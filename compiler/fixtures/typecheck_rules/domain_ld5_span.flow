@@ -1,0 +1,19 @@
+# expect: lifetime domain escape: `scratch` lives in the `callback` domain but is stored in field `tail`, which is declared to live in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 14, column 5
+struct Holder {
+    @lifetime(application)
+    tail: span<i32>
+}
+
+let mut empty: array<i32, 1> = [0]
+
+@lifetime(callback)
+function process() -> void {
+    let mut h: Holder = Holder { tail: empty[0..0] }
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    let view: span<i32> = scratch[0..4]
+    h.tail = view
+}
+
+function main() -> i32 {
+    return 0
+}

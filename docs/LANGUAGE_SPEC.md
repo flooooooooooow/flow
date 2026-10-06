@@ -419,7 +419,7 @@ a syntax error; use `const` for immutable module-level values.
 **Grammar:**
 ```
 struct_decl := 'struct' IDENTIFIER '{' (field (',' field)*)? '}'
-field := IDENTIFIER ':' type
+field := ('@' 'lifetime' '(' IDENTIFIER ')')? IDENTIFIER ':' type
 ```
 
 **Status:** ✅ Fully implemented
@@ -487,10 +487,11 @@ See [library/os.md](library/os.md).
 ### 3.6 Attributes
 
 An attribute is written `@name` or `@name(arg, …)` immediately before a
-`function` declaration. Several may be stacked. The full vocabulary lives in
-`compiler/src/attributes.flow`. A name outside it is a type error, so a
-misspelled attribute gets reported. Under `--lenient` it is a warning and
-the attribute is ignored; it never reaches the C.
+`function` declaration, a module static, or a struct field. Several may be
+stacked. The full vocabulary lives in `compiler/src/attributes.flow`. A name
+outside it is a type error, so a misspelled attribute gets reported. Under
+`--lenient` it is a warning and the attribute is ignored; it never reaches
+the C. `@lifetime` is the only attribute allowed on a static or a field.
 
 ```flow-pseudocode
 @always_inline
@@ -508,6 +509,7 @@ function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
 | `@noinline` | ✅ | Inline barrier (below) |
 | `@always_inline` | ✅ | Forced inline (below) |
 | `@target("…")` | ✅ | Per-function C target features (below) |
+| `@lifetime(D)` | ✅ | Function, static, or struct field; see [§8.4](#84-lifetime-domains) |
 
 #### Code-generation attributes
 
@@ -1100,10 +1102,11 @@ callback  <  frame  <  session  <  application
 ```
 
 `@lifetime(D)` goes on a function, where it declares the domain the frame runs
-in, and on a module static, where it declares the domain of that storage
-(default `application`). It is the only attribute allowed on a static. A value
-takes its domain from its allocation site: a local belongs to the enclosing
-function's domain, a static to its own.
+in, on a module static, where it declares the domain of that storage
+(default `application`), and on a struct field, where it is a contract that
+the field holds a `D`-domain reference. It is the only attribute allowed on a
+static or a field. A value takes its domain from its allocation site: a local
+belongs to the enclosing function's domain, a static to its own.
 
 ```flow-pseudocode
 @lifetime(application)
@@ -1122,28 +1125,30 @@ function build(f: ptr<FrameArena>, n: i64) -> ptr<f32> {
 function process(input: span<f32>) -> f32 { return input[0] }
 ```
 
-Four rules are checked, each an error in `--strict` and a warning in
+Five rules are checked, each an error in `--strict` and a warning in
 `--lenient`:
 
 | Rule | What it rejects |
 |---|---|
-| LD1 | storing a reference rooted in local storage into a static of a longer-lived domain |
-| LD2 | returning a reference into the annotated function's own frame |
+| LD1 | storing a reference rooted in local storage into a static of a longer-lived domain, including through a field path, array element, or struct/array literal |
+| LD2 | returning a reference into the annotated function's own frame, including inside a returned struct or array literal |
 | LD3 | allocation: `callback` is `@rt_safe`; `frame` forbids heap create/destroy but allows bumping an arena |
 | LD4 | calling a function whose declared domain outlives the caller's |
+| LD5 | storing a shorter-lived reference into a field declared `@lifetime(D)` whose domain outlives the writer |
 
 Domains are opt-in. An unannotated function has no domain and no rule fires
 inside it. The annotation is erased after checking: every domain lowers to the
 same C.
 
 **Not checked** (documented rather than half-enforced): escape through a call,
-a struct field, a closure, or heap storage; the domain of arena-allocated
-memory; domains on parameters or in types. Cross-module calls consult a
-compact effect/lifetime summary for each public function (#765); see
-[lifetime-domains.md](language/lifetime-domains.md).
+an unannotated field of a struct reached only by pointer, a closure, or heap
+storage; the domain of arena-allocated memory; domains on parameters or in
+types. Cross-module calls consult a compact effect/lifetime summary for each
+public function (#765); see [lifetime-domains.md](language/lifetime-domains.md)
+and [domain-fields.md](language/domain-fields.md).
 
-**Status:** ✅ C-backend type checker. Tests: `tests/unit/test_lifetime_domains.py`,
-`tests/lang/test_lifetime_domains.flow`. Example:
+**Status:** ✅ C-backend type checker. Tests: `tests/lang/test_lifetime_domains.flow`,
+`tests/lang/test_domain_fields.flow`. Example:
 `examples/audio/lifetime_domains.flow`.
 
 ---
@@ -1380,7 +1385,7 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Arrays | ✅ | ✅ | ✅ | ✅ |
 | Spans (`span<T>` / `&[T]`, concrete elements) | ✅ | ✅ | ❌ | ✅ |
 | Spans (bare `span`, trait-shaped, dependent extents) | ❌ | ❌ | ❌ | ✅ (documented gap) |
-| Lifetime domains (`@lifetime(...)`, 4 rules) | ✅ | ✅ (erased) | ✅ (erased) | ✅ |
+| Lifetime domains (`@lifetime(...)`, 5 rules) | ✅ | ✅ (erased) | ✅ (erased) | ✅ |
 | If/Else | ✅ | ✅ | ✅ | ✅ |
 | While | ✅ | ✅ | ✅ | ✅ |
 | For (`to` / `..` / `step`) | ✅ | ✅ | ✅ | ✅ |

@@ -184,10 +184,13 @@ outlives every frame.
 **What this catches, and what it does not.** This is a scope-local check rather than
 region inference. It catches a `return` of a local array or of a span local
 that borrows one, transitively through slice expressions, and the same value
-assigned to a module static. It does **not** track borrows through struct
-fields, closure environments, function calls that launder a view, or pointers
-taken out of a span. Those escapes compile today and are unsound; treat them
-as a known gap until layer 2 lands.
+assigned to a module static. It does **not** track borrows through unannotated struct
+fields of a value reached only by pointer, closure environments, function
+calls that launder a view, or pointers taken out of a span. Lifetime domains
+do follow a borrow through a static-rooted field path, an annotated field,
+and a struct or array literal; see
+[domain-fields.md](domain-fields.md). Other escapes compile today and are
+unsound; treat them as a known gap until layer 2 lands.
 
 **With lifetime domains.** [Lifetime domains](lifetime-domains.md) generalise
 this check. A function annotated `@lifetime(callback)` or `@lifetime(frame)`
@@ -294,7 +297,7 @@ total_span_const_i32(((flow_span_const_i32){ .data = (const int32_t*)(((xs)) + (
 | Dependent extents (`span<mut, source.extent>`) | ❌ layer 2 |
 | `span<number>` and other trait-shaped element constraints | ❌ layer 2 |
 | Span methods (`fill`, `reduce`, iteration) | ❌ layer 2 |
-| Spans as struct fields | ⚠️ compiles, but no escape checking: avoid |
+| Spans as struct fields | ⚠️ domain-checked when the field or its static is annotated; see [domain-fields.md](domain-fields.md) |
 
 The four layer-2 spellings (`span`, `span<mut>` / `span<const>`,
 `span<number>`, `span<mut, source.extent>`, plus `span[N]`) are rejected at
@@ -303,10 +306,6 @@ version.
 
 Example: [examples/basics/spans.flow](../../examples/basics/spans.flow) ·
 Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`
-
-A span is already a `{pointer, length}` view. Crossing into C with that
-shape uses the [zero-copy FFI buffer ABI](ffi-buffer.md); do not pack the
-elements into a second buffer when the layout already matches.
 
 Related: [types.md](types.md) ·
 [lifetime-domains.md](lifetime-domains.md) ·

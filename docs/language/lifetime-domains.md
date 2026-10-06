@@ -1,9 +1,11 @@
 # Lifetime domains
 
 > **Status:** v0 is implemented in the C-backend type checker. Domains are
-> declared with `@lifetime(...)` on functions and module statics. Four rules
-> are enforced (see [What the compiler checks](#what-the-compiler-checks)).
-> Everything the checker cannot decide soundly is listed under
+> declared with `@lifetime(...)` on functions, module statics, and struct
+> fields. Five rules are enforced (see
+> [What the compiler checks](#what-the-compiler-checks)). Composite stores
+> through fields and collections are [domain-fields.md](domain-fields.md)
+> (issue #684). Everything the checker cannot decide soundly is listed under
 > [What the compiler does not check](#what-the-compiler-does-not-check) and is
 > not half-checked.
 
@@ -64,7 +66,11 @@ function process_block(state: ptr<FilterState>, n: i32) -> void {
 let mut cache: span<f32> = null
 ```
 
-Those are the only two places a domain is written in v0. This is the
+`@lifetime(D)` on a struct field declares the domain of the storage that
+field may point to, wherever the instance lives. See
+[domain-fields.md](domain-fields.md) (LD5).
+
+Those are the only three places a domain is written. This is the
 "annotation-only" answer to the open question in the issue: no `domain frame
 { ... }` blocks, no per-`let` annotations, no domains in types. See
 [project Questions](../project/Questions.md).
@@ -88,7 +94,7 @@ change the meaning of any other.
 
 ## What the compiler checks
 
-Four rules. Each one is a hard error in `--strict` and a printed warning in
+Five rules. Each one is a hard error in `--strict` and a printed warning in
 `--lenient`, like every other type-checker diagnostic.
 
 ### LD1: a shorter-lived value may not be stored in a longer-lived static
@@ -219,14 +225,64 @@ error: lifetime domain violation: 'process' is in the `callback` domain but
 The other direction is fine and normal: a `session` function calls a
 `callback` function to run one block.
 
+### LD5: a shorter-lived reference may not be stored in a longer-lived field
+
+LD1 covers module statics. LD5 extends the same rule to composite storage
+([domain-fields.md](domain-fields.md), issue #684). A store `base.field = value`
+is an escape when the field's domain outlives the writing frame and `value`
+is rooted in that frame.
+
+A field's domain comes from one of two places:
+
+- **The static it belongs to.** A reference stored anywhere inside a module
+  static, at any field depth or through an array element, takes the static's
+  domain. `holder.inner.view = &scratch` and `table[0] = &scratch` are both
+  caught when `holder` and `table` are statics. A struct or array literal
+  assigned to that static is walked the same way.
+- **An `@lifetime(D)` on the field itself.** The annotation is a contract that
+  the field holds a `D`-domain reference, so a shorter-lived store breaks it
+  wherever the struct instance lives:
+
+```flow expect-error
+struct Holder {
+    @lifetime(application)
+    view: ptr<i32>
+}
+
+@lifetime(callback)
+function process() -> void {
+    let mut h: Holder = Holder { view: null }
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    h.view = &scratch
+}
+```
+
+```text
+error: lifetime domain escape: `scratch` lives in the `callback` domain but is
+       stored in field `view`, which is declared to live in the `application`
+       domain (a longer-lived domain may not hold a reference to a
+       shorter-lived one) at line 11, column 5
+```
+
+Both halves are opt-in. A store fires only when the writing function declares a
+domain, the field's domain outlives it, and the value is rooted in the writing
+frame. An unannotated field on a local struct is left alone, because a local
+struct dies with the frame and receives no longer-lived promise.
+
 ## What the compiler does not check
 
 A lifetime system that misses violations is worse than no lifetime system,
 because people trust it. Everything below compiles today and is **not**
 checked. None of it is partially checked.
 
-- **Escape through a struct field.** Writing a reference into a field of a
-  longer-lived struct is not tracked. This is the same gap spans have.
+- **Escape through an unannotated field of a struct whose lifetime is not
+  known.** Two field cases are checked (see LD5): a store into any field
+  or element of a module static, and a store into a field declared with
+  `@lifetime(D)`. A store into a plain field of a struct reached only through a
+  pointer parameter is still not tracked, because the checker cannot prove that
+  struct outlives the writing frame. Copying a previously-filled local struct
+  onto a longer-lived location without a literal on the right-hand side is
+  also not tracked.
 - **Escape through a closure environment**, a function pointer, or dynamic
   dispatch. The `@rt_safe` call graph is over direct named calls only, and LD3
   and LD4 inherit that.
@@ -266,9 +322,11 @@ Where both apply to one assignment or return, only the domain diagnostic is
 emitted, since it strictly says more. A span in a function with no
 `@lifetime(...)` still gets the span diagnostic, unchanged.
 
-The two share their known gaps exactly: neither follows a borrow through a
-a call, or a closure. See
-[spans.md § Lifetime](spans.md#lifetime).
+The two share their remaining gaps: neither follows a borrow through a
+call or a closure. Domain checking does follow a borrow through a
+static-rooted field path, an annotated field, and a struct or array
+literal. See [spans.md § Lifetime](spans.md#lifetime) and
+[domain-fields.md](domain-fields.md).
 
 ## Frame domain and the arena
 
@@ -364,13 +422,14 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 |---|---|
 | `@lifetime(...)` on a function | ✅ |
 | `@lifetime(...)` on a module static | ✅ (only attribute allowed there) |
-| LD1 escape into a longer-lived static | ✅ direct cases; see [gaps](#what-the-compiler-does-not-check) |
-| LD2 escape by return | ✅ direct cases |
+| LD1 escape into a longer-lived static | ✅ direct cases and composite stores; see [gaps](#what-the-compiler-does-not-check) |
+| LD2 escape by return | ✅ direct cases and struct/array literals |
 | LD3 `callback` = `@rt_safe` | ✅ shares the `@rt_safe` call graph |
 | LD3 `frame` forbids heap create/destroy | ✅ allocation names only, locks allowed |
 | LD4 call ordering between declared domains | ✅ |
 | `FrameArena` bump API in the stdlib | ✅ `lib/stdlib/memory.flow` |
-| LD1 escape into a struct field of a longer-lived static | ✅ |
+| LD1 escape into a struct field or collection of a longer-lived static | ✅ [domain-fields.md](domain-fields.md) |
+| LD5 `@lifetime(D)` on a struct field | ✅ [domain-fields.md](domain-fields.md) |
 | Escape through a call, closure or heap | ❌ not checked, by design in v0 |
 | Domain of arena-allocated memory | ✅ |
 | Domains on parameters / in types | ❌ |
@@ -398,7 +457,9 @@ same C as the unannotated function.
 ## Related
 
 [rt-safety.md](../library/rt-safety.md) · [memory.md](../library/memory.md) ·
-[spans.md](spans.md) · [LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
+[spans.md](spans.md) · [domain-fields.md](domain-fields.md) ·
+[LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
 
-Tests: `tests/unit/test_lifetime_domains.py`,
-`tests/lang/test_lifetime_domains.flow`
+Tests: `tests/lang/test_lifetime_domains.flow`,
+`tests/lang/test_domain_fields.flow`,
+`compiler/fixtures/typecheck_rules/domain_*.flow`

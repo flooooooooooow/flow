@@ -1,0 +1,17 @@
+# expect: ok
+struct Holder {
+    @lifetime(application)
+    view: ptr<i32>
+}
+
+let mut g: i32 = 0
+
+@lifetime(callback)
+function process() -> void {
+    let mut h: Holder = Holder { view: null }
+    h.view = &g
+}
+
+function main() -> i32 {
+    return 0
+}

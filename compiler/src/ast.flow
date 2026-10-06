@@ -190,6 +190,9 @@ export const AST_IDENT_FORK_SRC: i32 = 2
 # declaration binding for AST_CALL, or AST_NONE when unresolved.
 # AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array size
 # (0 if none), c = AST_TYPE_SPAN_MUTABLE for span<mut T>, else AST_NONE.
+# AST_FIELD: name_* = field name, a = type. A preceding `@lifetime(D)` is
+#   not stored on the node; the type checker reads it from the source
+#   between the previous field and this name (#684).
 # AST_FIELD_ACCESS: a = base expr, name_* = field; AST_INDEX: a = base, b = index.
 # AST_STRUCT_LIT: name_* = type, a = AST_FIELD chain (a child = field expr).
 # AST_CONST: name_* = name, a = type (AST_TYPE), b = init expr, ival = 1 if export else 0.

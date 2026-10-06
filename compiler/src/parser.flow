@@ -2115,6 +2115,7 @@ function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32 {
 function flowc_parse_block(p: ptr<Parser>) -> i32
 function flowc_parser_skip_brace_block(p: ptr<Parser>)
 function flowc_parser_skip_paren_block(p: ptr<Parser>)
+function flowc_parse_skip_attrs(p: ptr<Parser>)
 function flowc_parse_assume(p: ptr<Parser>) -> i32
 function flowc_parse_therefore(p: ptr<Parser>) -> i32
 function flowc_parse_theorem(p: ptr<Parser>, is_export: i32) -> i32
@@ -3107,6 +3108,13 @@ function flowc_parse_struct(p: ptr<Parser>) -> i32 {
     }
     let mut fields: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        # Optional `@lifetime(D)` (or other `@name` / `@name(args)`) on a
+        # field. The type checker records the domain; the attribute is
+        # erased before codegen (#684).
+        flowc_parse_skip_attrs(p)
+        if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+            break
+        }
         # Field name can be an identifier or a keyword used as a name (e.g. `unit`).
         if flowc_parser_check(p[0], TOK_IDENT) == 0 and flowc_parser_check(p[0], TOK_KEYWORD) == 0 {
             flowc_parser_fail(p)
@@ -3660,6 +3668,21 @@ function flowc_parser_skip_brace_block(p: ptr<Parser>) {
         }
         if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
             flowc_parser_advance(p)
+        }
+    }
+}
+
+# Consume a run of `@name` / `@name(args)` attributes. Used on struct
+# fields so `@lifetime(D)` can sit on a field without a new grammar
+# production; statement attributes already skip the same way.
+function flowc_parse_skip_attrs(p: ptr<Parser>) {
+    while flowc_parser_check(p[0], TOK_AT) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 1 or flowc_parser_check(p[0], TOK_KEYWORD) == 1 {
+            flowc_parser_advance(p)
+        }
+        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+            flowc_parser_skip_paren_block(p)
         }
     }
 }

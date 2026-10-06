@@ -557,6 +557,10 @@
           "path": "language/lifetime-domains.md"
         },
         {
+          "label": "Domain Fields and Collections",
+          "path": "language/domain-fields.md"
+        },
+        {
           "label": "Effects Showcase",
           "path": "effects-showcase.md"
         },
@@ -641,10 +645,6 @@
         {
           "label": "Export ABI",
           "path": "language/export-abi.md"
-        },
-        {
-          "label": "FFI Buffer ABI",
-          "path": "language/ffi-buffer.md"
         },
         {
           "label": "C Function Pointers",

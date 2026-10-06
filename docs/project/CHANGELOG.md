@@ -4,6 +4,13 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- Type checker: lifetime domains propagate through struct fields and
+  collections (#684). A shorter-lived reference stored in a field or
+  element of a longer-lived static is an escape at any nesting depth,
+  including through a struct or array literal. A struct field may declare
+  `@lifetime(D)`; storing a shorter-lived reference into it is LD5,
+  wherever the instance lives. The annotation is erased before codegen.
+  See [domain-fields.md](../language/domain-fields.md).
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
 - Type checker: public functions emit a compact RT-safety / lifetime-domain
@@ -16,7 +23,7 @@ All notable changes to FLOW will be documented in this file.
   `unknown` bit; this slice still rejects only the known unsafe names.
 - Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy volume. The #728 harness records those fields without workload source rewrites. (#740)
 - flowc emits C `restrict` and MLIR `{llvm.noalias}` for pointer parameters and locals only when a fail-closed provenance certificate proves disjointness: distinct local arrays, non-overlapping constant slices, and internal functions whose every call site is proven. Overlapping views, a buffer passed twice, exported/`@flow_api` functions, and pointers copied from parameters stay aliasable (#731).
-- FFI: Zero-copy contiguous buffer ABI (`FlowFfiBuffer` in `runtime/flow_ffi_buffer.h`, Flow `FFIBuffer`), borrowed vs owned lifetime, fail-closed layout checks that never silently copy, a pointer-identity lang test, and a microbenchmark identity row. (#737)
+- FFI: Zero-copy contiguous buffer ABI (`ffi_buffer_handoff`), boundary instrumentation, and benchmarks. (#737)
 
 ### Type checker diagnostics
 
