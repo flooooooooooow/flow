@@ -110,6 +110,45 @@ Their examples and `flow gpu test --suite vgpu` report `UNSUPPORTED`,
 not parity. Actual device execution and readback remain acceptance work
 for #812.
 
+
+## Actual WebGPU device execution: reflected f32 copy
+
+The executable `gpu_graph_add_copy_f32` operation emits BOTH the
+WGSL compute entry and JSON binding reflection from the same typed Flow
+graph. That reflection plugs into the existing
+`wasm/crossing_assets/webgpu-host.js` `runKernel` API. The
+`runFlowGraphCopy` adapter verifies exact f32 readback bits: successful
+shader compilation alone cannot produce an `execution: "webgpu-device"`
+result.
+
+Produce both browser artifacts from Flow source:
+
+```sh
+./flow run examples/gpu/vgpu/copy_graph.flow
+node tools/gpu_graph/export_copy.mjs
+python3 -m http.server 8000 --directory site
+```
+
+Open `http://localhost:8000/wasm-crossings/gpu/copy-graph.html` in a
+WebGPU-enabled browser and select **Execute on GPU**. That page fetches
+the WGSL and reflection emitted by Flow, creates a real compute
+pipeline, dispatches the kernel, maps a readback buffer and checks the
+result against the source. It does not embed an alternative handwritten
+WGSL implementation.
+
+Regression commands:
+
+```sh
+./flow run tests/lang/test_gpu_graph.flow
+node --test tests/webgpu/graph-copy.test.mjs
+```
+
+The Node test uses a mock GPU device to exercise the dispatch/readback
+host interface and failure paths; it does **not** establish Metal/WebGPU
+hardware parity on its own. True #812 completion still requires fluid,
+FFT-ocean, air-painting and radiance-cascade algorithms, actual device
+submissions on both targets, and reference-output validation.
+
 ## vgpu families
 
 | Builder | Upstream | Passes |
