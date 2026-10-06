@@ -11,6 +11,38 @@ Format:
 
 ## Open Questions
 
+### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
+
+**Context:** Issue #564 records that shipped handlers are tail-resumptive
+only: an operation returns to its call site, and a capability method cannot
+decline to resume (abort / exception encoding), replay the continuation
+(retry), or invoke it more than once (multi-shot / generators / schedulers).
+The C backend implements this as a `_Thread_local` handler pointer plus a
+direct call. Full continuations need CPS, heap stacks, or a state machine,
+which conflicts with the zero-overhead C ABI path. See
+[rfc_effects_continuations.md](../research/rfc_effects_continuations.md)
+and [effects-continuations.md](../language/effects-continuations.md).
+
+**Options:**
+1. Keep tail-resumptive handlers as the 1.0 language rule. Reject reserved
+   `resume` / `resume_multi` forms in capability methods. Encode abort as
+   `Result` / status, retry as a caller loop plus a policy effect.
+2. Add abort (0-shot) only, via longjmp or an extra handle-block status,
+   still without retry or multi-shot.
+3. Add general one-shot and multi-shot continuation capture (Koka / Eff /
+   OCaml 5 style).
+
+**Recommendation:** Option 1. It is the conservative 1.0 choice already
+accepted by the RFC. Options 2 and 3 change control-flow and ABI
+predictability and need an explicit human design decision before anyone
+plans a scheduler or exception encoding on top of `handle`.
+
+**Status:** Conservative option implemented (2026-10-05): spec + compiler
+rejection of `resume` / `resume_multi` in capability methods + tests.
+Options 2 and 3 remain open for a later 1.x or post-1.0 decision.
+
+---
+
 ### 2026-08-06: Lifetime domains: annotation-only or `domain` blocks in v0?
 
 **Context:** Issue #148 asks for `callback` / `frame` / `session` /

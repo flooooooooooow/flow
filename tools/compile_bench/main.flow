@@ -10,18 +10,22 @@
 #   ./flow tool compile_bench --repeat 3 prog.flow ...
 #   ./flow tool compile_bench --host          current compiler/src via flowc_host
 #   ./flow tool compile_bench --compiler PATH
+#   ./flow tool compile_bench --python-code 'print("Hello, world!")' hello.flow
 #
 # The default compiler is the bootstrap binary, rebuilt from the
 # checked-in bootstrap C when missing or older. Output is one JSON object
 # per program plus, after the stock set, a summary that names the top
 # fixed and scaling costs. Fields: program, loc, emit_ms, cc_ms, run_ms,
 # total_ms, cold_total_ms, warm_total_ms, reps, loc_per_emit_s, and when
-# present profile (the [flow-profile] object) plus phase_*_ms. Stock runs
+# present profile (the [flow-profile] object) plus phase_*_ms, and bin_bytes of the linked program. With --python-code, each row also
+# reports the matching `python3 -c` minimum as python_ms and
+# run_vs_python_x100. #746 uses those fields as the machine-readable
+# cold-start comparison against equivalent Python invocations. Stock runs
 # also print a Tier-1 matrix row and >10% bottleneck follow-ups.
 #
 # Exit codes: 0 pass, 1 a stage failed, 2 bad arguments or setup.
 
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_run, proc_argc, proc_argv, proc_getenv, proc_strs_new, proc_strs_push, proc_strs_len, proc_strs_get, PROC_NULL }
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_run, proc_argc, proc_argv, proc_getenv, proc_strs_new, proc_strs_push, proc_strs_len, proc_strs_get, proc_which, PROC_NULL }
 import "tools/flow_cli/sys.flow"
 
 extern {
@@ -178,6 +182,7 @@ function main() -> i32 {
     let mut stock: bool = true
 
     let mut i: i32 = 1
+    let mut python_code: string = ""
     while i < proc_argc() {
         let a: string = proc_argv(i)
         if s_eq(a, "--repeat") {
@@ -200,6 +205,13 @@ function main() -> i32 {
                 return 2
             }
             compiler = proc_argv(i)
+        } elif s_eq(a, "--python-code") {
+            i = i + 1
+            if i >= proc_argc() {
+                errln("compile_bench: --python-code needs source text")
+                return 2
+            }
+            python_code = proc_argv(i)
         } else {
             proc_strs_push(progs, a)
             stock = false
@@ -250,6 +262,30 @@ function main() -> i32 {
     let out_bin: string = work + "/p"
     let err_path: string = work + "/emit.err"
     let no_env: ptr<ProcStrs> = proc_strs_new()
+
+    let mut python_min: i64 = 0 - 1
+    if s_len(python_code) > 0 {
+        if s_len(proc_which("python3")) == 0 {
+            errln("compile_bench: --python-code needs python3 on PATH")
+            return 2
+        }
+        let py_a: ptr<ProcStrs> = proc_strs_new()
+        proc_strs_push(py_a, "python3")
+        proc_strs_push(py_a, "-c")
+        proc_strs_push(py_a, python_code)
+        let mut pr: i32 = 0
+        while pr < repeat {
+            let pt: i64 = timed_ms(py_a, no_env)
+            if pt >= 0 and (python_min < 0 or pt < python_min) {
+                python_min = pt
+            }
+            pr = pr + 1
+        }
+        if python_min < 0 {
+            errln("compile_bench: python3 -c comparison failed")
+            return 1
+        }
+    }
 
     let cc_a: ptr<ProcStrs> = proc_strs_new()
     proc_strs_push(cc_a, "cc")
@@ -361,6 +397,12 @@ function main() -> i32 {
         line = line + ", \"total_ms\": " + i64_str(total)
         line = line + ", \"cold_total_ms\": " + i64_str(cold_total)
         line = line + ", \"warm_total_ms\": " + i64_str(total)
+        if python_min >= 0 {
+            line = line + ", \"python_ms\": " + i64_str(python_min)
+            if run_min >= 0 and python_min > 0 {
+                line = line + ", \"run_vs_python_x100\": " + i64_str(run_min * 100 / python_min)
+            }
+        }
         line = line + ", \"reps\": " + i64_str(repeat as i64)
         if loc > 0 and emit_min > 0 {
             line = line + ", \"loc_per_emit_s\": " + i64_str((loc * 1000) / emit_min)

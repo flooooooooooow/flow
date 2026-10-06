@@ -228,9 +228,10 @@ A caller must then handle `Logger` or declare the requirement on its own signatu
 
 ## Part 4: What native handlers do not mean
 
-Current Flow handlers are not general resumable continuations. The supported syntax is named
-`capability` declarations installed by `handle ... with ...`; there is no current inline
-`resume()` handler syntax.
+Current Flow handlers are tail-resumptive: returning from a capability method
+resumes the call site once. There is no `resume()` / abort / multi-shot
+continuation syntax; the type checker rejects those reserved forms. See
+[Effect Continuations](../language/effects-continuations.md).
 
 For retry, timeout, counters, accumulators, and similar stateful patterns, keep state explicit and
 use the effect as a swappable policy. The runnable examples demonstrate that exact shape.

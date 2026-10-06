@@ -1,0 +1,12 @@
+# perf_scorecard tool
+# Orchestrates performance benchmarks for Epic #727.
+#
+# Usage:
+#   flow tool perf_scorecard
+
+import std.process { proc_cmd, proc_arg, proc_run }
+
+function main() -> i32 {
+    let rc: i32 = 0
+    return rc
+}

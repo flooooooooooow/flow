@@ -1,0 +1,143 @@
+# Cold-start link trimming (#746). A tiny program must not load optional
+# Python/GPU/OpenSSL libraries, must not emit C constructors, and must run.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, proc_env }
+
+function write_tiny(path: string) -> bool {
+    return write_text(path, "function main() -> i32 {\n    print(\"42\")\n    println(\"\")\n    return 0\n}\n")
+}
+
+function compile_tiny(build: string, src: string, no_trim: bool) -> i32 {
+    let c: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "compile", src))
+    proc_env(c, "FLOW_BUILD_ROOT", build)
+    if no_trim {
+        proc_env(c, "FLOW_NO_LINK_TRIM", "1")
+    }
+    return t_run(c)
+}
+
+function dynlibs(exe: string) -> string {
+    if have("ldd") {
+        let c: ptr<ProcCmd> = t_cmd(sl_of2("ldd", exe))
+        let _r: i32 = t_run(c)
+        return read_text(t_out()) + read_text(t_err())
+    }
+    if have("otool") {
+        let c: ptr<ProcCmd> = t_cmd(sl_of3("otool", "-L", exe))
+        let _r: i32 = t_run(c)
+        return read_text(t_out()) + read_text(t_err())
+    }
+    if have("readelf") {
+        let c: ptr<ProcCmd> = t_cmd(sl_of3("readelf", "-d", exe))
+        let _r: i32 = t_run(c)
+        return read_text(t_out()) + read_text(t_err())
+    }
+    return ""
+}
+
+function has_optional_lib(deps: string) -> bool {
+    if s_contains(deps, "Python3") or s_contains(deps, "libpython") {
+        return true
+    }
+    if s_contains(deps, "Metal") or s_contains(deps, "Foundation") {
+        return true
+    }
+    if s_contains(deps, "libssl") or s_contains(deps, "libcrypto") {
+        return true
+    }
+    return false
+}
+
+function check_tiny_trims_optional_libs() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    if not have("ldd") and not have("otool") and not have("readelf") {
+        return t_skip("requires ldd, otool or readelf")
+    }
+    let src: string = t_tmp() + "/tiny.flow"
+    if not write_tiny(src) {
+        outln("could not write tiny.flow")
+        return T_FAIL
+    }
+    let build: string = t_tmp() + "/build"
+    if compile_tiny(build, src, false) != 0 {
+        outln("flow compile failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let exe: string = build + "/tiny"
+    if not a_exists(exe) {
+        return T_FAIL
+    }
+    let deps: string = dynlibs(exe)
+    if s_len(deps) == 0 {
+        outln("no dynamic-library listing")
+        return T_FAIL
+    }
+    if has_optional_lib(deps) {
+        outln("tiny program should not link optional Python/GPU/OpenSSL libraries:")
+        outln(deps)
+        return T_FAIL
+    }
+    let c_file: string = build + "/tiny.c"
+    if not a_exists(c_file) {
+        return T_FAIL
+    }
+    let c_text: string = read_text(c_file)
+    if not a_not_contains(c_text, "__attribute__((constructor))") {
+        return T_FAIL
+    }
+    if not a_not_contains(c_text, "__attribute__((destructor))") {
+        return T_FAIL
+    }
+    let run: ptr<ProcCmd> = t_cmd(sl_of1(exe))
+    if t_run(run) != 0 {
+        outln("tiny binary failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "42") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_opt_out_keeps_full_link() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    if not have("ldd") and not have("otool") and not have("readelf") {
+        return t_skip("requires ldd, otool or readelf")
+    }
+    let src: string = t_tmp() + "/tiny.flow"
+    if not write_tiny(src) {
+        return T_FAIL
+    }
+    let build: string = t_tmp() + "/build"
+    if compile_tiny(build, src, true) != 0 {
+        outln("flow compile with FLOW_NO_LINK_TRIM=1 failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let deps: string = dynlibs(build + "/tiny")
+    if not has_optional_lib(deps) {
+        return t_skip("full link has no optional Python/GPU/OpenSSL libraries on this host")
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("cold_start")
+    t_start()
+    t_end("tiny_trims_optional_libs", check_tiny_trims_optional_libs())
+    t_start()
+    t_end("opt_out_keeps_full_link", check_opt_out_keeps_full_link())
+    t_done()
+    return 0
+}

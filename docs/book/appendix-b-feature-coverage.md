@@ -143,6 +143,7 @@ means that the syntax or design is not implemented.
 | blocking async I/O | Native POSIX target | Chapter 12 |
 | kqueue/epoll netpoll | Darwin/Linux target | Chapter 12 |
 | TCP effect and blocking TCP | Native target | Chapter 12 |
+| tail-resumptive effect handlers | Full: resume/resume_multi rejected in capability methods | Chapter 12 |
 | general Flow-frame delimited continuations | Partial/scaffold | Chapter 12 |
 | `async`/`await` syntax | Planned, deliberately absent | Chapter 12 |
 
