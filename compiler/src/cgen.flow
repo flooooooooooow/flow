@@ -6298,6 +6298,21 @@ function flowc_cgen_bounds_span_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     if flowc_cgen_checked_is_span(w, arena, src, base) == 0 {
         return AST_NONE
     }
+    # A syntactic 0..xs.len range is not an inductive proof when the
+    # loop body can assign/address xs or shadow/rebind the induction name.
+    # Also never apply this ascending proof to a descending loop.
+    if dir <= 0 {
+        return AST_NONE
+    }
+    let body: i32 = arena.nodes[id].c
+    if flowc_cgen_name_rebound_in_node(arena, src, body,
+        arena.nodes[base].name_start, arena.nodes[base].name_end) == 1 {
+        return AST_NONE
+    }
+    if flowc_cgen_name_rebound_in_node(arena, src, body,
+        arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+        return AST_NONE
+    }
     return base
 }
 
@@ -6305,7 +6320,9 @@ function flowc_cgen_bounds_span_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
 # when its name is assigned, shadowed, or addressed. Element writes and value
 # arguments leave the two-word span value unchanged, so they remain eligible.
 function flowc_cgen_name_rebound_in_node(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32) -> i32 {
-    if id == AST_NONE {
+    # AST fields can contain negative non-node sentinels. Never recurse
+    # through such values while proving a bounds check removable.
+    if id < 0 or id >= arena.len {
         return 0
     }
     let k: i32 = arena.nodes[id].kind
