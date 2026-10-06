@@ -34,9 +34,13 @@ function main() -> i32 {
 | `gpu_tensor_view_host` | Backends that cannot alias host and device | Explicit host view, no `GpuBuffer` |
 | Stub backend (`gpu_available()` is false) | Linux / Windows CI | Host staging with the same `GpuTensor` type |
 
-`gpu_tensor_buffer` returns the `GpuBuffer` handle that `@gpu` kernels, compute
-passes and (once typed textures land) storage-texture binds consume. Pre- and
-post-model `@gpu` kernels take `gpu_tensor_ptr` of that same resource.
+`gpu_tensor_buffer` returns the `GpuBuffer` handle that GPU kernels
+and compute passes consume. `gpu_tensor_ptr` is a CPU-visible mapping on
+unified memory; calling an `@gpu`-annotated function through the C host path
+is **not** automatically a multi-thread GPU dispatch. The Metal runtime
+provides real device kernels for scale/bias, ReLU, clamp/invert and GEMM;
+Flow's separate `./flow gpu` command emits the user-authored WGSL/Metal
+kernels for supported GPU launchers.
 
 ## Compatibility
 
@@ -61,8 +65,12 @@ refuse incompatible operands before they touch storage.
 
 `examples/gpu/vgpu/mnist.flow` and `examples/gpu/vgpu/depth_estimation.flow`
 run a host-Tensor reference and a `GpuTensor` path over the same logical
-buffers, with `@gpu` preprocess and postprocess kernels on those pointers.
-Both backends emit from the same source:
+buffers. On Metal's unified-memory backend, supported model operations use
+real compute command buffers; the conformance result requires all expected
+model dispatches to complete. On unsupported platforms the host numerical
+fallback remains useful, but is reported as **UNSUPPORTED** for GPU parity.
+The `@gpu` declarations separately emit backend shader source and are not
+silently counted as device execution.
 
 ```bash
 ./flow run examples/gpu/vgpu/mnist.flow
@@ -73,3 +81,38 @@ Both backends emit from the same source:
 
 See [GPU Memory](gpu-memory.md) for the underlying `GpuBuffer` ABI and
 [vgpu parity](../project/vgpu-parity.md) for the P3 resource model.
+
+## WebGPU shared-resource multi-pass execution
+
+`wasm/crossing_assets/gpu-multipass.mjs` exports
+`runFlowGpuPasses(device, config)`. It consumes **Flow-emitted WGSL and
+Flow compiler kernel reflection**, binds persistent `GPUBuffer` objects
+once, submits any number of reflected compute stages in order, and only
+reads back the explicitly requested final buffers. Per-stage parameters
+use the same 16-byte-aligned uniform ABI as the existing
+`webgpu-host.js` `runKernel` path.
+
+The configuration names resources as a `Float32Array` (initial host
+upload) or a positive element count (a device-only intermediate/result).
+Each pass supplies the reflected `kernel`, its WGSL source,
+`dispatchElements`, optional `bindings` mapping parameter names to
+persistent resource names, optional `requiredElements` for shape
+validation (especially matrix multiplication), and scalar uniforms.
+
+The executor validates resource extents, workgroup limits,
+read-before-write dependencies and same-pass alias hazards **before**
+creating GPU objects. A real result has
+`execution: "webgpu-device"` and `intermediateCpuCopies: 0`.
+It cleans up created GPU objects when compilation or submission fails.
+
+```bash
+node --test tests/webgpu/multipass.test.mjs
+```
+
+The Node test uses a simulated WebGPU device to check two ordered kernels,
+one queue submission, final-only readback, and error cleanup. It does
+**not** prove MNIST/depth parity on a physical WebGPU adapter. The model
+examples still need a compiler-to-browser launcher that carries their
+actual generated WGSL, scalar reflection, weights and numerical
+reference fixtures into this multi-pass executor.
+
