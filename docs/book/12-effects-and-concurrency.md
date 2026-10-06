@@ -93,6 +93,11 @@ The async standard library exposes an `Async` effect with several handler implem
 
 Available policies include deterministic simulated execution, OS-thread execution, fibers, blocking I/O, and netpoll-backed I/O. The active handler changes policy without changing the operation that requests the effect.
 
+Handlers themselves are tail-resumptive: a capability method returns to the
+call site once. It cannot abort the `handle` block, retry the continuation,
+or resume it more than once. See
+[Effect Continuations](../language/effects-continuations.md).
+
 ## 12.7 Fiber and I/O semantics
 
 `FiberAsync` can park work and keeps effect handlers fiber-local. Worker count is controlled through the runtime configuration. General arbitrary-stack delimited continuations are not claimed as complete; the runtime has continuation infrastructure but the supported async surface is the one exercised by repository tests and examples.

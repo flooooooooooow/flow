@@ -1,0 +1,27 @@
+# Distinct embedded struct fields are disjoint storage (#731).
+
+struct Pair {
+    xs: array<i32, 4>,
+    ys: array<i32, 4>
+}
+
+function field_add(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let mut pair: Pair = Pair { xs: [1, 2, 3, 4], ys: [5, 6, 7, 8] }
+    let px: ptr<i32> = pair.xs
+    let py: ptr<i32> = pair.ys
+    field_add(px, py, 4)
+    if pair.xs[0] != 6 { return 1 }
+    if pair.xs[1] != 8 { return 2 }
+    if pair.xs[2] != 10 { return 3 }
+    if pair.xs[3] != 12 { return 4 }
+    if pair.ys[0] != 5 { return 5 }
+    return 0
+}

@@ -1,0 +1,20 @@
+# Effects parity fixture: reserved resume form in a capability method (#564).
+
+effect Probe {
+    mark(x: i32) -> i32,
+}
+
+capability Replay {
+    effect Probe,
+    function mark(x: i32) -> i32 {
+        resume(x)
+        return x
+    },
+}
+
+function main() -> i32 {
+    handle Probe with Replay {
+        let n: i32 = Probe.mark(0)
+    }
+    return 0
+}

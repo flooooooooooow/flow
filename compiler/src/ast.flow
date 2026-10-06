@@ -224,6 +224,10 @@ export struct AstNode {
     aux_id: i32
 }
 
+# Byte size of AstNode. The parse cache stores and keys this so a layout
+# change cannot reuse records written for a different node shape.
+export const FLOWC_AST_NODE_SIZE: i32 = 44
+
 export struct AstArena {
     nodes: ptr<AstNode>,
     len: i32,
@@ -231,7 +235,7 @@ export struct AstArena {
 }
 
 export function flowc_ast_new(cap: i32) -> AstArena {
-    let size: i64 = (cap as i64) * 44
+    let size: i64 = (cap as i64) * (FLOWC_AST_NODE_SIZE as i64)
     let raw: ptr<u8> = malloc(size)
     let nodes: ptr<AstNode> = raw
     let mut i: i32 = 0

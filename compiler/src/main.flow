@@ -1,4 +1,4 @@
-# flowc — Flow compiler written in Flow (self-hosting bootstrap)
+# flowc :  Flow compiler written in Flow (self-hosting bootstrap)
 #
 # Phase 3: lex + parse a core subset, dump AST stats.
 # Phase 4: Stage-A C emit of a tiny AST subset into a buffer.
@@ -1145,7 +1145,7 @@ function test_cgen_string() -> i32 {
 }
 
 function test_cgen_emit() -> i32 {
-    # Same program as test_parse_core — emit C and scan for expected substrings.
+    # Same program as test_parse_core :  emit C and scan for expected substrings.
     let src: array<u8, 220> = [
         102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32,
         105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32,
@@ -2252,7 +2252,7 @@ function test_bundle_emit() -> i32 {
     if flowc_bytes_contains(out, n, "main") == 0 { ok = 0 }
     if flowc_bytes_contains(out, n, "#include <stdint.h>") == 0 { ok = 0 }
     # Preamble once: second module uses flags&1 (no second stdint include after body).
-    # Count occurrences of the include line — expect exactly one.
+    # Count occurrences of the include line :  expect exactly one.
     let needle: string = "#include <stdint.h>"
     let np: ptr<u8> = needle
     let nlen: i32 = strlen(needle) as i32
