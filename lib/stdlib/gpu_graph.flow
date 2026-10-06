@@ -53,6 +53,7 @@ export const GPU_GRAPH_ERR_FULL: i32 = 6
 export const GPU_GRAPH_ERR_UNKNOWN_RESOURCE: i32 = 7
 export const GPU_GRAPH_ERR_TRANSIENT: i32 = 8
 export const GPU_GRAPH_ERR_BARRIER: i32 = 9
+export const GPU_GRAPH_ERR_INVALID_RESOURCE: i32 = 10
 
 export const GPU_GRAPH_MAX_RESOURCES: i32 = 16
 export const GPU_GRAPH_MAX_PASSES: i32 = 16
@@ -251,6 +252,9 @@ export function gpu_graph_error_name(code: i32) -> string {
     if code == GPU_GRAPH_ERR_BARRIER {
         return "barrier"
     }
+    if code == GPU_GRAPH_ERR_INVALID_RESOURCE {
+        return "invalid_resource"
+    }
     return "unknown"
 }
 
@@ -317,6 +321,10 @@ export function gpu_graph_pingpong_write_id(g: GpuGraph, pp_id: i32) -> i32 {
 }
 
 export function gpu_graph_add_storage_buffer(g: ptr<GpuGraph>, name: string, usage: i32, lifetime: i32, bytes: i32) -> i32 {
+    if bytes <= 0 or name == "" or usage < GPU_ACCESS_READ or usage > GPU_ACCESS_READ_WRITE or
+       (lifetime != GPU_LIFE_PERSISTENT and lifetime != GPU_LIFE_TRANSIENT) {
+        return 0 - 1
+    }
     if g.resource_count >= GPU_GRAPH_MAX_RESOURCES {
         return 0 - 1
     }
@@ -340,6 +348,18 @@ export function gpu_graph_add_storage_buffer(g: ptr<GpuGraph>, name: string, usa
 }
 
 export function gpu_graph_add_storage_texture(g: ptr<GpuGraph>, name: string, usage: i32, lifetime: i32, format: i32, dim: i32, width: i32, height: i32, depth: i32) -> i32 {
+    if name == "" or usage < GPU_ACCESS_READ or usage > GPU_ACCESS_READ_WRITE or
+       (lifetime != GPU_LIFE_PERSISTENT and lifetime != GPU_LIFE_TRANSIENT) or
+       format < GPU_GRAPH_FMT_R32FLOAT or format > GPU_GRAPH_FMT_RGBA8UNORM or
+       dim < GPU_DIM_1D or dim > GPU_DIM_3D or
+       width <= 0 or height <= 0 or depth <= 0 or
+       width > 16384 or height > 16384 or depth > 2048 {
+        return 0 - 1
+    }
+    if (dim == GPU_DIM_1D and (height != 1 or depth != 1)) or
+       (dim == GPU_DIM_2D and depth != 1) {
+        return 0 - 1
+    }
     if g.resource_count >= GPU_GRAPH_MAX_RESOURCES {
         return 0 - 1
     }
@@ -448,7 +468,7 @@ export function gpu_graph_set_iterations(g: ptr<GpuGraph>, pass_id: i32, iterati
     if pass_id < 0 or pass_id >= g.pass_count {
         return 0 - 1
     }
-    if iterations < 1 {
+    if iterations < 1 or iterations > 1024 {
         return 0 - 1
     }
     g.passes[pass_id].iterations = iterations
@@ -468,6 +488,10 @@ export function gpu_graph_set_hazard_mode(g: ptr<GpuGraph>, mode: i32) -> void {
 }
 
 export function gpu_graph_bind(g: ptr<GpuGraph>, pass_id: i32, resource_id: i32, usage: i32, slot: i32) -> i32 {
+    if usage < GPU_ACCESS_READ or usage > GPU_ACCESS_READ_WRITE or
+       slot < 0 or slot >= GPU_GRAPH_MAX_BINDINGS {
+        return 0 - 1
+    }
     if pass_id < 0 or pass_id >= g.pass_count {
         return 0 - 1
     }
@@ -490,6 +514,10 @@ export function gpu_graph_bind(g: ptr<GpuGraph>, pass_id: i32, resource_id: i32,
 }
 
 export function gpu_graph_bind_pingpong(g: ptr<GpuGraph>, pass_id: i32, pp_id: i32, read_slot: i32, write_slot: i32) -> i32 {
+    if pass_id < 0 or pass_id >= g.pass_count or read_slot == write_slot or
+       g.passes[pass_id].binding_count > GPU_GRAPH_MAX_BINDINGS - 2 {
+        return 0 - 1
+    }
     if pp_id < 0 or pp_id >= g.pingpong_count {
         return 0 - 1
     }
@@ -551,6 +579,12 @@ function usage_allowed(declared: i32, used: i32) -> bool {
 }
 
 function workgroup_threads(wg: GpuDim3) -> i32 {
+    if wg.x < 1 or wg.y < 1 or wg.z < 1 or
+       wg.x > GPU_GRAPH_MAX_WG_THREADS or
+       wg.y > GPU_GRAPH_MAX_WG_THREADS / wg.x or
+       wg.z > GPU_GRAPH_MAX_WG_THREADS / (wg.x * wg.y) {
+        return 0 - 1
+    }
     return wg.x * wg.y * wg.z
 }
 
@@ -560,7 +594,8 @@ function validate_pass(g: GpuGraph, pass_id: i32) -> GpuGraphError {
         if p.workgroup.x < 1 or p.workgroup.y < 1 or p.workgroup.z < 1 {
             return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "workgroup axis < 1")
         }
-        if workgroup_threads(p.workgroup) > GPU_GRAPH_MAX_WG_THREADS {
+        if workgroup_threads(p.workgroup) < 1 or
+           workgroup_threads(p.workgroup) > GPU_GRAPH_MAX_WG_THREADS {
             return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "workgroup exceeds backend limit")
         }
         if p.workgroup_bytes < 0 or p.workgroup_bytes > GPU_GRAPH_MAX_WG_BYTES {
@@ -571,6 +606,10 @@ function validate_pass(g: GpuGraph, pass_id: i32) -> GpuGraphError {
         }
         if p.dispatch.x < 1 or p.dispatch.y < 1 or p.dispatch.z < 1 {
             return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "dispatch axis < 1")
+        }
+        if p.dispatch.x > 2147483647 / p.dispatch.y or
+           p.dispatch.x * p.dispatch.y > 2147483647 / p.dispatch.z {
+            return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "dispatch volume overflow")
         }
     }
 
@@ -632,7 +671,7 @@ function validate_transients(g: GpuGraph) -> GpuGraphError {
     return gpu_graph_ok()
 }
 
-export function gpu_graph_derive_deps(g: ptr<GpuGraph>) -> void {
+export function gpu_graph_derive_deps(g: ptr<GpuGraph>) -> i32 {
     g.dep_count = 0
     let mut i: i32 = 0
     while i < g.pass_count {
@@ -657,7 +696,10 @@ export function gpu_graph_derive_deps(g: ptr<GpuGraph>) -> void {
                         }
                         d = d + 1
                     }
-                    if !exists and g.dep_count < GPU_GRAPH_MAX_DEPS {
+                    if !exists {
+                        if g.dep_count >= GPU_GRAPH_MAX_DEPS {
+                            return 0 - 1
+                        }
                         let k: i32 = g.dep_count
                         g.deps[k].from_pass = i
                         g.deps[k].to_pass = j
@@ -671,6 +713,7 @@ export function gpu_graph_derive_deps(g: ptr<GpuGraph>) -> void {
         }
         i = i + 1
     }
+    return 0
 }
 
 export function gpu_graph_has_dep(g: GpuGraph, from_pass: i32, to_pass: i32) -> bool {
@@ -716,7 +759,9 @@ export function gpu_graph_validate(g: ptr<GpuGraph>) -> GpuGraphError {
     if t.code != GPU_GRAPH_OK {
         return t
     }
-    gpu_graph_derive_deps(g)
+    if gpu_graph_derive_deps(g) != 0 {
+        return graph_err(GPU_GRAPH_ERR_FULL, 0 - 1, 0 - 1, "dependency table capacity exceeded")
+    }
     return gpu_graph_ok()
 }
 
@@ -800,23 +845,32 @@ export function gpu_graph_metal_binding_at(res: GpuGraphResource, slot: i32, usa
     return ty + "<float, " + acc + "> " + res.name + " [[texture(" + slot_s + ")]]"
 }
 
+function gpu_graph_digit(d: i32) -> string {
+    if d == 0 { return "0" }
+    if d == 1 { return "1" }
+    if d == 2 { return "2" }
+    if d == 3 { return "3" }
+    if d == 4 { return "4" }
+    if d == 5 { return "5" }
+    if d == 6 { return "6" }
+    if d == 7 { return "7" }
+    if d == 8 { return "8" }
+    return "9"
+}
+
+# Shader dimensions and binding indices cannot contain a placeholder token.
+# The previous lookup table returned "n" for ordinary values such as 20.
 function gpu_graph_i32_token(n: i32) -> string {
     if n == 0 { return "0" }
-    if n == 1 { return "1" }
-    if n == 2 { return "2" }
-    if n == 3 { return "3" }
-    if n == 4 { return "4" }
-    if n == 5 { return "5" }
-    if n == 6 { return "6" }
-    if n == 7 { return "7" }
-    if n == 8 { return "8" }
-    if n == 9 { return "9" }
-    if n == 16 { return "16" }
-    if n == 32 { return "32" }
-    if n == 64 { return "64" }
-    if n == 128 { return "128" }
-    if n == 256 { return "256" }
-    return "n"
+    if n == (0 - 2147483647 - 1) { return "-2147483648" }
+    if n < 0 { return "-" + gpu_graph_i32_token(0 - n) }
+    let mut v: i32 = n
+    let mut result: string = ""
+    while v > 0 {
+        result = gpu_graph_digit(v % 10) + result
+        v = v / 10
+    }
+    return result
 }
 
 export function gpu_graph_wgsl_workgroup(wg: GpuDim3) -> string {
