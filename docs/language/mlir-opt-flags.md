@@ -171,6 +171,13 @@ Pass `--alignment=N` to choose a power-of-two arena alignment from 1 through
 4096 bytes. The selected value is applied to every planned buffer and recorded
 as `flow.static_arena_alignment`.
 
+Pass `--lifetimes=start:end,start:end,start:end` to supply three validated live
+ranges in planner buffer order. Each range is a pair of non-negative integers
+with `end >= start`. The planner reuses arena offsets for buffers whose ranges
+do not overlap and records the resulting interference graph. Omitting the flag
+keeps the default ranges `0:2,3:5,1:4`. A bare `--lifetimes` or a malformed
+list is rejected.
+
 The module also records `flow.static_buffer_lifetimes` as comma-separated
 `start:end` operation ranges and `flow.static_buffer_offsets` as comma-separated
 arena offsets. It records `flow.static_buffer_interference` as comma-separated
