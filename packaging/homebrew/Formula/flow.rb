@@ -12,12 +12,11 @@ class Flow < Formula
   depends_on "python@3.12"
 
   def install
-    # Keep the repo layout intact. `flow` is a sh stub that builds the
-    # command line (tools/flow_cli, a Flow program) from the bootstrap C in
-    # compiler/bootstrap and expects VERSION, lib/, runtime/ and tools/ next
-    # to it.
-    libexec.install "flow", "flow-lsp", "VERSION"
-    libexec.install "lib", "runtime", "compiler", "tools"
+    # Keep the repo layout intact — the `flow` driver resolves SCRIPT_DIR via
+    # realpath and expects src/, lib/, runtime/ next to itself.
+    libexec.install "flow", "flow-lsp"
+    libexec.install "src", "lib", "runtime", "compiler"
+    libexec.install "tools" if (buildpath/"tools").exist?
     libexec.install "wasm" if (buildpath/"wasm").exist?
     libexec.install "examples" if (buildpath/"examples").exist?
     libexec.install "pyproject.toml" if (buildpath/"pyproject.toml").exist?
@@ -25,8 +24,6 @@ class Flow < Formula
 
     chmod 0755, libexec/"flow"
     chmod 0755, libexec/"flow-lsp" if (libexec/"flow-lsp").exist?
-    # Build the command line now, so the first `flow` does not have to.
-    system libexec/"flow", "version"
 
     python = Formula["python@3.12"].opt_bin/"python3.12"
     venv = virtualenv_create(libexec/"venv", python)
