@@ -22,7 +22,7 @@ The tap is maintained in `flooooooooooow/homebrew-flow`.
 `packaging/nix/default.nix` and `packaging/nix/flake.nix` build the current checkout rather than fetching a guessed release tag or placeholder hash:
 
 ```bash
-nix build ./packaging/nix#flow
+nix build .#default
 ./result/bin/flow version
 ```
 
@@ -35,10 +35,10 @@ This is a repository-local flake specification. It is not a claim that Flow has 
 `packaging/deb/` contains Debian metadata for building a package from the current checkout:
 
 ```bash
-./flow tool build_deb
+bash packaging/deb/build.sh --rev HEAD --out dist/deb
 ```
 
-The tool prints the path of the generated `.deb`. This repository does not currently advertise an APT repository.
+The script prints the path of the generated `.deb` and records its actual SHA-256. This repository does not currently advertise an APT repository.
 
 ## Deferred channels
 
@@ -100,7 +100,7 @@ No APT repository or signed DEB release is claimed.
 The repository's top-level flake is the supported build-from-checkout entry:
 
 ```bash
-nix build .#flow
+nix build .#default
 ./result/bin/flow version
 ```
 
