@@ -1,0 +1,5 @@
+env FLOWC_CHECKS=1
+# The loop body reassigns xs, so removing xs[i]'s checked index is unsound.
++ flow_fault_handler("span index out of bounds")
++ span index
+exit 0
