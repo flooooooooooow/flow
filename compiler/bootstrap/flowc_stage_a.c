@@ -1359,6 +1359,7 @@ const int32_t AST_CALL_PIPE_FIND = 16;
 const int32_t AST_IDENT_SORT_MOD = 1;
 #undef AST_IDENT_FORK_SRC
 const int32_t AST_IDENT_FORK_SRC = 2;
+const int32_t FLOWC_AST_NODE_SIZE = 44;
 AstArena flowc_ast_new(int32_t cap);
 void flowc_ast_free(AstArena arena);
 int32_t flowc_ast_alloc(AstArena* arena, int32_t kind, int32_t start, int32_t end);
@@ -1376,7 +1377,7 @@ int32_t flowc_ast_reject_effects(AstArena arena, uint8_t* src, const char* who);
 int32_t flowc_ast_chain_push(AstArena* arena, int32_t head, int32_t node);
 int32_t flowc_ast_chain_len(AstArena arena, int32_t head);
 AstArena flowc_ast_new(int32_t cap) {
-  int64_t size = ((int64_t)(cap) * 44);
+  int64_t size = ((int64_t)(cap) * (int64_t)(FLOWC_AST_NODE_SIZE));
   uint8_t* raw = (uint8_t*)(flow_mem_malloc(size));
   AstNode* nodes = (AstNode*)(raw);
   int32_t i = 0;
@@ -89572,6 +89573,9 @@ static const char* const FLOWC_RANGE_HELPERS = "\nfunction __flow_sum_range(star
 static const int32_t MLI_MAX_EDITS = 1024;
 #undef MLI_POOL_CAP
 static const int32_t MLI_POOL_CAP = 65536;
+static const int32_t FLOWC_AST_CACHE_SCHEMA = 1;
+static const int32_t FLOWC_AST_CACHE_MAGIC = 1128350534;
+static const int32_t FLOWC_AST_CACHE_EXPAND = 63;
 void flowc_resolve_import_error(const char* mpath, uint8_t* src, int32_t s, int32_t e);
 void flowc_resolve_putstr(const char* s);
 int32_t flowc_resolve_is_dist_dir(const char* d);
@@ -89629,6 +89633,13 @@ int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
 int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, const char* project_root, uint8_t* path_store);
 int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const char* project_root, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path);
 void flowc_u64_to_hex(uint64_t v, uint8_t* buf);
+int32_t flowc_ast_cache_env_nonempty(const char* name);
+int32_t flowc_ast_cache_env_is(const char* name, const char* want);
+int32_t flowc_ast_cache_mlir_mode();
+uint64_t flowc_ast_cache_parse_config();
+uint64_t flowc_ast_cache_salt();
+int32_t flowc_ast_cache_push_seg(uint8_t* dir, int32_t clen, int32_t cap, const char* seg);
+int32_t flowc_ast_cache_dir(uint8_t* dir, int32_t cap);
 int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc);
 int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search_dir, const char* project_root, uint8_t* out_store);
 int32_t flowc_resolve_add_templates(AstArena arena, int32_t root, uint8_t* src, int32_t own_len, uint8_t* tpl, int32_t tpl_cap, int32_t tpl_len);
@@ -91676,38 +91687,129 @@ void flowc_u64_to_hex(uint64_t v, uint8_t* buf) {
   buf[16] = 0;
 }
 
-int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
-  uint64_t salt = 736;
+int32_t flowc_ast_cache_env_nonempty(const char* name) {
+  const char* v = getenv(name);
+  uint8_t* restrict p = (uint8_t*)(v);
+  if (p == NULL) {
+  return 0;
+}
+  if (p[0] == 0) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t flowc_ast_cache_env_is(const char* name, const char* want) {
+  if (flowc_ast_cache_env_nonempty(name) == 0) {
+  return 0;
+}
+  const char* v = getenv(name);
+  uint8_t* vp = (uint8_t*)(v);
+  uint8_t* wp = (uint8_t*)(want);
+  int32_t i = 0;
+  while (1) {
+  if (vp[i] != wp[i]) {
+  return 0;
+}
+  if (vp[i] == 0) {
+  return 1;
+}
+  i = (i + 1);
+  if (i > 64) {
+  return 0;
+}
+}
+  return 0;
+}
+
+int32_t flowc_ast_cache_mlir_mode() {
+  if (flowc_ast_cache_env_is("FLOWC_EMIT", "mlir") == 1) {
+  return 1;
+}
+  if (flowc_ast_cache_env_is("FLOWC_BACKEND", "mlir") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+uint64_t flowc_ast_cache_parse_config() {
+  uint64_t h = (uint64_t)(FLOWC_AST_CACHE_EXPAND);
+  h = flowc_den_mix(h, (uint64_t)(flowc_ast_cache_mlir_mode()));
+  return h;
+}
+
+uint64_t flowc_ast_cache_salt() {
+  uint64_t salt = (uint64_t)(FLOWC_AST_CACHE_SCHEMA);
   salt = flowc_den_mix(salt, (uint64_t)(FLOWC_VERSION_MAJOR));
   salt = flowc_den_mix(salt, (uint64_t)(FLOWC_VERSION_MINOR));
   salt = flowc_den_mix(salt, (uint64_t)(FLOWC_VERSION_PATCH));
+  salt = flowc_den_mix(salt, (uint64_t)(FLOWC_AST_NODE_SIZE));
+  salt = flowc_den_mix(salt, flowc_ast_cache_parse_config());
+  if (flowc_ast_cache_env_nonempty("FLOW_CACHE_SALT") == 1) {
   const char* env_salt = getenv("FLOW_CACHE_SALT");
-  if ((uint8_t*)(env_salt) != NULL) {
   salt = flowc_den_mix(salt, flowc_den_hash_bytes((uint8_t*)(env_salt), 0, (int32_t)(strlen(env_salt))));
 }
+  return salt;
+}
+
+int32_t flowc_ast_cache_push_seg(uint8_t* dir, int32_t clen, int32_t cap, const char* seg) {
+  int32_t n = flowc_resolve_copy_cstr(seg, (dir + clen), (cap - clen));
+  if (n < 0) {
+  return (0 - 1);
+}
+  int32_t _m = flowc_io_mkdir((const char*)(dir));
+  return (clen + n);
+}
+
+int32_t flowc_ast_cache_dir(uint8_t* dir, int32_t cap) {
+  if (flowc_ast_cache_env_nonempty("XDG_CACHE_HOME") == 1) {
+  const char* xdg = getenv("XDG_CACHE_HOME");
+  int32_t clen = flowc_resolve_copy_cstr(xdg, dir, cap);
+  if (clen > 0) {
+  int32_t _m = flowc_io_mkdir((const char*)(dir));
+  int32_t n1 = flowc_ast_cache_push_seg(dir, clen, cap, "/flow");
+  if (n1 < 0) {
+  return 0;
+}
+  int32_t n2 = flowc_ast_cache_push_seg(dir, n1, cap, "/ast");
+  if (n2 < 0) {
+  return 0;
+}
+  return n2;
+}
+}
+  if (flowc_ast_cache_env_nonempty("HOME") == 1) {
+  const char* home = getenv("HOME");
+  int32_t clen = flowc_resolve_copy_cstr(home, dir, cap);
+  if (clen > 0) {
+  int32_t n1 = flowc_ast_cache_push_seg(dir, clen, cap, "/.cache");
+  if (n1 < 0) {
+  return 0;
+}
+  int32_t n2 = flowc_ast_cache_push_seg(dir, n1, cap, "/flow");
+  if (n2 < 0) {
+  return 0;
+}
+  int32_t n3 = flowc_ast_cache_push_seg(dir, n2, cap, "/ast");
+  if (n3 < 0) {
+  return 0;
+}
+  return n3;
+}
+}
+  return 0;
+}
+
+int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
+  uint64_t salt = flowc_ast_cache_salt();
   uint64_t content_hash = flowc_den_hash_bytes(src, 0, nsrc);
   uint64_t cache_key = flowc_den_mix(salt, content_hash);
   uint8_t* cache_dir = (uint8_t*)(flow_mem_malloc(512));
-  int32_t clen = 0;
-  const char* home = getenv("HOME");
-  if ((uint8_t*)(home) != NULL) {
-  clen = flowc_resolve_copy_cstr(home, cache_dir, 512);
-  if (clen > 0) {
-  const char* s1 = "/.cache";
-  int32_t _s1 = flowc_resolve_copy_cstr(s1, (cache_dir + clen), (512 - clen));
-  clen = (clen + (int32_t)(strlen(s1)));
-  int32_t _mkdir2 = flowc_io_mkdir((const char*)(cache_dir));
-  const char* s2 = "/flow";
-  int32_t _s2 = flowc_resolve_copy_cstr(s2, (cache_dir + clen), (512 - clen));
-  clen = (clen + (int32_t)(strlen(s2)));
-  int32_t _mkdir3 = flowc_io_mkdir((const char*)(cache_dir));
-  const char* s3 = "/ast";
-  int32_t _s3 = flowc_resolve_copy_cstr(s3, (cache_dir + clen), (512 - clen));
-  clen = (clen + (int32_t)(strlen(s3)));
-  int32_t _mkdir4 = flowc_io_mkdir((const char*)(cache_dir));
+  if (cache_dir == NULL) {
+  return flowc_parse_program(p);
 }
-}
-  if (clen == 0) {
+  int32_t clen = flowc_ast_cache_dir(cache_dir, 512);
+  if (clen <= 0) {
   flow_mem_free(cache_dir);
   int64_t t_parse = flowc_prof_span_begin();
   int32_t root0 = flowc_parse_program(p);
@@ -91724,13 +91826,13 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
   int64_t t_cache = flowc_prof_span_begin();
   void* fp = (void*)(flowc_io_fopen(cache_file, "rb"));
   if (fp != NULL) {
-  int32_t header[3] = { 0, 0, 0 };
-  if (flowc_io_fread((uint8_t*)((&header[0])), 4, 3, fp) == 3) {
-  if (header[0] == 736) {
-  int32_t ast_len = header[1];
-  int32_t root = header[2];
+  int32_t header[5] = { 0, 0, 0, 0, 0 };
+  if (flowc_io_fread((uint8_t*)((&header[0])), 4, 5, fp) == 5) {
+  if (header[0] == FLOWC_AST_CACHE_MAGIC && header[1] == FLOWC_AST_CACHE_SCHEMA && header[2] == FLOWC_AST_NODE_SIZE) {
+  int32_t ast_len = header[3];
+  int32_t root = header[4];
   if (ast_len > 0 && ast_len <= ((p[0]).arena).cap) {
-  if (flowc_io_fread((uint8_t*)(((p[0]).arena).nodes), 44, ast_len, fp) == ast_len) {
+  if (flowc_io_fread((uint8_t*)(((p[0]).arena).nodes), FLOWC_AST_NODE_SIZE, ast_len, fp) == ast_len) {
   ((p[0]).arena).len = ast_len;
   ((p[0]).cur).start = nsrc;
   flowc_io_fclose(fp);
@@ -91750,9 +91852,9 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
   if (root >= 0 && (p[0]).err == 0) {
   void* fpo = (void*)(flowc_io_fopen(cache_file, "wb"));
   if (fpo != NULL) {
-  int32_t header_out[3] = { 736, ((p[0]).arena).len, root };
-  int32_t _w1 = flowc_io_fwrite((uint8_t*)((&header_out[0])), 4, 3, fpo);
-  int32_t _w2 = flowc_io_fwrite((uint8_t*)(((p[0]).arena).nodes), 44, ((p[0]).arena).len, fpo);
+  int32_t header_out[5] = { FLOWC_AST_CACHE_MAGIC, FLOWC_AST_CACHE_SCHEMA, FLOWC_AST_NODE_SIZE, ((p[0]).arena).len, root };
+  int32_t _w1 = flowc_io_fwrite((uint8_t*)((&header_out[0])), 4, 5, fpo);
+  int32_t _w2 = flowc_io_fwrite((uint8_t*)(((p[0]).arena).nodes), FLOWC_AST_NODE_SIZE, ((p[0]).arena).len, fpo);
   int32_t _c2 = flowc_io_fclose(fpo);
 }
 }
@@ -91891,7 +91993,7 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
 }
   flowc_prof_note_source(src, nsrc, ((p).arena).len);
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st11275 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st11275; }
+  { __typeof__(tpl_len[0]) __flowc_st11538 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st11538; }
 }
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
@@ -91902,8 +92004,8 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st11342 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11342; }
-  { __typeof__(siglen[0]) __flowc_st11356 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11356; }
+  { __typeof__(siglen[0]) __flowc_st11605 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11605; }
+  { __typeof__(siglen[0]) __flowc_st11619 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11619; }
 }
   flowc_parser_free(p);
   flow_mem_free(src);
@@ -92177,8 +92279,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st12793 = sem_error_count(c); counts[0] = __flowc_st12793; }
-  { __typeof__(counts[1]) __flowc_st12799 = sem_fatal_count(c); counts[1] = __flowc_st12799; }
+  { __typeof__(counts[0]) __flowc_st13056 = sem_error_count(c); counts[0] = __flowc_st13056; }
+  { __typeof__(counts[1]) __flowc_st13062 = sem_fatal_count(c); counts[1] = __flowc_st13062; }
   return 0;
 }
 

@@ -1,67 +1,255 @@
+# Proof for the #736 first slice: parsed-declaration cache keys include an
+# explicit schema/compiler salt and parse-affecting config, and persistence
+# is a non-executable record under the user cache. A checkout that ships
+# crafted pickle (or any project-local cache) cannot run cache-controlled
+# code. Typecheck / monomorphize / codegen caches and a full dependency
+# graph are remaining gaps.
+
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcStrs, proc_env }
 
-function run_test() -> i32 {
-    let dir: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-inc-test.XXXXXX")
-    if s_len(dir) == 0 {
-        return 1
+function host_bin() -> string {
+    let c: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    let _r: i32 = t_run(c)
+    if t_rc() != 0 {
+        return ""
+    }
+    return s_chomp_all(read_text(t_out()))
+}
+
+function ast_dir(xdg: string) -> string {
+    return xdg + "/flow/ast"
+}
+
+function count_ast(xdg: string) -> i32 {
+    return sl_len(glob_suffix(ast_dir(xdg), ".ast"))
+}
+
+function write_pair(dir: string, ret: i32) -> bool {
+    let leaf: bool = write_text(dir + "/leaf.flow", "export function helper() -> i32 { return " + s_itoa(ret) + "; }\n")
+    let app: bool = write_text(dir + "/app.flow", "import .leaf\nfunction main() -> i32 { return helper(); }\n")
+    return leaf and app
+}
+
+function emit_bundle(host: string, src: string, out_c: string, salt: string, xdg: string, home: string) -> i32 {
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", src)
+    proc_env(c, "FLOWC_OUT", out_c)
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOW_CACHE_SALT", salt)
+    proc_env(c, "XDG_CACHE_HOME", xdg)
+    proc_env(c, "HOME", home)
+    return t_run(c)
+}
+
+function link_c(c_out: string, bin: string) -> i32 {
+    let cc: string = env_or("CC", "cc")
+    let ccv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
+    sl_extend(ccv, s_words("-w -O0 -o"))
+    sl_push2(ccv, bin, c_out)
+    sl_push(ccv, "-lm")
+    return t_run_argv(ccv)
+}
+
+function compile_run(host: string, dir: string, salt: string, xdg: string, home: string) -> i32 {
+    let c_out: string = dir + "/app.c"
+    let bin: string = dir + "/app"
+    if emit_bundle(host, dir + "/app.flow", c_out, salt, xdg, home) != 0 {
+        outln("flowc emit failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return 0 - 1
+    }
+    if link_c(c_out, bin) != 0 {
+        outln("cc failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return 0 - 1
+    }
+    return t_run_argv(sl_of1(bin))
+}
+
+# Same source, different FLOW_CACHE_SALT must not reuse the old record.
+function check_salt_mutation_invalidates() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    if not write_pair(dir, 42) {
+        outln("could not write fixtures")
+        return T_FAIL
     }
 
-    let leaf: string = dir + "/leaf.flow"
-    let app: string = dir + "/app.flow"
-    let _w1: bool = write_text(leaf, "export function helper() -> i32 { return 42; }\n")
-    let _w2: bool = write_text(app, "import .leaf\nfunction main() -> i32 { return helper(); }\n")
-
-    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
-    let flow_bin: string = root + "/flow"
-
-    env_set("FLOW_CACHE_SALT", "test1")
-
-    let c1: ptr<ProcStrs> = sl_of3(flow_bin, "run", app)
-    let res1: ptr<ProcResult> = run_result(cmd(c1))
-    let r1: i32 = res1.exit_code
+    let r1: i32 = compile_run(host, dir, "frontend-v1", xdg, home)
     if r1 != 42 {
-        println("FAIL: expected 42 from first compile, got " + s_itoa(r1))
-        rm_rf(dir)
-        return 1
+        outln("expected 42 from first compile, got " + s_itoa(r1))
+        return T_FAIL
+    }
+    let n1: i32 = count_ast(xdg)
+    if n1 <= 0 {
+        outln("expected a user-cache AST record after the first compile")
+        return T_FAIL
     }
 
-    # Modify leaf
-    let _w3: bool = write_text(leaf, "export function helper() -> i32 { return 99; }\n")
-
-    let c2: ptr<ProcStrs> = sl_of3(flow_bin, "run", app)
-    let res2: ptr<ProcResult> = run_result(cmd(c2))
-    let r2: i32 = res2.exit_code
-    if r2 != 99 {
-        println("FAIL: expected 99 from second compile, got " + s_itoa(r2))
-        rm_rf(dir)
-        return 1
+    # Unchanged rebuild under the same salt: no new key.
+    let r1b: i32 = compile_run(host, dir, "frontend-v1", xdg, home)
+    if r1b != 42 {
+        outln("expected 42 from same-salt rebuild, got " + s_itoa(r1b))
+        return T_FAIL
+    }
+    let n1b: i32 = count_ast(xdg)
+    if n1b != n1 {
+        outln("same salt must reuse the existing key, files " + s_itoa(n1) + " -> " + s_itoa(n1b))
+        return T_FAIL
     }
 
-    env_set("FLOW_CACHE_SALT", "test2")
-
-    let _w4: bool = write_text(leaf, "export function helper() -> i32 { return 100; }\n")
-    let c3: ptr<ProcStrs> = sl_of3(flow_bin, "run", app)
-    let res3: ptr<ProcResult> = run_result(cmd(c3))
-    let r3: i32 = res3.exit_code
-    if r3 != 100 {
-        println("FAIL: expected 100 from third compile, got " + s_itoa(r3))
-        rm_rf(dir)
-        return 1
+    # Byte-identical source under a new compiler/schema salt must miss.
+    let r2: i32 = compile_run(host, dir, "frontend-v2", xdg, home)
+    if r2 != 42 {
+        outln("expected 42 from salt-mutated compile, got " + s_itoa(r2))
+        return T_FAIL
     }
+    let n2: i32 = count_ast(xdg)
+    if n2 <= n1 {
+        outln("salt mutation did not allocate a new cache key, files stayed " + s_itoa(n2))
+        return T_FAIL
+    }
+    return T_PASS
+}
 
-    rm_rf(dir)
-    return 0
+# A source edit must not serve the previous parse.
+function check_source_edit_invalidates() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    if not write_pair(dir, 1) {
+        return T_FAIL
+    }
+    let r1: i32 = compile_run(host, dir, "edit", xdg, home)
+    if r1 != 1 {
+        outln("expected 1, got " + s_itoa(r1))
+        return T_FAIL
+    }
+    if not write_pair(dir, 2) {
+        return T_FAIL
+    }
+    let r2: i32 = compile_run(host, dir, "edit", xdg, home)
+    if r2 != 2 {
+        outln("expected 2 after source edit, got " + s_itoa(r2))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Opening an untrusted checkout must not execute project-local cache data.
+# Protocol-0 pickle that would `touch` a sentinel if anyone ran pickle.load.
+function check_untrusted_checkout_is_inert() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let sentinel: string = t_tmp() + "/pwned"
+    let _d: bool = mkdir_p(dir)
+    let _c: bool = mkdir_p(dir + "/.flow_cache")
+    if not write_pair(dir, 7) {
+        return T_FAIL
+    }
+    let payload: string = "cos\nsystem\n(S'touch " + sentinel + "'\ntR.\n"
+    let _p1: bool = write_text(dir + "/.flow_cache/attack.pkl", payload)
+    let _p2: bool = write_text(dir + "/.flow_cache/0000000000000000.pkl", payload)
+    let _p3: bool = write_text(dir + "/.flow_cache/deadbeef.ast", payload)
+
+    let r: i32 = compile_run(host, dir, "trust", xdg, home)
+    if r != 7 {
+        outln("expected 7 from untrusted checkout, got " + s_itoa(r))
+        return T_FAIL
+    }
+    if exists(sentinel) {
+        outln("crafted project cache executed code and created " + sentinel)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Records under the user cache are the non-executable FCAC format, not pickle.
+function check_cache_format_is_not_pickle() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    if not write_pair(dir, 3) {
+        return T_FAIL
+    }
+    let r: i32 = compile_run(host, dir, "fmt", xdg, home)
+    if r != 3 {
+        outln("expected 3, got " + s_itoa(r))
+        return T_FAIL
+    }
+    let files: ptr<ProcStrs> = glob_suffix(ast_dir(xdg), ".ast")
+    if sl_len(files) <= 0 {
+        outln("no AST cache records to inspect")
+        return T_FAIL
+    }
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let path: string = sl_get(files, i)
+        let body: Bytes = read_bytes(path)
+        if body.len < 20 {
+            outln("cache record too small to be FCAC: " + path)
+            return T_FAIL
+        }
+        if body.data[0] != 70 or body.data[1] != 67 or body.data[2] != 65 or body.data[3] != 67 {
+            outln("cache record is not the FCAC format: " + path)
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    return T_PASS
 }
 
 function main() -> i32 {
-    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
-    let _cd: bool = proc_chdir(root)
-    let r: i32 = run_test()
-    if r == 0 {
-        outln("PASS incremental_cache")
-    } else {
-        outln("FAIL incremental_cache")
-    }
-    return r
+    t_begin("incremental_cache")
+    t_start()
+    t_end("salt_mutation", check_salt_mutation_invalidates())
+    t_start()
+    t_end("source_edit", check_source_edit_invalidates())
+    t_start()
+    t_end("untrusted_checkout", check_untrusted_checkout_is_inert())
+    t_start()
+    t_end("format_not_pickle", check_cache_format_is_not_pickle())
+    t_done()
+    return 0
 }
