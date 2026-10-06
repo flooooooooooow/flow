@@ -31,6 +31,21 @@ function check_linear_shape_reject() -> i32 {
     return 0
 }
 
+# GEMM must never destroy a live source or weight buffer.
+function check_gemm_alias_reject() -> i32 {
+    let inp: GpuTensor = gpu_tensor_alloc_f32(1, 2, 1, 1)
+    let weight: GpuTensor = gpu_tensor_alloc_f32(2, 2, 1, 1)
+    let dst: GpuTensor = gpu_tensor_alloc_f32(1, 2, 1, 1)
+    if gpu_tensor_linear(inp, inp, weight) != 4 { return 1 }
+    let mut weight_alias: GpuTensor = dst
+    weight_alias.data = weight.data
+    if gpu_tensor_linear(weight_alias, inp, weight) != 4 { return 2 }
+    gpu_tensor_free(inp)
+    gpu_tensor_free(weight)
+    gpu_tensor_free(dst)
+    return 0
+}
+
 function check_mnist_like_interop() -> i32 {
     let input_dim: i32 = 16
     let hidden: i32 = 8
@@ -156,6 +171,7 @@ function check_depth_like_interop() -> i32 {
 }
 
 function main() -> i32 {
+    if check_gemm_alias_reject() != 0 { return 4 }
     let r1: i32 = check_linear_shape_reject()
     if r1 != 0 { return 10 + r1 }
     let r2: i32 = check_mnist_like_interop()
