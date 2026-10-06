@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 
 typedef struct FlowGpuBuffer {
     void *mtl_ref; /* CFBridgingRetain(id<MTLBuffer>) */
@@ -25,6 +26,11 @@ static id<MTLComputePipelineState> g_mulElemPSO = nil;
 static id<MTLComputePipelineState> g_scaleBiasPSO = nil;
 static id<MTLComputePipelineState> g_reluPSO = nil;
 static id<MTLComputePipelineState> g_gemmPSO = nil;
+static _Atomic uint64_t g_modelDispatchCount = 0;
+
+int64_t flow_gpu_model_dispatch_count(void) {
+    return (int64_t)atomic_load_explicit(&g_modelDispatchCount, memory_order_relaxed);
+}
 
 /* Elementwise mul — also used for mul backward (grad_a = go*b, grad_b = go*a). */
 static const char *kGpuGradMetalSource =
@@ -425,7 +431,9 @@ static int flow_gpu_dispatch_unary(void *out_gpu, void *input_gpu,
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
-        return [cmd status] == MTLCommandBufferStatusCompleted ? 0 : -1;
+        if ([cmd status] != MTLCommandBufferStatusCompleted) return -1;
+        atomic_fetch_add_explicit(&g_modelDispatchCount, 1, memory_order_relaxed);
+        return 0;
     }
 }
 
@@ -477,7 +485,9 @@ int flow_gpu_gemm_f32(void *out_gpu, void *input_gpu, void *weights_gpu,
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
-        return [cmd status] == MTLCommandBufferStatusCompleted ? 0 : -1;
+        if ([cmd status] != MTLCommandBufferStatusCompleted) return -1;
+        atomic_fetch_add_explicit(&g_modelDispatchCount, 1, memory_order_relaxed);
+        return 0;
     }
 }
 
