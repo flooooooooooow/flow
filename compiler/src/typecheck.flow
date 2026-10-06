@@ -10,6 +10,7 @@ import .ast {
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_C_IMPORT, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
+    AST_ORCH, ORCH_FANOUT, ORCH_SEQ,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_HAS_ARGS,
     flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE, AST_GPU_FRAME
@@ -1660,6 +1661,15 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].b)
         return
     }
+    if kind == AST_ORCH {
+        if arena.nodes[id].ival == ORCH_FANOUT {
+            flowc_tc_check_pipe_block(ctx, arena, id)
+        } else {
+            flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
+            flowc_tc_check_expr(ctx, arena, arena.nodes[id].b)
+        }
+        return
+    }
     if kind == AST_UNARY {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         return
@@ -3292,6 +3302,11 @@ function ut_binop(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
     let l: UTy = ut_expr(u, arena, arena.nodes[id].a)
     let r: UTy = ut_expr(u, arena, arena.nodes[id].b)
     let op: i32 = arena.nodes[id].ival
+    if op == UT_TOK_SHR and l.tag != UT_NUM {
+        arena.nodes[id].kind = AST_ORCH
+        arena.nodes[id].ival = ORCH_SEQ
+        return ut_unknown()
+    }
     let mut logical: i32 = 0
     if ut_is_compare(op) == 1 or op == UT_TOK_AMPAMP or op == UT_TOK_BARBAR {
         logical = 1
@@ -3672,6 +3687,19 @@ function ut_expr(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
     }
     if kind == AST_BINOP {
         return ut_binop(u, arena, id)
+    }
+    if kind == AST_ORCH {
+        if arena.nodes[id].ival == ORCH_FANOUT {
+            if arena.nodes[id].name_start < arena.nodes[id].name_end {
+                let st: i32 = flowc_tc_find_struct_by_name(arena, u[0].src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                if st != AST_NONE {
+                    return ut_node_ty(UT_STRUCT, st)
+                }
+            }
+            return ut_unknown()
+        }
+        let r_ty: UTy = ut_expr(u, arena, arena.nodes[id].b)
+        return ut_unknown()
     }
     if kind == AST_UNARY {
         let o: UTy = ut_expr(u, arena, arena.nodes[id].a)

@@ -1,0 +1,38 @@
+struct Record {
+    a: i32,
+    b: i32
+}
+
+function plus_one(x: i32) -> i32 {
+    return x + 1
+}
+
+function times_two(x: i32) -> i32 {
+    return x * 2
+}
+
+function test_value_compose() -> i32 {
+    let result = 5 >> plus_one >> times_two
+    return result as i32
+}
+
+function test_fanout() -> Record {
+    let result = 10 >> Record {
+        a: plus_one,
+        b: times_two
+    }
+    return result as Record
+}
+
+function main() -> i32 {
+    if test_value_compose() != 12 { return 1 }
+    let r = test_fanout()
+    if r.a != 11 { return 2 }
+    if r.b != 20 { return 3 }
+
+    # Test bitwise shift precedence vs orchestration
+    let shift_test = 16 >> 2
+    if shift_test != 4 { return 4 }
+
+    return 0
+}
