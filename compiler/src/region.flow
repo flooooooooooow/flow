@@ -1,0 +1,682 @@
+# @module flowc.region
+# @means  Constraint-based local region inference and conservative
+#         non-aliasing proofs (#694).
+#
+# Intraprocedural, fail closed. A wrong disjointness claim is undefined
+# behaviour, so this pass only reports disjointness it can justify from the
+# function body with no manual annotations.
+#
+# Constraints (equality + disjointness):
+#   - Each parameter is a PARAM region. Distinct parameters are never
+#     unified: the caller may pass the same buffer for both.
+#   - A fresh local (array / struct / vector / scalar literal, or an
+#     uninitialized non-borrow binding) is a LOCAL region whose identity
+#     is that binding. Distinct LOCAL identities never alias.
+#   - A copy, borrow (`&`), index, slice, field, or cast inherits the
+#     root's region (equality constraint).
+#   - Pointer / arithmetic expressions inherit the unique referenced
+#     region (`base + off` shares `base`). Pure literal arithmetic is
+#     fresh. Mixed or unknown provenance is TOP.
+#   - A reassigned or redeclared binding is TOP (its region is not
+#     stable). A call result is TOP.
+#
+# Disjointness (sound direction: 1 only when proven):
+#   - Distinct LOCAL regions.
+#   - A LOCAL region and a PARAM region (the local is allocated in this
+#     frame after the parameters were bound).
+#   Two PARAMs, anything TOP, and two views of the same identity may
+#     alias.
+#
+# restrict_candidate is the #731 hook: a local binding whose LOCAL region
+# is unique in the function (disjoint from every parameter and from every
+# other tracked binding). This module does not emit restrict / noalias;
+# backends consume the proof.
+#
+# FLOWC_REGION_REPORT=1 asks codegen to print per-binding remarks.
+# FLOWC_REGION_CHECK=1 asks the type checker to diagnose unproven
+# overlapping mutable access at calls.
+
+import .token { TOK_PLUS, TOK_MINUS, TOK_AMP }
+import .ast {
+    AstArena, AST_NONE,
+    AST_FN, AST_PARAM, AST_LET, AST_BINOP, AST_CALL, AST_IDENT, AST_INT,
+    AST_TYPE, AST_FIELD_ACCESS, AST_INDEX, AST_CAST, AST_ARRAY_LIT,
+    AST_UNARY, AST_ASSIGN, AST_STRUCT_LIT, AST_FLOAT, AST_BOOL, AST_STRING,
+    AST_VECTOR_LIT, AST_TYPE_FIXED_ARRAY
+}
+
+extern {
+    function strlen(s: string) -> i64
+    function getenv(name: string) -> string
+}
+
+export const RI_UNKNOWN: i32 = 0
+export const RI_LOCAL: i32 = 1
+export const RI_PARAM: i32 = 2
+
+export const RI_WHY_DISJOINT: i32 = 0
+export const RI_WHY_SAME: i32 = 1
+export const RI_WHY_PARAMS: i32 = 2
+export const RI_WHY_UNKNOWN: i32 = 3
+
+export struct Region {
+    kind: i32,
+    ident: i32
+}
+
+function ri_unknown() -> Region {
+    return Region { kind: RI_UNKNOWN, ident: AST_NONE }
+}
+
+function ri_local(id: i32) -> Region {
+    if id == AST_NONE {
+        return ri_unknown()
+    }
+    return Region { kind: RI_LOCAL, ident: id }
+}
+
+function ri_param(id: i32) -> Region {
+    if id == AST_NONE {
+        return ri_unknown()
+    }
+    return Region { kind: RI_PARAM, ident: id }
+}
+
+function ri_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let n: i32 = a1 - a0
+    let mut i: i32 = 0
+    while i < n {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function ri_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if end - start != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[start + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function ri_env_is_1(name: string) -> i32 {
+    let v: string = getenv(name)
+    let p: ptr<u8> = v
+    if p == null {
+        return 0
+    }
+    if p[0] == 49 and p[1] == 0 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_region_report_on() -> i32 {
+    return ri_env_is_1("FLOWC_REGION_REPORT")
+}
+
+export function flowc_region_check_on() -> i32 {
+    return ri_env_is_1("FLOWC_REGION_CHECK")
+}
+
+function ri_in_fn(arena: AstArena, fn: i32, id: i32) -> i32 {
+    if fn == AST_NONE or id == AST_NONE {
+        return 0
+    }
+    if id < 0 or id >= arena.len {
+        return 0
+    }
+    let pos: i32 = arena.nodes[id].start
+    if pos >= arena.nodes[fn].start and pos < arena.nodes[fn].end {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_region_ty_is_ptr(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    if ri_span_is(src, ns, ne, "ptr") == 1 {
+        return 1
+    }
+    if ne - ns > 7 and ri_span_is(src, ns, ns + 7, "memref_") == 1 {
+        return 1
+    }
+    if ne - ns > 6 and ri_span_is(src, ns, ns + 6, "array_") == 1 {
+        return 1
+    }
+    return 0
+}
+
+function ri_ty_is_span(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    return ri_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "span")
+}
+
+export function flowc_region_ty_is_ref(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if flowc_region_ty_is_ptr(arena, src, ty) == 1 {
+        return 1
+    }
+    return ri_ty_is_span(arena, src, ty)
+}
+
+function ri_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[ty].c == AST_TYPE_FIXED_ARRAY {
+        return 1
+    }
+    return ri_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+}
+
+function ri_binding_unstable(arena: AstArena, src: ptr<u8>, fn: i32, ns: i32, ne: i32) -> i32 {
+    let mut decls: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if ri_in_fn(arena, fn, i) == 1 {
+            if arena.nodes[i].kind == AST_LET {
+                if ri_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    decls = decls + 1
+                }
+            }
+            if arena.nodes[i].kind == AST_ASSIGN {
+                let lhs: i32 = arena.nodes[i].a
+                if lhs != AST_NONE and lhs >= 0 and lhs < arena.len {
+                    if arena.nodes[lhs].kind == AST_IDENT {
+                        if ri_span_eq(src, ns, ne, arena.nodes[lhs].name_start, arena.nodes[lhs].name_end) == 1 {
+                            return 1
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if decls > 1 {
+        return 1
+    }
+    return 0
+}
+
+function ri_find_binding(arena: AstArena, src: ptr<u8>, fn: i32, use: i32) -> i32 {
+    if fn == AST_NONE or use == AST_NONE {
+        return AST_NONE
+    }
+    let ns: i32 = arena.nodes[use].name_start
+    let ne: i32 = arena.nodes[use].name_end
+    let use_pos: i32 = arena.nodes[use].name_start
+    let mut best: i32 = AST_NONE
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if arena.nodes[prm].kind == AST_PARAM {
+            if ri_span_eq(src, ns, ne, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                best = prm
+            }
+        }
+        prm = arena.nodes[prm].next
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_LET and ri_in_fn(arena, fn, i) == 1 {
+            if arena.nodes[i].end <= use_pos {
+                if ri_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    if best == AST_NONE or arena.nodes[i].start >= arena.nodes[best].start {
+                        best = i
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function ri_region_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, depth: i32) -> Region
+function ri_region_of_binding(arena: AstArena, src: ptr<u8>, fn: i32, bind: i32, depth: i32) -> Region
+function ri_derived_region(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, fresh_id: i32, depth: i32) -> Region
+
+function ri_is_value_ctor(k: i32) -> i32 {
+    if k == AST_ARRAY_LIT or k == AST_STRUCT_LIT or k == AST_VECTOR_LIT {
+        return 1
+    }
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_STRING {
+        return 1
+    }
+    return 0
+}
+
+function ri_collect_refs(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, depth: i32, kinds: ptr<i32>, idents: ptr<i32>, n: ptr<i32>) {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len or depth > 32 {
+        return
+    }
+    if n[0] >= 8 {
+        n[0] = 99
+        return
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_IDENT or k == AST_INDEX or k == AST_FIELD_ACCESS {
+        if k == AST_IDENT {
+            let bind: i32 = ri_find_binding(arena, src, fn, expr)
+            if bind != AST_NONE {
+                let ty: i32 = arena.nodes[bind].a
+                if flowc_region_ty_is_ref(arena, src, ty) == 0 and ri_ty_is_array(arena, src, ty) == 0 {
+                    return
+                }
+            }
+        }
+        let r: Region = ri_region_of_expr(arena, src, fn, expr, depth + 1)
+        if r.kind == RI_UNKNOWN {
+            n[0] = 99
+            return
+        }
+        let mut i: i32 = 0
+        while i < n[0] {
+            if kinds[i] == r.kind and idents[i] == r.ident {
+                return
+            }
+            i = i + 1
+        }
+        kinds[n[0]] = r.kind
+        idents[n[0]] = r.ident
+        n[0] = n[0] + 1
+        return
+    }
+    if k == AST_UNARY and arena.nodes[expr].ival == TOK_AMP {
+        let r2: Region = ri_region_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+        if r2.kind == RI_UNKNOWN {
+            n[0] = 99
+            return
+        }
+        let mut j: i32 = 0
+        while j < n[0] {
+            if kinds[j] == r2.kind and idents[j] == r2.ident {
+                return
+            }
+            j = j + 1
+        }
+        if n[0] >= 8 {
+            n[0] = 99
+            return
+        }
+        kinds[n[0]] = r2.kind
+        idents[n[0]] = r2.ident
+        n[0] = n[0] + 1
+        return
+    }
+    if k == AST_BINOP or k == AST_CAST {
+        ri_collect_refs(arena, src, fn, arena.nodes[expr].a, depth + 1, kinds, idents, n)
+        if k == AST_BINOP {
+            ri_collect_refs(arena, src, fn, arena.nodes[expr].b, depth + 1, kinds, idents, n)
+        }
+        return
+    }
+    if k == AST_UNARY {
+        ri_collect_refs(arena, src, fn, arena.nodes[expr].a, depth + 1, kinds, idents, n)
+        return
+    }
+}
+
+function ri_derived_region(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, fresh_id: i32, depth: i32) -> Region {
+    let mut kinds: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut idents: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut n: array<i32, 1> = [0]
+    ri_collect_refs(arena, src, fn, expr, depth, &kinds[0], &idents[0], &n[0])
+    if n[0] == 99 or n[0] > 1 {
+        return ri_unknown()
+    }
+    if n[0] == 0 {
+        return ri_local(fresh_id)
+    }
+    if kinds[0] == RI_PARAM {
+        return ri_param(idents[0])
+    }
+    return ri_local(idents[0])
+}
+
+function ri_region_of_binding(arena: AstArena, src: ptr<u8>, fn: i32, bind: i32, depth: i32) -> Region {
+    if bind == AST_NONE or bind < 0 or bind >= arena.len or depth > 32 {
+        return ri_unknown()
+    }
+    if ri_binding_unstable(arena, src, fn, arena.nodes[bind].name_start, arena.nodes[bind].name_end) == 1 {
+        return ri_unknown()
+    }
+    if arena.nodes[bind].kind == AST_PARAM {
+        return ri_param(bind)
+    }
+    if arena.nodes[bind].kind != AST_LET {
+        return ri_unknown()
+    }
+    let ty: i32 = arena.nodes[bind].a
+    let init: i32 = arena.nodes[bind].b
+    if init == AST_NONE {
+        return ri_local(bind)
+    }
+    let ik: i32 = arena.nodes[init].kind
+    if ri_is_value_ctor(ik) == 1 {
+        return ri_local(bind)
+    }
+    if ri_ty_is_array(arena, src, ty) == 1 {
+        if ik != AST_IDENT and ik != AST_INDEX and ik != AST_FIELD_ACCESS and ik != AST_CALL {
+            if ik != AST_UNARY and ik != AST_BINOP and ik != AST_CAST {
+                return ri_local(bind)
+            }
+        }
+    }
+    if ik == AST_BINOP or ik == AST_CAST {
+        return ri_derived_region(arena, src, fn, init, bind, depth + 1)
+    }
+    if ik == AST_UNARY {
+        if arena.nodes[init].ival == TOK_AMP {
+            return ri_region_of_expr(arena, src, fn, arena.nodes[init].a, depth + 1)
+        }
+        return ri_derived_region(arena, src, fn, init, bind, depth + 1)
+    }
+    if ik == AST_IDENT or ik == AST_INDEX or ik == AST_FIELD_ACCESS {
+        return ri_region_of_expr(arena, src, fn, init, depth + 1)
+    }
+    return ri_unknown()
+}
+
+function ri_region_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, depth: i32) -> Region {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len or depth > 32 {
+        return ri_unknown()
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_IDENT {
+        let bind: i32 = ri_find_binding(arena, src, fn, expr)
+        return ri_region_of_binding(arena, src, fn, bind, depth + 1)
+    }
+    if k == AST_CAST {
+        return ri_region_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_UNARY and arena.nodes[expr].ival == TOK_AMP {
+        return ri_region_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_FIELD_ACCESS {
+        return ri_region_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_INDEX {
+        return ri_region_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_BINOP and arena.nodes[expr].ival == TOK_PLUS {
+        return ri_derived_region(arena, src, fn, expr, expr, depth + 1)
+    }
+    if ri_is_value_ctor(k) == 1 {
+        return ri_local(expr)
+    }
+    return ri_unknown()
+}
+
+export function flowc_region_of_binding(arena: AstArena, src: ptr<u8>, fn: i32, bind: i32) -> Region {
+    return ri_region_of_binding(arena, src, fn, bind, 0)
+}
+
+export function flowc_region_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32) -> Region {
+    return ri_region_of_expr(arena, src, fn, expr, 0)
+}
+
+export function flowc_region_why(a: Region, b: Region) -> i32 {
+    if a.kind == RI_UNKNOWN or b.kind == RI_UNKNOWN {
+        return RI_WHY_UNKNOWN
+    }
+    if a.kind == RI_PARAM and b.kind == RI_PARAM {
+        return RI_WHY_PARAMS
+    }
+    if a.kind == b.kind and a.ident == b.ident {
+        return RI_WHY_SAME
+    }
+    return RI_WHY_DISJOINT
+}
+
+export function flowc_region_disjoint_regs(a: Region, b: Region) -> i32 {
+    if flowc_region_why(a, b) == RI_WHY_DISJOINT {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_region_disjoint(arena: AstArena, src: ptr<u8>, fn: i32, e1: i32, e2: i32) -> i32 {
+    if fn == AST_NONE {
+        return 0
+    }
+    let a: Region = ri_region_of_expr(arena, src, fn, e1, 0)
+    let b: Region = ri_region_of_expr(arena, src, fn, e2, 0)
+    return flowc_region_disjoint_regs(a, b)
+}
+
+export function flowc_region_may_alias(arena: AstArena, src: ptr<u8>, fn: i32, e1: i32, e2: i32) -> i32 {
+    if flowc_region_disjoint(arena, src, fn, e1, e2) == 1 {
+        return 0
+    }
+    return 1
+}
+
+function ri_local_count(arena: AstArena, src: ptr<u8>, fn: i32, ident: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut p: i32 = arena.nodes[fn].a
+    while p != AST_NONE {
+        let r: Region = ri_region_of_binding(arena, src, fn, p, 0)
+        if r.kind == RI_LOCAL and r.ident == ident {
+            n = n + 1
+        }
+        p = arena.nodes[p].next
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_LET and ri_in_fn(arena, fn, i) == 1 {
+            let r2: Region = ri_region_of_binding(arena, src, fn, i, 0)
+            if r2.kind == RI_LOCAL and r2.ident == ident {
+                n = n + 1
+            }
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# 1 when this local let is a unique LOCAL region: disjoint from every
+# parameter and from every other tracked binding. The sound subset a
+# backend may mark restrict on a local pointer (#731).
+export function flowc_region_restrict_candidate(arena: AstArena, src: ptr<u8>, fn: i32, let_id: i32) -> i32 {
+    if fn == AST_NONE or let_id == AST_NONE or fn < 0 or let_id < 0 {
+        return 0
+    }
+    if fn >= arena.len or let_id >= arena.len {
+        return 0
+    }
+    if arena.nodes[let_id].kind != AST_LET {
+        return 0
+    }
+    if ri_in_fn(arena, fn, let_id) == 0 {
+        return 0
+    }
+    let r: Region = ri_region_of_binding(arena, src, fn, let_id, 0)
+    if r.kind != RI_LOCAL {
+        return 0
+    }
+    if ri_local_count(arena, src, fn, r.ident) != 1 {
+        return 0
+    }
+    return 1
+}
+
+function ri_arg_at(arena: AstArena, first: i32, idx: i32) -> i32 {
+    let mut a: i32 = first
+    let mut i: i32 = 0
+    while a != AST_NONE {
+        if i == idx {
+            return a
+        }
+        i = i + 1
+        a = arena.nodes[a].next
+    }
+    return AST_NONE
+}
+
+function ri_expr_ty_guess(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32) -> i32 {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len {
+        return AST_NONE
+    }
+    let mut e: i32 = expr
+    let mut d: i32 = 0
+    while d < 16 and e != AST_NONE and e >= 0 and e < arena.len {
+        let k: i32 = arena.nodes[e].kind
+        if k == AST_CAST {
+            if arena.nodes[e].b != AST_NONE {
+                return arena.nodes[e].b
+            }
+            e = arena.nodes[e].a
+        } elif k == AST_UNARY and arena.nodes[e].ival == TOK_AMP {
+            return AST_NONE
+        } elif k == AST_IDENT {
+            let bind: i32 = ri_find_binding(arena, src, fn, e)
+            if bind == AST_NONE {
+                return AST_NONE
+            }
+            return arena.nodes[bind].a
+        } else {
+            return AST_NONE
+        }
+        d = d + 1
+    }
+    return AST_NONE
+}
+
+function ri_expr_is_ref(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32) -> i32 {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len {
+        return 0
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_UNARY and arena.nodes[expr].ival == TOK_AMP {
+        return 1
+    }
+    let ty: i32 = ri_expr_ty_guess(arena, src, fn, expr)
+    if flowc_region_ty_is_ref(arena, src, ty) == 1 {
+        return 1
+    }
+    return 0
+}
+
+# 1 when a call has two reference arguments that are not proven disjoint
+# and share a region or have unknown provenance. Two distinct parameters
+# are declined silently: that is the expected fail-closed answer, not a
+# local overlapping-borrow bug.
+export function flowc_region_call_unproven(arena: AstArena, src: ptr<u8>, fn: i32, call: i32) -> i32 {
+    if call == AST_NONE or arena.nodes[call].kind != AST_CALL {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < 32 {
+        let ai: i32 = ri_arg_at(arena, arena.nodes[call].a, i)
+        if ai == AST_NONE {
+            return 0
+        }
+        if ri_expr_is_ref(arena, src, fn, ai) == 1 {
+            let mut j: i32 = i + 1
+            while j < 32 {
+                let aj: i32 = ri_arg_at(arena, arena.nodes[call].a, j)
+                if aj == AST_NONE {
+                    j = 32
+                } else {
+                    if ri_expr_is_ref(arena, src, fn, aj) == 1 {
+                        let ri: Region = ri_region_of_expr(arena, src, fn, ai, 0)
+                        let rj: Region = ri_region_of_expr(arena, src, fn, aj, 0)
+                        let why: i32 = flowc_region_why(ri, rj)
+                        if why == RI_WHY_SAME or why == RI_WHY_UNKNOWN {
+                            return 1
+                        }
+                    }
+                    j = j + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+export function flowc_region_call_why(arena: AstArena, src: ptr<u8>, fn: i32, call: i32) -> i32 {
+    if call == AST_NONE or arena.nodes[call].kind != AST_CALL {
+        return RI_WHY_DISJOINT
+    }
+    let mut i: i32 = 0
+    while i < 32 {
+        let ai: i32 = ri_arg_at(arena, arena.nodes[call].a, i)
+        if ai == AST_NONE {
+            return RI_WHY_DISJOINT
+        }
+        if ri_expr_is_ref(arena, src, fn, ai) == 1 {
+            let mut j: i32 = i + 1
+            while j < 32 {
+                let aj: i32 = ri_arg_at(arena, arena.nodes[call].a, j)
+                if aj == AST_NONE {
+                    j = 32
+                } else {
+                    if ri_expr_is_ref(arena, src, fn, aj) == 1 {
+                        let ri: Region = ri_region_of_expr(arena, src, fn, ai, 0)
+                        let rj: Region = ri_region_of_expr(arena, src, fn, aj, 0)
+                        let why: i32 = flowc_region_why(ri, rj)
+                        if why == RI_WHY_SAME or why == RI_WHY_UNKNOWN {
+                            return why
+                        }
+                    }
+                    j = j + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return RI_WHY_DISJOINT
+}
+
+export function flowc_region_fn_of_node(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE {
+        return AST_NONE
+    }
+    let pos: i32 = arena.nodes[id].start
+    let mut best: i32 = AST_NONE
+    let mut best_span: i32 = 2147483647
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if pos >= arena.nodes[i].start and pos < arena.nodes[i].end {
+                let sp: i32 = arena.nodes[i].end - arena.nodes[i].start
+                if sp < best_span {
+                    best = i
+                    best_span = sp
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}

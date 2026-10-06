@@ -7,9 +7,10 @@
 # (safety/flight), so this surface is FLOWC_PROFILE.
 #
 # Phases match the #735 list as far as the current pipeline can split them
-# without a rewrite. monomorphize and lowering stay in the report with 0 ms
-# until those passes are timed on their own; they currently run inside
-# codegen. external_compile and process_launch are measured by
+# without a rewrite. monomorphize times the cgen specialization pass;
+# lowering times proof erasure, unsupported-node refusal and plan
+# selection. incremental_cache is the AST cache probe (hits and miss
+# lookups). external_compile and process_launch are measured by
 # tools/compile_bench, not here.
 
 import .fileio { flowc_read_file }
@@ -19,7 +20,7 @@ import .fileio { flowc_read_file }
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#define FLOWC_PROF_N 8
+#define FLOWC_PROF_N 9
 static int64_t flowc_prof_ns[FLOWC_PROF_N];
 static int64_t flowc_prof_process_start;
 static int32_t flowc_prof_ast;
@@ -84,6 +85,13 @@ int64_t flowc_prof_get_raw(int32_t id) {
   if (id < 0 || id >= FLOWC_PROF_N) { return 0; }
   return flowc_prof_ns[id];
 }
+void flowc_prof_sub_raw(int32_t id, int64_t ns) {
+  if (flowc_prof_mode_c() == 0) { return; }
+  if (id < 0 || id >= FLOWC_PROF_N) { return; }
+  if (ns < 0) { ns = 0; }
+  flowc_prof_ns[id] -= ns;
+  if (flowc_prof_ns[id] < 0) { flowc_prof_ns[id] = 0; }
+}
 void flowc_prof_add_ast_raw(int32_t n) {
   if (n > 0) { flowc_prof_ast += n; }
 }
@@ -114,6 +122,7 @@ extern {
     function flowc_prof_now_raw() -> i64
     function flowc_prof_add_raw(id: i32, ns: i64)
     function flowc_prof_get_raw(id: i32) -> i64
+    function flowc_prof_sub_raw(id: i32, ns: i64)
     function flowc_prof_add_ast_raw(n: i32)
     function flowc_prof_set_loc_raw(n: i32)
     function flowc_prof_ast_raw() -> i32
@@ -135,6 +144,8 @@ export const FLOWC_PROF_TYPECHECK: i32 = 4
 export const FLOWC_PROF_MONO: i32 = 5
 export const FLOWC_PROF_LOWERING: i32 = 6
 export const FLOWC_PROF_CODEGEN: i32 = 7
+export const FLOWC_PROF_CACHE: i32 = 8
+export const FLOWC_PROF_COUNT: i32 = 9
 
 export function flowc_prof_enabled() -> i32 {
     if flowc_prof_mode_raw() == 0 {
@@ -155,6 +166,24 @@ export function flowc_prof_span_end(id: i32, start: i64) {
         return
     }
     flowc_prof_add_raw(id, flowc_prof_now_raw() - start)
+}
+
+# Subtract nested phase time from an outer bucket so mono/lowering are
+# not also counted as codegen when the caller wraps the whole emit.
+export function flowc_prof_phase_ns(id: i32) -> i64 {
+    return flowc_prof_get_raw(id)
+}
+
+export function flowc_prof_carve(outer: i32, inner_a: i32, a0: i64, inner_b: i32, b0: i64) {
+    let mut da: i64 = flowc_prof_get_raw(inner_a) - a0
+    let mut db: i64 = flowc_prof_get_raw(inner_b) - b0
+    if da < 0 {
+        da = 0
+    }
+    if db < 0 {
+        db = 0
+    }
+    flowc_prof_sub_raw(outer, da + db)
 }
 
 export function flowc_prof_mark_startup() {
@@ -225,6 +254,7 @@ function flowc_prof_name(id: i32) -> string {
     if id == 5 { return "monomorphize" }
     if id == 6 { return "lowering" }
     if id == 7 { return "codegen" }
+    if id == 8 { return "incremental_cache" }
     return "other"
 }
 
@@ -251,7 +281,7 @@ function flowc_prof_ns_to_us(ns: i64) -> i64 {
 function flowc_prof_total_ns() -> i64 {
     let mut t: i64 = 0
     let mut i: i32 = 0
-    while i < 8 {
+    while i < FLOWC_PROF_COUNT {
         t = t + flowc_prof_get_raw(i)
         i = i + 1
     }
@@ -274,7 +304,7 @@ export function flowc_prof_format_json(buf: ptr<u8>, cap: i32) -> i32 {
     let mut n: i32 = snprintf(buf, cap as i64, "{\"schema\": \"flow-compile-profile/1\"")
     n = n + snprintf(buf + n, (cap - n) as i64, ", \"phases\": [")
     let mut i: i32 = 0
-    while i < 8 {
+    while i < FLOWC_PROF_COUNT {
         if i > 0 {
             n = n + snprintf(buf + n, (cap - n) as i64, ", ")
         }
@@ -299,11 +329,11 @@ export function flowc_prof_emit() {
     if mode == 0 {
         return
     }
-    let buf: ptr<u8> = malloc(2048)
+    let buf: ptr<u8> = malloc(2560)
     if buf == null {
         return
     }
-    let n: i32 = flowc_prof_format_json(buf, 2048)
+    let n: i32 = flowc_prof_format_json(buf, 2560)
     if n <= 0 {
         return
     }
@@ -311,7 +341,7 @@ export function flowc_prof_emit() {
         flowc_prof_write_line("Compile profile (per-phase wall time):")
         let total_ns: i64 = flowc_prof_total_ns()
         let mut i: i32 = 0
-        while i < 8 {
+        while i < FLOWC_PROF_COUNT {
             let ns: i64 = flowc_prof_get_raw(i)
             let ms: i64 = flowc_prof_ns_to_ms(ns)
             let mut pct: i64 = 0
@@ -327,8 +357,8 @@ export function flowc_prof_emit() {
         let _tn: i32 = snprintf(tot, 64, "  %-18s %6lld ms", "total", flowc_prof_ns_to_ms(total_ns))
         flowc_prof_write_line(tot as string)
     }
-    let marker: ptr<u8> = malloc(2080)
-    let _mn: i32 = snprintf(marker, 2080, "[flow-profile] %s", buf as string)
+    let marker: ptr<u8> = malloc(2600)
+    let _mn: i32 = snprintf(marker, 2600, "[flow-profile] %s", buf as string)
     flowc_prof_write_line(marker as string)
 }
 

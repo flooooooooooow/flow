@@ -99,7 +99,7 @@ function span_window_total() -> f32 {
 
 Flow's memory standard library includes `Arena` and frame-arena helpers. Because the API depends on imported declarations, the canonical runnable sources are [`lib/stdlib/memory.flow`](../../lib/stdlib/memory.flow) and [`examples/audio/lifetime_domains.flow`](../../examples/audio/lifetime_domains.flow), rather than isolated pseudo-calls copied without their import context.
 
-An arena owns one region and advances an offset for each allocation; resetting invalidates its contained transient objects together.
+An arena owns one region and advances an offset for each allocation; resetting invalidates its contained transient objects together. Memory bumped from a module-static arena carries that arena's declared `@lifetime`, so it cannot be stored past the domain (and therefore the reset) that owns the arena.
 
 ## 10.6 Lifetime domains
 

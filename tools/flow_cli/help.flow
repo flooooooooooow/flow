@@ -45,6 +45,7 @@ export function show_help() {
     outln("  jit <program>      JIT compile and run (fastest)")
     outln("  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)")
     outln("  gpu <program>      Generate @gpu compute kernels as Metal sources")
+    outln("  gpu test --suite vgpu [--backend B|--all-backends]  vgpu exact-pixel/numerical conformance")
     outln("  shader <program>   Run fill-shader demo (Metal; macOS)")
     outln("  explain <program>  Print the compilation plan for every declarative")
     outln("                    construct: implementations considered, their costs,")

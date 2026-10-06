@@ -114,7 +114,8 @@ Representative compatibility cases: MNIST classifier and depth estimation.
 
 ### P4: backend-independent compatibility runner
 
-Target command:
+Landed as `./flow gpu test --suite vgpu` (`tools/gpu_test`, docs in
+[vgpu conformance](../gpu/vgpu-conformance.md)):
 
 ```text
 flow gpu test --suite vgpu --backend metal
@@ -122,9 +123,11 @@ flow gpu test --suite vgpu --backend webgpu
 flow gpu test --suite vgpu --all-backends
 ```
 
-Each case should print one of `EXACT`, `TOLERANCE`, `NUMERICAL`, `UNSUPPORTED` or
-`FAIL`, together with the measured error and the capability that blocks unsupported
-cases.
+Each case prints one of `EXACT`, `TOLERANCE`, `NUMERICAL`, `UNSUPPORTED` or
+`FAIL`, together with backend, dimensions, time/seed/camera/model inputs, max
+error and the capability that blocks unsupported cases. The gradient fixture is
+byte-for-byte against a captured upstream `rgba8unorm` reference. MNIST and
+depth stay `UNSUPPORTED` (`tensor-model-execution`) until P3 lands.
 
 ## Resource IR
 

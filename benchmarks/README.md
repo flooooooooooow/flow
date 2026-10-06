@@ -27,9 +27,11 @@ benchmarks/
 ├── baselines/python/        # CPython and NumPy subjects for every comparison
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
+│   ├── ffi_boundary_benchmark.flow  # FFI scalar / batched / buffer timings
 │   ├── mandelbrot_benchmark.flow  # Fractal computation
 │   ├── matmul_benchmark.flow     # Matrix multiplication
 │   ├── nbody_benchmark.flow      # N-body simulation
+│   ├── parallel_scaling.flow     # Serial and disjoint-chunk parallel scaling
 │   └── sort_benchmark.flow       # Sorting algorithms
 └── runner.flow              # Benchmark runner with statistics
 ```
@@ -52,6 +54,7 @@ No workload source rewrite is required. See [docs/library/memory.md](../docs/lib
 # Run individual benchmarks
 ./flow run benchmarks/micro/sort_benchmark.flow
 ./flow run benchmarks/micro/matmul_benchmark.flow
+./flow run benchmarks/micro/parallel_scaling.flow
 ```
 
 ### What Each Benchmark Measures
@@ -62,6 +65,7 @@ No workload source rewrite is required. See [docs/library/memory.md](../docs/lib
 | `mandelbrot` | Fractal computation (scalar, unrolled) | Mpixels/sec |
 | `nbody` | N-body gravitational simulation | M interactions/sec |
 | `fft` | Cooley-Tukey FFT | GFLOPS |
+| `parallel_scaling` | Serial and disjoint-chunk parallel passes | Time (ms), efficiency |
 | `sort` | Quicksort, heapsort, insertion sort | Time (ms) |
 | `ffi_boundary_benchmark` | FFI boundary: pointer-identity row (copied_bytes=0) plus scalar / batched / large-buffer timings | Time (ms) |
 | `ffi_breakeven` | Real C crossings (scalar, batch, zero-copy, copy, string, value, callback) and live `breakeven_batch=` | Batch size |

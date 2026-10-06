@@ -17,9 +17,9 @@ If the environment is fully equipped with the required toolchain (`mlir-opt`, `m
 *(Note: The actual measured runtime metrics were skipped in this run due to missing LLVM dependencies in the execution VM, but the pipeline logic, simulation fallback, and code generation were fully verified).*
 
 ## Remaining Work
-1. **Full Pipeline Integration:** The tuner is currently exposed as a utility method. It needs to be wired directly into the MLIR generator's primary execution path for suitable kernels (e.g., automatically tuning convolution and matrix multiplication loops during JIT compilation).
-2. **Toolchain Dependency Resolution:** The evaluation loop needs a dependable fall-back or an integrated `mlir-cpu-runner`. It currently shells out to `clang` and `mlir-translate`, which might not be present on all host systems.
-3. **Parameter Expansion:** The benchmark now evaluates multi-dimensional `tile_sizes [M, N, K]` schedules. Future work can add vector and unroll parameters to the same candidate representation.
+1. **Full Pipeline Integration:** The tuner is currently a schedule generator plus a measurement / search harness. It is not yet wired into the MLIR generator's primary execution path for suitable kernels (e.g., automatically tuning convolution and matrix multiplication loops during JIT compilation).
+2. **Joint candidate representation:** Tile, vector, and unroll schedules are separate strategies. Search still explores a list of tile triples; a single individual that carries tile sizes, an unroll factor, and a vector width together is future work.
+3. **Measured Bayesian surrogate:** The current Bayesian path is discrete inverse-distance UCB. A full Gaussian-process surrogate over measured runtimes, and an in-process `mlir-cpu-runner`, are still open.
 
 ## Target metadata
 
@@ -44,7 +44,22 @@ The benchmark accepts an optional Linux `perf stat` event:
   --pmu-event=cache-misses
 ```
 
-Supported events are `cycles`, `instructions`, `cache-misses`, `branches`, and
-`branch-misses`. The benchmark keeps wall-clock timing when `perf` is absent,
-the event is unavailable, or the kernel denies PMU access. The selected metric
-is printed with the event name so reports remain comparable across runs.
+Supported events are `cycles`, `instructions`, `cache-misses`, `branches`,
+`branch-misses`, `ipc`, `stalled-cycles-frontend`, and
+`stalled-cycles-backend`. `ipc` is compared as cycles/instruction so every
+metric stays a minimization. The benchmark keeps wall-clock timing when
+`perf` is absent, the event is unavailable, or the kernel denies PMU access.
+The selected metric is printed with the event name so reports remain
+comparable across runs.
+
+## Cost model and search
+
+`--metric=cost-model` ranks candidates with an analytic reuse / cache /
+remainder score and does not lower IR. `--search=genetic` and
+`--search=bayesian` explore the supplied `--candidates` list instead of
+evaluating every schedule. When the LLVM toolchain is missing, `--search`
+uses the same cost model. `--print-cost` on `mlir_tune` prints the integer
+score for one schedule.
+
+See [MLIR Autotuning](../language/mlir-autotuning.md) for the command
+surface.
