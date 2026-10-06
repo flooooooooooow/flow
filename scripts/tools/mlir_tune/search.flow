@@ -1,0 +1,169 @@
+# @module tools.mlir_tune.search
+# @means  Discrete genetic search and inverse-distance Bayesian UCB over
+#         tile schedules. Callers evaluate the returned index, record the
+#         cost, then ask for the next index.
+
+import "scripts/tools/mlir_tune/cost.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+export function tune_i32s(n: i32) -> ptr<i32> {
+    if n <= 0 {
+        return null
+    }
+    return malloc((n as i64) * 4) as ptr<i32>
+}
+
+# LCG in 1 .. 2^31-2. Returns a value in 0 .. n-1 and updates seed[0].
+export function tune_rng(seed: ptr<i32>, n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    let mut s: i64 = seed[0] as i64
+    if s <= 0 {
+        s = 1
+    }
+    s = (s * 1103515245 + 12345) % 2147483647
+    if s <= 0 {
+        s = 1
+    }
+    seed[0] = s as i32
+    return (s % (n as i64)) as i32
+}
+
+export function tune_nearest(n: i32, tms: ptr<i32>, tns: ptr<i32>, tks: ptr<i32>, tm: i32, tn: i32, tk: i32) -> i32 {
+    let mut best: i32 = 0
+    let mut best_d: i32 = 2147483647
+    let mut i: i32 = 0
+    while i < n {
+        let d: i32 = tune_l1(tm, tn, tk, tms[i], tns[i], tks[i])
+        if d < best_d {
+            best = i
+            best_d = d
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function tune_predicted(n: i32, idx: i32, tms: ptr<i32>, tns: ptr<i32>, tks: ptr<i32>, seen: ptr<i32>, costs: ptr<i32>) -> i32 {
+    let mut wsum: i32 = 0
+    let mut csum: i32 = 0
+    let mut j: i32 = 0
+    while j < n {
+        if seen[j] != 0 {
+            let d: i32 = tune_l1(tms[idx], tns[idx], tks[idx], tms[j], tns[j], tks[j])
+            let w: i32 = 1000 / (1 + d)
+            wsum = wsum + w
+            csum = csum + w * costs[j]
+        }
+        j = j + 1
+    }
+    if wsum <= 0 {
+        return 0
+    }
+    return csum / wsum
+}
+
+function tune_min_l1(n: i32, idx: i32, tms: ptr<i32>, tns: ptr<i32>, tks: ptr<i32>, seen: ptr<i32>) -> i32 {
+    let mut best: i32 = 2147483647
+    let mut j: i32 = 0
+    while j < n {
+        if seen[j] != 0 {
+            let d: i32 = tune_l1(tms[idx], tns[idx], tks[idx], tms[j], tns[j], tks[j])
+            if d < best {
+                best = d
+            }
+        }
+        j = j + 1
+    }
+    return best
+}
+
+# Next unevaluated index under lower-confidence-bound acquisition, or -1
+# when every candidate has a cost. The first pick is index 0.
+export function tune_bayesian_next(n: i32, tms: ptr<i32>, tns: ptr<i32>, tks: ptr<i32>, seen: ptr<i32>, costs: ptr<i32>) -> i32 {
+    if n <= 0 {
+        return -1
+    }
+    let mut seen_n: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if seen[i] != 0 {
+            seen_n = seen_n + 1
+        }
+        i = i + 1
+    }
+    if seen_n == 0 {
+        return 0
+    }
+    if seen_n >= n {
+        return -1
+    }
+    let mut best: i32 = -1
+    let mut best_lcb: i32 = 2147483647
+    i = 0
+    while i < n {
+        if seen[i] == 0 {
+            let mu: i32 = tune_predicted(n, i, tms, tns, tks, seen, costs)
+            let sigma: i32 = tune_min_l1(n, i, tms, tns, tks, seen)
+            let lcb: i32 = mu - 40 * sigma
+            if best < 0 or lcb < best_lcb or (lcb == best_lcb and i < best) {
+                best = i
+                best_lcb = lcb
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function tune_tournament(pop: ptr<i32>, pop_n: i32, fit: ptr<i32>, seed: ptr<i32>) -> i32 {
+    let a: i32 = tune_rng(seed, pop_n)
+    let b: i32 = tune_rng(seed, pop_n)
+    if fit[a] <= fit[b] {
+        return a
+    }
+    return b
+}
+
+# Tournament parents, per-dimension crossover, occasional mutation, then
+# snap to the nearest candidate still in the discrete space.
+export function tune_genetic_child(n: i32, tms: ptr<i32>, tns: ptr<i32>, tks: ptr<i32>, pop: ptr<i32>, pop_n: i32, fit: ptr<i32>, seed: ptr<i32>) -> i32 {
+    if n <= 0 {
+        return 0
+    }
+    if pop_n <= 0 {
+        return tune_rng(seed, n)
+    }
+    let s1: i32 = tune_tournament(pop, pop_n, fit, seed)
+    let s2: i32 = tune_tournament(pop, pop_n, fit, seed)
+    let i1: i32 = pop[s1]
+    let i2: i32 = pop[s2]
+    let mut tm: i32 = tms[i1]
+    let mut tn: i32 = tns[i1]
+    let mut tk: i32 = tks[i1]
+    if tune_rng(seed, 2) == 1 {
+        tm = tms[i2]
+    }
+    if tune_rng(seed, 2) == 1 {
+        tn = tns[i2]
+    }
+    if tune_rng(seed, 2) == 1 {
+        tk = tks[i2]
+    }
+    if tune_rng(seed, 2) == 1 {
+        let which: i32 = tune_rng(seed, 3)
+        let src: i32 = tune_rng(seed, n)
+        if which == 0 {
+            tm = tms[src]
+        } elif which == 1 {
+            tn = tns[src]
+        } else {
+            tk = tks[src]
+        }
+    }
+    return tune_nearest(n, tms, tns, tks, tm, tn, tk)
+}
