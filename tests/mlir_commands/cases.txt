@@ -74,6 +74,7 @@ pipe_o1_nolicm_nodce pipeline --opt-level O1 --no-licm --no-dce
 pipe_async pipeline --enable-loop-pipelining --enable-multi-buffering
 pipe_affine_tile pipeline --enable-affine-tiling --affine-tile-size 8
 pipe_gpu_async pipeline --enable-async-copy --async-copy-target gpu
+pipe_affine_interchange pipeline --enable-affine-interchange
 
 # --emit-spirv (fails at mlir-opt on the Python generator's GPU module too).
 spirv_gpu_kernels spirv lib/stdlib/gpu_kernels.flow --mlir-gpu --emit-spirv --spirv-out @WORK@/k.spv

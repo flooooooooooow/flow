@@ -46,6 +46,14 @@ import .noalias {
     flowc_noalias_local_restrict,
     flowc_noalias_ty_is_ptr
 }
+import .region {
+    flowc_region_disjoint,
+    flowc_region_restrict_candidate,
+    flowc_region_of_binding,
+    flowc_region_report_on,
+    Region,
+    RI_LOCAL, RI_PARAM, RI_UNKNOWN
+}
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
@@ -9084,11 +9092,23 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
             return 0
         }
     }
+    let disjoint: i32 = flowc_region_disjoint(arena, src, w[0].cur_fn, dst, srcb)
+    if disjoint == 1 {
+        flowc_cgen_puts(w, "  /* region: disjoint */\n")
+    } else {
+        flowc_cgen_puts(w, "  /* region: unproven */\n")
+    }
     flowc_cgen_puts(w, "  if ((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ") > (")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-    flowc_cgen_puts(w, ")) {\n    memmove((void*)(&(")
+    flowc_cgen_puts(w, ")) {\n    ")
+    if disjoint == 1 {
+        flowc_cgen_puts(w, "memcpy")
+    } else {
+        flowc_cgen_puts(w, "memmove")
+    }
+    flowc_cgen_puts(w, "((void*)(&(")
     flowc_cgen_emit_expr(w, arena, src, dst)
     flowc_cgen_puts(w, ")[")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -9328,6 +9348,35 @@ function flowc_cgen_line_directive(w: ptr<CgenBuf>, src: ptr<u8>, pos: i32) {
     flowc_cgen_puts(w, "\"\n")
 }
 
+# Opt-in remarks for the #694 region-inference slice. Backends that emit
+# restrict (#731) consume the same proofs; these comments name the region
+# so tests can check the analysis without depending on restrict spelling.
+function flowc_cgen_region_let_remark(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if flowc_region_report_on() == 0 {
+        return
+    }
+    if w[0].cur_fn == AST_NONE {
+        return
+    }
+    let r: Region = flowc_region_of_binding(arena, src, w[0].cur_fn, id)
+    flowc_cgen_puts(w, "  /* region[")
+    if r.kind == RI_LOCAL {
+        flowc_cgen_puts(w, "local")
+    } elif r.kind == RI_PARAM {
+        flowc_cgen_puts(w, "param")
+    } else {
+        flowc_cgen_puts(w, "unknown")
+    }
+    flowc_cgen_puts(w, "]: `")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, "` */\n")
+    if flowc_region_restrict_candidate(arena, src, w[0].cur_fn, id) == 1 {
+        flowc_cgen_puts(w, "  /* region[restrict-candidate]: `")
+        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_puts(w, "` */\n")
+    }
+}
+
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -9337,6 +9386,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     let kind: i32 = arena.nodes[id].kind
     if kind == AST_LET {
+        flowc_cgen_region_let_remark(w, arena, src, id)
         # Stage-A: emit annotated type (ptr/struct/primitives/array); default int32_t.
         # array<T,N> name → T name[N]; ptr lets wrap init in (T*)(expr).
         # No annotation → infer from the initialiser (see flowc_cgen_infer_type_node).

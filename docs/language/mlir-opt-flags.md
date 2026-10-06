@@ -99,14 +99,21 @@ It converts eligible affine loops to one-dimensional `affine.parallel` loops.
 The pass stays opt-in because dependence analysis determines which loops are
 safe to parallelize.
 
+Use `--enable-affine-interchange` to add the opt-in `affine-loop-interchange`
+pass. It reorders eligible nested affine loops when dependence analysis shows
+the permutation is safe. The default pipeline does not include the pass; it
+stays opt-in because interchange changes locality and is not always
+profitable. The transform is O2-gated, matching the other affine nest passes.
+
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
 tiling. Two through four positive sizes up to 4096 are accepted. The matching
 affine tiling passes are emitted in the listed order.
 
 ## Async copy capability gate
 
-Loop pipelining and multi-buffering remain opt-in. Multi-buffering defaults to
-two buffers. Set `--multi-buffering-factor N` for a multiplier from 2 through
+Loop pipelining and multi-buffering remain opt-in for ordinary pipelines.
+Async copy supplies both supporting passes when they are omitted. It uses two
+buffers by default. Set `--multi-buffering-factor N` for a multiplier from 2 through
 8. The GPU async-region pass
 also requires an explicit target capability:
 
@@ -116,7 +123,9 @@ also requires an explicit target capability:
 ```
 
 Accepted targets are `gpu`, `nvptx` and `amdgpu`. The target flag adds
-`gpu-async-region` to the function pipeline. A CPU pipeline does not acquire
+`gpu-async-region` to the function pipeline. Async copy also adds
+`test-multi-buffering{multiplier=2}` and `test-scf-pipelining` when callers do
+not request those passes. A CPU pipeline does not acquire
 an async-copy pass implicitly. The current gate marks GPU regions async. It
 does not synthesize `nvgpu.device_async_copy` operations or claim a hardware
 copy engine is available. Those lowerings need target-specific IR and a
@@ -164,6 +173,13 @@ and offset plan explicit for the target lowering that consumes it.
 Pass `--alignment=N` to choose a power-of-two arena alignment from 1 through
 4096 bytes. The selected value is applied to every planned buffer and recorded
 as `flow.static_arena_alignment`.
+
+Pass `--lifetimes=start:end,start:end,start:end` to supply three validated live
+ranges in planner buffer order. Each range is a pair of non-negative integers
+with `end >= start`. The planner reuses arena offsets for buffers whose ranges
+do not overlap and records the resulting interference graph. Omitting the flag
+keeps the default ranges `0:2,3:5,1:4`. A bare `--lifetimes` or a malformed
+list is rejected.
 
 The module also records `flow.static_buffer_lifetimes` as comma-separated
 `start:end` operation ranges and `flow.static_buffer_offsets` as comma-separated
