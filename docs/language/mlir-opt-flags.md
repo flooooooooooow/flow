@@ -196,8 +196,8 @@ buffer order.
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
-intrinsic. For vector operands it emits `vector.outerproduct`, preserving the
-tile shape for later AMX, SME, or GPU target selection.
+intrinsic. For vector operands it emits `vector.outerproduct` by default,
+preserving the tile shape for later AMX, SME, or GPU target selection.
 
 The default lane budget is 256 scalar lanes. Set
 `FLOWC_MLIR_REGISTER_TILE_MAX_LANES` to a smaller target budget when a tile
@@ -206,16 +206,21 @@ must fit a particular register file. The emitter records both
 outer-product operation for downstream register-pressure analysis.
 
 Set `FLOWC_MLIR_REGISTER_TILE_TARGET` to `amx`, `sme`, or `nvvm` to attach the
-hardware selection metadata used by a later target lowering. The emitter also
-records the target intrinsic family: `amx.tile_mulf`, `arm_sme.outerproduct`,
-or `nvvm.wgmma`. The default is `generic`, which keeps
-`vector.outerproduct`.
+hardware selection metadata. The emitter also records the target intrinsic
+family: `amx.tile_mulf`, `arm_sme.outerproduct`, or `nvvm.wgmma`. The default
+is `generic`, which keeps `vector.outerproduct`.
+
+Pass `--register-tile-intrinsics` (or `FLOWC_MLIR_REGISTER_TILE_INTRINSICS=1`)
+with a non-generic target to emit that hardware operation as a generic MLIR
+op instead of `vector.outerproduct`. The default stays `vector.outerproduct`
+so existing pipelines keep working.
 
 The same selection is available on the command line with
 `--register-tile-target=TARGET` and `--register-tile-max-lanes=N`.
 
 ```bash
-./flow mlir compiler/fixtures/mlir/register_tile_probe.flow --register-tiles
+./flow mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --register-tiles
+./flow mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --register-tiles --register-tile-intrinsics --register-tile-target=amx
 ```
 
 ## Generator-side vectorization
