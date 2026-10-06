@@ -74472,21 +74472,16 @@ int32_t flowc_cgen_try_emit_contiguous_copy(CgenBuf* w, AstArena arena, uint8_t*
 }
 }
   int32_t disjoint = flowc_region_disjoint(arena, src, (w[0]).cur_fn, dst, srcb);
-  if (disjoint == 1) {
-  flowc_cgen_puts(w, "  /* region: disjoint */\n");
-} else {
-  flowc_cgen_puts(w, "  /* region: unproven */\n");
+  if (disjoint != 1) {
+  return 0;
 }
+  flowc_cgen_puts(w, "  /* region: disjoint */\n");
   flowc_cgen_puts(w, "  if ((");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
   flowc_cgen_puts(w, ") > (");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_puts(w, ")) {\n    ");
-  if (disjoint == 1) {
   flowc_cgen_puts(w, "memcpy");
-} else {
-  flowc_cgen_puts(w, "memmove");
-}
   flowc_cgen_puts(w, "((void*)(&(");
   flowc_cgen_emit_expr(w, arena, src, dst);
   flowc_cgen_puts(w, ")[");
