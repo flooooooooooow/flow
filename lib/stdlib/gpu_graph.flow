@@ -1,0 +1,1017 @@
+# Typed render/compute graph (issue #812)
+#
+# Backend-independent IR for multi-pass GPU programs: storage buffers,
+# storage textures, ping-pong pairs, transient resources, dispatch
+# dimensions, workgroup memory/barriers, and hazard checks.
+#
+# This is the Resource IR sketched in docs/project/vgpu-parity.md P2.
+# FSL and @gpu can both lower into it; emitters map the same layout to
+# Metal and WGSL/WebGPU.
+#
+# Issue #811 owns sampled textures, samplers, vertex/index buffers,
+# typed render targets, and vertex/fragment stage declarations. This
+# module does not define those types. Bind them later by the same
+# integer resource id. Storage textures appear here because the graph
+# must name read/write access and format tags to check hazards.
+
+export const GPU_RES_STORAGE_BUFFER: i32 = 1
+export const GPU_RES_STORAGE_TEXTURE: i32 = 2
+
+export const GPU_ACCESS_READ: i32 = 1
+export const GPU_ACCESS_WRITE: i32 = 2
+export const GPU_ACCESS_READ_WRITE: i32 = 3
+
+export const GPU_LIFE_PERSISTENT: i32 = 1
+export const GPU_LIFE_TRANSIENT: i32 = 2
+
+# Storage-texture format tags used by the graph. Not the typed
+# gpu.texture<Format> surface from #811.
+export const GPU_GRAPH_FMT_NONE: i32 = 0
+export const GPU_GRAPH_FMT_R32FLOAT: i32 = 1
+export const GPU_GRAPH_FMT_RG32FLOAT: i32 = 2
+export const GPU_GRAPH_FMT_RGBA16FLOAT: i32 = 3
+export const GPU_GRAPH_FMT_RGBA8UNORM: i32 = 4
+
+export const GPU_DIM_BUFFER: i32 = 0
+export const GPU_DIM_1D: i32 = 1
+export const GPU_DIM_2D: i32 = 2
+export const GPU_DIM_3D: i32 = 3
+
+export const GPU_PASS_COMPUTE: i32 = 1
+export const GPU_PASS_RENDER: i32 = 2
+
+export const GPU_HAZARD_STRICT: i32 = 0
+export const GPU_HAZARD_ALLOW_FEEDBACK: i32 = 1
+
+export const GPU_GRAPH_OK: i32 = 0
+export const GPU_GRAPH_ERR_CONFLICTING_BINDING: i32 = 1
+export const GPU_GRAPH_ERR_SAME_PASS_RW: i32 = 2
+export const GPU_GRAPH_ERR_PINGPONG_ALIAS: i32 = 3
+export const GPU_GRAPH_ERR_BAD_ACCESS: i32 = 4
+export const GPU_GRAPH_ERR_WORKGROUP: i32 = 5
+export const GPU_GRAPH_ERR_FULL: i32 = 6
+export const GPU_GRAPH_ERR_UNKNOWN_RESOURCE: i32 = 7
+export const GPU_GRAPH_ERR_TRANSIENT: i32 = 8
+export const GPU_GRAPH_ERR_BARRIER: i32 = 9
+
+export const GPU_GRAPH_MAX_RESOURCES: i32 = 16
+export const GPU_GRAPH_MAX_PASSES: i32 = 16
+export const GPU_GRAPH_MAX_BINDINGS: i32 = 8
+export const GPU_GRAPH_MAX_PINGPONG: i32 = 8
+export const GPU_GRAPH_MAX_DEPS: i32 = 32
+export const GPU_GRAPH_MAX_WG_THREADS: i32 = 256
+export const GPU_GRAPH_MAX_WG_BYTES: i32 = 16384
+
+export struct GpuDim3 {
+    x: i32
+    y: i32
+    z: i32
+}
+
+export struct GpuGraphResource {
+    id: i32
+    kind: i32
+    name: string
+    usage: i32
+    lifetime: i32
+    format: i32
+    dim: i32
+    width: i32
+    height: i32
+    depth: i32
+    bytes: i32
+    physical: i32
+}
+
+export struct GpuBinding {
+    resource_id: i32
+    usage: i32
+    slot: i32
+    pingpong_id: i32
+    pingpong_role: i32
+}
+
+export struct GpuPass {
+    id: i32
+    kind: i32
+    name: string
+    workgroup: GpuDim3
+    dispatch: GpuDim3
+    workgroup_bytes: i32
+    barrier: i32
+    iterations: i32
+    binding_count: i32
+    bindings: array<GpuBinding, 8>
+    draw_count: i32
+    feedback: i32
+}
+
+export struct GpuPingPong {
+    id: i32
+    name: string
+    a: i32
+    b: i32
+    front: i32
+}
+
+export struct GpuDep {
+    from_pass: i32
+    to_pass: i32
+    resource_id: i32
+}
+
+export struct GpuGraph {
+    resource_count: i32
+    pass_count: i32
+    pingpong_count: i32
+    dep_count: i32
+    hazard_mode: i32
+    resources: array<GpuGraphResource, 16>
+    passes: array<GpuPass, 16>
+    pingpongs: array<GpuPingPong, 8>
+    deps: array<GpuDep, 32>
+}
+
+export struct GpuGraphError {
+    code: i32
+    pass_id: i32
+    resource_id: i32
+    message: string
+}
+
+export function gpu_dim3(x: i32, y: i32, z: i32) -> GpuDim3 {
+    return GpuDim3 { x: x, y: y, z: z }
+}
+
+export function gpu_dim3_1(x: i32) -> GpuDim3 {
+    return GpuDim3 { x: x, y: 1, z: 1 }
+}
+
+function empty_binding() -> GpuBinding {
+    return GpuBinding {
+        resource_id: 0 - 1,
+        usage: 0,
+        slot: 0 - 1,
+        pingpong_id: 0 - 1,
+        pingpong_role: 0
+    }
+}
+
+function empty_resource() -> GpuGraphResource {
+    return GpuGraphResource {
+        id: 0 - 1,
+        kind: 0,
+        name: "",
+        usage: 0,
+        lifetime: 0,
+        format: 0,
+        dim: 0,
+        width: 0,
+        height: 0,
+        depth: 0,
+        bytes: 0,
+        physical: 0 - 1
+    }
+}
+
+function empty_pass() -> GpuPass {
+    let z: GpuBinding = empty_binding()
+    let binds: array<GpuBinding, 8> = [z; 8]
+    return GpuPass {
+        id: 0 - 1,
+        kind: 0,
+        name: "",
+        workgroup: gpu_dim3(1, 1, 1),
+        dispatch: gpu_dim3(1, 1, 1),
+        workgroup_bytes: 0,
+        barrier: 0,
+        iterations: 1,
+        binding_count: 0,
+        bindings: binds,
+        draw_count: 0,
+        feedback: 0
+    }
+}
+
+function empty_pingpong() -> GpuPingPong {
+    return GpuPingPong {
+        id: 0 - 1,
+        name: "",
+        a: 0 - 1,
+        b: 0 - 1,
+        front: 0
+    }
+}
+
+function empty_dep() -> GpuDep {
+    return GpuDep {
+        from_pass: 0 - 1,
+        to_pass: 0 - 1,
+        resource_id: 0 - 1
+    }
+}
+
+export function gpu_graph_ok() -> GpuGraphError {
+    return GpuGraphError {
+        code: GPU_GRAPH_OK,
+        pass_id: 0 - 1,
+        resource_id: 0 - 1,
+        message: "ok"
+    }
+}
+
+export function gpu_graph_error_name(code: i32) -> string {
+    if code == GPU_GRAPH_OK {
+        return "ok"
+    }
+    if code == GPU_GRAPH_ERR_CONFLICTING_BINDING {
+        return "conflicting_binding"
+    }
+    if code == GPU_GRAPH_ERR_SAME_PASS_RW {
+        return "same_pass_rw"
+    }
+    if code == GPU_GRAPH_ERR_PINGPONG_ALIAS {
+        return "pingpong_alias"
+    }
+    if code == GPU_GRAPH_ERR_BAD_ACCESS {
+        return "bad_access"
+    }
+    if code == GPU_GRAPH_ERR_WORKGROUP {
+        return "workgroup"
+    }
+    if code == GPU_GRAPH_ERR_FULL {
+        return "full"
+    }
+    if code == GPU_GRAPH_ERR_UNKNOWN_RESOURCE {
+        return "unknown_resource"
+    }
+    if code == GPU_GRAPH_ERR_TRANSIENT {
+        return "transient"
+    }
+    if code == GPU_GRAPH_ERR_BARRIER {
+        return "barrier"
+    }
+    return "unknown"
+}
+
+function graph_err(code: i32, pass_id: i32, resource_id: i32, message: string) -> GpuGraphError {
+    return GpuGraphError {
+        code: code,
+        pass_id: pass_id,
+        resource_id: resource_id,
+        message: message
+    }
+}
+
+export function gpu_graph_new() -> GpuGraph {
+    let r: GpuGraphResource = empty_resource()
+    let p: GpuPass = empty_pass()
+    let pp: GpuPingPong = empty_pingpong()
+    let d: GpuDep = empty_dep()
+    return GpuGraph {
+        resource_count: 0,
+        pass_count: 0,
+        pingpong_count: 0,
+        dep_count: 0,
+        hazard_mode: GPU_HAZARD_STRICT,
+        resources: [r; 16],
+        passes: [p; 16],
+        pingpongs: [pp; 8],
+        deps: [d; 32]
+    }
+}
+
+export function gpu_access_has_read(usage: i32) -> bool {
+    return usage == GPU_ACCESS_READ or usage == GPU_ACCESS_READ_WRITE
+}
+
+export function gpu_access_has_write(usage: i32) -> bool {
+    return usage == GPU_ACCESS_WRITE or usage == GPU_ACCESS_READ_WRITE
+}
+
+export function gpu_graph_physical(g: GpuGraph, resource_id: i32) -> i32 {
+    if resource_id < 0 or resource_id >= g.resource_count {
+        return 0 - 1
+    }
+    return g.resources[resource_id].physical
+}
+
+export function gpu_graph_pingpong_read_id(g: GpuGraph, pp_id: i32) -> i32 {
+    if pp_id < 0 or pp_id >= g.pingpong_count {
+        return 0 - 1
+    }
+    if g.pingpongs[pp_id].front == 0 {
+        return g.pingpongs[pp_id].a
+    }
+    return g.pingpongs[pp_id].b
+}
+
+export function gpu_graph_pingpong_write_id(g: GpuGraph, pp_id: i32) -> i32 {
+    if pp_id < 0 or pp_id >= g.pingpong_count {
+        return 0 - 1
+    }
+    if g.pingpongs[pp_id].front == 0 {
+        return g.pingpongs[pp_id].b
+    }
+    return g.pingpongs[pp_id].a
+}
+
+export function gpu_graph_add_storage_buffer(g: ptr<GpuGraph>, name: string, usage: i32, lifetime: i32, bytes: i32) -> i32 {
+    if g.resource_count >= GPU_GRAPH_MAX_RESOURCES {
+        return 0 - 1
+    }
+    let id: i32 = g.resource_count
+    g.resources[id] = GpuGraphResource {
+        id: id,
+        kind: GPU_RES_STORAGE_BUFFER,
+        name: name,
+        usage: usage,
+        lifetime: lifetime,
+        format: GPU_GRAPH_FMT_NONE,
+        dim: GPU_DIM_BUFFER,
+        width: 0,
+        height: 0,
+        depth: 0,
+        bytes: bytes,
+        physical: id
+    }
+    g.resource_count = id + 1
+    return id
+}
+
+export function gpu_graph_add_storage_texture(g: ptr<GpuGraph>, name: string, usage: i32, lifetime: i32, format: i32, dim: i32, width: i32, height: i32, depth: i32) -> i32 {
+    if g.resource_count >= GPU_GRAPH_MAX_RESOURCES {
+        return 0 - 1
+    }
+    let id: i32 = g.resource_count
+    g.resources[id] = GpuGraphResource {
+        id: id,
+        kind: GPU_RES_STORAGE_TEXTURE,
+        name: name,
+        usage: usage,
+        lifetime: lifetime,
+        format: format,
+        dim: dim,
+        width: width,
+        height: height,
+        depth: depth,
+        bytes: 0,
+        physical: id
+    }
+    g.resource_count = id + 1
+    return id
+}
+
+export function gpu_graph_add_pingpong(g: ptr<GpuGraph>, name: string, a: i32, b: i32) -> i32 {
+    if g.pingpong_count >= GPU_GRAPH_MAX_PINGPONG {
+        return 0 - 1
+    }
+    if a < 0 or b < 0 or a >= g.resource_count or b >= g.resource_count {
+        return 0 - 1
+    }
+    if a == b or g.resources[a].physical == g.resources[b].physical {
+        return 0 - 1
+    }
+    let id: i32 = g.pingpong_count
+    g.pingpongs[id] = GpuPingPong {
+        id: id,
+        name: name,
+        a: a,
+        b: b,
+        front: 0
+    }
+    g.pingpong_count = id + 1
+    return id
+}
+
+export function gpu_graph_pingpong_swap(g: ptr<GpuGraph>, pp_id: i32) -> i32 {
+    if pp_id < 0 or pp_id >= g.pingpong_count {
+        return 0 - 1
+    }
+    if g.pingpongs[pp_id].front == 0 {
+        g.pingpongs[pp_id].front = 1
+    } else {
+        g.pingpongs[pp_id].front = 0
+    }
+    return g.pingpongs[pp_id].front
+}
+
+export function gpu_graph_add_compute(g: ptr<GpuGraph>, name: string, workgroup: GpuDim3, dispatch: GpuDim3, workgroup_bytes: i32, barrier: i32) -> i32 {
+    if g.pass_count >= GPU_GRAPH_MAX_PASSES {
+        return 0 - 1
+    }
+    let id: i32 = g.pass_count
+    let z: GpuBinding = empty_binding()
+    g.passes[id] = GpuPass {
+        id: id,
+        kind: GPU_PASS_COMPUTE,
+        name: name,
+        workgroup: workgroup,
+        dispatch: dispatch,
+        workgroup_bytes: workgroup_bytes,
+        barrier: barrier,
+        iterations: 1,
+        binding_count: 0,
+        bindings: [z; 8],
+        draw_count: 0,
+        feedback: 0
+    }
+    g.pass_count = id + 1
+    return id
+}
+
+export function gpu_graph_add_render(g: ptr<GpuGraph>, name: string, draw_count: i32) -> i32 {
+    if g.pass_count >= GPU_GRAPH_MAX_PASSES {
+        return 0 - 1
+    }
+    let id: i32 = g.pass_count
+    let z: GpuBinding = empty_binding()
+    g.passes[id] = GpuPass {
+        id: id,
+        kind: GPU_PASS_RENDER,
+        name: name,
+        workgroup: gpu_dim3(1, 1, 1),
+        dispatch: gpu_dim3(1, 1, 1),
+        workgroup_bytes: 0,
+        barrier: 0,
+        iterations: 1,
+        binding_count: 0,
+        bindings: [z; 8],
+        draw_count: draw_count,
+        feedback: 0
+    }
+    g.pass_count = id + 1
+    return id
+}
+
+export function gpu_graph_set_iterations(g: ptr<GpuGraph>, pass_id: i32, iterations: i32) -> i32 {
+    if pass_id < 0 or pass_id >= g.pass_count {
+        return 0 - 1
+    }
+    if iterations < 1 {
+        return 0 - 1
+    }
+    g.passes[pass_id].iterations = iterations
+    return 0
+}
+
+export function gpu_graph_set_feedback(g: ptr<GpuGraph>, pass_id: i32) -> i32 {
+    if pass_id < 0 or pass_id >= g.pass_count {
+        return 0 - 1
+    }
+    g.passes[pass_id].feedback = 1
+    return 0
+}
+
+export function gpu_graph_set_hazard_mode(g: ptr<GpuGraph>, mode: i32) -> void {
+    g.hazard_mode = mode
+}
+
+export function gpu_graph_bind(g: ptr<GpuGraph>, pass_id: i32, resource_id: i32, usage: i32, slot: i32) -> i32 {
+    if pass_id < 0 or pass_id >= g.pass_count {
+        return 0 - 1
+    }
+    if resource_id < 0 or resource_id >= g.resource_count {
+        return 0 - 1
+    }
+    let n: i32 = g.passes[pass_id].binding_count
+    if n >= GPU_GRAPH_MAX_BINDINGS {
+        return 0 - 1
+    }
+    g.passes[pass_id].bindings[n] = GpuBinding {
+        resource_id: resource_id,
+        usage: usage,
+        slot: slot,
+        pingpong_id: 0 - 1,
+        pingpong_role: 0
+    }
+    g.passes[pass_id].binding_count = n + 1
+    return n
+}
+
+export function gpu_graph_bind_pingpong(g: ptr<GpuGraph>, pass_id: i32, pp_id: i32, read_slot: i32, write_slot: i32) -> i32 {
+    if pp_id < 0 or pp_id >= g.pingpong_count {
+        return 0 - 1
+    }
+    let rid: i32 = gpu_graph_pingpong_read_id(g[0], pp_id)
+    let wid: i32 = gpu_graph_pingpong_write_id(g[0], pp_id)
+    let a: i32 = gpu_graph_bind(g, pass_id, rid, GPU_ACCESS_READ, read_slot)
+    if a < 0 {
+        return 0 - 1
+    }
+    g.passes[pass_id].bindings[a].pingpong_id = pp_id
+    g.passes[pass_id].bindings[a].pingpong_role = 0
+    let b: i32 = gpu_graph_bind(g, pass_id, wid, GPU_ACCESS_WRITE, write_slot)
+    if b < 0 {
+        return 0 - 1
+    }
+    g.passes[pass_id].bindings[b].pingpong_id = pp_id
+    g.passes[pass_id].bindings[b].pingpong_role = 1
+    return 0
+}
+
+function binding_physical(g: GpuGraph, b: GpuBinding) -> i32 {
+    return gpu_graph_physical(g, b.resource_id)
+}
+
+function pass_writes_physical(g: GpuGraph, pass_id: i32, physical: i32) -> bool {
+    let n: i32 = g.passes[pass_id].binding_count
+    let mut i: i32 = 0
+    while i < n {
+        let b: GpuBinding = g.passes[pass_id].bindings[i]
+        if gpu_access_has_write(b.usage) and binding_physical(g, b) == physical {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function pass_reads_physical(g: GpuGraph, pass_id: i32, physical: i32) -> bool {
+    let n: i32 = g.passes[pass_id].binding_count
+    let mut i: i32 = 0
+    while i < n {
+        let b: GpuBinding = g.passes[pass_id].bindings[i]
+        if gpu_access_has_read(b.usage) and binding_physical(g, b) == physical {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function usage_allowed(declared: i32, used: i32) -> bool {
+    if gpu_access_has_read(used) and !gpu_access_has_read(declared) {
+        return false
+    }
+    if gpu_access_has_write(used) and !gpu_access_has_write(declared) {
+        return false
+    }
+    return true
+}
+
+function workgroup_threads(wg: GpuDim3) -> i32 {
+    return wg.x * wg.y * wg.z
+}
+
+function validate_pass(g: GpuGraph, pass_id: i32) -> GpuGraphError {
+    let p: GpuPass = g.passes[pass_id]
+    if p.kind == GPU_PASS_COMPUTE {
+        if p.workgroup.x < 1 or p.workgroup.y < 1 or p.workgroup.z < 1 {
+            return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "workgroup axis < 1")
+        }
+        if workgroup_threads(p.workgroup) > GPU_GRAPH_MAX_WG_THREADS {
+            return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "workgroup exceeds backend limit")
+        }
+        if p.workgroup_bytes < 0 or p.workgroup_bytes > GPU_GRAPH_MAX_WG_BYTES {
+            return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "workgroup memory exceeds backend limit")
+        }
+        if p.workgroup_bytes > 0 and p.barrier == 0 {
+            return graph_err(GPU_GRAPH_ERR_BARRIER, pass_id, 0 - 1, "workgroup memory requires a barrier")
+        }
+        if p.dispatch.x < 1 or p.dispatch.y < 1 or p.dispatch.z < 1 {
+            return graph_err(GPU_GRAPH_ERR_WORKGROUP, pass_id, 0 - 1, "dispatch axis < 1")
+        }
+    }
+
+    let n: i32 = p.binding_count
+    let mut i: i32 = 0
+    while i < n {
+        let b: GpuBinding = p.bindings[i]
+        if b.resource_id < 0 or b.resource_id >= g.resource_count {
+            return graph_err(GPU_GRAPH_ERR_UNKNOWN_RESOURCE, pass_id, b.resource_id, "unknown resource")
+        }
+        let res: GpuGraphResource = g.resources[b.resource_id]
+        if !usage_allowed(res.usage, b.usage) {
+            return graph_err(GPU_GRAPH_ERR_BAD_ACCESS, pass_id, b.resource_id, "binding access exceeds resource")
+        }
+        let mut j: i32 = i + 1
+        while j < n {
+            let o: GpuBinding = p.bindings[j]
+            if b.slot == o.slot {
+                return graph_err(GPU_GRAPH_ERR_CONFLICTING_BINDING, pass_id, b.resource_id, "conflicting binding slot")
+            }
+            let pb: i32 = binding_physical(g, b)
+            let po: i32 = binding_physical(g, o)
+            if pb == po and pb >= 0 {
+                let conflict: bool = gpu_access_has_write(b.usage) or gpu_access_has_write(o.usage)
+                if conflict {
+                    let allowed: bool = p.feedback == 1 or g.hazard_mode == GPU_HAZARD_ALLOW_FEEDBACK
+                    if !allowed {
+                        return graph_err(GPU_GRAPH_ERR_SAME_PASS_RW, pass_id, pb, "same-pass read/write hazard")
+                    }
+                }
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return gpu_graph_ok()
+}
+
+function validate_transients(g: GpuGraph) -> GpuGraphError {
+    let mut r: i32 = 0
+    while r < g.resource_count {
+        let res: GpuGraphResource = g.resources[r]
+        if res.lifetime == GPU_LIFE_TRANSIENT {
+            let phys: i32 = res.physical
+            let mut written: bool = false
+            let mut p: i32 = 0
+            while p < g.pass_count {
+                if pass_reads_physical(g, p, phys) and !written {
+                    return graph_err(GPU_GRAPH_ERR_TRANSIENT, p, r, "transient read before write")
+                }
+                if pass_writes_physical(g, p, phys) {
+                    written = true
+                }
+                p = p + 1
+            }
+        }
+        r = r + 1
+    }
+    return gpu_graph_ok()
+}
+
+export function gpu_graph_derive_deps(g: ptr<GpuGraph>) -> void {
+    g.dep_count = 0
+    let mut i: i32 = 0
+    while i < g.pass_count {
+        let mut j: i32 = i + 1
+        while j < g.pass_count {
+            let mut r: i32 = 0
+            while r < g.resource_count {
+                let phys: i32 = g.resources[r].physical
+                let a_w: bool = pass_writes_physical(g[0], i, phys)
+                let a_r: bool = pass_reads_physical(g[0], i, phys)
+                let b_w: bool = pass_writes_physical(g[0], j, phys)
+                let b_r: bool = pass_reads_physical(g[0], j, phys)
+                let write_edge: bool = a_w and (b_r or b_w)
+                let war_edge: bool = a_r and b_w
+                let edge: bool = write_edge or war_edge
+                if edge {
+                    let mut exists: bool = false
+                    let mut d: i32 = 0
+                    while d < g.dep_count {
+                        if g.deps[d].from_pass == i and g.deps[d].to_pass == j and g.deps[d].resource_id == r {
+                            exists = true
+                        }
+                        d = d + 1
+                    }
+                    if !exists and g.dep_count < GPU_GRAPH_MAX_DEPS {
+                        let k: i32 = g.dep_count
+                        g.deps[k].from_pass = i
+                        g.deps[k].to_pass = j
+                        g.deps[k].resource_id = r
+                        g.dep_count = k + 1
+                    }
+                }
+                r = r + 1
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+export function gpu_graph_has_dep(g: GpuGraph, from_pass: i32, to_pass: i32) -> bool {
+    let mut i: i32 = 0
+    while i < g.dep_count {
+        if g.deps[i].from_pass == from_pass and g.deps[i].to_pass == to_pass {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function validate_pingpongs(g: GpuGraph) -> GpuGraphError {
+    let mut i: i32 = 0
+    while i < g.pingpong_count {
+        let pp: GpuPingPong = g.pingpongs[i]
+        if pp.a < 0 or pp.b < 0 or pp.a >= g.resource_count or pp.b >= g.resource_count {
+            return graph_err(GPU_GRAPH_ERR_UNKNOWN_RESOURCE, 0 - 1, pp.a, "pingpong resource missing")
+        }
+        if pp.a == pp.b or g.resources[pp.a].physical == g.resources[pp.b].physical {
+            return graph_err(GPU_GRAPH_ERR_PINGPONG_ALIAS, 0 - 1, pp.a, "pingpong aliases one physical resource")
+        }
+        i = i + 1
+    }
+    return gpu_graph_ok()
+}
+
+export function gpu_graph_validate(g: ptr<GpuGraph>) -> GpuGraphError {
+    let pp_err: GpuGraphError = validate_pingpongs(g[0])
+    if pp_err.code != GPU_GRAPH_OK {
+        return pp_err
+    }
+    let mut i: i32 = 0
+    while i < g.pass_count {
+        let e: GpuGraphError = validate_pass(g[0], i)
+        if e.code != GPU_GRAPH_OK {
+            return e
+        }
+        i = i + 1
+    }
+    let t: GpuGraphError = validate_transients(g[0])
+    if t.code != GPU_GRAPH_OK {
+        return t
+    }
+    gpu_graph_derive_deps(g)
+    return gpu_graph_ok()
+}
+
+export function gpu_graph_access_name(usage: i32) -> string {
+    if usage == GPU_ACCESS_READ {
+        return "read"
+    }
+    if usage == GPU_ACCESS_WRITE {
+        return "write"
+    }
+    if usage == GPU_ACCESS_READ_WRITE {
+        return "read_write"
+    }
+    return "unknown"
+}
+
+export function gpu_graph_format_wgsl(format: i32) -> string {
+    if format == GPU_GRAPH_FMT_R32FLOAT {
+        return "r32float"
+    }
+    if format == GPU_GRAPH_FMT_RG32FLOAT {
+        return "rg32float"
+    }
+    if format == GPU_GRAPH_FMT_RGBA16FLOAT {
+        return "rgba16float"
+    }
+    if format == GPU_GRAPH_FMT_RGBA8UNORM {
+        return "rgba8unorm"
+    }
+    return "r32float"
+}
+
+export function gpu_graph_dim_wgsl(dim: i32) -> string {
+    if dim == GPU_DIM_1D {
+        return "texture_storage_1d"
+    }
+    if dim == GPU_DIM_3D {
+        return "texture_storage_3d"
+    }
+    return "texture_storage_2d"
+}
+
+export function gpu_graph_dim_metal(dim: i32) -> string {
+    if dim == GPU_DIM_1D {
+        return "texture1d"
+    }
+    if dim == GPU_DIM_3D {
+        return "texture3d"
+    }
+    return "texture2d"
+}
+
+export function gpu_graph_metal_access(usage: i32) -> string {
+    if usage == GPU_ACCESS_READ {
+        return "access::read"
+    }
+    if usage == GPU_ACCESS_WRITE {
+        return "access::write"
+    }
+    return "access::read_write"
+}
+
+export function gpu_graph_wgsl_binding_at(res: GpuGraphResource, slot: i32, usage: i32) -> string {
+    let acc: string = gpu_graph_access_name(usage)
+    let slot_s: string = gpu_graph_i32_token(slot)
+    if res.kind == GPU_RES_STORAGE_BUFFER {
+        return "@group(0) @binding(" + slot_s + ") var<storage, " + acc + "> " + res.name + ": array<f32>;"
+    }
+    let ty: string = gpu_graph_dim_wgsl(res.dim)
+    let fmt: string = gpu_graph_format_wgsl(res.format)
+    return "@group(0) @binding(" + slot_s + ") var " + res.name + ": " + ty + "<" + fmt + ", " + acc + ">;"
+}
+
+export function gpu_graph_metal_binding_at(res: GpuGraphResource, slot: i32, usage: i32) -> string {
+    let acc: string = gpu_graph_metal_access(usage)
+    let slot_s: string = gpu_graph_i32_token(slot)
+    if res.kind == GPU_RES_STORAGE_BUFFER {
+        return "device float* " + res.name + " [[buffer(" + slot_s + ")]]"
+    }
+    let ty: string = gpu_graph_dim_metal(res.dim)
+    return ty + "<float, " + acc + "> " + res.name + " [[texture(" + slot_s + ")]]"
+}
+
+function gpu_graph_i32_token(n: i32) -> string {
+    if n == 0 { return "0" }
+    if n == 1 { return "1" }
+    if n == 2 { return "2" }
+    if n == 3 { return "3" }
+    if n == 4 { return "4" }
+    if n == 5 { return "5" }
+    if n == 6 { return "6" }
+    if n == 7 { return "7" }
+    if n == 8 { return "8" }
+    if n == 9 { return "9" }
+    if n == 16 { return "16" }
+    if n == 32 { return "32" }
+    if n == 64 { return "64" }
+    if n == 128 { return "128" }
+    if n == 256 { return "256" }
+    return "n"
+}
+
+export function gpu_graph_wgsl_workgroup(wg: GpuDim3) -> string {
+    return "@workgroup_size(" + gpu_graph_i32_token(wg.x) + ", " + gpu_graph_i32_token(wg.y) + ", " + gpu_graph_i32_token(wg.z) + ")"
+}
+
+export function gpu_graph_emit_wgsl_pass(g: GpuGraph, pass_id: i32) -> string {
+    if pass_id < 0 or pass_id >= g.pass_count {
+        return ""
+    }
+    let p: GpuPass = g.passes[pass_id]
+    let mut out: string = "// pass " + p.name + "\n"
+    let mut i: i32 = 0
+    while i < p.binding_count {
+        let b: GpuBinding = p.bindings[i]
+        let res: GpuGraphResource = g.resources[b.resource_id]
+        out = out + gpu_graph_wgsl_binding_at(res, b.slot, b.usage) + "\n"
+        i = i + 1
+    }
+    if p.kind == GPU_PASS_COMPUTE {
+        out = out + gpu_graph_wgsl_workgroup(p.workgroup) + "\n"
+        out = out + "@compute fn " + p.name + "() {}\n"
+    } else {
+        out = out + "@fragment fn " + p.name + "() -> @location(0) vec4<f32> { return vec4<f32>(0.0); }\n"
+    }
+    return out
+}
+
+export function gpu_graph_emit_metal_pass(g: GpuGraph, pass_id: i32) -> string {
+    if pass_id < 0 or pass_id >= g.pass_count {
+        return ""
+    }
+    let p: GpuPass = g.passes[pass_id]
+    let mut out: string = "// pass " + p.name + "\n"
+    if p.kind == GPU_PASS_COMPUTE {
+        out = out + "kernel void " + p.name + "(\n"
+    } else {
+        out = out + "fragment float4 " + p.name + "(\n"
+    }
+    let mut i: i32 = 0
+    while i < p.binding_count {
+        let b: GpuBinding = p.bindings[i]
+        let res: GpuGraphResource = g.resources[b.resource_id]
+        let bind_txt: string = gpu_graph_metal_binding_at(res, b.slot, b.usage)
+        if i + 1 < p.binding_count {
+            out = out + "    " + bind_txt + ",\n"
+        } else {
+            out = out + "    " + bind_txt + "\n"
+        }
+        i = i + 1
+    }
+    if p.kind == GPU_PASS_COMPUTE {
+        out = out + ")\n{\n}\n"
+    } else {
+        out = out + ")\n{\n    return float4(0.0);\n}\n"
+    }
+    return out
+}
+
+# Same Flow graph lowers to both backends; used by the vgpu fluid and
+# FFT-ocean families so Metal and WebGPU share one resource/pass layout.
+export function gpu_graph_same_source_both_backends(g: GpuGraph) -> bool {
+    if g.pass_count < 1 {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < g.pass_count {
+        let w: string = gpu_graph_emit_wgsl_pass(g, i)
+        let m: string = gpu_graph_emit_metal_pass(g, i)
+        if w == "" or m == "" {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function fluid_size() -> i32 {
+    return 64
+}
+
+# vgpu interactive-fluid family: advect, curl, vorticity, divergence,
+# pressure (Jacobi ping-pong), project, advect-dye, display.
+export function gpu_graph_vgpu_fluid() -> GpuGraph {
+    let mut g: GpuGraph = gpu_graph_new()
+    let gp: ptr<GpuGraph> = &g
+    let n: i32 = fluid_size()
+    let vel_a: i32 = gpu_graph_add_storage_texture(gp, "vel_a", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, n, n, 1)
+    let vel_b: i32 = gpu_graph_add_storage_texture(gp, "vel_b", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, n, n, 1)
+    let dye_a: i32 = gpu_graph_add_storage_texture(gp, "dye_a", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, n, n, 1)
+    let dye_b: i32 = gpu_graph_add_storage_texture(gp, "dye_b", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, n, n, 1)
+    let pr_a: i32 = gpu_graph_add_storage_texture(gp, "pressure_a", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, n, n, 1)
+    let pr_b: i32 = gpu_graph_add_storage_texture(gp, "pressure_b", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, n, n, 1)
+    let curl: i32 = gpu_graph_add_storage_texture(gp, "curl", GPU_ACCESS_READ_WRITE, GPU_LIFE_TRANSIENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, n, n, 1)
+    let div: i32 = gpu_graph_add_storage_texture(gp, "divergence", GPU_ACCESS_READ_WRITE, GPU_LIFE_TRANSIENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, n, n, 1)
+    let vel_pp: i32 = gpu_graph_add_pingpong(gp, "velocity", vel_a, vel_b)
+    let dye_pp: i32 = gpu_graph_add_pingpong(gp, "dye", dye_a, dye_b)
+    let pr_pp: i32 = gpu_graph_add_pingpong(gp, "pressure", pr_a, pr_b)
+
+    let wg: GpuDim3 = gpu_dim3(8, 8, 1)
+    let grid: GpuDim3 = gpu_dim3(n, n, 1)
+
+    let advect: i32 = gpu_graph_add_compute(gp, "advect_velocity", wg, grid, 0, 0)
+    let _b0: i32 = gpu_graph_bind_pingpong(gp, advect, vel_pp, 0, 1)
+    let _s0: i32 = gpu_graph_pingpong_swap(gp, vel_pp)
+
+    let curl_p: i32 = gpu_graph_add_compute(gp, "curl", wg, grid, 0, 0)
+    let _b1: i32 = gpu_graph_bind(gp, curl_p, gpu_graph_pingpong_read_id(g, vel_pp), GPU_ACCESS_READ, 0)
+    let _b2: i32 = gpu_graph_bind(gp, curl_p, curl, GPU_ACCESS_WRITE, 1)
+
+    let vort: i32 = gpu_graph_add_compute(gp, "vorticity", wg, grid, 0, 0)
+    let _b3: i32 = gpu_graph_bind_pingpong(gp, vort, vel_pp, 0, 1)
+    let _b4: i32 = gpu_graph_bind(gp, vort, curl, GPU_ACCESS_READ, 2)
+    let _s1: i32 = gpu_graph_pingpong_swap(gp, vel_pp)
+
+    let div_p: i32 = gpu_graph_add_compute(gp, "divergence", wg, grid, 0, 0)
+    let _b5: i32 = gpu_graph_bind(gp, div_p, gpu_graph_pingpong_read_id(g, vel_pp), GPU_ACCESS_READ, 0)
+    let _b6: i32 = gpu_graph_bind(gp, div_p, div, GPU_ACCESS_WRITE, 1)
+
+    let pressure: i32 = gpu_graph_add_compute(gp, "pressure", wg, grid, 0, 0)
+    let _b7: i32 = gpu_graph_bind_pingpong(gp, pressure, pr_pp, 0, 1)
+    let _b8: i32 = gpu_graph_bind(gp, pressure, div, GPU_ACCESS_READ, 2)
+    let _it: i32 = gpu_graph_set_iterations(gp, pressure, 20)
+    let _s2: i32 = gpu_graph_pingpong_swap(gp, pr_pp)
+
+    let project: i32 = gpu_graph_add_compute(gp, "project", wg, grid, 0, 0)
+    let _b9: i32 = gpu_graph_bind_pingpong(gp, project, vel_pp, 0, 1)
+    let _b10: i32 = gpu_graph_bind(gp, project, gpu_graph_pingpong_read_id(g, pr_pp), GPU_ACCESS_READ, 2)
+    let _s3: i32 = gpu_graph_pingpong_swap(gp, vel_pp)
+
+    let dye_p: i32 = gpu_graph_add_compute(gp, "advect_dye", wg, grid, 0, 0)
+    let _b11: i32 = gpu_graph_bind_pingpong(gp, dye_p, dye_pp, 0, 1)
+    let _b12: i32 = gpu_graph_bind(gp, dye_p, gpu_graph_pingpong_read_id(g, vel_pp), GPU_ACCESS_READ, 2)
+    let _s4: i32 = gpu_graph_pingpong_swap(gp, dye_pp)
+
+    let disp: i32 = gpu_graph_add_render(gp, "display", 1)
+    let _b13: i32 = gpu_graph_bind(gp, disp, gpu_graph_pingpong_read_id(g, vel_pp), GPU_ACCESS_READ, 0)
+    let _b14: i32 = gpu_graph_bind(gp, disp, gpu_graph_pingpong_read_id(g, dye_pp), GPU_ACCESS_READ, 1)
+
+    return g
+}
+
+# vgpu FFT-ocean family: Phillips spectrum, Stockham IFFT with workgroup
+# memory/barriers, displacement, normals/foam, present.
+export function gpu_graph_vgpu_fft_ocean() -> GpuGraph {
+    let mut g: GpuGraph = gpu_graph_new()
+    let gp: ptr<GpuGraph> = &g
+    let n: i32 = 64
+    let spec_a: i32 = gpu_graph_add_storage_buffer(gp, "spectrum_a", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, n * n * 8)
+    let spec_b: i32 = gpu_graph_add_storage_buffer(gp, "spectrum_b", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, n * n * 8)
+    let disp: i32 = gpu_graph_add_storage_texture(gp, "displacement", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, n, n, 1)
+    let normals: i32 = gpu_graph_add_storage_texture(gp, "normals", GPU_ACCESS_READ_WRITE, GPU_LIFE_TRANSIENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, n, n, 1)
+    let foam: i32 = gpu_graph_add_storage_texture(gp, "foam", GPU_ACCESS_READ_WRITE, GPU_LIFE_TRANSIENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, n, n, 1)
+    let spec_pp: i32 = gpu_graph_add_pingpong(gp, "spectrum", spec_a, spec_b)
+
+    let wg_spec: GpuDim3 = gpu_dim3(8, 8, 1)
+    let grid: GpuDim3 = gpu_dim3(n, n, 1)
+    let wg_ifft: GpuDim3 = gpu_dim3(256, 1, 1)
+    let grid_ifft: GpuDim3 = gpu_dim3(n, 1, 1)
+
+    let init_p: i32 = gpu_graph_add_compute(gp, "initial_spectrum", wg_spec, grid, 0, 0)
+    let _b0: i32 = gpu_graph_bind(gp, init_p, spec_a, GPU_ACCESS_WRITE, 0)
+
+    let evo: i32 = gpu_graph_add_compute(gp, "spectrum", wg_spec, grid, 0, 0)
+    let _b1: i32 = gpu_graph_bind(gp, evo, spec_a, GPU_ACCESS_READ, 0)
+    let _b2: i32 = gpu_graph_bind(gp, evo, spec_b, GPU_ACCESS_WRITE, 1)
+    let _s0: i32 = gpu_graph_pingpong_swap(gp, spec_pp)
+
+    let ifft: i32 = gpu_graph_add_compute(gp, "ifft_stage", wg_ifft, grid_ifft, 4096, 1)
+    let _b3: i32 = gpu_graph_bind_pingpong(gp, ifft, spec_pp, 0, 1)
+    let _it: i32 = gpu_graph_set_iterations(gp, ifft, 6)
+    let _s1: i32 = gpu_graph_pingpong_swap(gp, spec_pp)
+
+    let fin: i32 = gpu_graph_add_compute(gp, "ifft_finalize", wg_spec, grid, 0, 0)
+    let _b4: i32 = gpu_graph_bind(gp, fin, gpu_graph_pingpong_read_id(g, spec_pp), GPU_ACCESS_READ, 0)
+    let _b5: i32 = gpu_graph_bind(gp, fin, disp, GPU_ACCESS_WRITE, 1)
+
+    let nf: i32 = gpu_graph_add_compute(gp, "normal_foam", wg_spec, grid, 0, 0)
+    let _b6: i32 = gpu_graph_bind(gp, nf, disp, GPU_ACCESS_READ, 0)
+    let _b7: i32 = gpu_graph_bind(gp, nf, normals, GPU_ACCESS_WRITE, 1)
+    let _b8: i32 = gpu_graph_bind(gp, nf, foam, GPU_ACCESS_WRITE, 2)
+
+    let present: i32 = gpu_graph_add_render(gp, "present", 1)
+    let _b9: i32 = gpu_graph_bind(gp, present, disp, GPU_ACCESS_READ, 0)
+    let _b10: i32 = gpu_graph_bind(gp, present, normals, GPU_ACCESS_READ, 1)
+    let _b11: i32 = gpu_graph_bind(gp, present, foam, GPU_ACCESS_READ, 2)
+
+    return g
+}
+
+# FFT-ocean surface family shares the compute graph and presents a grid.
+export function gpu_graph_vgpu_fft_ocean_surface() -> GpuGraph {
+    let mut g: GpuGraph = gpu_graph_vgpu_fft_ocean()
+    if g.pass_count > 0 {
+        g.passes[g.pass_count - 1].name = "surface"
+    }
+    return g
+}

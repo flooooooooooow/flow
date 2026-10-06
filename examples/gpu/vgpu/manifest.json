@@ -36,6 +36,32 @@
         "metal",
         "webgpu"
       ]
+    },
+    {
+      "id": "fluid",
+      "upstream": "https://vgpu.sh/examples/fluid",
+      "source": "examples/gpu/vgpu/fluid.flow",
+      "graph": "gpu_graph_vgpu_fluid",
+      "comparison": {
+        "mode": "graph-validate"
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "fft-ocean",
+      "upstream": "https://vgpu.sh/examples/fft-ocean",
+      "source": "examples/gpu/vgpu/fft_ocean.flow",
+      "graph": "gpu_graph_vgpu_fft_ocean",
+      "comparison": {
+        "mode": "graph-validate"
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
     }
   ]
 }

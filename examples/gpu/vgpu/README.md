@@ -45,6 +45,8 @@ compositing. `compareRgba` then provides an exact byte comparison primitive.
 | Case | Flow source | Metal | WGSL | Reference comparison |
 | --- | --- | --- | --- | --- |
 | Gradient | `gradient.flow` | source-ready | offscreen renderer ready | upstream reference bytes pending |
+| Fluid | `fluid.flow` | graph emit | graph emit | device dispatch + reference pending (P4) |
+| FFT ocean | `fft_ocean.flow` | graph emit | graph emit | device dispatch + reference pending (P4) |
 
 The next tranche should deliberately exercise missing capabilities instead of
 adding only fragment effects: textures/samplers, vertex and index buffers,

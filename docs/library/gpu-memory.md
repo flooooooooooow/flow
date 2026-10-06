@@ -68,4 +68,7 @@ Flags include `GPU_MEM_DEFAULT`, `GPU_MEM_SHARED`, and `GPU_MEM_PRIVATE`.
 
 The full checked round-trip is [`examples/gpu/gpu_memory_roundtrip.flow`](../../examples/gpu/gpu_memory_roundtrip.flow).
 
+Multi-pass storage textures, ping-pong resources and hazard checks live in
+[GPU graph](gpu-graph.md).
+
 Runtime implementation: `runtime/gpu_memory.h`, `runtime/gpu_metal.m`, and `runtime/gpu_memory_stub.c`.

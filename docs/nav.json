@@ -705,6 +705,10 @@
           "path": "library/gpu-memory.md"
         },
         {
+          "label": "GPU Graph",
+          "path": "library/gpu-graph.md"
+        },
+        {
           "label": "Tiny Pointers",
           "path": "library/tiny-pointers.md"
         },

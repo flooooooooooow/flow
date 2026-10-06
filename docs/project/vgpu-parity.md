@@ -101,6 +101,12 @@ Required surface: dispatch dimensions, storage buffers/textures, workgroup memor
 barriers, ping-pong resources, explicit read/write access, transient resources and
 compile-time hazard validation.
 
+The IR is `lib/stdlib/gpu_graph.flow`. Fluid and FFT-ocean family graphs
+validate hazards and emit Metal + WGSL from the same Flow source
+(`examples/gpu/vgpu/fluid.flow`, `fft_ocean.flow`). Device dispatch and
+reference compare remain the P4 runner. Sampled textures, samplers and
+geometry types are the P1 / #811 surface and are not redefined here.
+
 Representative compatibility cases: fluid, FFT ocean, FFT ocean surface, air
 painting and radiance cascades.
 

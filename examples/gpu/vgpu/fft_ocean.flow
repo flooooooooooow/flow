@@ -1,0 +1,54 @@
+# vgpu compatibility case: https://vgpu.sh/examples/fft-ocean
+#
+# FFT-ocean family as a typed render/compute graph: spectrum storage
+# buffers, Stockham IFFT with workgroup memory and a barrier, displacement
+# / normal / foam storage textures, and a present pass. The same Flow
+# graph emits Metal and WGSL. `fft_ocean_surface` shares this compute
+# graph and only changes the present pass name.
+
+import "stdlib/gpu_graph.flow"
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let mut ocean: GpuGraph = gpu_graph_vgpu_fft_ocean()
+    let op: ptr<GpuGraph> = &ocean
+    let err: GpuGraphError = gpu_graph_validate(op)
+    if err.code != GPU_GRAPH_OK {
+        println(gpu_graph_error_name(err.code))
+        return 1
+    }
+    if !gpu_graph_same_source_both_backends(ocean) {
+        return 2
+    }
+    if ocean.passes[2].workgroup_bytes != 4096 or ocean.passes[2].barrier != 1 {
+        return 3
+    }
+
+    let mut surface: GpuGraph = gpu_graph_vgpu_fft_ocean_surface()
+    let sp: ptr<GpuGraph> = &surface
+    let serr: GpuGraphError = gpu_graph_validate(sp)
+    if serr.code != GPU_GRAPH_OK {
+        return 4
+    }
+    if strcmp(surface.passes[surface.pass_count - 1].name, "surface") != 0 {
+        return 5
+    }
+
+    println("vgpu fft-ocean graph")
+    println(ocean.pass_count)
+    println(ocean.resource_count)
+    println(ocean.dep_count)
+
+    println("--- wgsl ifft_stage ---")
+    println(gpu_graph_emit_wgsl_pass(ocean, 2))
+    println("--- metal ifft_stage ---")
+    println(gpu_graph_emit_metal_pass(ocean, 2))
+    println("--- wgsl present ---")
+    println(gpu_graph_emit_wgsl_pass(ocean, 5))
+    println("--- metal present ---")
+    println(gpu_graph_emit_metal_pass(ocean, 5))
+    return 0
+}
