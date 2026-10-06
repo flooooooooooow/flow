@@ -1,0 +1,29 @@
+# Executable Flow GPU graph: five-element f32 copy.
+# This program emits WGSL + WebGPU reflection from ONE Flow graph.
+# The browser WebGPU host executes the result using runFlowGraphCopy.
+import "stdlib/gpu_graph.flow"
+
+function main() -> i32 {
+    let mut graph: GpuGraph = gpu_graph_new()
+    let gp: ptr<GpuGraph> = &graph
+    let src: i32 = gpu_graph_add_storage_buffer(gp,
+        "source", GPU_ACCESS_READ, GPU_LIFE_PERSISTENT, 20)
+    let dst: i32 = gpu_graph_add_storage_buffer(gp,
+        "target", GPU_ACCESS_WRITE, GPU_LIFE_PERSISTENT, 20)
+    let pass: i32 = gpu_graph_add_copy_f32(gp, "copy_f32", src, dst)
+    if pass < 0 or gpu_graph_validate(gp).code != GPU_GRAPH_OK {
+        return 1
+    }
+    if not gpu_graph_same_source_both_backends(graph) { return 2 }
+    let wgsl: string = gpu_graph_emit_wgsl_pass(graph, pass)
+    let metal: string = gpu_graph_emit_metal_pass(graph, pass)
+    let reflection: string = gpu_graph_emit_webgpu_reflection(graph, pass)
+    if wgsl == "" or metal == "" or reflection == "" { return 3 }
+    println("FLOW_WGSL_BEGIN")
+    println(wgsl)
+    println("FLOW_WGSL_END")
+    println("FLOW_REFLECTION_BEGIN")
+    println(reflection)
+    println("FLOW_REFLECTION_END")
+    return 0
+}
