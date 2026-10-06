@@ -40,6 +40,11 @@ export const GPU_DIM_3D: i32 = 3
 export const GPU_PASS_COMPUTE: i32 = 1
 export const GPU_PASS_RENDER: i32 = 2
 
+# Only explicit operations have executable shaders. A structural graph alone
+# is not a fluid/FFT algorithm; unknown passes must fail closed (#812).
+export const GPU_GRAPH_OP_NONE: i32 = 0
+export const GPU_GRAPH_OP_COPY_F32: i32 = 1
+
 export const GPU_HAZARD_STRICT: i32 = 0
 export const GPU_HAZARD_ALLOW_FEEDBACK: i32 = 1
 
@@ -105,6 +110,7 @@ export struct GpuPass {
     bindings: array<GpuBinding, 8>
     draw_count: i32
     feedback: i32
+    operation: i32
 }
 
 export struct GpuPingPong {
@@ -190,7 +196,8 @@ function empty_pass() -> GpuPass {
         binding_count: 0,
         bindings: binds,
         draw_count: 0,
-        feedback: 0
+        feedback: 0,
+        operation: GPU_GRAPH_OP_NONE
     }
 }
 
@@ -434,7 +441,8 @@ export function gpu_graph_add_compute(g: ptr<GpuGraph>, name: string, workgroup:
         binding_count: 0,
         bindings: [z; 8],
         draw_count: 0,
-        feedback: 0
+        feedback: 0,
+        operation: GPU_GRAPH_OP_NONE
     }
     g.pass_count = id + 1
     return id
@@ -458,7 +466,8 @@ export function gpu_graph_add_render(g: ptr<GpuGraph>, name: string, draw_count:
         binding_count: 0,
         bindings: [z; 8],
         draw_count: draw_count,
-        feedback: 0
+        feedback: 0,
+        operation: GPU_GRAPH_OP_NONE
     }
     g.pass_count = id + 1
     return id
@@ -536,6 +545,35 @@ export function gpu_graph_bind_pingpong(g: ptr<GpuGraph>, pass_id: i32, pp_id: i
     g.passes[pass_id].bindings[b].pingpong_id = pp_id
     g.passes[pass_id].bindings[b].pingpong_role = 1
     return 0
+}
+
+# A real backend-neutral compute operation: copy contiguous f32 storage
+# between distinct buffers. Graph-only nodes without a body cannot execute.
+export function gpu_graph_add_copy_f32(g: ptr<GpuGraph>, name: string, source: i32, destination: i32) -> i32 {
+    if source < 0 or destination < 0 or source >= g.resource_count or
+       destination >= g.resource_count or source == destination {
+        return 0 - 1
+    }
+    let src: GpuGraphResource = g.resources[source]
+    let dst: GpuGraphResource = g.resources[destination]
+    if src.kind != GPU_RES_STORAGE_BUFFER or dst.kind != GPU_RES_STORAGE_BUFFER or
+       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes or
+       src.physical == dst.physical or
+       !gpu_access_has_read(src.usage) or !gpu_access_has_write(dst.usage) {
+        return 0 - 1
+    }
+    if g.pass_count >= GPU_GRAPH_MAX_PASSES { return 0 - 1 }
+    let n: i32 = src.bytes / 4
+    let pass: i32 = gpu_graph_add_compute(g, name, gpu_dim3_1(64), gpu_dim3_1(n), 0, 0)
+    if pass < 0 { return 0 - 1 }
+    let first: i32 = gpu_graph_bind(g, pass, source, GPU_ACCESS_READ, 0)
+    let second: i32 = gpu_graph_bind(g, pass, destination, GPU_ACCESS_WRITE, 1)
+    if first < 0 or second < 0 {
+        g.pass_count = pass
+        return 0 - 1
+    }
+    g.passes[pass].operation = GPU_GRAPH_OP_COPY_F32
+    return pass
 }
 
 function binding_physical(g: GpuGraph, b: GpuBinding) -> i32 {
@@ -828,7 +866,10 @@ export function gpu_graph_wgsl_binding_at(res: GpuGraphResource, slot: i32, usag
     let acc: string = gpu_graph_access_name(usage)
     let slot_s: string = gpu_graph_i32_token(slot)
     if res.kind == GPU_RES_STORAGE_BUFFER {
-        return "@group(0) @binding(" + slot_s + ") var<storage, " + acc + "> " + res.name + ": array<f32>;"
+        # WGSL storage buffers support read / read_write, not write-only.
+        let buf_access: string = "read"
+        if gpu_access_has_write(usage) { buf_access = "read_write" }
+        return "@group(0) @binding(" + slot_s + ") var<storage, " + buf_access + "> " + res.name + ": array<f32>;"
     }
     let ty: string = gpu_graph_dim_wgsl(res.dim)
     let fmt: string = gpu_graph_format_wgsl(res.format)
@@ -878,56 +919,55 @@ export function gpu_graph_wgsl_workgroup(wg: GpuDim3) -> string {
 }
 
 export function gpu_graph_emit_wgsl_pass(g: GpuGraph, pass_id: i32) -> string {
-    if pass_id < 0 or pass_id >= g.pass_count {
+    if pass_id < 0 or pass_id >= g.pass_count { return "" }
+    let p: GpuPass = g.passes[pass_id]
+    if p.kind != GPU_PASS_COMPUTE or p.operation != GPU_GRAPH_OP_COPY_F32 or
+       p.binding_count != 2 {
         return ""
     }
-    let p: GpuPass = g.passes[pass_id]
-    let mut out: string = "// pass " + p.name + "\n"
-    let mut i: i32 = 0
-    while i < p.binding_count {
-        let b: GpuBinding = p.bindings[i]
-        let res: GpuGraphResource = g.resources[b.resource_id]
-        out = out + gpu_graph_wgsl_binding_at(res, b.slot, b.usage) + "\n"
-        i = i + 1
+    let src_b: GpuBinding = p.bindings[0]
+    let dst_b: GpuBinding = p.bindings[1]
+    let src: GpuGraphResource = g.resources[src_b.resource_id]
+    let dst: GpuGraphResource = g.resources[dst_b.resource_id]
+    if src.kind != GPU_RES_STORAGE_BUFFER or dst.kind != GPU_RES_STORAGE_BUFFER or
+       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes {
+        return ""
     }
-    if p.kind == GPU_PASS_COMPUTE {
-        out = out + gpu_graph_wgsl_workgroup(p.workgroup) + "\n"
-        out = out + "@compute fn " + p.name + "() {}\n"
-    } else {
-        out = out + "@fragment fn " + p.name + "() -> @location(0) vec4<f32> { return vec4<f32>(0.0); }\n"
-    }
+    let count: string = gpu_graph_i32_token(src.bytes / 4)
+    let out: string = gpu_graph_wgsl_binding_at(src, src_b.slot, GPU_ACCESS_READ) + "\n" +
+        gpu_graph_wgsl_binding_at(dst, dst_b.slot, GPU_ACCESS_WRITE) + "\n" +
+        gpu_graph_wgsl_workgroup(p.workgroup) + "\n" +
+        "@compute fn " + p.name + "(@builtin(global_invocation_id) gid: vec3<u32>) {\n" +
+        "    if (gid.x < " + count + "u) {\n" +
+        "        " + dst.name + "[gid.x] = " + src.name + "[gid.x];\n" +
+        "    }\n}\n"
     return out
 }
 
 export function gpu_graph_emit_metal_pass(g: GpuGraph, pass_id: i32) -> string {
-    if pass_id < 0 or pass_id >= g.pass_count {
+    if pass_id < 0 or pass_id >= g.pass_count { return "" }
+    let p: GpuPass = g.passes[pass_id]
+    if p.kind != GPU_PASS_COMPUTE or p.operation != GPU_GRAPH_OP_COPY_F32 or
+       p.binding_count != 2 {
         return ""
     }
-    let p: GpuPass = g.passes[pass_id]
-    let mut out: string = "// pass " + p.name + "\n"
-    if p.kind == GPU_PASS_COMPUTE {
-        out = out + "kernel void " + p.name + "(\n"
-    } else {
-        out = out + "fragment float4 " + p.name + "(\n"
+    let src_b: GpuBinding = p.bindings[0]
+    let dst_b: GpuBinding = p.bindings[1]
+    let src: GpuGraphResource = g.resources[src_b.resource_id]
+    let dst: GpuGraphResource = g.resources[dst_b.resource_id]
+    if src.kind != GPU_RES_STORAGE_BUFFER or dst.kind != GPU_RES_STORAGE_BUFFER or
+       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes {
+        return ""
     }
-    let mut i: i32 = 0
-    while i < p.binding_count {
-        let b: GpuBinding = p.bindings[i]
-        let res: GpuGraphResource = g.resources[b.resource_id]
-        let bind_txt: string = gpu_graph_metal_binding_at(res, b.slot, b.usage)
-        if i + 1 < p.binding_count {
-            out = out + "    " + bind_txt + ",\n"
-        } else {
-            out = out + "    " + bind_txt + "\n"
-        }
-        i = i + 1
-    }
-    if p.kind == GPU_PASS_COMPUTE {
-        out = out + ")\n{\n}\n"
-    } else {
-        out = out + ")\n{\n    return float4(0.0);\n}\n"
-    }
-    return out
+    let count: string = gpu_graph_i32_token(src.bytes / 4)
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "kernel void " + p.name + "(\n    " +
+        gpu_graph_metal_binding_at(src, src_b.slot, GPU_ACCESS_READ) + ",\n    " +
+        gpu_graph_metal_binding_at(dst, dst_b.slot, GPU_ACCESS_WRITE) +
+        ",\n    uint gid [[thread_position_in_grid]]) {\n" +
+        "    if (gid < " + count + "u) {\n" +
+        "        " + dst.name + "[gid] = " + src.name + "[gid];\n" +
+        "    }\n}\n"
 }
 
 # Same Flow graph lowers to both backends; used by the vgpu fluid and
