@@ -1,6 +1,76 @@
 # @module flowc.fileio
 # @means  Read/write files from disk (CLI emit, fixture self-tests).
 #
+# Cache files are a privileged compiler input: refuse symlinks, foreign
+# owners, insecure permissions and oversized AST payloads, instead of
+# trusting project-supplied paths or raw fopen() on a writable cache.
+@cEmbed("#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <stdio.h>
+#ifndef O_NOFOLLOW
+#error \"Flow cache security requires O_NOFOLLOW on its supported POSIX hosts\"
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+int flowc_cache_secure_dir_raw(const char *path, int strict) {
+  struct stat st;
+  if (!path || path[0] != '/') return 0;
+  if (lstat(path, &st) != 0) {
+    if (errno != ENOENT || mkdir(path, 0700) != 0) return 0;
+    if (lstat(path, &st) != 0) return 0;
+  }
+  if (!S_ISDIR(st.st_mode) || st.st_uid != geteuid()) return 0;
+  if ((st.st_mode & 0022) != 0) return 0;
+  if (strict && (st.st_mode & 0077) != 0) return 0;
+  return 1;
+}
+static int flowc_cache_secure_fd(int fd, int64_t max_bytes) {
+  struct stat st;
+  if (fd < 0 || fstat(fd, &st) != 0) return 0;
+  if (!S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
+      (st.st_mode & 0077) != 0 || st.st_nlink != 1) return 0;
+  if (max_bytes > 0 && st.st_size > max_bytes) return 0;
+  return 1;
+}
+void *flowc_cache_read_raw(const char *path, int64_t max_bytes) {
+  int fd;
+  FILE *fp;
+  if (!path) return NULL;
+  fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return NULL;
+  if (!flowc_cache_secure_fd(fd, max_bytes)) {
+    close(fd);
+    return NULL;
+  }
+  fp = fdopen(fd, \"rb\");
+  if (!fp) close(fd);
+  return (void *)fp;
+}
+void *flowc_cache_create_raw(const char *path) {
+  int fd;
+  FILE *fp;
+  if (!path) return NULL;
+  fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+  if (fd < 0) return NULL;
+  if (!flowc_cache_secure_fd(fd, 0)) {
+    close(fd);
+    return NULL;
+  }
+  fp = fdopen(fd, \"wb\");
+  if (!fp) close(fd);
+  return (void *)fp;
+}")
+
+extern {
+    function flowc_cache_secure_dir_raw(path: string, strict: i32) -> i32
+    function flowc_cache_read_raw(path: string, max_bytes: i64) -> ptr<void>
+    function flowc_cache_create_raw(path: string) -> ptr<void>
+}
+
 # libc FILE* APIs are declared here for typing; c_generator skips emitting
 # conflicting prototypes (stdio.h already provides them).
 
