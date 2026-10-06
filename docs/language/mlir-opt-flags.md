@@ -99,6 +99,12 @@ It converts eligible affine loops to one-dimensional `affine.parallel` loops.
 The pass stays opt-in because dependence analysis determines which loops are
 safe to parallelize.
 
+Use `--enable-affine-interchange` to add the opt-in `affine-loop-interchange`
+pass. It reorders eligible nested affine loops when dependence analysis shows
+the permutation is safe. The default pipeline does not include the pass; it
+stays opt-in because interchange changes locality and is not always
+profitable. The transform is O2-gated, matching the other affine nest passes.
+
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
 tiling. Two through four positive sizes up to 4096 are accepted. The matching
 affine tiling passes are emitted in the listed order.
