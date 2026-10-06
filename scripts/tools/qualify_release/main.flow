@@ -1,0 +1,804 @@
+# Qualify a Flow commit for release or RC promotion.
+#
+# Run it as `./flow tool qualify_release` from the repository:
+#
+#   flow tool qualify_release --dry-run --out build/qualify
+#   flow tool qualify_release --check-formula
+#   flow tool qualify_release --promote-rc --dry-run --out DIR
+#
+# This program never tags, never creates a GitHub Release, never pushes, and
+# never updates the public Homebrew tap. `--publish` is refused. Artifacts
+# and records stay in --out for review.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_byte, ft_starts, ft_ends, ft_find, ft_contains, ft_slice, ft_from, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, StrList }
+import .repo { rp_enter_root, rp_root, rp_capture, rp_status, rp_argv2, rp_argv3 }
+import .proc { pr_chomp, pr_mkdir_p }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_stdout, proc_stderr, proc_run, proc_which, PROC_INHERIT }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const PROG: string = "flow tool qualify_release"
+const DEFAULT_FORMULA: string = "packaging/homebrew/Formula/flow.rb"
+const DEFAULT_REV: string = "HEAD"
+const DEFAULT_OUT: string = "build/qualify"
+
+function usage_text() -> string {
+    return "usage: " + PROG + " [-h] [--dry-run] [--out DIR] [--rev REV]\n                             [--version VER] [--formula PATH] [--mode MODE]\n                             [--artifacts-only] [--check-formula]\n                             [--promote-rc] [--rc-number N]\n                             [--print-tag-command] [--publish]\n"
+}
+
+function help_text() -> string {
+    let mut h: string = usage_text()
+    h = h + "\nQualify the current commit for a release or RC without publishing.\n\n"
+    h = h + "This tool never tags, never creates a GitHub Release, never pushes,\n"
+    h = h + "and never updates flooooooooooow/homebrew-flow. --dry-run is implied.\n"
+    h = h + "--publish is refused so a qualification run cannot become a release.\n\n"
+    h = h + "options:\n"
+    h = h + "  -h, --help            show this help message and exit\n"
+    h = h + "  --dry-run             implied; kept so CI can pass it explicitly\n"
+    h = h + "  --out DIR             artifact and record directory (default: build/qualify)\n"
+    h = h + "  --rev REV             git revision to archive (default: HEAD)\n"
+    h = h + "  --version VER         candidate version (default: first line of VERSION)\n"
+    h = h + "  --formula PATH        Homebrew formula to validate\n"
+    h = h + "  --mode local|full     local writes artifacts and runs cheap gates;\n"
+    h = h + "                        full also runs the documented extra gates\n"
+    h = h + "  --artifacts-only      archives, checksums and unpack check only\n"
+    h = h + "  --check-formula       validate the Homebrew formula and exit\n"
+    h = h + "  --promote-rc          write an RC promotion record (no tag)\n"
+    h = h + "  --rc-number N         RC number used with --promote-rc (default: 1)\n"
+    h = h + "  --print-tag-command   print the git tag command; do not run it\n"
+    h = h + "  --publish             refused; this tool does not publish\n"
+    return h
+}
+
+function fail(msg: string) -> i32 {
+    ft_errln(PROG + ": " + msg)
+    return 1
+}
+
+function refuse_publish() -> i32 {
+    ft_errln(PROG + ": --publish is refused. This tool never tags, never creates")
+    ft_errln("a GitHub Release, never pushes, and never updates the Homebrew tap.")
+    ft_errln("Qualify here, then tag the exact recorded commit after review.")
+    return 2
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+function is_hex_char(c: i32) -> bool {
+    if is_digit(c) {
+        return true
+    }
+    if c >= 97 and c <= 102 {
+        return true
+    }
+    if c >= 65 and c <= 70 {
+        return true
+    }
+    return false
+}
+
+function is_hex64(s: string) -> bool {
+    if ft_len(s) != 64 {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < 64 {
+        if is_hex_char(ft_byte(s, i)) == false {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function is_suffix_char(c: i32) -> bool {
+    return is_digit(c) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 46 or c == 45
+}
+
+function semver_at(p: ptr<u8>, at: i32) -> i32 {
+    let mut q: i32 = at
+    let mut part: i32 = 0
+    while part < 3 {
+        let s: i32 = q
+        while is_digit(p[q] as i32) {
+            q = q + 1
+        }
+        if q == s {
+            return -1
+        }
+        if part < 2 {
+            if p[q] != 46 {
+                return -1
+            }
+            q = q + 1
+        }
+        part = part + 1
+    }
+    return q
+}
+
+function suffix_end(p: ptr<u8>, q: i32) -> i32 {
+    if p[q] == 45 or p[q] == 43 {
+        let mut e: i32 = q + 1
+        while is_suffix_char(p[e] as i32) {
+            e = e + 1
+        }
+        if e > q + 1 {
+            return e
+        }
+    }
+    return q
+}
+
+function is_semver(v: string) -> bool {
+    if v as ptr<u8> == null {
+        return false
+    }
+    let p: ptr<u8> = v as ptr<u8>
+    let q: i32 = semver_at(p, 0)
+    if q < 0 {
+        return false
+    }
+    if p[q] == 0 {
+        return true
+    }
+    let e: i32 = suffix_end(p, q)
+    return e > q and p[e] == 0
+}
+
+function first_line(text: string) -> string {
+    if text as ptr<u8> == null {
+        return null as string
+    }
+    let mut e: i32 = 0
+    while ft_byte(text, e) != 0 and ft_byte(text, e) != 10 and ft_byte(text, e) != 13 {
+        e = e + 1
+    }
+    if e == 0 {
+        return null as string
+    }
+    return ft_slice(text, 0, e)
+}
+
+function strip_leading_v(s: string) -> string {
+    let mut i: i32 = 0
+    while ft_byte(s, i) == 118 {
+        i = i + 1
+    }
+    return ft_from(s, i)
+}
+
+function need_value(name: string, i: i32, argc: i32, argv: ptr<string>) -> string {
+    if i + 1 >= argc {
+        return null as string
+    }
+    let v: string = argv[i + 1]
+    if ft_starts(v, "-") and ft_len(v) > 1 {
+        return null as string
+    }
+    return v
+}
+
+function quoted_field(text: string, key: string) -> string {
+    let needle: string = key + " \""
+    let at: i32 = ft_find(text, needle, 0)
+    if at < 0 {
+        return null as string
+    }
+    let start: i32 = at + ft_len(needle)
+    let end: i32 = ft_find(text, "\"", start)
+    if end < 0 or end <= start {
+        return null as string
+    }
+    return ft_slice(text, start, end)
+}
+
+# The version in a `.../flow-vX.Y.Z.tar.gz` url (the last `flow-v` in it),
+# which Homebrew also scans when a formula has no `version` line. Null when
+# the url names no such archive or the part before `.tar.gz` is not semver.
+function version_from_url(url: string) -> string {
+    let mut at: i32 = ft_find(url, "flow-v", 0)
+    if at < 0 {
+        return null as string
+    }
+    let mut next: i32 = ft_find(url, "flow-v", at + 1)
+    while next >= 0 {
+        at = next
+        next = ft_find(url, "flow-v", at + 1)
+    }
+    let start: i32 = at + 6
+    let tar: i32 = ft_find(url, ".tar.gz", start)
+    if tar <= start {
+        return null as string
+    }
+    let v: string = ft_slice(url, start, tar)
+    if is_semver(v) == false {
+        return null as string
+    }
+    return v
+}
+
+struct Formula {
+    url: string
+    sha256: string
+    version: string
+    error: string
+    version_from: string
+}
+
+function parse_formula(path: string) -> ptr<Formula> {
+    let f: ptr<Formula> = malloc(40) as ptr<Formula>
+    f.url = null as string
+    f.sha256 = null as string
+    f.version = null as string
+    f.error = null as string
+    f.version_from = "version field"
+    if ft_exists(path) == false {
+        f.error = "missing formula: " + path
+        return f
+    }
+    let text: string = ft_read_file(path)
+    if text as ptr<u8> == null {
+        f.error = "cannot read formula: " + path
+        return f
+    }
+    f.url = quoted_field(text, "url")
+    f.sha256 = quoted_field(text, "sha256")
+    f.version = quoted_field(text, "version")
+    if f.url as ptr<u8> == null {
+        f.error = "formula has no url field: " + path
+        return f
+    }
+    if f.sha256 as ptr<u8> == null {
+        f.error = "formula has no sha256 field: " + path
+        return f
+    }
+    if f.version as ptr<u8> == null {
+        # No explicit `version` line: use the one Homebrew scans from the url.
+        f.version = version_from_url(f.url)
+        f.version_from = "url"
+    }
+    if f.version as ptr<u8> == null {
+        f.error = "formula has no version field and its url names no flow-vX.Y.Z.tar.gz: " + path
+        return f
+    }
+    if is_hex64(f.sha256) == false {
+        f.error = "formula sha256 is not 64 hex digits"
+        return f
+    }
+    if is_semver(f.version) == false {
+        f.error = "formula version is not a semantic version: " + f.version
+        return f
+    }
+    let want_tar: string = "flow-v" + f.version + ".tar.gz"
+    if ft_contains(f.url, want_tar) == false {
+        f.error = "formula url does not name flow-v" + f.version + ".tar.gz"
+        return f
+    }
+    if ft_contains(f.url, "/v" + f.version + "/") == false {
+        f.error = "formula url does not include /v" + f.version + "/"
+        return f
+    }
+    return f
+}
+
+function run_inherit(argv: ptr<StrList>) -> i32 {
+    let c: ptr<ProcCmd> = proc_cmd(ft_list_get(argv, 0))
+    let mut i: i32 = 1
+    while i < ft_list_len(argv) {
+        proc_arg(c, ft_list_get(argv, i))
+        i = i + 1
+    }
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    if ft_len(r.error) > 0 {
+        return 127
+    }
+    return r.exit_code
+}
+
+function capture_cmd(argv: ptr<StrList>) -> string {
+    let text: string = rp_capture(argv)
+    if rp_status() != 0 {
+        return null as string
+    }
+    return pr_chomp(text)
+}
+
+function file_sha256(path: string) -> string {
+    let mut out: string = ""
+    if ft_len(proc_which("sha256sum")) > 0 {
+        out = rp_capture(rp_argv2("sha256sum", path))
+    } else {
+        let sh: ptr<StrList> = rp_argv3("shasum", "-a", "256")
+        ft_list_push(sh, path)
+        out = rp_capture(sh)
+    }
+    if rp_status() != 0 {
+        return null as string
+    }
+    let mut n: i32 = 0
+    while ft_byte(out, n) != 0 and ft_byte(out, n) != 32 and ft_byte(out, n) != 10 {
+        n = n + 1
+    }
+    let digest: string = ft_slice(out, 0, n)
+    if is_hex64(digest) == false {
+        return null as string
+    }
+    return digest
+}
+
+function git_commit(rev: string) -> string {
+    let argv: ptr<StrList> = rp_argv3("git", "rev-parse", rev)
+    return capture_cmd(argv)
+}
+
+function tag_command(version: string, commit: string) -> string {
+    return "git tag -a v" + version + " " + commit + " -m \"Flow v" + version + "\""
+}
+
+function json_escape_ok(s: string) -> bool {
+    if s as ptr<u8> == null {
+        return false
+    }
+    let mut i: i32 = 0
+    while ft_byte(s, i) != 0 {
+        let c: i32 = ft_byte(s, i)
+        if c == 34 or c == 92 or c < 32 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function validate_formula_path(path: string, run_brew: bool) -> i32 {
+    let f: ptr<Formula> = parse_formula(path)
+    if f.error as ptr<u8> != null {
+        ft_errln(PROG + ": " + f.error)
+        return 1
+    }
+    ft_outln("formula: " + path)
+    ft_outln("formula.version: " + f.version + " (from " + f.version_from + ")")
+    ft_outln("formula.url: " + f.url)
+    ft_outln("formula.sha256: " + f.sha256)
+    ft_outln("formula.structural: pass")
+    if run_brew == false {
+        return 0
+    }
+    if ft_len(proc_which("brew")) == 0 {
+        ft_outln("formula.brew: skip (brew not on PATH)")
+        return 0
+    }
+    let style: ptr<StrList> = rp_argv3("brew", "style", path)
+    let st: i32 = run_inherit(style)
+    if st != 0 {
+        ft_errln(PROG + ": brew style failed on " + path)
+        return 1
+    }
+    let audit: ptr<StrList> = rp_argv3("brew", "audit", "--strict")
+    ft_list_push(audit, "--offline")
+    ft_list_push(audit, path)
+    let au: i32 = run_inherit(audit)
+    if au != 0 {
+        ft_errln(PROG + ": brew audit --strict --offline failed on " + path)
+        return 1
+    }
+    ft_outln("formula.brew: pass")
+    return 0
+}
+
+function expected_entry(prefix: string, name: string) -> string {
+    return prefix + name
+}
+
+function listing_has(listing: string, name: string) -> bool {
+    if ft_eq(listing, name) or ft_starts(listing, name + "\n") {
+        return true
+    }
+    if ft_contains(listing, "\n" + name + "\n") {
+        return true
+    }
+    return ft_ends(listing, "\n" + name)
+}
+
+function unpack_check(tarball: string, prefix: string) -> i32 {
+    let argv: ptr<StrList> = rp_argv3("tar", "-tzf", tarball)
+    let listing: string = rp_capture(argv)
+    if rp_status() != 0 {
+        ft_errln(PROG + ": tar -tzf failed for " + tarball)
+        return 1
+    }
+    let names: ptr<StrList> = ft_list_new()
+    ft_list_push(names, expected_entry(prefix, "VERSION"))
+    ft_list_push(names, expected_entry(prefix, "flow"))
+    ft_list_push(names, expected_entry(prefix, "compiler/"))
+    ft_list_push(names, expected_entry(prefix, "lib/"))
+    ft_list_push(names, expected_entry(prefix, "runtime/"))
+    ft_list_push(names, expected_entry(prefix, "tools/"))
+    ft_list_push(names, expected_entry(prefix, "packaging/homebrew/Formula/flow.rb"))
+    let mut i: i32 = 0
+    let mut missing: i32 = 0
+    while i < ft_list_len(names) {
+        let n: string = ft_list_get(names, i)
+        let mut present: bool = false
+        if ft_ends(n, "/") {
+            present = ft_contains(listing, n)
+        } else {
+            present = listing_has(listing, n)
+        }
+        if present == false {
+            ft_errln(PROG + ": archive missing " + n)
+            missing = missing + 1
+        }
+        i = i + 1
+    }
+    if missing > 0 {
+        return 1
+    }
+    ft_outln("unpack: listed " + prefix + " source archive; required paths present")
+    return 0
+}
+
+function write_text(path: string, text: string) -> i32 {
+    if ft_write_file(path, text) == false {
+        return fail("cannot write " + path)
+    }
+    return 0
+}
+
+function full_gate(name: string, argv: ptr<StrList>) -> i32 {
+    ft_outln("gate " + name + ": " + ft_list_get(argv, 0))
+    let rc: i32 = run_inherit(argv)
+    if rc != 0 {
+        ft_errln(PROG + ": gate " + name + " failed with status " + ft_itoa(rc))
+        return 1
+    }
+    ft_outln("gate " + name + ": pass")
+    return 0
+}
+
+function run_full_gates(root: string) -> i32 {
+    let flow: string = root + "/flow"
+    let v: ptr<StrList> = rp_argv3(flow, "tool", "sync_version")
+    ft_list_push(v, "--check")
+    if full_gate("sync_version", v) != 0 {
+        return 1
+    }
+    let c: ptr<StrList> = rp_argv3(flow, "tool", "changelog_check")
+    if full_gate("changelog_check", c) != 0 {
+        return 1
+    }
+    let sm: ptr<StrList> = rp_argv3(flow, "tool", "stability_manifest")
+    ft_list_push(sm, "--require-complete")
+    if full_gate("stability_manifest", sm) != 0 {
+        return 1
+    }
+    let de: ptr<StrList> = rp_argv3(flow, "tool", "doc_examples")
+    ft_list_push(de, "strict")
+    if full_gate("doc_examples", de) != 0 {
+        return 1
+    }
+    let cf: ptr<StrList> = rp_argv3(flow, "tool", "tests/conformance/run.flow")
+    if full_gate("conformance", cf) != 0 {
+        return 1
+    }
+    let boot: ptr<StrList> = rp_argv2("./compiler/scripts/bootstrap_from_c.sh", "--verify")
+    if full_gate("bootstrap_verify", boot) != 0 {
+        return 1
+    }
+    return 0
+}
+
+function run_local_tool_gates(root: string) -> i32 {
+    let flow: string = root + "/flow"
+    let v: ptr<StrList> = rp_argv3(flow, "tool", "sync_version")
+    ft_list_push(v, "--check")
+    if full_gate("sync_version", v) != 0 {
+        return 1
+    }
+    let c: ptr<StrList> = rp_argv3(flow, "tool", "changelog_check")
+    if full_gate("changelog_check", c) != 0 {
+        return 1
+    }
+    return 0
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        return fail("cannot enter the repository root")
+    }
+    let root: string = rp_root()
+    let mut out_dir: string = DEFAULT_OUT
+    let mut rev: string = DEFAULT_REV
+    let mut version_arg: string = null as string
+    let mut formula_path: string = DEFAULT_FORMULA
+    let mut mode: string = "local"
+    let mut artifacts_only: bool = false
+    let mut check_formula: bool = false
+    let mut promote_rc: bool = false
+    let mut print_tag: bool = false
+    let mut rc_number: string = "1"
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "-h") or ft_eq(arg, "--help") {
+            ft_out(help_text())
+            return 0
+        }
+        if ft_eq(arg, "--publish") {
+            return refuse_publish()
+        }
+        if ft_eq(arg, "--dry-run") {
+            i = i + 1
+            continue
+        }
+        if ft_eq(arg, "--artifacts-only") {
+            artifacts_only = true
+            i = i + 1
+            continue
+        }
+        if ft_eq(arg, "--check-formula") {
+            check_formula = true
+            i = i + 1
+            continue
+        }
+        if ft_eq(arg, "--promote-rc") {
+            promote_rc = true
+            i = i + 1
+            continue
+        }
+        if ft_eq(arg, "--print-tag-command") {
+            print_tag = true
+            i = i + 1
+            continue
+        }
+        if ft_eq(arg, "--out") or ft_eq(arg, "--rev") or ft_eq(arg, "--version") or ft_eq(arg, "--formula") or ft_eq(arg, "--mode") or ft_eq(arg, "--rc-number") {
+            let val: string = need_value(arg, i, argc, argv)
+            if val as ptr<u8> == null {
+                return fail(arg + " expects a value")
+            }
+            if ft_eq(arg, "--out") {
+                out_dir = val
+            } elif ft_eq(arg, "--rev") {
+                rev = val
+            } elif ft_eq(arg, "--version") {
+                version_arg = strip_leading_v(val)
+            } elif ft_eq(arg, "--formula") {
+                formula_path = val
+            } elif ft_eq(arg, "--mode") {
+                mode = val
+            } else {
+                rc_number = val
+            }
+            i = i + 2
+            continue
+        }
+        return fail("unrecognized argument: " + arg)
+    }
+
+    if ft_eq(mode, "local") == false and ft_eq(mode, "full") == false {
+        return fail("mode must be local or full")
+    }
+    let mut n: i32 = 0
+    while is_digit(ft_byte(rc_number, n)) {
+        n = n + 1
+    }
+    if n == 0 or ft_byte(rc_number, n) != 0 {
+        return fail("rc-number must be a positive integer")
+    }
+
+    if check_formula {
+        let brew: bool = ft_eq(mode, "full")
+        return validate_formula_path(formula_path, brew)
+    }
+
+    let vtext: string = ft_read_file("VERSION")
+    if vtext as ptr<u8> == null {
+        return fail("cannot read VERSION")
+    }
+    let mut version: string = first_line(vtext)
+    if version as ptr<u8> == null {
+        return fail("VERSION is empty")
+    }
+    if version_arg as ptr<u8> != null {
+        version = version_arg
+    }
+    if is_semver(version) == false {
+        return fail("not a semantic version: " + version)
+    }
+
+    let commit: string = git_commit(rev)
+    if commit as ptr<u8> == null {
+        return fail("git rev-parse failed for " + rev)
+    }
+
+    if print_tag and artifacts_only == false and promote_rc == false and ft_eq(mode, "local") {
+        let tag_ver: string = version
+        ft_outln(tag_command(tag_ver, commit))
+        ft_outln("not run: this tool never tags")
+        return 0
+    }
+
+    if pr_mkdir_p(out_dir) == false {
+        return fail("cannot create " + out_dir)
+    }
+
+    let mut gates_ok: bool = true
+    if artifacts_only == false {
+        if ft_eq(mode, "full") {
+            if run_full_gates(root) != 0 {
+                gates_ok = false
+            }
+        } else {
+            if run_local_tool_gates(root) != 0 {
+                gates_ok = false
+            }
+        }
+    }
+
+    let formula: ptr<Formula> = parse_formula(formula_path)
+    let mut formula_status: string = "pass"
+    if formula.error as ptr<u8> != null {
+        ft_errln(PROG + ": " + formula.error)
+        formula_status = "fail"
+        gates_ok = false
+    } else {
+        ft_outln("formula.version: " + formula.version)
+        ft_outln("formula.sha256: " + formula.sha256)
+        if ft_eq(formula.version, version) == false {
+            ft_outln("formula.note: points at published " + formula.version + "; candidate is " + version)
+            ft_outln("formula.note: update url/sha256 only after the candidate artifact exists")
+        }
+        if ft_eq(mode, "full") {
+            if validate_formula_path(formula_path, true) != 0 {
+                formula_status = "fail"
+                gates_ok = false
+            }
+        }
+    }
+
+    let prefix: string = "flow-" + version + "/"
+    let tarball_name: string = "flow-v" + version + ".tar.gz"
+    let zip_name: string = "flow-v" + version + ".zip"
+    let tarball: string = out_dir + "/" + tarball_name
+    let zip: string = out_dir + "/" + zip_name
+
+    let arch_tar: ptr<StrList> = rp_argv3("git", "archive", "--format=tar.gz")
+    ft_list_push(arch_tar, "--prefix=" + prefix)
+    ft_list_push(arch_tar, "-o")
+    ft_list_push(arch_tar, tarball)
+    ft_list_push(arch_tar, rev)
+    if run_inherit(arch_tar) != 0 {
+        return fail("git archive tar.gz failed")
+    }
+    let arch_zip: ptr<StrList> = rp_argv3("git", "archive", "--format=zip")
+    ft_list_push(arch_zip, "--prefix=" + prefix)
+    ft_list_push(arch_zip, "-o")
+    ft_list_push(arch_zip, zip)
+    ft_list_push(arch_zip, rev)
+    if run_inherit(arch_zip) != 0 {
+        return fail("git archive zip failed")
+    }
+
+    let tar_sha: string = file_sha256(tarball)
+    let zip_sha: string = file_sha256(zip)
+    if tar_sha as ptr<u8> == null or zip_sha as ptr<u8> == null {
+        return fail("could not hash the source archives")
+    }
+    let sums: string = tar_sha + "  " + tarball_name + "\n" + zip_sha + "  " + zip_name + "\n"
+    if write_text(out_dir + "/SHA256SUMS.txt", sums) != 0 {
+        return 1
+    }
+    ft_outln("artifact: " + tarball_name + " sha256 " + tar_sha)
+    ft_outln("artifact: " + zip_name + " sha256 " + zip_sha)
+
+    if unpack_check(tarball, prefix) != 0 {
+        gates_ok = false
+    }
+
+    let mut promo_ver: string = version
+    if promote_rc {
+        promo_ver = version + "-rc." + rc_number
+    }
+    let tag_cmd: string = tag_command(promo_ver, commit)
+
+    let mut record: string = "# Flow release qualification record\n"
+    record = record + "# Evidence only. published=false. This file is not a release.\n"
+    record = record + "version: " + version + "\n"
+    record = record + "commit: " + commit + "\n"
+    record = record + "rev: " + rev + "\n"
+    record = record + "mode: " + mode + "\n"
+    record = record + "dry_run: true\n"
+    record = record + "published: false\n"
+    record = record + "tagged: false\n"
+    record = record + "tarball: " + tarball_name + "\n"
+    record = record + "tarball_sha256: " + tar_sha + "\n"
+    record = record + "zip: " + zip_name + "\n"
+    record = record + "zip_sha256: " + zip_sha + "\n"
+    if formula.error as ptr<u8> == null {
+        record = record + "formula_version: " + formula.version + "\n"
+        record = record + "formula_sha256: " + formula.sha256 + "\n"
+        record = record + "formula_url: " + formula.url + "\n"
+    }
+    record = record + "formula_structural: " + formula_status + "\n"
+    if gates_ok {
+        record = record + "result: pass\n"
+    } else {
+        record = record + "result: fail\n"
+    }
+    if promote_rc {
+        record = record + "promotion: rc\n"
+        record = record + "rc_tag: v" + promo_ver + "\n"
+    } else {
+        record = record + "promotion: none\n"
+    }
+    record = record + "tag_command: " + tag_cmd + "\n"
+    if write_text(out_dir + "/qualification.txt", record) != 0 {
+        return 1
+    }
+
+    if json_escape_ok(version) and json_escape_ok(commit) and json_escape_ok(tar_sha) and json_escape_ok(zip_sha) {
+        let mut js: string = "{\n"
+        js = js + "  \"version\": \"" + version + "\",\n"
+        js = js + "  \"commit\": \"" + commit + "\",\n"
+        js = js + "  \"dry_run\": true,\n"
+        js = js + "  \"published\": false,\n"
+        js = js + "  \"tagged\": false,\n"
+        js = js + "  \"tarball\": \"" + tarball_name + "\",\n"
+        js = js + "  \"tarball_sha256\": \"" + tar_sha + "\",\n"
+        js = js + "  \"zip\": \"" + zip_name + "\",\n"
+        js = js + "  \"zip_sha256\": \"" + zip_sha + "\",\n"
+        if gates_ok {
+            js = js + "  \"result\": \"pass\",\n"
+        } else {
+            js = js + "  \"result\": \"fail\",\n"
+        }
+        if promote_rc {
+            js = js + "  \"promotion\": \"rc\",\n"
+            js = js + "  \"rc_tag\": \"v" + promo_ver + "\"\n"
+        } else {
+            js = js + "  \"promotion\": \"none\"\n"
+        }
+        js = js + "}\n"
+        if write_text(out_dir + "/qualification.json", js) != 0 {
+            return 1
+        }
+    }
+
+    if promote_rc {
+        let mut promo: string = "RC promotion (dry-run; no tag created)\n"
+        promo = promo + "version: " + promo_ver + "\n"
+        promo = promo + "commit: " + commit + "\n"
+        if gates_ok {
+            promo = promo + "qualified: true\n"
+        } else {
+            promo = promo + "qualified: false\n"
+        }
+        promo = promo + "published: false\n"
+        promo = promo + "tagged: false\n"
+        promo = promo + "tag_command: " + tag_cmd + "\n"
+        promo = promo + "next: After review, tag that exact commit. Do not rebuild.\n"
+        promo = promo + "homebrew: update url/sha256 only after a non-RC GitHub Release exists\n"
+        if write_text(out_dir + "/rc-promotion.txt", promo) != 0 {
+            return 1
+        }
+        ft_outln("rc-promotion: recorded v" + promo_ver + " at " + commit + " (not tagged)")
+    }
+
+    if print_tag {
+        ft_outln(tag_cmd)
+        ft_outln("not run: this tool never tags")
+    }
+
+    ft_outln("qualify: wrote " + out_dir + " published=false tagged=false")
+    if gates_ok == false {
+        return 1
+    }
+    return 0
+}
