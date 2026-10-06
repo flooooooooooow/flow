@@ -43,7 +43,42 @@ function expect_ok(e: GpuGraphError, n: i32) -> i32 {
     return 0
 }
 
+# Invalid graph shapes and bindings are rejected *before* lowering to
+# either backend. This catches wrapped products and dependency overflow.
+function graph_guard_regression() -> i32 {
+    let mut g: GpuGraph = gpu_graph_new()
+    let gp: ptr<GpuGraph> = &g
+    if gpu_graph_add_storage_buffer(gp, "negative", GPU_ACCESS_READ_WRITE,
+            GPU_LIFE_PERSISTENT, -1) != -1 { return 1 }
+    if gpu_graph_add_storage_texture(gp, "bad_shape", GPU_ACCESS_READ_WRITE,
+            GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA8UNORM,
+            GPU_DIM_2D, 10, 10, 2) != -1 { return 2 }
+    if gpu_graph_add_storage_texture(gp, "bad_format", GPU_ACCESS_READ_WRITE,
+            GPU_LIFE_PERSISTENT, 99, GPU_DIM_2D, 10, 10, 1) != -1 { return 3 }
+    let buffer: i32 = gpu_graph_add_storage_buffer(gp, "valid",
+        GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, 256)
+    if buffer < 0 { return 4 }
+    let compute: i32 = gpu_graph_add_compute(gp, "unsafe_dispatch",
+        gpu_dim3(65536, 65536, 1), gpu_dim3_1(1), 0, 0)
+    let _b: i32 = gpu_graph_bind(gp, compute, buffer, GPU_ACCESS_WRITE, 0)
+    if gpu_graph_validate(gp).code != GPU_GRAPH_ERR_WORKGROUP { return 5 }
+    g.passes[compute].workgroup = gpu_dim3(8, 8, 1)
+    g.passes[compute].dispatch = gpu_dim3(65536, 65536, 1)
+    if gpu_graph_validate(gp).code != GPU_GRAPH_ERR_WORKGROUP { return 6 }
+    g.passes[compute].dispatch = gpu_dim3_1(8)
+    if gpu_graph_bind(gp, compute, buffer, 9, 1) != -1 { return 7 }
+    if gpu_graph_bind(gp, compute, buffer, GPU_ACCESS_READ, -1) != -1 { return 8 }
+    if gpu_graph_set_iterations(gp, compute, 1025) != -1 { return 9 }
+    if gpu_graph_set_iterations(gp, compute, 20) != 0 { return 10 }
+
+    # The high-precision integer-to-source formatter must not return "n".
+    if gpu_graph_wgsl_workgroup(gpu_dim3(20, 21, 1)) !=
+       "@workgroup_size(20, 21, 1)" { return 11 }
+    return 0
+}
+
 function main() -> i32 {
+    if graph_guard_regression() != 0 { return 90 }
     # 1. Valid two-pass compute chain derives a write->read dependency.
     let mut g: GpuGraph = gpu_graph_new()
     let gp: ptr<GpuGraph> = &g
