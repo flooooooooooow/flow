@@ -93,13 +93,14 @@ function prepare(device,config) {
             if(b.access!=="write" && !initialised.has(key)){
                 throw new Error("GPU resource read before write: "+key);
             }
-            if((b.access==="write" || b.access==="read_write") &&
-               bindings.some(x=>x.key===key) && pass.feedback!==true) {
+            const aliased=bindings.find(x=>x.key===key);
+            if(aliased && (b.access!=="read" ||
+               aliased.access!=="read") && pass.feedback!==true) {
                 throw new Error("same-pass GPU read/write hazard: "+key);
             }
             if(b.access!=="read")written.add(key);
             used.add(b.binding);
-            bindings.push({binding:b.binding,key});
+            bindings.push({binding:b.binding,key,access:b.access});
         }
         const uniforms=packParams(kernel,pass.scalars??{});
         if(uniforms){
