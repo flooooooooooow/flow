@@ -16,7 +16,22 @@
 # Span parameters are structs; they are never restrict-qualified.
 - span_add(flowc_span_int32_t restrict
 + int32_t span_add(flowc_span_int32_t to
+# Proven-disjoint span arguments extract restrict `.data` temps.
++ int32_t* restrict __flowc_na_d_to
++ int32_t* restrict __flowc_na_d_from
 # Pointer copied from a parameter inherits unknown provenance.
 - restrict q
 + int32_t* q =
+# Mixed call sites: the shared function stays aliasable.
+# (Do not use the substring `mix_add(int32_t* restrict`: the clone name
+# `__flowc_na_mix_add` contains that.)
+- int32_t mix_add(int32_t* restrict
++ int32_t mix_add(int32_t* dst, int32_t* src, int32_t n);
+# Proven calls of that function use the specialized clone.
++ __flowc_na_mix_add(int32_t* restrict dst, int32_t* restrict src, int32_t n)
++ __flowc_na_mix_add(
+# Distinct embedded struct fields may be restrict locals and prove a call.
++ int32_t* restrict px
++ int32_t* restrict py
++ int32_t field_add(int32_t* restrict dst, int32_t* restrict src, int32_t n);
 exit 0

@@ -1,0 +1,42 @@
+# A restrict/noalias certificate must never arise from signed-overflow
+# or negative/unknown spans. Tests provenance predicate directly (#731).
+import "compiler/src/noalias.flow"
+
+function view(root: i32, off: i32, size: i32, field: i32) -> NoaliasView {
+    return NoaliasView {
+        kind: NA_LOCAL, root: root, off: off, len: size,
+        known: 1, field: field
+    }
+}
+
+function main() -> i32 {
+    let a: NoaliasView = view(10, 0, 4, 0)
+    let b: NoaliasView = view(10, 4, 4, 0)
+    if flowc_noalias_views_disjoint(a, b) != 1 { return 1 }
+    if flowc_noalias_views_disjoint(b, a) != 1 { return 2 }
+    let overlapped: NoaliasView = view(10, 3, 4, 0)
+    if flowc_noalias_views_disjoint(a, overlapped) != 0 { return 3 }
+    let far: NoaliasView = view(10, 2147483640, 100, 0)
+    let near: NoaliasView = view(10, 2147483643, 2, 0)
+    # Old far.off + far.len wrapped to negative, certifying disjointness
+    # even though near's two elements are INSIDE far's range.
+    if flowc_noalias_views_disjoint(far, near) != 0 { return 4 }
+    if flowc_noalias_views_disjoint(near, far) != 0 { return 5 }
+    let negative: NoaliasView = view(10, 0 - 4, 2, 0)
+    if flowc_noalias_views_disjoint(negative, b) != 0 { return 6 }
+    let unknown_length: NoaliasView = view(10, 0, -1, 0)
+    if flowc_noalias_views_disjoint(unknown_length, b) != 0 { return 7 }
+    let field_a: NoaliasView = view(10, 0, 4, 1)
+    let field_b: NoaliasView = view(10, 0, 4, 2)
+    if flowc_noalias_views_disjoint(field_a, field_b) != 1 { return 8 }
+    let field_unknown: NoaliasView = view(10, 0, -1, 1)
+    if flowc_noalias_views_disjoint(field_unknown, field_b) != 0 { return 9 }
+    let another_root: NoaliasView = view(11, 0, 4, 0)
+    if flowc_noalias_views_disjoint(a, another_root) != 1 { return 10 }
+    let opaque: NoaliasView = NoaliasView {
+        kind: NA_UNKNOWN, root: 0, off: 0, len: 4,
+        known: 0, field: 0
+    }
+    if flowc_noalias_views_disjoint(a, opaque) != 0 { return 11 }
+    return 0
+}
