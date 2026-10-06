@@ -60,6 +60,9 @@ function prepare(device,config) {
         sizes.set(name,n);
     }
     const ready=[];
+    const initialised=new Set(Object.entries(config.resources)
+        .filter(([,value])=>value instanceof Float32Array)
+        .map(([name])=>name));
     for(const pass of config.passes){
         const kernel=reflected(pass.reflection);
         const n=pass.dispatchElements;
@@ -72,6 +75,7 @@ function prepare(device,config) {
             throw new RangeError("invalid Flow GPU dispatch");
         }
         const bindings=[];
+        const written=new Set();
         const used=new Set();
         const translate=pass.bindings??{};
         for(const b of kernel.buffers){
@@ -81,6 +85,19 @@ function prepare(device,config) {
                !["read","write","read_write"].includes(b.access)) {
                 throw new TypeError("invalid Flow GPU buffer binding "+b.name);
             }
+            const required=pass.requiredElements?.[b.name]??n;
+            if(!Number.isSafeInteger(required) || required<=0 ||
+               required>sizes.get(key)){
+                throw new RangeError("Flow tensor shape exceeds GPU buffer "+key);
+            }
+            if(b.access!=="write" && !initialised.has(key)){
+                throw new Error("GPU resource read before write: "+key);
+            }
+            if((b.access==="write" || b.access==="read_write") &&
+               bindings.some(x=>x.key===key) && pass.feedback!==true) {
+                throw new Error("same-pass GPU read/write hazard: "+key);
+            }
+            if(b.access!=="read")written.add(key);
             used.add(b.binding);
             bindings.push({binding:b.binding,key});
         }
@@ -90,6 +107,7 @@ function prepare(device,config) {
                 throw new TypeError("uniform binding overlaps GPU buffer");
             used.add(kernel.paramsBinding);
         }
+        for(const key of written)initialised.add(key);
         ready.push({kernel,wg,n,wgsl:pass.wgsl,bindings,uniforms});
     }
     for(const name of config.readback){
