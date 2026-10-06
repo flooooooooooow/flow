@@ -87,6 +87,36 @@ error: cannot write through `values`: span<i32> is an immutable view
        (declare it span<mut i32>)
 ```
 
+## Safe elimination of repeated bounds checks
+
+For the canonical range loop `for i in 0 to samples.len`, the C backend
+can omit a redundant per-element bounds-fault branch for
+`samples[i]` **only while the proof remains valid**. If the body
+reassigns or takes the address of the span binding, or rebinds/shadows
+the induction name, the compiler must retain dynamic bounds checks.
+A span's `.len` may be changed by rebinding even when the original
+loop bound was its old length.
+
+```flow
+function sum_with_rebind(xs: &[i32], ys: &[i32]) -> i32 {
+    let mut sum: i32 = 0
+    for i in 0 to xs.len {
+        if i == 1 {
+            xs = ys
+        }
+        sum = sum + xs[i]  # checked because xs was rebound
+    }
+    return sum
+}
+```
+
+Structural C-output regressions distinguish the canonical
+non-mutating loop (`tests/cgen/span_bounds_elision.flow`), which should
+still omit unnecessary checks, from the rebinding case
+(`tests/cgen/span_bounds_rebinding.flow`), which must retain a
+`span index out of bounds` fault path. Compiler tests and generated-code
+validation remain required before claiming complete #729 optimisation.
+
 ## Reference sugar
 
 The bracket forms are sugar for the same semantic type:
