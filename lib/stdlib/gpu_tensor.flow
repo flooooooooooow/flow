@@ -488,7 +488,9 @@ export function gpu_tensor_normalize(src: GpuTensor, dst: GpuTensor, scale: f32)
        not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
         let gpu_rc: i32 = flow_gpu_scale_bias_f32(dst.buffer.device,
             src.buffer.device, 1.0 / scale, 0.0, src.size as i64)
-        if gpu_rc == 0 { return 0 }
+        # A device launch failure must not silently produce a CPU result that
+        # the GPU conformance runner could mistake for real execution.
+        return gpu_rc
     }
     let mut i: i32 = 0
     while i < src.size {
@@ -510,7 +512,9 @@ export function gpu_tensor_scale_bias(src: GpuTensor, dst: GpuTensor, scale: f32
        not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
         let gpu_rc: i32 = flow_gpu_scale_bias_f32(dst.buffer.device,
             src.buffer.device, scale, bias, src.size as i64)
-        if gpu_rc == 0 { return 0 }
+        # A device launch failure must not silently produce a CPU result that
+        # the GPU conformance runner could mistake for real execution.
+        return gpu_rc
     }
     let mut i: i32 = 0
     while i < src.size {
@@ -532,7 +536,9 @@ export function gpu_tensor_relu(src: GpuTensor, dst: GpuTensor) -> i32 {
        not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
         let gpu_rc: i32 = flow_gpu_relu_f32(dst.buffer.device,
             src.buffer.device, src.size as i64)
-        if gpu_rc == 0 { return 0 }
+        # A device launch failure must not silently produce a CPU result that
+        # the GPU conformance runner could mistake for real execution.
+        return gpu_rc
     }
     let mut i: i32 = 0
     while i < src.size {
@@ -580,7 +586,8 @@ export function gpu_tensor_invert01(src: GpuTensor, dst: GpuTensor) -> i32 {
        not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
         let rc: i32 = flow_gpu_invert_clamp01_f32(dst.buffer.device,
             src.buffer.device, src.size as i64)
-        if rc == 0 { return 0 }
+        # Fail closed: no implicit host fallback after a failed GPU launch.
+        return rc
     }
     if gpu_tensor_clamp01(src, dst) != 0 {
         return 0 - 1
@@ -618,7 +625,9 @@ export function gpu_tensor_linear(out: GpuTensor, inp: GpuTensor, weight: GpuTen
        not gpu_is_null(weight.buffer) {
         let gpu_rc: i32 = flow_gpu_gemm_f32(out.buffer.device,
             inp.buffer.device, weight.buffer.device, M as i64, K as i64, N as i64)
-        if gpu_rc == 0 { return 0 }
+        # A device launch failure must not silently produce a CPU result that
+        # the GPU conformance runner could mistake for real execution.
+        return gpu_rc
     }
     let mut i: i32 = 0
     while i < M {
