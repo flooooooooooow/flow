@@ -1151,6 +1151,11 @@ export function write_text(p: string, text: string) -> bool {
     return flow_cli_write_bytes(p, text as ptr<u8>, s_len(text) as i64, 0) == 0
 }
 
+# Write n raw bytes (which may contain NUL), replacing the file.
+export function write_bytes(p: string, data: ptr<u8>, n: i64) -> bool {
+    return flow_cli_write_bytes(p, data, n, 0) == 0
+}
+
 export function append_text(p: string, text: string) -> bool {
     return flow_cli_write_bytes(p, text as ptr<u8>, s_len(text) as i64, 1) == 0
 }
