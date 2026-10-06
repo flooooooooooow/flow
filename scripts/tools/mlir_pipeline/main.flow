@@ -11,6 +11,7 @@
 #       [--enable-affine-unroll-jam --affine-unroll-jam-factor N]
 #       [--enable-affine-coalescing]
 #       [--enable-affine-parallelize]
+#       [--enable-affine-interchange]
 #       [--enable-affine-skewing --affine-skew-factor N]
 #       [--enable-async-copy --async-copy-target gpu|nvptx|amdgpu]
 #
@@ -96,6 +97,7 @@ struct PipeFlags {
     affine_unroll_jam_factor: i32,
     affine_coalescing: bool,
     affine_parallelize: bool,
+    affine_interchange: bool,
     affine_skewing: bool,
     affine_skew_factor: i32,
     async_copy: bool,
@@ -194,13 +196,25 @@ function build_pipeline(f: PipeFlags) -> string {
             fn_passes = add(fn_passes, "affine-loop-fusion")
             fn_passes = add(fn_passes, "linalg-fuse-elementwise-ops")
         }
-        if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=" + ft_itoa(f.multi_buffering_factor) + "}") }
-        if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
+        # Async copies need staging storage and an overlapped loop schedule.
+        # Supply the conservative two-buffer schedule when callers enable the
+        # async path without spelling out its supporting passes.
+        if f.async_copy and not f.multi_buffering {
+            fn_passes = add(fn_passes, "test-multi-buffering{multiplier=2}")
+        } elif f.multi_buffering {
+            fn_passes = add(fn_passes, "test-multi-buffering{multiplier=" + ft_itoa(f.multi_buffering_factor) + "}")
+        }
+        if f.async_copy and not f.pipelining {
+            fn_passes = add(fn_passes, "test-scf-pipelining")
+        } elif f.pipelining {
+            fn_passes = add(fn_passes, "test-scf-pipelining")
+        }
         if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
         if f.affine_unroll_jam { fn_passes = add(fn_passes, "affine-loop-unroll-jam{unroll-factor=" + ft_itoa(f.affine_unroll_jam_factor) + "}") }
         if f.affine_coalescing { fn_passes = add(fn_passes, "affine-loop-coalescing") }
         if f.affine_parallelize { fn_passes = add(fn_passes, "affine-parallelize") }
+        if f.affine_interchange { fn_passes = add(fn_passes, "affine-loop-interchange") }
         if f.affine_skewing { fn_passes = add(fn_passes, "affine-loop-skew{skew-factor=" + ft_itoa(f.affine_skew_factor) + "}") }
         if f.affine_tiling {
             if f.affine_tile_levels > 0 {
@@ -243,6 +257,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         affine_unroll_jam: false, affine_unroll_jam_factor: 0,
         affine_coalescing: false,
         affine_parallelize: false,
+        affine_interchange: false,
         affine_skewing: false, affine_skew_factor: 0,
         async_target: 0
     }
@@ -250,13 +265,18 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     while i < argc {
         let a: string = argv[i] as string
         let mut lv: string = ""
+        let mut saw_level: bool = false
         if ft_eq(a, "--opt-level") {
-            if i + 1 < argc {
-                lv = argv[i + 1] as string
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --opt-level requires a value")
+                return 2
             }
+            lv = argv[i + 1] as string
+            saw_level = true
+            i = i + 1
         } elif ft_starts(a, "--opt-level=") {
             lv = ft_from(a, 12)
+            saw_level = true
         } elif ft_eq(a, "--no-vectorization") {
             f.vectorization = false
         } elif ft_eq(a, "--loop-fusion") {
@@ -348,6 +368,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.affine_coalescing = true
         } elif ft_eq(a, "--enable-affine-parallelize") {
             f.affine_parallelize = true
+        } elif ft_eq(a, "--enable-affine-interchange") {
+            f.affine_interchange = true
         } elif ft_eq(a, "--enable-affine-skewing") {
             f.affine_skewing = true
         } elif ft_eq(a, "--affine-skew-factor") {
@@ -431,7 +453,11 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             }
             f.async_target = target_id
         }
-        if ft_len(lv) > 0 {
+        if saw_level {
+            if ft_len(lv) == 0 {
+                ft_errln("mlir_pipeline: --opt-level requires a value")
+                return 2
+            }
             let n: i32 = level_of(lv)
             if n < 0 {
                 ft_errln("mlir_pipeline: --opt-level: invalid choice: '" + lv + "' (choose from 'O0', 'O1', 'O2', 'O3')")
