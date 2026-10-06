@@ -8,6 +8,7 @@ extern {
 }
 
 export import "buffer_handoff.flow"
+export import "boundary_audit.flow"
 
 export function ffi_alloc(size: i64) -> ptr<i8> {
     return malloc(size)

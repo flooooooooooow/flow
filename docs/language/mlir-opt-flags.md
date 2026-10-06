@@ -12,6 +12,8 @@ When compiling with the MLIR backend (`--mlir`), pass `--optimize` to run
 | `--opt-level O2` (default) | O1 + inline, sccp, mem2reg, LICM, affine-loop-fusion |
 | `--opt-level O3` | O2 + affine-super-vectorize |
 
+A bare `--opt-level` or empty `--opt-level=` is rejected. The accepted values are `O0`, `O1`, `O2`, and `O3`.
+
 ## Toggles
 
 Disable individual passes (level gates still apply):
@@ -97,6 +99,12 @@ It converts eligible affine loops to one-dimensional `affine.parallel` loops.
 The pass stays opt-in because dependence analysis determines which loops are
 safe to parallelize.
 
+Use `--enable-affine-interchange` to add the opt-in `affine-loop-interchange`
+pass. It reorders eligible nested affine loops when dependence analysis shows
+the permutation is safe. The default pipeline does not include the pass; it
+stays opt-in because interchange changes locality and is not always
+profitable. The transform is O2-gated, matching the other affine nest passes.
+
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
 tiling. Two through four positive sizes up to 4096 are accepted. The matching
 affine tiling passes are emitted in the listed order.
@@ -162,6 +170,13 @@ and offset plan explicit for the target lowering that consumes it.
 Pass `--alignment=N` to choose a power-of-two arena alignment from 1 through
 4096 bytes. The selected value is applied to every planned buffer and recorded
 as `flow.static_arena_alignment`.
+
+Pass `--lifetimes=start:end,start:end,start:end` to supply three validated live
+ranges in planner buffer order. Each range is a pair of non-negative integers
+with `end >= start`. The planner reuses arena offsets for buffers whose ranges
+do not overlap and records the resulting interference graph. Omitting the flag
+keeps the default ranges `0:2,3:5,1:4`. A bare `--lifetimes` or a malformed
+list is rejected.
 
 The module also records `flow.static_buffer_lifetimes` as comma-separated
 `start:end` operation ranges and `flow.static_buffer_offsets` as comma-separated

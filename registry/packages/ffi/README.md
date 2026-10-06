@@ -24,9 +24,15 @@ status and an empty view. The helpers never silently `O(n)`-copy an `O(1)`
 handoff. The named fallback is `ffi_buffer_copy_explicit`.
 
 Calling across the FFI has a baseline overhead. For an `O(1)` buffer
-handoff the overhead is fixed regardless of buffer size. Operations on
-small batches (for example fewer than 1000 elements) may see FFI overhead
-dominate. Batching over one contiguous view amortizes that cost.
+handoff the overhead is fixed regardless of buffer size. Measure the
+live break-even with `./flow run benchmarks/micro/ffi_breakeven.flow`
+and read [docs/language/ffi-boundary-audit.md](../../../docs/language/ffi-boundary-audit.md).
+Batch into one contiguous view when the element type and stride already
+match; do not copy to "help" a compatible layout.
+
+The C / Python / native-library crossing catalog lives in
+`src/boundary_audit.flow` (`ffi_crossing_class`, `ffi_python_buffer_class`,
+`ffi_native_buffer_class`, `ffi_breakeven_batch`).
 
 ## Instrumentation
 

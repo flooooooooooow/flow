@@ -651,6 +651,10 @@
           "path": "language/ffi-buffer.md"
         },
         {
+          "label": "FFI Boundary Audit",
+          "path": "language/ffi-boundary-audit.md"
+        },
+        {
           "label": "C Function Pointers",
           "path": "language/c-fnptr-call.md"
         }
