@@ -853,6 +853,10 @@
           "path": "project/benchmark-results.md"
         },
         {
+          "label": "Compile Profile",
+          "path": "project/compile-profile.md"
+        },
+        {
           "label": "Contributing",
           "path": "project/CONTRIBUTING.md"
         },
