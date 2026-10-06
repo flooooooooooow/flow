@@ -47,3 +47,63 @@ Arch/AUR packaging is deferred until a stable versioned source artifact exists t
 Windows/Scoop packaging is deferred until Flow has a supported Windows release artifact. Do not publish a Scoop manifest that points at source archives or placeholder hashes.
 
 External package-manager documentation should be promoted to the published section only after that channel is actually installable and verified.
+
+## Linux release acceptance (local-only)
+
+On an x86-64 Linux machine, use the published asset and its actual SHA-256 (from
+GitHub's release asset or `SHA256SUMS.txt`). The qualification script rejects a
+missing or wrong digest, unpacks to a disposable directory, runs `flow version`,
+compiles the bundled Fibonacci sample and checks its exit status (55).
+
+```bash
+bash packaging/linux/qualify-release.sh \
+  --archive dist/flow-v1.0.1.tar.gz \
+  --sha256 deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b
+```
+
+The example digest is the published v1.0.1 artifact digest, **not** a checksum
+for any future candidate. Run against the exact published tarball, not a moving
+source checkout. Passing evidence is written to
+`build/linux-qualification/qualification-linux.txt`.
+
+### Debian / Ubuntu (unpublished local artifacts)
+
+Build from one pinned commit, without a network connection or system install:
+
+```bash
+bash packaging/deb/build.sh --rev HEAD --out dist/deb
+cat dist/deb/SHA256SUMS.deb.txt
+```
+
+The script uses `git archive`, `SOURCE_DATE_EPOCH`, fixed ownership and gzip
+compression to create `flow_VERSION-1_all.deb`. The package installs the
+source-based compiler/runtime under `/usr/lib/flow`, with command symlinks in
+`/usr/bin`. It never publishes or installs anything. **HEAD is a development
+example**; use a frozen release commit when qualifying a release.
+
+For a local install/execution check without root, pass the computed hash:
+
+```bash
+bash packaging/linux/qualify-deb.sh \
+  --package dist/deb/flow_2.0.0-1_all.deb \
+  --sha256 "$(awk '$2 == "flow_2.0.0-1_all.deb" { print $1 }' dist/deb/SHA256SUMS.deb.txt)"
+```
+
+This package name describes the currently declared 2.0.0 tree, not a published
+Flow 2.0 release. The `.deb` verifier checks the archive, package metadata,
+installed symlinks, `flow version`, compiler execution and Fibonacci's exit
+status. Its evidence is in `build/linux-deb-qualification/qualification-deb.txt`.
+No APT repository or signed DEB release is claimed.
+
+### Nix / NixOS
+
+The repository's top-level flake is the supported build-from-checkout entry:
+
+```bash
+nix build .#flow
+./result/bin/flow version
+```
+
+Nix package availability or installation on Linux is not proven by the presence
+of a flake alone; record the platform, resolved inputs and an actual build
+result before promising supported binaries.
