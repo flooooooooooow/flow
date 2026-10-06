@@ -35,7 +35,11 @@ const result = await runFlowKernelChain(device, {
       wgsl: generatedClassifierWgsl,
       bindings: {input: "normalized", output: "logits"},
       scalars: {n: 10},
-      count: 10
+      count: 10,
+      // GEMM may read more than its output dispatch extent. Supply
+      // explicit element counts for each bound resource.
+      allowNonlinear: true,
+      requiredElements: {input: 784, output: 10}
     }
   ],
   readback: ["logits"]
@@ -46,8 +50,16 @@ console.log(result.execution, result.outputs.logits);
 
 The reflection names used above are illustrative; **use the exact buffer
 argument names and types emitted by the compiler**. The executor rejects
-unknown or aliased bindings, incorrect input shape, over-limit dispatch,
+unknown or aliased bindings, uninitialised tensor reads and unwritten
+readbacks, incorrect input shape, over-limit dispatch/workgroup sizes,
 invalid shader compilation, malformed uniform params and missing outputs.
+
+For `allowNonlinear: true` (e.g. matrix multiplication where the thread
+count and input/weight tensor elements differ), the caller must provide
+`requiredElements` for every Flow-reflected buffer name. Every declared
+span is checked against its resource's allocated length before any GPU
+command is submitted; `allowNonlinear` is not a bypass for bounds
+validation.
 A successful result has `execution: "webgpu-device"`, not a synthetic
 shader-compilation verdict.
 
