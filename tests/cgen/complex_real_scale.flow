@@ -1,0 +1,45 @@
+# Known elementwise case from #630 / #729: complex × real-scalar, including
+# `z * c64(c1, 0.0)`, must lower to componentwise real/imag scaling so the
+# loop does not call `__mulsc3`. `cabs` on c64 uses `cabsf`.
+
+function scale_ctor(xs: span<mut c64>, c1: f32) {
+    for i in 0 to xs.len {
+        xs[i] = xs[i] * c64(c1, 0.0)
+    }
+}
+
+function scale_typed(z: c64, k: f32) -> c64 {
+    return z * k
+}
+
+function mag(z: c64) -> f64 {
+    return cabs(z)
+}
+
+function main() -> i32 {
+    let mut xs: [c64; 2] = [c64(1.0, 2.0), c64(3.0, 4.0)]
+    scale_ctor(xs, 2.0)
+    if creal(xs[0]) != 2.0 {
+        return 1
+    }
+    if cimag(xs[0]) != 4.0 {
+        return 2
+    }
+    if creal(xs[1]) != 6.0 {
+        return 3
+    }
+    if cimag(xs[1]) != 8.0 {
+        return 4
+    }
+    let p: c64 = scale_typed(c64(1.0, 2.0), 3.0)
+    if creal(p) != 3.0 {
+        return 5
+    }
+    if cimag(p) != 6.0 {
+        return 6
+    }
+    if mag(c64(3.0, 4.0)) != 5.0 {
+        return 7
+    }
+    return 0
+}

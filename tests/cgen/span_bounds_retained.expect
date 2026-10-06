@@ -1,0 +1,5 @@
+env FLOWC_CHECKS=1
++ span index
++ flow_fault_handler("span index out of bounds")
++ ((int64_t)(
+exit 0
