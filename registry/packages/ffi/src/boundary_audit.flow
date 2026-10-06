@@ -1,0 +1,187 @@
+# Executable catalog of C / Python / native-library crossings (#737).
+#
+# A compiled handoff is wasted if the other side copies. This file classifies
+# each crossing so a test can refuse an accidental O(n) conversion of an
+# O(1) view. Prose: docs/language/ffi-boundary-audit.md
+
+import "buffer_handoff.flow"
+
+# Surfaces. C and native libraries share the FlowFfiBuffer ABI. Python has
+# two doors: `flow python` (pywheel) and a native/ctypes consumer of the C ABI.
+export const FFI_SURF_C: i32 = 0
+export const FFI_SURF_PYTHON: i32 = 1
+export const FFI_SURF_NATIVE: i32 = 2
+export const FFI_SURF_PYWHEEL: i32 = 3
+
+export const FFI_KIND_SCALAR: i32 = 0
+export const FFI_KIND_PTR: i32 = 1
+export const FFI_KIND_SPAN: i32 = 2
+export const FFI_KIND_ARRAY: i32 = 3
+export const FFI_KIND_STRING: i32 = 4
+export const FFI_KIND_STRUCT: i32 = 5
+export const FFI_KIND_CALLBACK: i32 = 6
+export const FFI_KIND_BUFFER: i32 = 7
+
+# Copy class. VALUE is a register-sized or sizeof(struct) copy (O(1) in n).
+# COPY is an O(n) payload copy. ZERO_COPY stores the caller's pointer.
+# REFUSED fails closed: no silent pack, widen, or byte-swap.
+export const FFI_X_ZERO_COPY: i32 = 0
+export const FFI_X_VALUE: i32 = 1
+export const FFI_X_COPY: i32 = 2
+export const FFI_X_REFUSED: i32 = 3
+
+# 0 = O(1), 1 = O(n), -1 = no transfer.
+export function ffi_copy_order(cls: i32) -> i32 {
+    if cls == FFI_X_ZERO_COPY {
+        return 0
+    }
+    if cls == FFI_X_VALUE {
+        return 0
+    }
+    if cls == FFI_X_COPY {
+        return 1
+    }
+    return 0 - 1
+}
+
+# Compatible layout must not become a silent payload copy.
+export function ffi_compatible_must_not_copy(compatible: bool, cls: i32) -> bool {
+    if compatible {
+        if cls == FFI_X_COPY {
+            return false
+        }
+    }
+    return true
+}
+
+export function ffi_crossing_class(surface: i32, kind: i32) -> i32 {
+    if surface == FFI_SURF_PYWHEEL {
+        if kind == FFI_KIND_SCALAR {
+            return FFI_X_VALUE
+        }
+        if kind == FFI_KIND_STRING {
+            return FFI_X_COPY
+        }
+        return FFI_X_REFUSED
+    }
+    if surface == FFI_SURF_C or surface == FFI_SURF_NATIVE or surface == FFI_SURF_PYTHON {
+        if kind == FFI_KIND_SCALAR {
+            return FFI_X_VALUE
+        }
+        if kind == FFI_KIND_PTR {
+            return FFI_X_ZERO_COPY
+        }
+        if kind == FFI_KIND_SPAN {
+            return FFI_X_ZERO_COPY
+        }
+        if kind == FFI_KIND_ARRAY {
+            return FFI_X_ZERO_COPY
+        }
+        if kind == FFI_KIND_STRING {
+            return FFI_X_ZERO_COPY
+        }
+        if kind == FFI_KIND_STRUCT {
+            return FFI_X_VALUE
+        }
+        if kind == FFI_KIND_CALLBACK {
+            return FFI_X_VALUE
+        }
+        if kind == FFI_KIND_BUFFER {
+            return FFI_X_ZERO_COPY
+        }
+        return FFI_X_REFUSED
+    }
+    return FFI_X_REFUSED
+}
+
+# PEP 3118 / NumPy format character for a packed integer or IEEE float.
+# kind: 0 = unsigned, 1 = signed, 2 = float. 0 means "no code".
+export function ffi_pep3118_format(item_size: i64, kind: i32) -> i32 {
+    if kind == 2 {
+        if item_size == 4 {
+            return 102
+        }
+        if item_size == 8 {
+            return 100
+        }
+        return 0
+    }
+    if kind == 1 {
+        if item_size == 1 {
+            return 98
+        }
+        if item_size == 2 {
+            return 104
+        }
+        if item_size == 4 {
+            return 105
+        }
+        if item_size == 8 {
+            return 113
+        }
+        return 0
+    }
+    if kind == 0 {
+        if item_size == 1 {
+            return 66
+        }
+        if item_size == 2 {
+            return 72
+        }
+        if item_size == 4 {
+            return 73
+        }
+        if item_size == 8 {
+            return 81
+        }
+        return 0
+    }
+    return 0
+}
+
+# Python buffer-protocol / ctypes / NumPy consumer of the C ABI.
+# Contiguous + matching item_size + matching format => zero-copy view.
+# Anything else is refused (never a silent dtype or stride conversion).
+export function ffi_python_buffer_class(contiguous: bool, have_size: i64, want_size: i64, have_fmt: i32, want_fmt: i32) -> i32 {
+    if contiguous == false {
+        return FFI_X_REFUSED
+    }
+    if have_size <= 0 or want_size <= 0 {
+        return FFI_X_REFUSED
+    }
+    if have_size != want_size {
+        return FFI_X_REFUSED
+    }
+    if have_fmt == 0 or want_fmt == 0 {
+        return FFI_X_REFUSED
+    }
+    if have_fmt != want_fmt {
+        return FFI_X_REFUSED
+    }
+    return FFI_X_ZERO_COPY
+}
+
+# Native-library buffer: the C layout check, mapped onto a copy class.
+export function ffi_native_buffer_class(data: ptr<void>, len: i64, have: FFILayout, want: FFILayout) -> i32 {
+    let st: i32 = ffi_layout_compatible(data, len, have, want)
+    if st == FFI_OK {
+        return FFI_X_ZERO_COPY
+    }
+    return FFI_X_REFUSED
+}
+
+# Smallest batch size where one batched crossing beats N scalar crossings.
+# Returns 0 when batching cannot win (per-element cost >= scalar call cost).
+export function ffi_breakeven_batch(scalar_cost: i64, batch_fixed: i64, batch_per_elem: i64) -> i64 {
+    if scalar_cost <= 0 {
+        return 0
+    }
+    if batch_fixed < 0 or batch_per_elem < 0 {
+        return 0
+    }
+    if batch_per_elem >= scalar_cost {
+        return 0
+    }
+    let denom: i64 = scalar_cost - batch_per_elem
+    return (batch_fixed + denom - 1) / denom
+}
