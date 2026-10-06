@@ -85610,6 +85610,9 @@ void flowc_tc_eff_print_sorted(uint8_t* names, int32_t nlen);
 void flowc_tc_eff_check_handle(TcCtx* ctx, AstArena arena, int32_t id);
 void flowc_tc_check_rows(TcCtx* ctx, AstArena arena, int32_t root);
 int32_t flowc_tc_eff_implicit_ok(TcCtx* ctx, AstArena arena, int32_t call, int32_t nargs);
+int32_t flowc_tc_cap_is_resume(uint8_t* src, int32_t start, int32_t end);
+void flowc_tc_cap_resume_diag(TcCtx* ctx, int32_t start, int32_t end);
+void flowc_tc_cap_scan_resume(TcCtx* ctx, AstArena arena, int32_t id);
 void flowc_tc_check_body(TcCtx* ctx, AstArena arena, int32_t fn);
 void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id);
 void flowc_tc_check_block(TcCtx* ctx, AstArena arena, int32_t id);
@@ -86993,10 +86996,50 @@ int32_t flowc_tc_eff_implicit_ok(TcCtx* ctx, AstArena arena, int32_t call, int32
   return 0;
 }
 
+int32_t flowc_tc_cap_is_resume(uint8_t* src, int32_t start, int32_t end) {
+  if (flowc_tc_span_is(src, start, end, "resume") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_is(src, start, end, "resume_multi") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+void flowc_tc_cap_resume_diag(TcCtx* ctx, int32_t start, int32_t end) {
+  flowc_tc_eff_begin(ctx, start);
+  (ctx[0]).fatal = ((ctx[0]).fatal + 1);
+  flowc_eff_diag_s("Capability methods are tail-resumptive: '");
+  flowc_eff_diag_span((ctx[0]).src, start, end);
+  flowc_eff_diag_s("' cannot abort, retry, or invoke a multi-shot continuation (see docs/language/effects-continuations.md)");
+  flowc_eff_diag_end();
+}
+
+void flowc_tc_cap_scan_resume(TcCtx* ctx, AstArena arena, int32_t id) {
+  if (id == AST_NONE) {
+  return;
+}
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_CALL || kind == AST_IDENT) {
+  int32_t ns = ((arena).nodes[id]).name_start;
+  int32_t ne = ((arena).nodes[id]).name_end;
+  if (flowc_tc_cap_is_resume((ctx[0]).src, ns, ne) == 1) {
+  flowc_tc_cap_resume_diag(ctx, ns, ne);
+}
+}
+  flowc_tc_cap_scan_resume(ctx, arena, ((arena).nodes[id]).a);
+  flowc_tc_cap_scan_resume(ctx, arena, ((arena).nodes[id]).b);
+  flowc_tc_cap_scan_resume(ctx, arena, ((arena).nodes[id]).c);
+  flowc_tc_cap_scan_resume(ctx, arena, ((arena).nodes[id]).next);
+}
+
 void flowc_tc_check_body(TcCtx* ctx, AstArena arena, int32_t fn) {
   int32_t body = ((arena).nodes[fn]).c;
   if (body == AST_NONE) {
   return;
+}
+  if (((arena).nodes[fn]).kind == AST_CAP_METHOD) {
+  flowc_tc_cap_scan_resume(ctx, arena, body);
 }
   flowc_tc_push_mark(ctx);
   int32_t param = ((arena).nodes[fn]).a;
@@ -87688,8 +87731,8 @@ void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint
   return;
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
-  { __typeof__((ctx[0]).eff_len) __flowc_st9431 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9431; }
-  { __typeof__((ctx[0]).eff_len) __flowc_st9452 = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9452; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st9616 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9616; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st9637 = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9637; }
   (ctx[0]).eff_seed_len = (ctx[0]).eff_len;
   int32_t item = ((dep_arena).nodes[dep_root]).a;
   while (item != AST_NONE) {
@@ -88430,7 +88473,7 @@ void ut_register_unit(UCtx* u, AstArena arena, int32_t d) {
   (u[0]).u_ne[k] = ne;
   (u[0]).u_dims[k] = dims;
   (u[0]).u_ok[k] = ok;
-  { __typeof__((u[0]).u_rad[k]) __flowc_st13072 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st13072; }
+  { __typeof__((u[0]).u_rad[k]) __flowc_st13257 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st13257; }
   (u[0]).u_len = (k + 1);
 }
 
@@ -89463,8 +89506,8 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_err(ctx);
   (ctx[0]).fatal = ((ctx[0]).fatal + 1);
 }
-  { __typeof__((ctx[0]).eff_len) __flowc_st17795 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17795; }
-  { __typeof__((ctx[0]).eff_len) __flowc_st17819 = flowc_rt_summary_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st17819; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st17980 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17980; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st18004 = flowc_rt_summary_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st18004; }
   flowc_tc_collect_globals(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_rows(ctx, arena, root);
@@ -89474,7 +89517,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 }
   flowc_tc_check_fns(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
-  { __typeof__((ctx[0]).err) __flowc_st17877 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st17877; }
+  { __typeof__((ctx[0]).err) __flowc_st18062 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st18062; }
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;

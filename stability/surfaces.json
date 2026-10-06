@@ -52,9 +52,9 @@
       "id": "effects-multishot",
       "kind": "language-feature",
       "classification": "reserved-future",
-      "source": "docs/effects-showcase.md",
+      "source": "docs/language/effects-continuations.md",
       "owner_issue": 564,
-      "note": "Abort, retry and multi-shot continuation capture are outside the shipped tail-resumptive model unless implemented and promoted later."
+      "note": "1.0 handlers are tail-resumptive. Abort, retry and multi-shot continuation capture stay reserved unless a later design decision implements and promotes them. flowc rejects resume/resume_multi in capability methods."
     },
     {
       "id": "stdlib-core",

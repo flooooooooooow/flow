@@ -11605,6 +11605,9 @@ function flowc_cgen_is_cembed_fn(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32
 #   handle E with C -> save the slot, install &_C_E_vtable, run the body,
 #                      restore the slot
 #   E.op(args)      -> E_op(args)
+# Handlers are tail-resumptive (#564): a capability method is an ordinary
+# call that returns to the operation site. Abort, retry and multi-shot
+# continuation capture are reserved; see docs/language/effects-continuations.md.
 # Unhandled operations abort by default. FLOWC_PERMISSIVE_EFFECTS=1 at compile
 # time and FLOW_PERMISSIVE_EFFECTS=1 at run time restore zero/no-op fallback.
 
