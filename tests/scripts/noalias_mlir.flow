@@ -112,11 +112,61 @@ function check_negative_cases_stay_aliasable() -> i32 {
     return T_PASS
 }
 
+function check_mixed_site_clone() -> i32 {
+    let out_path: string = t_tmp() + "/noalias.mlir"
+    if not exists(out_path) {
+        if emit_mlir("tests/cgen/noalias_restrict.flow", out_path) != 0 {
+            return T_FAIL
+        }
+    }
+    let text: string = read_text(out_path)
+    if not a_contains(text, "func.func @__flowc_na_mix_add") {
+        outln("expected specialized clone @__flowc_na_mix_add")
+        return T_FAIL
+    }
+    if not a_contains(text, "{llvm.noalias}") {
+        outln("clone should carry llvm.noalias")
+        return T_FAIL
+    }
+    let mut i: i32 = 0
+    let lines: ptr<ProcStrs> = s_lines(text)
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        if s_contains(line, "func.func @mix_add(") and s_contains(line, "llvm.noalias") {
+            outln("original mix_add must not carry llvm.noalias")
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    return T_PASS
+}
+
+function check_span_data_remark() -> i32 {
+    let out_path: string = t_tmp() + "/noalias.mlir"
+    if not exists(out_path) {
+        if emit_mlir("tests/cgen/noalias_restrict.flow", out_path) != 0 {
+            return T_FAIL
+        }
+    }
+    let text: string = read_text(out_path)
+    if not a_contains(text, "// flowc.noalias to.data") {
+        outln("expected span .data noalias remark for to")
+        return T_FAIL
+    }
+    if not a_contains(text, "// flowc.noalias from.data") {
+        outln("expected span .data noalias remark for from")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("noalias_mlir")
     t_start()
     t_end("distinct_arrays", check_distinct_arrays_get_noalias())
     t_end("negative_aliasable", check_negative_cases_stay_aliasable())
+    t_end("mixed_clone", check_mixed_site_clone())
+    t_end("span_data", check_span_data_remark())
     t_done()
     return 0
 }
