@@ -141,3 +141,36 @@ A passing dry-run leaves at least:
 | `SHA256SUMS.txt` | SHA-256 of those archives |
 | `qualification.txt` / `.json` | Commit, digests, `published: false` |
 | `rc-promotion.txt` | Only with `--promote-rc`; still `tagged: false` |
+
+## Linux (Tier 1 x86-64) release-artifact qualification
+
+Linux release acceptance is local-only and **separate** from macOS Homebrew
+acceptance. Obtain the actual released `flow-vVERSION.tar.gz` and its SHA-256
+from the corresponding published GitHub Release. Never use the SHA-256 from a
+prior tag for a new candidate.
+
+```bash
+bash packaging/linux/qualify-release.sh --archive /path/to/flow-vVERSION.tar.gz --sha256 ACTUAL_SHA256
+```
+
+This checks the hash *before extraction*, rejects unsafe/archive-mismatched
+paths, unpacks the exact artifact in a temporary directory, runs the delivered
+`flow version`, compiles the packaged Fibonacci sample and requires its exit
+status to be 55. The resulting `qualification-linux.txt` names the artifact,
+hash, host platform and C compiler. It does not publish or tag anything.
+
+For Debian/Ubuntu, build a separate local `.deb` from the *frozen* source
+commit and verify it without root:
+
+```bash
+bash packaging/deb/build.sh --rev QUALIFIED_COMMIT --out dist/deb
+cat dist/deb/SHA256SUMS.deb.txt
+bash packaging/linux/qualify-deb.sh --package /path/to/flow_VERSION-1_all.deb --sha256 ACTUAL_DEB_SHA256
+```
+
+Both Linux scripts require a real locally available artifact; they never
+invent digests or create an APT repository. `packaging/README.md` records the
+Nix smoke command and the distinction between tested local specs and public
+package-manager publication. Linux arm64 remains a Tier 2 candidate pending
+its own native-run evidence. A green Linux test does not close the outstanding
+macOS Homebrew test in #652.
