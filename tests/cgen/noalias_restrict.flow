@@ -55,6 +55,30 @@ function from_param(base: ptr<i32>) -> i32 {
     return q[0]
 }
 
+# Mixed call sites: the original stays aliasable; proven calls use a clone.
+function mix_add(dst: ptr<i32>, src: ptr<i32>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+    return dst[0]
+}
+
+function field_add(dst: ptr<i32>, src: ptr<i32>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+    return dst[0]
+}
+
+struct Pair {
+    xs: array<i32, 4>,
+    ys: array<i32, 4>
+}
+
 function main() -> i32 {
     let mut a: array<i32, 4> = [1, 2, 3, 4]
     let mut b: array<i32, 4> = [5, 6, 7, 8]
@@ -74,6 +98,17 @@ function main() -> i32 {
     let mut halves: array<i32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]
     let r6: i32 = span_add(halves[4..8], halves[0..4])
     let r7: i32 = from_param(pb)
+
+    let mut ma: array<i32, 4> = [1, 2, 3, 4]
+    let mut mb: array<i32, 4> = [5, 6, 7, 8]
+    let r8: i32 = mix_add(ma, mb, 4)
+    let r9: i32 = mix_add(ma, ma, 4)
+
+    let mut pair: Pair = Pair { xs: [1, 2, 3, 4], ys: [5, 6, 7, 8] }
+    let px: ptr<i32> = pair.xs
+    let py: ptr<i32> = pair.ys
+    let r10: i32 = field_add(px, py, 4)
+
     if r1 != 6 { return 1 }
     if r3 != 1 { return 2 }
     if r4 != 1 { return 3 }
@@ -84,5 +119,8 @@ function main() -> i32 {
     if r5 != 6 { return 8 }
     if r6 != 6 { return 9 }
     if r7 != 5 { return 10 }
+    if r8 != 6 { return 11 }
+    if r9 != 12 { return 12 }
+    if r10 != 6 { return 13 }
     return 0
 }
