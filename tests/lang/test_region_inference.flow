@@ -1,0 +1,19 @@
+# Distinct owned locals occupy distinct regions; a copy between them is
+# proven non-aliasing (#694). Exit 0 on success; a nonzero exit identifies
+# the failing check.
+
+function main() -> i32 {
+    let mut a: array<i32, 4> = [1, 2, 3, 4]
+    let mut b: array<i32, 4> = [0, 0, 0, 0]
+    let mut i: i32 = 0
+    while i < 4 {
+        b[i] = a[i]
+        i = i + 1
+    }
+    if b[0] != 1 { return 1 }
+    if b[1] != 2 { return 2 }
+    if b[2] != 3 { return 3 }
+    if b[3] != 4 { return 4 }
+    if a[0] != 1 { return 5 }
+    return 0
+}
