@@ -89,7 +89,7 @@ struct Pair {
     ys: array<i32, 4>
 }
 
-fn demo_pair_fields() -> void {
+function demo_pair_fields() -> void {
     let mut pair: Pair = Pair { xs: [1, 2, 3, 4], ys: [5, 6, 7, 8] }
     let px: ptr<i32> = pair.xs
     let py: ptr<i32> = pair.ys
