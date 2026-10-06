@@ -1,7 +1,7 @@
 [package]
 name = "ffi"
 version = "0.1.0"
-description = "FFI glue helpers, bindgen seed (sizeof ptr), and zero-copy buffer ABI"
+description = "FFI glue helpers, bindgen seed (sizeof ptr), zero-copy buffer ABI, and boundary audit"
 author = "Flow Contributors"
 license = "MIT"
 entry = "src/lib.flow"
