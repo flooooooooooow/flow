@@ -1,0 +1,157 @@
+# Executable Python/native/C boundary audit and break-even math (#737).
+# A compatible handoff must stay O(1). An incompatible layout must refuse
+# rather than silently copy. Run with: ./flow test-lang tests/lang/test_ffi_boundary_audit.flow
+
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/boundary_audit.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+")
+
+function expect_class(surface: i32, kind: i32, want: i32) -> i32 {
+    let got: i32 = ffi_crossing_class(surface, kind)
+    if got != want {
+        return 1
+    }
+    if want == FFI_X_ZERO_COPY or want == FFI_X_VALUE {
+        if ffi_compatible_must_not_copy(true, got) == false {
+            return 2
+        }
+        if ffi_copy_order(got) != 0 {
+            return 3
+        }
+    }
+    return 0
+}
+
+function test_c_and_native_catalog() -> i32 {
+    if expect_class(FFI_SURF_C, FFI_KIND_SCALAR, FFI_X_VALUE) != 0 { return 1 }
+    if expect_class(FFI_SURF_C, FFI_KIND_PTR, FFI_X_ZERO_COPY) != 0 { return 2 }
+    if expect_class(FFI_SURF_C, FFI_KIND_SPAN, FFI_X_ZERO_COPY) != 0 { return 3 }
+    if expect_class(FFI_SURF_C, FFI_KIND_ARRAY, FFI_X_ZERO_COPY) != 0 { return 4 }
+    if expect_class(FFI_SURF_C, FFI_KIND_STRING, FFI_X_ZERO_COPY) != 0 { return 5 }
+    if expect_class(FFI_SURF_C, FFI_KIND_STRUCT, FFI_X_VALUE) != 0 { return 6 }
+    if expect_class(FFI_SURF_C, FFI_KIND_CALLBACK, FFI_X_VALUE) != 0 { return 7 }
+    if expect_class(FFI_SURF_C, FFI_KIND_BUFFER, FFI_X_ZERO_COPY) != 0 { return 8 }
+
+    if expect_class(FFI_SURF_NATIVE, FFI_KIND_PTR, FFI_X_ZERO_COPY) != 0 { return 9 }
+    if expect_class(FFI_SURF_NATIVE, FFI_KIND_BUFFER, FFI_X_ZERO_COPY) != 0 { return 10 }
+    if expect_class(FFI_SURF_NATIVE, FFI_KIND_CALLBACK, FFI_X_VALUE) != 0 { return 11 }
+
+    if ffi_copy_order(FFI_X_ZERO_COPY) != 0 { return 12 }
+    if ffi_copy_order(FFI_X_VALUE) != 0 { return 13 }
+    if ffi_copy_order(FFI_X_COPY) != 1 { return 14 }
+    if ffi_copy_order(FFI_X_REFUSED) >= 0 { return 15 }
+    return 0
+}
+
+function test_python_catalog() -> i32 {
+    # ctypes / buffer-protocol / NumPy over the C ABI: views, not copies.
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_PTR, FFI_X_ZERO_COPY) != 0 { return 1 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_SPAN, FFI_X_ZERO_COPY) != 0 { return 2 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_ARRAY, FFI_X_ZERO_COPY) != 0 { return 3 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_BUFFER, FFI_X_ZERO_COPY) != 0 { return 4 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_STRING, FFI_X_ZERO_COPY) != 0 { return 5 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_SCALAR, FFI_X_VALUE) != 0 { return 6 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_STRUCT, FFI_X_VALUE) != 0 { return 7 }
+    if expect_class(FFI_SURF_PYTHON, FFI_KIND_CALLBACK, FFI_X_VALUE) != 0 { return 8 }
+
+    # `flow python` (pywheel) today: scalars by value, string is a UTF-8
+    # decode copy, everything else is refused. No silent buffer conversion.
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_SCALAR, FFI_X_VALUE) != 0 { return 9 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_STRING, FFI_X_COPY) != 0 { return 10 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_PTR, FFI_X_REFUSED) != 0 { return 11 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_SPAN, FFI_X_REFUSED) != 0 { return 12 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_ARRAY, FFI_X_REFUSED) != 0 { return 13 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_STRUCT, FFI_X_REFUSED) != 0 { return 14 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_CALLBACK, FFI_X_REFUSED) != 0 { return 15 }
+    if expect_class(FFI_SURF_PYWHEEL, FFI_KIND_BUFFER, FFI_X_REFUSED) != 0 { return 16 }
+
+    if ffi_copy_order(ffi_crossing_class(FFI_SURF_PYWHEEL, FFI_KIND_STRING)) != 1 { return 17 }
+    return 0
+}
+
+function test_python_buffer_protocol() -> i32 {
+    let i32_fmt: i32 = ffi_pep3118_format(4, 1)
+    let i64_fmt: i32 = ffi_pep3118_format(8, 1)
+    let f32_fmt: i32 = ffi_pep3118_format(4, 2)
+    let f64_fmt: i32 = ffi_pep3118_format(8, 2)
+    let u8_fmt: i32 = ffi_pep3118_format(1, 0)
+    if i32_fmt != 105 { return 1 }
+    if i64_fmt != 113 { return 2 }
+    if f32_fmt != 102 { return 3 }
+    if f64_fmt != 100 { return 4 }
+    if u8_fmt != 66 { return 5 }
+    if ffi_pep3118_format(3, 1) != 0 { return 6 }
+
+    # Contiguous matching dtype: zero-copy. Stride or dtype mismatch: refuse.
+    if ffi_python_buffer_class(true, 4, 4, i32_fmt, i32_fmt) != FFI_X_ZERO_COPY { return 7 }
+    if ffi_python_buffer_class(false, 4, 4, i32_fmt, i32_fmt) != FFI_X_REFUSED { return 8 }
+    if ffi_python_buffer_class(true, 4, 8, i32_fmt, i64_fmt) != FFI_X_REFUSED { return 9 }
+    if ffi_python_buffer_class(true, 4, 4, i32_fmt, f32_fmt) != FFI_X_REFUSED { return 10 }
+    if ffi_compatible_must_not_copy(true, ffi_python_buffer_class(true, 8, 8, f64_fmt, f64_fmt)) == false { return 11 }
+    return 0
+}
+
+function test_native_buffer_class() -> i32 {
+    let raw: ptr<i8> = ffi_alloc(32)
+    if (raw as i64) == 0 { return 1 }
+    let have: FFILayout = ffi_layout_contiguous(4, 4)
+    let want: FFILayout = ffi_layout_contiguous(4, 4)
+    if ffi_native_buffer_class(raw as ptr<void>, 8, have, want) != FFI_X_ZERO_COPY {
+        ffi_free(raw)
+        return 2
+    }
+    let stride: FFILayout = FFILayout { item_size: 4, stride: 8, item_align: 4, reserved: 0 }
+    if ffi_native_buffer_class(raw as ptr<void>, 4, stride, want) != FFI_X_REFUSED {
+        ffi_free(raw)
+        return 3
+    }
+    let want_i64: FFILayout = ffi_layout_contiguous(8, 8)
+    if ffi_native_buffer_class(raw as ptr<void>, 4, have, want_i64) != FFI_X_REFUSED {
+        ffi_free(raw)
+        return 4
+    }
+    let handoff: FFIHandoff = ffi_buffer_try_borrow(raw as ptr<void>, 8, have, want)
+    if handoff.status != FFI_OK { ffi_free(raw); return 5 }
+    if ffi_buffer_addr(handoff.buf) != (raw as i64) { ffi_free(raw); return 6 }
+    if ffi_copy_order(FFI_X_ZERO_COPY) != 0 { ffi_free(raw); return 7 }
+    ffi_free(raw)
+    return 0
+}
+
+function test_breakeven_math() -> i32 {
+    # scalar=10, fixed=100, per-elem=0 => n = 10
+    if ffi_breakeven_batch(10, 100, 0) != 10 { return 1 }
+    # ceiling: 101 / 10 = 11
+    if ffi_breakeven_batch(10, 101, 0) != 11 { return 2 }
+    # per-elem eats the advantage: never
+    if ffi_breakeven_batch(10, 100, 10) != 0 { return 3 }
+    if ffi_breakeven_batch(10, 100, 11) != 0 { return 4 }
+    if ffi_breakeven_batch(0, 100, 0) != 0 { return 5 }
+    # scalar=20, fixed=50, per-elem=10 => n = 5
+    if ffi_breakeven_batch(20, 50, 10) != 5 { return 6 }
+    return 0
+}
+
+function main() -> i32 {
+    let r1: i32 = test_c_and_native_catalog()
+    if r1 != 0 { return r1 }
+
+    let r2: i32 = test_python_catalog()
+    if r2 != 0 { return r2 + 20 }
+
+    let r3: i32 = test_python_buffer_protocol()
+    if r3 != 0 { return r3 + 40 }
+
+    let r4: i32 = test_native_buffer_class()
+    if r4 != 0 { return r4 + 60 }
+
+    let r5: i32 = test_breakeven_math()
+    if r5 != 0 { return r5 + 80 }
+
+    return 0
+}

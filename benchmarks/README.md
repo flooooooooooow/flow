@@ -68,6 +68,8 @@ No workload source rewrite is required. See [docs/library/memory.md](../docs/lib
 | `parallel_scaling` | Serial and disjoint-chunk parallel passes | Time (ms), efficiency |
 | `sort` | Quicksort, heapsort, insertion sort | Time (ms) |
 | `ffi_boundary_benchmark` | FFI boundary: pointer-identity row (copied_bytes=0) plus scalar / batched / large-buffer timings | Time (ms) |
+| `ffi_breakeven` | Real C crossings (scalar, batch, zero-copy, copy, string, value, callback) and live `breakeven_batch=` | Batch size |
+| `runtime_ffi_*` / `memory_ffi_*` | #728 harness rows for FFI boundary overhead and copy-byte instrumentation | Harness schema |
 
 ## Performance Targets
 

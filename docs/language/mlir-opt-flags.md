@@ -12,6 +12,8 @@ When compiling with the MLIR backend (`--mlir`), pass `--optimize` to run
 | `--opt-level O2` (default) | O1 + inline, sccp, mem2reg, LICM, affine-loop-fusion |
 | `--opt-level O3` | O2 + affine-super-vectorize |
 
+A bare `--opt-level` or empty `--opt-level=` is rejected. The accepted values are `O0`, `O1`, `O2`, and `O3`.
+
 ## Toggles
 
 Disable individual passes (level gates still apply):
