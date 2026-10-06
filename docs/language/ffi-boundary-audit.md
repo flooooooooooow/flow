@@ -63,7 +63,7 @@ helper: that is an `O(n)` copy the caller must choose.
 
 ## Callback overhead
 
-A function-pointer hop is `O(1)` extra calls, not an `O(n)` payload copy.
+A function-pointer hop costs `O(1)` extra calls and never copies the `O(n)` payload.
 It still shows up on tiny callees. Batch the data, not the callback: one
 crossing with a contiguous buffer beats N scalar callbacks.
 
