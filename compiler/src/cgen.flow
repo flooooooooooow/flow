@@ -6306,10 +6306,8 @@ function flowc_cgen_bounds_span_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     }
     # A syntactic 0..xs.len range is not an inductive proof when the
     # loop body can assign/address xs or shadow/rebind the induction name.
-    # Also never apply this ascending proof to a descending loop.
-    if dir <= 0 {
-        return AST_NONE
-    }
+    # Preserve the existing canonical-loop code shape, which emits both
+    # up/down arms for a runtime-valued bound (xs.len is normally >= 0).
     let body: i32 = arena.nodes[id].c
     if flowc_cgen_name_rebound_in_node(arena, src, body,
         arena.nodes[base].name_start, arena.nodes[base].name_end) == 1 {
