@@ -300,6 +300,25 @@ function main() -> i32 {
     if gpu_graph_add_copy_f32(cop, "self", src, src) != -1 { return 67 }
     if gpu_graph_add_copy_f32(cop, "wrong_direction", dst, src) != -1 { return 68 }
     if gpu_graph_add_copy_f32(cop, "wrong_bytes", dst, dst) != -1 { return 69 }
+    let reflection: string = gpu_graph_emit_webgpu_reflection(copy, copied)
+    if not str_has(reflection, "\"entryPoint\":\"copy_f32\"") { return 70 }
+    if not str_has(reflection, "\"workgroupSize\":64") { return 71 }
+    if not str_has(reflection, "\"name\":\"source\"") { return 72 }
+    if not str_has(reflection, "\"access\":\"write\"") { return 73 }
+    if gpu_graph_emit_webgpu_reflection(fluid, 0) != "" { return 74 }
+
+    # A resource name is embedded in shader source and JSON. Reject
+    # invalid identifiers before either backend can interpret it.
+    let mut injected: GpuGraph = gpu_graph_new()
+    let ip: ptr<GpuGraph> = &injected
+    let bad_name: i32 = gpu_graph_add_storage_buffer(ip, "x;evil",
+        GPU_ACCESS_READ, GPU_LIFE_PERSISTENT, 16)
+    let good_name: i32 = gpu_graph_add_storage_buffer(ip, "output",
+        GPU_ACCESS_WRITE, GPU_LIFE_PERSISTENT, 16)
+    let unsafe_op: i32 = gpu_graph_add_copy_f32(ip, "copy_valid", bad_name, good_name)
+    if unsafe_op != 0 { return 75 }
+    if gpu_graph_emit_wgsl_pass(injected, 0) != "" { return 76 }
+    if gpu_graph_emit_webgpu_reflection(injected, 0) != "" { return 77 }
 
     return 0
 }
