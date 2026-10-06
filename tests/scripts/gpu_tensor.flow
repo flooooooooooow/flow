@@ -138,10 +138,14 @@ function check_gpu_test_numerical() -> i32 {
         return T_FAIL
     }
     let text: string = read_text(t_out())
-    if not a_contains(text, "CASE mnist [metal] NUMERICAL") { return T_FAIL }
-    if not a_contains(text, "CASE mnist [webgpu] NUMERICAL") { return T_FAIL }
-    if not a_contains(text, "CASE depth [metal] NUMERICAL") { return T_FAIL }
-    if not a_contains(text, "CASE depth [webgpu] NUMERICAL") { return T_FAIL }
+    # Metal may be unavailable on this host; WebGPU shader generation
+    # alone never counts as model execution.
+    if not a_contains(text, "CASE mnist [metal] NUMERICAL") and
+       not a_contains(text, "CASE mnist [metal] UNSUPPORTED reason=device-execution") { return T_FAIL }
+    if not a_contains(text, "CASE depth [metal] NUMERICAL") and
+       not a_contains(text, "CASE depth [metal] UNSUPPORTED reason=device-execution") { return T_FAIL }
+    if not a_contains(text, "CASE mnist [webgpu] UNSUPPORTED reason=device-execution") { return T_FAIL }
+    if not a_contains(text, "CASE depth [webgpu] UNSUPPORTED reason=device-execution") { return T_FAIL }
     return T_PASS
 }
 
