@@ -225,7 +225,7 @@ function check_final_line_loc() -> i32 {
         t_cat(t_err())
         return T_FAIL
     }
-    if not a_contains(read_text(t_out()), "\\\"loc\\\": 1") {
+    if not a_contains(read_text(t_out()), "\"loc\": 1") {
         return T_FAIL
     }
     return T_PASS
