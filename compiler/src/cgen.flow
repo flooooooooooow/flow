@@ -9212,10 +9212,12 @@ function flowc_cgen_step_is_unit(arena: AstArena, step: i32) -> i32 {
     return 0
 }
 
-# Contiguous `dst[i] = src[i]` over `i in lo to hi` with unit stride: emit
-# `memmove` instead of a scalar loop. The C compiler already maps that to a
-# vector or libc copy. Skip when runtime checks would have guarded a sized
-# array or span, or when the bases may be spans (those index through `.data`).
+# Contiguous `dst[i] = src[i]` over `i in lo to hi` with unit stride
+# becomes memcpy ONLY if provenance proves the two regions disjoint.
+# Do not replace an overlapping forward loop with memmove: when
+# `dst = src + 1`, sequential writes feed later reads (a recurrence),
+# whereas memmove snapshots the old values and changes program semantics.
+# Skip checks/slices as before; unknown aliasing keeps the original loop.
 function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_step_is_unit(arena, arena.nodes[id].ival) == 0 {
         return 0
@@ -9268,21 +9270,18 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
         }
     }
     let disjoint: i32 = flowc_region_disjoint(arena, src, w[0].cur_fn, dst, srcb)
-    if disjoint == 1 {
-        flowc_cgen_puts(w, "  /* region: disjoint */\n")
-    } else {
-        flowc_cgen_puts(w, "  /* region: unproven */\n")
+    # When aliasing is possible, even memmove is not equivalent to an
+    # ordered elementwise assignment. Fall back to the exact scalar loop.
+    if disjoint != 1 {
+        return 0
     }
+    flowc_cgen_puts(w, "  /* region: disjoint */\n")
     flowc_cgen_puts(w, "  if ((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ") > (")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
     flowc_cgen_puts(w, ")) {\n    ")
-    if disjoint == 1 {
-        flowc_cgen_puts(w, "memcpy")
-    } else {
-        flowc_cgen_puts(w, "memmove")
-    }
+    flowc_cgen_puts(w, "memcpy")
     flowc_cgen_puts(w, "((void*)(&(")
     flowc_cgen_emit_expr(w, arena, src, dst)
     flowc_cgen_puts(w, ")[")
