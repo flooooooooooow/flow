@@ -83,5 +83,8 @@ function main() -> i32 {
     if r4 != 0 { return 40 + r4 }
     let r5: i32 = check_from_buffer_rejects_mismatch()
     if r5 != 0 { return 50 + r5 }
+    # Reject overflow before allocating or indexing the backing buffer.
+    if gpu_tensor_numel(65536, 65536, 1, 1) != 0 { return 61 }
+    if not gpu_tensor_is_empty(gpu_tensor_alloc_f32(65536, 65536, 1, 1)) { return 62 }
     return 0
 }
