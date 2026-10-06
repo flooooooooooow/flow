@@ -1,4 +1,5 @@
-import .text { ft_outln, ft_errln, ft_len, ft_starts, ft_from, ft_byte, ft_eq }
+import .text { ft_outln, ft_errln, ft_len, ft_starts, ft_from, ft_byte, ft_eq, ft_itoa }
+import .cost { tune_schedule_cost, tune_is_gpu_target }
 
 function ft_digit(v: i32) -> bool {
     return v >= 48 and v <= 57
@@ -51,7 +52,45 @@ function valid_target(s: string) -> bool {
 function valid_strategy(s: string) -> bool {
     return ft_eq(s, "tile") or ft_eq(s, "vector") or
            ft_eq(s, "interchange") or ft_eq(s, "fuse") or
-           ft_eq(s, "hierarchical_tile") or ft_eq(s, "hierarchical_vector")
+           ft_eq(s, "hierarchical_tile") or ft_eq(s, "hierarchical_vector") or
+           ft_eq(s, "unroll")
+}
+
+function valid_unroll_factor(s: string) -> bool {
+    let n: i32 = ft_len(s)
+    if n == 0 or n > 2 {
+        return false
+    }
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if not ft_digit(ft_byte(s, i)) {
+            return false
+        }
+        value = value * 10 + ft_byte(s, i) - 48
+        i = i + 1
+    }
+    return value >= 2 and value <= 16
+}
+
+function valid_extent(s: string) -> bool {
+    let n: i32 = ft_len(s)
+    if n == 0 or n > 4 {
+        return false
+    }
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if not ft_digit(ft_byte(s, i)) {
+            return false
+        }
+        if value > 409 or (value == 409 and ft_byte(s, i) > 54) {
+            return false
+        }
+        value = value * 10 + ft_byte(s, i) - 48
+        i = i + 1
+    }
+    return value >= 8 and value <= 4096
 }
 
 function valid_permutation(s: string) -> bool {
@@ -60,7 +99,7 @@ function valid_permutation(s: string) -> bool {
            ft_eq(s, "2,0,1") or ft_eq(s, "2,1,0")
 }
 
-function transform_of(op: string, fuse_with: string, tiles: string, permutation: string, inner_tiles: string, target: string, strategy: string) -> string {
+function transform_of(op: string, fuse_with: string, tiles: string, permutation: string, inner_tiles: string, target: string, strategy: string, unroll_factor: string) -> string {
     let mut action: string = "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n"
     if ft_eq(strategy, "vector") {
         action = "    %vectorized = transform.structured.vectorize %matmul vector_sizes [" + tiles + "] : (!transform.any_op) -> !transform.any_op\n"
@@ -75,8 +114,15 @@ function transform_of(op: string, fuse_with: string, tiles: string, permutation:
     } elif ft_eq(strategy, "hierarchical_vector") {
         action = "    %outer, %outer_loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
                  "    %vectorized = transform.structured.vectorize %outer vector_sizes [" + inner_tiles + "] : (!transform.any_op) -> !transform.any_op\n"
+    } elif ft_eq(strategy, "unroll") {
+        action = "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
+                 "    transform.loop.unroll %loops#2 {factor = " + unroll_factor + "} : !transform.any_op\n"
     }
-    return "module attributes {transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"" + strategy + "\"} {\n" +
+    let mut attrs: string = "transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"" + strategy + "\""
+    if ft_eq(strategy, "unroll") {
+        attrs = attrs + ", flow.tune_unroll_factor = \"" + unroll_factor + "\""
+    }
+    return "module attributes {" + attrs + "} {\n" +
            "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n" +
            "    %matmul = transform.structured.match ops{[\"" + op + "\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n" +
            action +
@@ -94,6 +140,9 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut permutation: string = "0,1,2"
     let mut fuse_with: string = "linalg.generic"
     let mut inner_tiles: string = "8,8,8"
+    let mut unroll_factor: string = "4"
+    let mut extent: string = "128"
+    let mut print_cost: bool = false
     
     while i < argc {
         let a: string = argv[i] as string
@@ -132,6 +181,18 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--inner-tiles") {
             ft_errln("mlir_tune: --inner-tiles requires a value")
             return 2
+        } elif ft_starts(a, "--unroll-factor=") {
+            unroll_factor = ft_from(a, 16)
+        } elif ft_eq(a, "--unroll-factor") {
+            ft_errln("mlir_tune: --unroll-factor requires a value")
+            return 2
+        } elif ft_starts(a, "--extent=") {
+            extent = ft_from(a, 9)
+        } elif ft_eq(a, "--extent") {
+            ft_errln("mlir_tune: --extent requires a value")
+            return 2
+        } elif ft_eq(a, "--print-cost") {
+            print_cost = true
         }
         i = i + 1
     }
@@ -152,7 +213,15 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         return 2
     }
     if not valid_strategy(strategy) {
-        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector', 'interchange', 'fuse', 'hierarchical_tile', 'hierarchical_vector'")
+        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector', 'interchange', 'fuse', 'hierarchical_tile', 'hierarchical_vector', 'unroll'")
+        return 2
+    }
+    if not valid_unroll_factor(unroll_factor) {
+        ft_errln("mlir_tune: --unroll-factor expects an integer from two to sixteen")
+        return 2
+    }
+    if not valid_extent(extent) {
+        ft_errln("mlir_tune: --extent expects an integer from eight to 4096")
         return 2
     }
     if ft_eq(strategy, "interchange") and not valid_permutation(permutation) {
@@ -163,6 +232,16 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         ft_errln("mlir_tune: --fuse-with must not be empty")
         return 2
     }
-    ft_outln(transform_of(op, fuse_with, tiles, permutation, inner_tiles, target, strategy))
+    if print_cost {
+        let mut extent_n: i32 = 0
+        let mut ei: i32 = 0
+        while ei < ft_len(extent) {
+            extent_n = extent_n * 10 + ft_byte(extent, ei) - 48
+            ei = ei + 1
+        }
+        ft_outln(ft_itoa(tune_schedule_cost(tiles, extent_n, tune_is_gpu_target(target))))
+        return 0
+    }
+    ft_outln(transform_of(op, fuse_with, tiles, permutation, inner_tiles, target, strategy, unroll_factor))
     return 0
 }

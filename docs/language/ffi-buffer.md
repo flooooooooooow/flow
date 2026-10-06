@@ -1,9 +1,7 @@
 # Zero-copy FFI buffer ABI
 
-> **Status:** first slice of #737. Compatible contiguous pointer, span, and
-> array data can cross the C boundary as a borrowed or owned view. The ABI
-> never silently copies payload bytes. A full Python/native-library audit
-> and the #728 end-to-end suite are out of scope here.
+> **Status:** C ABI from #1347; Python/native audit, #728 harness rows, and
+> live break-even measurements are in [ffi-boundary-audit.md](ffi-boundary-audit.md).
 
 A compiled win is wasted if the FFI copies the buffer. The contract is: when
 the layout is compatible, handoff is `O(1)` (pointer + metadata). When it is
@@ -43,7 +41,7 @@ Compatible sources (contiguous, matching `item_size`, pointer meets
 | Source | How to form the view |
 |---|---|
 | `ptr<T>` + length | `data`, `len`, `item_size = sizeof(T)` |
-| `span<T>` / `span<mut T>` | `values.data`, `values.len` — already `{pointer, length}` |
+| `span<T>` / `span<mut T>` | `values.data`, `values.len` (already `{pointer, length}`) |
 | `array<T, N>` / `array<T>` | `&arr[0]`, `N` or `length(arr)` |
 
 `stride` must equal `item_size`. A strided, padded, or mixed-endian buffer
@@ -90,10 +88,10 @@ path inside the handoff helpers.
 ## Batching
 
 Crossing into C has a fixed call cost. For an `O(1)` buffer handoff that
-cost does not grow with `len`. Scalar calls and tiny batches (on the order
-of fewer than a thousand elements) often spend more time in the boundary
-than in the work. Batch into one contiguous view when the element type and
-stride already match.
+cost does not grow with `len`. Measure the live break-even with
+`./flow run benchmarks/micro/ffi_breakeven.flow` and read
+[ffi-boundary-audit.md](ffi-boundary-audit.md). Batch into one contiguous
+view when the element type and stride already match.
 
 ## Proof
 
@@ -104,4 +102,4 @@ layout returns an error with a null view and no copy instrumentation.
 `benchmarks/micro/ffi_boundary_benchmark.flow` prints a pointer-identity
 row next to the scalar / batched / large-buffer timings.
 
-Related: [spans](spans.md) · [export ABI](export-abi.md) · [memory](../library/memory.md)
+Related: [boundary audit](ffi-boundary-audit.md) · [spans](spans.md) · [export ABI](export-abi.md) · [memory](../library/memory.md)

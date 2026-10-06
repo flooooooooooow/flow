@@ -1,0 +1,140 @@
+# CPU scaling micro-benchmark for the #727 language/runtime scorecard.
+#
+# Times identical serial and disjoint-chunk `parallel for` passes over an
+# 8 million element i32 array (32 MiB). Each worker owns one contiguous
+# range, so the result has no reduction race. Wall time is measured with a
+# monotonic microsecond clock; the JSON still reports integer milliseconds
+# plus efficiency computed from the microsecond samples so sub-millisecond
+# runs do not divide by zero.
+#
+# `parallel for` emits OpenMP when the toolchain defines `_OPENMP`, and a
+# correct serial loop otherwise. The checksum stays verifiable either way.
+#
+# Run: ./flow run benchmarks/micro/parallel_scaling.flow
+
+@cEmbed("#include <time.h>
+static int64_t parallel_scaling_now_us(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000000 + (int64_t)(ts.tv_nsec / 1000);
+}
+")
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function printf(fmt: string, ...) -> i32
+    function parallel_scaling_now_us() -> i64
+}
+
+const N: i32 = 8000000
+const MAX_PARTS: i32 = 8
+const PASSES: i32 = 4
+const REPS: i32 = 3
+
+function mix(v: i32) -> i32 {
+    let wide: i64 = (v as i64) * 1103515245 + 12345
+    return (wide % 32768) as i32
+}
+
+function fill(data: ptr<i32>) -> void {
+    for i in 0 to N {
+        data[i] = mix(i)
+    }
+}
+
+function pass_range(data: ptr<i32>, lo: i32, hi: i32) -> void {
+    for _p in 0 to PASSES {
+        for i in lo to hi {
+            data[i] = mix(data[i])
+        }
+    }
+}
+
+function checksum(data: ptr<i32>) -> i64 {
+    let mut sum: i64 = 0
+    for i in 0 to N {
+        sum = sum + data[i] as i64
+    }
+    return sum
+}
+
+function serial_us(data: ptr<i32>) -> i64 {
+    let t0: i64 = parallel_scaling_now_us()
+    pass_range(data, 0, N)
+    return parallel_scaling_now_us() - t0
+}
+
+function parallel_us(data: ptr<i32>, parts: i32) -> i64 {
+    let t0: i64 = parallel_scaling_now_us()
+    parallel for part in 0 to parts {
+        let lo: i32 = part * (N / parts)
+        let mut hi: i32 = lo + N / parts
+        if part == parts - 1 {
+            hi = N
+        }
+        pass_range(data, lo, hi)
+    }
+    return parallel_scaling_now_us() - t0
+}
+
+function best_serial(data: ptr<i32>) -> i64 {
+    let mut best: i64 = 9223372036854775807
+    for r in 0 to REPS {
+        let s: i64 = serial_us(data)
+        if s < best {
+            best = s
+        }
+    }
+    return best
+}
+
+function best_parallel(data: ptr<i32>, parts: i32) -> i64 {
+    let mut best: i64 = 9223372036854775807
+    for r in 0 to REPS {
+        let p: i64 = parallel_us(data, parts)
+        if p < best {
+            best = p
+        }
+    }
+    return best
+}
+
+# serial_us / (parallel_us * parts) as a percent. 0 when the parallel
+# sample is not positive, so a sub-millisecond host cannot crash the run.
+function efficiency_x100(serial: i64, par_us: i64, parts: i64) -> i64 {
+    if par_us <= 0 or parts <= 0 {
+        return 0
+    }
+    return serial * 100 / (par_us * parts)
+}
+
+function us_to_ms(us: i64) -> i64 {
+    if us <= 0 {
+        return 0
+    }
+    return us / 1000
+}
+
+function main() -> i32 {
+    let data: ptr<i32> = malloc((N as i64) * 4) as ptr<i32>
+    if data as ptr<u8> == null {
+        return 2
+    }
+    fill(data)
+
+    let serial_best: i64 = best_serial(data)
+    let p1: i64 = best_parallel(data, 1)
+    let p2: i64 = best_parallel(data, 2)
+    let p4: i64 = best_parallel(data, 4)
+    let p8: i64 = best_parallel(data, MAX_PARTS)
+
+    let sum: i64 = checksum(data)
+    free(data as ptr<void>)
+    if sum <= 0 {
+        return 3
+    }
+
+    printf("{\"benchmark\":\"parallel_scaling\",\"n\":%d,\"passes\":%d,\"reps\":%d,\"serial_ms\":%lld,\"parallel_ms\":{\"1\":%lld,\"2\":%lld,\"4\":%lld,\"8\":%lld},\"efficiency_x100\":{\"1\":%lld,\"2\":%lld,\"4\":%lld,\"8\":%lld},\"checksum\":%lld}\n", N, PASSES, REPS, us_to_ms(serial_best), us_to_ms(p1), us_to_ms(p2), us_to_ms(p4), us_to_ms(p8), efficiency_x100(serial_best, p1, 1), efficiency_x100(serial_best, p2, 2), efficiency_x100(serial_best, p4, 4), efficiency_x100(serial_best, p8, 8), sum)
+    return 0
+}

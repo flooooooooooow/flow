@@ -1,0 +1,23 @@
+# #728 row: scalar FFI call overhead (issue #737).
+
+@cEmbed("
+#include <stdint.h>
+__attribute__((noinline)) int64_t ffi_h_scalar(int64_t v) { return v + 1; }
+")
+
+extern {
+    function ffi_h_scalar(v: i64) -> i64
+}
+
+function main() -> i32 {
+    let mut sum: i64 = 0
+    let mut i: i32 = 0
+    while i < 20000 {
+        sum = sum + ffi_h_scalar(i as i64)
+        i = i + 1
+    }
+    if sum <= 0 {
+        return 1
+    }
+    return 0
+}
