@@ -197,19 +197,46 @@ function quoted_field(text: string, key: string) -> string {
     return ft_slice(text, start, end)
 }
 
+# The version in a `.../flow-vX.Y.Z.tar.gz` url (the last `flow-v` in it),
+# which Homebrew also scans when a formula has no `version` line. Null when
+# the url names no such archive or the part before `.tar.gz` is not semver.
+function version_from_url(url: string) -> string {
+    let mut at: i32 = ft_find(url, "flow-v", 0)
+    if at < 0 {
+        return null as string
+    }
+    let mut next: i32 = ft_find(url, "flow-v", at + 1)
+    while next >= 0 {
+        at = next
+        next = ft_find(url, "flow-v", at + 1)
+    }
+    let start: i32 = at + 6
+    let tar: i32 = ft_find(url, ".tar.gz", start)
+    if tar <= start {
+        return null as string
+    }
+    let v: string = ft_slice(url, start, tar)
+    if is_semver(v) == false {
+        return null as string
+    }
+    return v
+}
+
 struct Formula {
     url: string
     sha256: string
     version: string
     error: string
+    version_from: string
 }
 
 function parse_formula(path: string) -> ptr<Formula> {
-    let f: ptr<Formula> = malloc(32) as ptr<Formula>
+    let f: ptr<Formula> = malloc(40) as ptr<Formula>
     f.url = null as string
     f.sha256 = null as string
     f.version = null as string
     f.error = null as string
+    f.version_from = "version field"
     if ft_exists(path) == false {
         f.error = "missing formula: " + path
         return f
@@ -231,7 +258,12 @@ function parse_formula(path: string) -> ptr<Formula> {
         return f
     }
     if f.version as ptr<u8> == null {
-        f.error = "formula has no version field: " + path
+        # No explicit `version` line: use the one Homebrew scans from the url.
+        f.version = version_from_url(f.url)
+        f.version_from = "url"
+    }
+    if f.version as ptr<u8> == null {
+        f.error = "formula has no version field and its url names no flow-vX.Y.Z.tar.gz: " + path
         return f
     }
     if is_hex64(f.sha256) == false {
@@ -332,7 +364,7 @@ function validate_formula_path(path: string, run_brew: bool) -> i32 {
         return 1
     }
     ft_outln("formula: " + path)
-    ft_outln("formula.version: " + f.version)
+    ft_outln("formula.version: " + f.version + " (from " + f.version_from + ")")
     ft_outln("formula.url: " + f.url)
     ft_outln("formula.sha256: " + f.sha256)
     ft_outln("formula.structural: pass")
