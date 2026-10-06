@@ -63,6 +63,7 @@ function mnist_cpu(input: Tensor, w1: Tensor, w2: Tensor) -> Tensor {
 }
 
 function main() -> i32 {
+    let dispatch_before: i64 = gpu_model_dispatch_count()
     let input_dim: i32 = 784
     let hidden_dim: i32 = 16
     let num_classes: i32 = 10
@@ -119,6 +120,11 @@ function main() -> i32 {
 
     println("vgpu mnist")
     println(gpu_backend_name())
+    if gpu_model_dispatch_count() > dispatch_before and gpu_backend_name() == "metal" {
+        println("GPU_DEVICE_EXECUTED metal")
+    } else {
+        println("GPU_DEVICE_UNAVAILABLE")
+    }
     print("class ")
     println(gpu_tensor_argmax(probs))
     print("match ")
