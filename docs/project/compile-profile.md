@@ -82,3 +82,53 @@ A phase that is >10% and has no row here is a remaining gap on #735.
 `flow-compile-profile/1` phase objects: `name`, `ms`, `us`. Totals: `source_loc`, `ast_nodes`, `total_ms`, `startup_ms`, `loc_per_s`, `ast_nodes_per_s`.
 
 `compile_bench` program rows keep `emit_ms`, `cc_ms`, `run_ms`, `total_ms`, `cold_total_ms`, `warm_total_ms`, `reps`, `loc_per_emit_s`.
+
+## AST cache correctness and trust boundary (#736)
+
+Stage-A uses an optional content-addressed AST snapshot in
+`$HOME/.cache/flow/ast/`. The compiler's salt includes the Flow compiler
+version, an explicit **AST cache schema (737)**, and the optional
+`FLOW_CACHE_SALT` override. The schema must be bumped whenever parser
+semantics or `AstNode` binary layout change without a compiler version bump.
+An old schema never counts as a cache hit.
+
+Unlike general project-local caches, this binary snapshot is only trusted
+from **owner-controlled directories**. The compiler verifies the real
+`$HOME` and `.cache` paths are owned and not group/other writable; the
+`flow` and `ast` subdirectories must be owner-only (mode 0700). It
+refuses symlink components, and opens snapshot files only if they are
+regular single-link files owned by the same effective user with no
+group/other access (mode 0600). Read-time inode/device checks prevent
+opening a different file through a pathname replacement. Writes use
+exclusive creation, not `fopen("wb")`, so an existing file or symlink
+cannot be overwritten.
+
+Snapshots carry a schema, node count, root index, source byte length and
+two halves of a 64-bit AST payload hash. Invalid/truncated/oversized
+snapshots, bad root IDs, incorrect root kinds or checksum failures are
+**cache misses**: the original Flow source is reparsed. The payload hash
+detects accidental corruption; it is **not** a cryptographic
+authentication tag. The owner-only filesystem boundary is essential.
+
+When any check cannot be established, compilation continues without the
+disk cache. Existing `~/.cache/flow` directories with permissive
+permissions are intentionally rejected; users may migrate them to 0700
+and discard old 736-format snapshots to restore caching. Snapshot files
+that fail validation are not overwritten; remove obsolete entries to
+allow a fresh exclusive-create.
+
+Validate a freshly built Flow compiler locally:
+
+```sh
+./compiler/scripts/bootstrap_from_c.sh --regen
+bash tests/scripts/ast_cache_security.sh
+./flow tool tests/scripts/incremental_cache.flow
+```
+
+The shell fixture exercises isolated-HOME mode checks, cache hits,
+corrupted-header fallback, refusal of insecure directories and symlink
+parents. **Neither the host C helper test nor a source-only inspection
+is a substitute for these actual Flow executions.** This secures the
+current parsed-AST cache slice; it does not yet implement
+dependency-aware typechecked, monomorphized or generated-code fragment
+caches, which remain open under #736.
