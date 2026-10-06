@@ -93,3 +93,8 @@ export function flow_gpu_gemm_f32(out: ptr<void>, input: ptr<void>, weights: ptr
 export function flow_gpu_model_dispatch_count() -> i64 {
     return 0
 }
+
+@flow_api
+export function flow_gpu_invert_clamp01_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i32 {
+    return -1
+}
