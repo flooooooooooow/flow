@@ -918,6 +918,24 @@ export function gpu_graph_wgsl_workgroup(wg: GpuDim3) -> string {
     return "@workgroup_size(" + gpu_graph_i32_token(wg.x) + ", " + gpu_graph_i32_token(wg.y) + ", " + gpu_graph_i32_token(wg.z) + ")"
 }
 
+# Shader identifiers and reflection JSON use a conservative ASCII
+# subset: no embedded code or JSON escape characters are emitted.
+function gpu_graph_valid_identifier(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    if p == null { return false }
+    let mut i: i32 = 0
+    while i < 128 {
+        let c: i32 = p[i]
+        if c == 0 { return i > 0 }
+        let letter: bool = (c >= 65 and c <= 90) or
+            (c >= 97 and c <= 122) or c == 95
+        let digit: bool = c >= 48 and c <= 57
+        if not letter and not (i > 0 and digit) { return false }
+        i = i + 1
+    }
+    return false
+}
+
 export function gpu_graph_emit_wgsl_pass(g: GpuGraph, pass_id: i32) -> string {
     if pass_id < 0 or pass_id >= g.pass_count { return "" }
     let p: GpuPass = g.passes[pass_id]
@@ -930,7 +948,10 @@ export function gpu_graph_emit_wgsl_pass(g: GpuGraph, pass_id: i32) -> string {
     let src: GpuGraphResource = g.resources[src_b.resource_id]
     let dst: GpuGraphResource = g.resources[dst_b.resource_id]
     if src.kind != GPU_RES_STORAGE_BUFFER or dst.kind != GPU_RES_STORAGE_BUFFER or
-       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes {
+       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes or
+       not gpu_graph_valid_identifier(p.name) or
+       not gpu_graph_valid_identifier(src.name) or
+       not gpu_graph_valid_identifier(dst.name) {
         return ""
     }
     let count: string = gpu_graph_i32_token(src.bytes / 4)
@@ -956,7 +977,10 @@ export function gpu_graph_emit_metal_pass(g: GpuGraph, pass_id: i32) -> string {
     let src: GpuGraphResource = g.resources[src_b.resource_id]
     let dst: GpuGraphResource = g.resources[dst_b.resource_id]
     if src.kind != GPU_RES_STORAGE_BUFFER or dst.kind != GPU_RES_STORAGE_BUFFER or
-       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes {
+       src.bytes <= 0 or src.bytes % 4 != 0 or dst.bytes < src.bytes or
+       not gpu_graph_valid_identifier(p.name) or
+       not gpu_graph_valid_identifier(src.name) or
+       not gpu_graph_valid_identifier(dst.name) {
         return ""
     }
     let count: string = gpu_graph_i32_token(src.bytes / 4)
@@ -968,6 +992,26 @@ export function gpu_graph_emit_metal_pass(g: GpuGraph, pass_id: i32) -> string {
         "    if (gid < " + count + "u) {\n" +
         "        " + dst.name + "[gid] = " + src.name + "[gid];\n" +
         "    }\n}\n"
+}
+
+# Reflection for the existing WebGPU host runKernel(device,kernel,code,
+# inputs,scalars,count), not a second GPU runtime. Both shader source and
+# this binding layout derive from one validated GpuGraph pass.
+export function gpu_graph_emit_webgpu_reflection(g: GpuGraph, pass_id: i32) -> string {
+    if gpu_graph_emit_wgsl_pass(g, pass_id) == "" { return "" }
+    let p: GpuPass = g.passes[pass_id]
+    if p.operation != GPU_GRAPH_OP_COPY_F32 or p.binding_count != 2 {
+        return ""
+    }
+    let src: GpuGraphResource = g.resources[p.bindings[0].resource_id]
+    let dst: GpuGraphResource = g.resources[p.bindings[1].resource_id]
+    return "{\"kernel\":\"" + p.name + "\",\"entryPoint\":\"" + p.name +
+        "\",\"workgroupSize\":" + gpu_graph_i32_token(p.workgroup.x) +
+        ",\"paramsBinding\":null,\"params\":[],\"paramsBytes\":0," +
+        "\"buffers\":[{\"name\":\"" + src.name + "\",\"binding\":" +
+        gpu_graph_i32_token(p.bindings[0].slot) + ",\"access\":\"read\"}," +
+        "{\"name\":\"" + dst.name + "\",\"binding\":" +
+        gpu_graph_i32_token(p.bindings[1].slot) + ",\"access\":\"write\"}]}"
 }
 
 # Same Flow graph lowers to both backends; used by the vgpu fluid and
