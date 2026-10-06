@@ -1,0 +1,13 @@
+env FLOWC_CHECKS=1
+# Componentwise real/imag scale, not a C99 complex×complex multiply.
++ crealf(
++ cimagf(
++ cabsf(
+- __mulsc3
+- __muldc3
+- * ((float)(c1)
+# Canonical span-length loop: proven `xs[i]` has no bounds-fault path.
++ xs.data[i]
+- span index
+- flow_fault_handler("span index out of bounds")
+exit 0

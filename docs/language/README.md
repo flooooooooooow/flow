@@ -12,6 +12,7 @@ Detailed documentation for the Flow programming language.
 | [Types](types.md) | Type system and primitive types |
 | [Spans](spans.md) | Borrowed `{pointer, length}` views over contiguous storage |
 | [FFI buffer ABI](ffi-buffer.md) | Zero-copy pointer/span/array handoff; borrowed vs owned |
+| [FFI boundary audit](ffi-boundary-audit.md) | C / Python / native crossings; #728 rows; break-even |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
 | [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |
