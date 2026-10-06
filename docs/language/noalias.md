@@ -89,10 +89,12 @@ struct Pair {
     ys: array<i32, 4>
 }
 
-let mut pair: Pair = Pair { xs: [1, 2, 3, 4], ys: [5, 6, 7, 8] }
-let px: ptr<i32> = pair.xs
-let py: ptr<i32> = pair.ys
-# px and py are disjoint; an internal add(px, py, 4) may be restrict
+fn demo_pair_fields() -> void {
+    let mut pair: Pair = Pair { xs: [1, 2, 3, 4], ys: [5, 6, 7, 8] }
+    let px: ptr<i32> = pair.xs
+    let py: ptr<i32> = pair.ys
+    # px and py are disjoint; an internal add(px, py, 4) may be restrict
+}
 ```
 
 ## What still fails closed
