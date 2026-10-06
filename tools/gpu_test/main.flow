@@ -164,9 +164,19 @@ function run_vgpu_suite(backends: TList) -> i32 {
                         out("CASE " + id + " [" + b + "] FAIL (expected)\n")
                         all_ok = false
                     } elif t_eq(mode, "numerical") {
-                        out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                        # Shader emission + a host reference is NOT device execution.
+                        # Only the Metal runtime currently exposes a completed
+                        # model-kernel dispatch counter. WebGPU needs a real
+                        # device launcher/readback before numerical parity.
+                        let output: string = t_read_file(out_path)
+                        if t_eq(b, "metal") and
+                           t_contains(output, "GPU_DEVICE_EXECUTED metal") {
+                            out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                        } else {
+                            out("CASE " + id + " [" + b + "] UNSUPPORTED reason=device-execution\n")
+                        }
                     } else {
-                        out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                        out("CASE " + id + " [" + b + "] UNSUPPORTED reason=unverified-mode\n")
                     }
                 }
             }
