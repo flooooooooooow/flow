@@ -59,6 +59,11 @@ that `VERSION`. Without `--artifacts-only`, the gates run on the checkout, so
 6. Writes `qualification.txt` and `qualification.json` with
    `published: false` and `tagged: false`.
 
+On Linux, `--mode full` additionally invokes the checksum-gated
+`packaging/linux/qualify-release.sh` against the newly created tarball,
+and records its clean unpack / compile / execute evidence under `--out/linux/`.
+The hash used here is computed from those archive bytes, not guessed.
+
 `--artifacts-only` skips the version/changelog tool gates and still writes the
 archives and record. `--mode full` also runs the expensive gates used by
 `.github/workflows/release.yml` (stability completeness, strict documentation
