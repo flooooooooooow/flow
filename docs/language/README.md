@@ -20,6 +20,7 @@ Detailed documentation for the Flow programming language.
 | [Dynamic invariant discovery](dynamic-invariants.md) | Flow-native runtime invariant mining feeding the semantic fact ledger |
 | [Ordering](ordering.md) | Declarative `\|> sort` / `sortBy` / `\|> find`, float total order |
 | [Explainable compilation](explainable-compilation.md) | `--explain`: the plan, the costs, the failed constraints |
+| [C SIMD loops](c-simd-loops.md) | Portable C lowering for hot numeric loops (#739) |
 | [Graphics](graphics.md) | Native 2D graphics: macOS Cocoa; Linux/Windows SDL2 (+ stub) |
 | [Shaders](shaders.md) | Fill-shader surface language (Metal on macOS) |
 | [WebAssembly](wasm.md) | Near-term Flow→C→emscripten path; native Flow-in-WASM deferred |

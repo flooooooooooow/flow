@@ -639,6 +639,10 @@
           "path": "language/mlir-opt-flags.md"
         },
         {
+          "label": "C SIMD Loops",
+          "path": "language/c-simd-loops.md"
+        },
+        {
           "label": "Export ABI",
           "path": "language/export-abi.md"
         },

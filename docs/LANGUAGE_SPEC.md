@@ -752,7 +752,11 @@ if x > 0 {
 while_stmt := 'while' expression block
 ```
 
-**Status:** ✅ Fully implemented
+**Status:** ✅ Fully implemented. A counted `while i < n { ...; i = i + k }`
+with `k` a positive integer constant lowers to the same C `for` as
+`for i in … to n`, including SIMD hints and `memmove` copies; see
+[C SIMD loops](language/c-simd-loops.md). `@max_iterations` and `continue`
+keep the `while`.
 
 **Example:**
 ```flow
@@ -774,7 +778,10 @@ for_stmt := 'parallel'? 'for' IDENTIFIER 'in' expression ('..' | 'to') expressio
 **Status:** ✅ Fully implemented. Prefix `parallel for` emits
 `#pragma omp parallel for` under `#ifdef _OPENMP` in the C backend;
 `./flow` passes `-fopenmp` when the toolchain supports it, otherwise the
-loop is correct and serial. See [concurrency-vs-go.md](language/concurrency-vs-go.md).
+loop is correct and serial. Straight-line counted loops also get portable
+SIMD hints, and recognized f32/f64 kernels lower to 128-bit `vector_size`
+loops on x86-64 and arm64. See [C SIMD loops](language/c-simd-loops.md) and
+[concurrency-vs-go.md](language/concurrency-vs-go.md).
 
 **Example:**
 ```flow-pseudocode

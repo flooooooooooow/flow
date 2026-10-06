@@ -1,0 +1,36 @@
+# Branchy clip/min-max stores lower to a ternary select so the C
+# auto-vectorizer sees a straight-line body (#739).
+
+function clip(out: ptr<f32>, x: ptr<f32>, n: i32, lo: f32, hi: f32) -> void {
+    for i in 0 to n {
+        let v: f32 = x[i]
+        if v < lo {
+            out[i] = lo
+        } else {
+            if v > hi {
+                out[i] = hi
+            } else {
+                out[i] = v
+            }
+        }
+    }
+}
+
+function main() -> i32 {
+    let x: [f32; 4] = [0.0 - 2.0, 0.5, 3.0, 1.0]
+    let mut y: [f32; 4] = [0.0, 0.0, 0.0, 0.0]
+    clip(&y[0], &x[0], 4, 0.0, 1.0)
+    if y[0] != 0.0 {
+        return 1
+    }
+    if y[1] != 0.5 {
+        return 2
+    }
+    if y[2] != 1.0 {
+        return 3
+    }
+    if y[3] != 1.0 {
+        return 4
+    }
+    return 0
+}
