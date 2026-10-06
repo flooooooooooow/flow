@@ -101,10 +101,8 @@ function main() -> i32 {
     let p_color: ptr<f32> = gpu_tensor_ptr(color)
 
     if gpu_tensor_scale_bias(img, feat, 0.8, 0.1) != 0 { return 4 }
-    depth_feature_extract(gpu_tensor_ptr(img), gpu_tensor_ptr(feat), feature_dim)
     if gpu_tensor_linear(depth, feat, w) != 0 { return 5 }
     if gpu_tensor_invert01(depth, color) != 0 { return 6 }
-    depth_colormap_tint(gpu_tensor_ptr(depth), gpu_tensor_ptr(color), depth_out)
 
     if gpu_tensor_ptr(feat) != p_feat { return 7 }
     if gpu_tensor_ptr(color) != p_color { return 8 }
@@ -122,7 +120,11 @@ function main() -> i32 {
 
     println("vgpu depth")
     println(gpu_backend_name())
-    if gpu_model_dispatch_count() > dispatch_before and gpu_backend_name() == "metal" {
+    # All three operations must have completed as real Metal dispatches.
+    let device_stages: i64 = gpu_model_dispatch_count() - dispatch_before
+    if device_stages >= 3 and gpu_available() and gpu_backend_name() == "metal" and
+       gpu_tensor_is_zero_copy(img) and gpu_tensor_is_zero_copy(feat) and
+       gpu_tensor_is_zero_copy(depth) and gpu_tensor_is_zero_copy(color) {
         println("GPU_DEVICE_EXECUTED metal")
     } else {
         println("GPU_DEVICE_UNAVAILABLE")
