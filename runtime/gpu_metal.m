@@ -321,15 +321,16 @@ static int flow_gpu_dispatch_mul_elem(void *out_gpu, void *x_gpu, void *y_gpu, i
     if (!out_gpu || !x_gpu || !y_gpu || n <= 0) {
         return -1;
     }
-    if (flow_gpu_compute_init() != 0) {
-        return -1;
-    }
-
     FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
     FlowGpuBuffer *x = (FlowGpuBuffer *)x_gpu;
     FlowGpuBuffer *y = (FlowGpuBuffer *)y_gpu;
-    int64_t nbytes = n * (int64_t)sizeof(float);
-    if (nbytes > out->size || nbytes > x->size || nbytes > y->size) {
+    /* The Metal kernel receives uint32_t n. Reject a truncated count,
+     * oversized copies and signed n*sizeof(float) overflow before use. */
+    if ((uint64_t)n > UINT32_MAX || out->size < 0 || x->size < 0 ||
+        y->size < 0 || (uint64_t)n > (uint64_t)out->size / sizeof(float) ||
+        (uint64_t)n > (uint64_t)x->size / sizeof(float) ||
+        (uint64_t)n > (uint64_t)y->size / sizeof(float) ||
+        flow_gpu_compute_init() != 0) {
         return -1;
     }
 
@@ -377,6 +378,7 @@ static int flow_gpu_dispatch_mul_elem(void *out_gpu, void *x_gpu, void *y_gpu, i
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
+        if ([cmd status] != MTLCommandBufferStatusCompleted) return -1;
     }
     return 0;
 }
@@ -470,7 +472,12 @@ int flow_gpu_gemm_f32(void *out_gpu, void *input_gpu, void *weights_gpu,
     FlowGpuBuffer *input = (FlowGpuBuffer *)input_gpu;
     FlowGpuBuffer *weights = (FlowGpuBuffer *)weights_gpu;
     uint64_t elements = (uint64_t)m * (uint64_t)n;
-    if (elements > UINT32_MAX || out->size < 0 || input->size < 0 ||
+    /* The generated Metal kernel indexes with uint32_t arithmetic: all
+     * strides and flat offsets must fit without wrapping on the GPU. */
+    if (elements > UINT32_MAX ||
+        (uint64_t)m * (uint64_t)k > UINT32_MAX ||
+        (uint64_t)k * (uint64_t)n > UINT32_MAX ||
+        out->size < 0 || input->size < 0 ||
         weights->size < 0 ||
         elements > (uint64_t)out->size / sizeof(float) ||
         (uint64_t)m * (uint64_t)k > (uint64_t)input->size / sizeof(float) ||
