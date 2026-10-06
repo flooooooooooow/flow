@@ -1,0 +1,114 @@
+# Proof for the remaining #737 slice: audit page is in the wiki nav,
+# #728 harness rows exist, and the break-even program reports a real
+# zero-copy crossing.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function check_docs_and_rows() -> i32 {
+    if not a_exists(t_root() + "/docs/language/ffi-boundary-audit.md") {
+        return T_FAIL
+    }
+    if not a_exists(t_root() + "/registry/packages/ffi/src/boundary_audit.flow") {
+        return T_FAIL
+    }
+    let nav: string = read_text(t_root() + "/docs/nav.json")
+    if not a_contains(nav, "language/ffi-boundary-audit.md") {
+        return T_FAIL
+    }
+    let rows: ptr<ProcStrs> = sl_new()
+    sl_push(rows, "benchmarks/cross_harness/runtime/ffi_scalar/ffi_scalar.flow")
+    sl_push(rows, "benchmarks/cross_harness/runtime/ffi_batch/ffi_batch.flow")
+    sl_push(rows, "benchmarks/cross_harness/runtime/ffi_buffer/ffi_buffer.flow")
+    sl_push(rows, "benchmarks/cross_harness/memory/ffi_handoff/ffi_handoff.flow")
+    sl_push(rows, "benchmarks/cross_harness/memory/ffi_copy/ffi_copy.flow")
+    sl_push(rows, "benchmarks/micro/ffi_breakeven.flow")
+    let mut i: i32 = 0
+    while i < sl_len(rows) {
+        if not a_exists(t_root() + "/" + sl_get(rows, i)) {
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    return T_PASS
+}
+
+function check_lang_audit() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "test-lang", "tests/lang/test_ffi_boundary_audit.flow")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "All 1 language tests passed") {
+        t_cat(t_out())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_breakeven_run() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "run", "benchmarks/micro/ffi_breakeven.flow")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let out: string = read_text(t_out())
+    if not a_contains(out, "zero-copy identity: PASS copied_bytes=0") {
+        return T_FAIL
+    }
+    if not a_contains(out, "row name=c_scalar") {
+        return T_FAIL
+    }
+    if not a_contains(out, "row name=c_buffer_zero_copy") {
+        return T_FAIL
+    }
+    if not a_contains(out, "copied_bytes=0") {
+        return T_FAIL
+    }
+    if not a_contains(out, "row name=c_callback") {
+        return T_FAIL
+    }
+    if not a_contains(out, "breakeven_batch=") {
+        return T_FAIL
+    }
+    if not a_contains(out, "guidance:") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_harness_buffer_row() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "run", "benchmarks/cross_harness/runtime/ffi_buffer/ffi_buffer.flow")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("ffi_boundary")
+    t_start()
+    t_end("docs_and_rows", check_docs_and_rows())
+    t_start()
+    t_end("lang_audit", check_lang_audit())
+    t_start()
+    t_end("breakeven_run", check_breakeven_run())
+    t_start()
+    t_end("harness_buffer_row", check_harness_buffer_row())
+    t_done()
+    return 0
+}
