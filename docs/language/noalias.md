@@ -18,7 +18,10 @@ A view is `(kind, root, offset, length, known, field)`:
 - Two local views of distinct roots are disjoint.
 - Same-root views of different embedded fields are disjoint.
 - Same-root, same-field views are disjoint only when both half-open
-  intervals `[off, off+len)` are known and do not overlap.
+  intervals `[off, off+len)` are known, strictly positive-length,
+  nonnegative-offset and do not overlap. The checker compares lengths
+  against **ordered-offset subtraction**, never unchecked `off + len`
+  whose signed-i32 overflow could create a false `restrict` proof.
 - Two parameters may alias (the caller can pass the same buffer twice).
 - A local is disjoint from every parameter.
 - Unknown provenance, dynamic slice bounds, and laundering calls fail
@@ -104,6 +107,30 @@ function demo_pair_fields() -> void {
 - a buffer passed twice
 - exported / `@flow_api` functions
 - a pointer copied from a parameter
+
+## Overflow-safe provenance
+
+Noalias is a **correctness** decision, not merely a vectorization hint.
+Unrepresentable pointer/slice offsets (including `INT32_MAX + constant`)
+and slices extending beyond a known base length now lose their proof.
+Different-field views with unknown/zero-length extents also fail closed,
+rather than assuming their memory cannot overlap. Field-name hashing
+uses widened arithmetic to avoid signed overflow.
+
+Run the adversarial interval tests as part of local qualification:
+
+```sh
+./flow run tests/lang/test_noalias_overflow.flow
+./flow tool tests/scripts/noalias_mlir.flow
+./flow tool tests/scripts/noalias_vectorize.flow
+```
+
+The test constructs a same-root range beginning near `INT32_MAX` whose
+unchecked end would overflow negative, plus overlapping, separate,
+negative-offset, unknown-length and distinct-field examples. Only
+actually proven non-overlapping ranges may receive `restrict` or LLVM
+noalias metadata. Compiler/bootstrap regeneration and full C/MLIR
+tests are required before merging this codegen change.
 
 ## Tests
 
