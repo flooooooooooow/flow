@@ -4,7 +4,7 @@ This directory contains packaging definitions maintained with the Flow source tr
 
 ## Published channel
 
-### Homebrew (macOS / Linux)
+### Homebrew (macOS; Linux requires separate validation)
 
 Homebrew is the currently published package-manager channel:
 
@@ -13,7 +13,7 @@ brew tap flooooooooooow/flow
 brew install flow
 ```
 
-The tap is maintained in `flooooooooooow/homebrew-flow`.
+The tap is maintained in `flooooooooooow/homebrew-flow`. A published formula is not evidence of a successful Linux Homebrew installation; run the local Linux package checks below and validate Homebrew separately before claiming support.
 
 ## Build-from-checkout specifications
 
