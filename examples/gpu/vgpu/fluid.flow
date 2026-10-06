@@ -2,9 +2,9 @@
 #
 # Interactive fluid as a typed render/compute graph: storage textures,
 # velocity/dye/pressure ping-pong, transient curl/divergence, Jacobi
-# pressure iterations, and a display pass. The same Flow graph emits
-# Metal and WGSL. Device dispatch is the P4 harness; this program
-# validates hazards and prints both backend modules.
+# pressure iterations, and a display pass. The graph has resource and hazard semantics but its numerical
+# algorithms are NOT yet lowered to Metal/WGSL executable kernels.
+# This example validates structure, never claims pixel or compute parity.
 
 import "stdlib/gpu_graph.flow"
 
@@ -17,7 +17,12 @@ function main() -> i32 {
         return 1
     }
     if !gpu_graph_same_source_both_backends(g) {
-        return 2
+        println("vgpu fluid graph")
+        println(g.pass_count)
+        println(g.resource_count)
+        println(g.dep_count)
+        println("UNSUPPORTED reason=compute-bodies-not-implemented")
+        return 0
     }
 
     println("vgpu fluid graph")
