@@ -72,6 +72,7 @@ function depth_cpu(image: Tensor, weights: Tensor) -> Tensor {
 }
 
 function main() -> i32 {
+    let dispatch_before: i64 = gpu_model_dispatch_count()
     let feature_dim: i32 = 64
     let depth_out: i32 = 64
 
@@ -121,6 +122,11 @@ function main() -> i32 {
 
     println("vgpu depth")
     println(gpu_backend_name())
+    if gpu_model_dispatch_count() > dispatch_before and gpu_backend_name() == "metal" {
+        println("GPU_DEVICE_EXECUTED metal")
+    } else {
+        println("GPU_DEVICE_UNAVAILABLE")
+    }
     print("match ")
     println(ok)
 
