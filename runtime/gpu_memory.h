@@ -61,6 +61,9 @@ void flow_gpu_sync(void);
  */
 int flow_gpu_scale_bias_f32(void *out, void *input, float scale, float bias, int64_t n);
 int flow_gpu_relu_f32(void *out, void *input, int64_t n);
+/* Successful device-side tensor dispatches; conformance is not inferred from shader emit. */
+int64_t flow_gpu_model_dispatch_count(void);
+
 int flow_gpu_gemm_f32(void *out, void *input, void *weights,
                       int64_t m, int64_t k, int64_t n);
 
