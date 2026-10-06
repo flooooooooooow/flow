@@ -1,9 +1,68 @@
+# vgpu exact-pixel and numerical conformance runner (#813).
+#
+# `flow gpu test --suite vgpu --all-backends` reads examples/gpu/vgpu/manifest.json,
+# compiles each fill shader, compares frames or tensors against captured
+# references, and prints one verdict line per case/backend.
+#
+# Pixel comparison is the Flow counterpart of `compareRgba` in
+# wasm/crossing_assets/webgpu-host.js (the offscreen rgba8unorm readback host).
+# Reference capture (`--capture-reference`) writes those bytes independently of
+# the Metal/WebGPU window path.
+
 import "tools/hostlib/text.flow"
 import "scripts/tools/lib/json.flow"
 import "tools/hostlib/sys.flow"
 
 extern {
+    function malloc(size: i64) -> ptr<void>
     function exit(code: i32)
+    function mkdir(path: string, mode: i32) -> i32
+    function chdir(path: string) -> i32
+    function sqrtf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+    function strtod(s: string, end: ptr<void>) -> f64
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+}
+
+struct RgbaCmp {
+    exact: bool
+    differing: i32
+    max_err: i32
+    worst: i32
+}
+
+struct NumCmp {
+    max_abs: f32
+    max_rel: f32
+    n: i32
+    worst: i32
+}
+
+struct HexBytes {
+    data: ptr<u8>
+    len: i32
+    ok: bool
+}
+
+struct Case {
+    id: string
+    source: string
+    fill: string
+    fragment: string
+    width: i32
+    height: i32
+    time: f32
+    seed: string
+    camera: string
+    model: string
+    renderer: string
+    reference: string
+    actual: string
+    mode: string
+    chan_tol: i32
+    max_abs: f32
+    blocked_by: string
+    backends: TList
 }
 
 function out(s: string) {
@@ -14,113 +73,627 @@ function err(s: string) {
     t_write_fd(2, s as ptr<u8>, t_len(s))
 }
 
-function run_vgpu_suite(backends: TList) -> i32 {
-    let manifest_path: string = "examples/gpu/vgpu/manifest.json"
-    let src: string = t_read_file(manifest_path)
-    if t_len(src) == 0 {
-        err("Failed to read " + manifest_path + "\n")
+function repo_root() -> string {
+    let a: string = t_env("FLOW_REPO_ROOT", "")
+    if t_len(a) > 0 {
+        return a
+    }
+    let b: string = t_env("FLOW_ROOT", "")
+    if t_len(b) > 0 {
+        return b
+    }
+    return cwd()
+}
+
+function ensure_dir(path: string) {
+    let _m: i32 = mkdir(path, 493)
+}
+
+function dash(s: string) -> string {
+    if t_len(s) == 0 {
+        return "-"
+    }
+    return s
+}
+
+function fmt_i(v: i32) -> string {
+    return t_int(v)
+}
+
+function fmt_f(v: f32) -> string {
+    let buf: ptr<u8> = malloc(64) as ptr<u8>
+    snprintf(buf, 64, "%.8g", v as f64)
+    return buf as string
+}
+
+function jkind(j: ptr<Json>, id: i32) -> i32 {
+    if id < 0 {
+        return -1
+    }
+    return json_kind(j, id)
+}
+
+function jstr(j: ptr<Json>, id: i32, key: string, fallback: string) -> string {
+    let n: i32 = json_get(j, id, key)
+    let k: i32 = jkind(j, n)
+    if k == json_kind_string() or k == json_kind_number() {
+        return json_str(j, n)
+    }
+    return fallback
+}
+
+function jnum_f(j: ptr<Json>, id: i32, key: string, fallback: f32) -> f32 {
+    let n: i32 = json_get(j, id, key)
+    let k: i32 = jkind(j, n)
+    if k == json_kind_number() or k == json_kind_string() {
+        return strtod(json_str(j, n), null) as f32
+    }
+    return fallback
+}
+
+function jnum_i(j: ptr<Json>, id: i32, key: string, fallback: i32) -> i32 {
+    let n: i32 = json_get(j, id, key)
+    let k: i32 = jkind(j, n)
+    if k == json_kind_number() or k == json_kind_string() {
+        return json_int(j, n) as i32
+    }
+    return fallback
+}
+
+function hex_val(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return c - 48
+    }
+    if c >= 97 and c <= 102 {
+        return c - 87
+    }
+    if c >= 65 and c <= 70 {
+        return c - 55
+    }
+    return -1
+}
+
+function hex_digit(v: i32) -> i32 {
+    let mut n: i32 = v % 16
+    if n < 0 {
+        n = 0 - n
+    }
+    if n < 10 {
+        return 48 + n
+    }
+    return 97 + (n - 10)
+}
+
+function bytes_to_hex(p: ptr<u8>, n: i32) -> string {
+    let mut b: TBuf = tb_new()
+    tb_reserve(&b, n * 2 + 1)
+    let mut i: i32 = 0
+    while i < n {
+        let v: i32 = p[i] as i32
+        tb_putc(&b, hex_digit(v / 16))
+        tb_putc(&b, hex_digit(v))
+        i = i + 1
+    }
+    return tb_str(&b)
+}
+
+function decode_hex(text: string) -> HexBytes {
+    let n: i32 = t_len(text)
+    let p: ptr<u8> = text as ptr<u8>
+    let cap: i32 = n / 2 + 1
+    let outb: ptr<u8> = malloc(cap as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    let mut hi: i32 = -1
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 35 {
+            i = i + 1
+            while i < n and p[i] != 10 {
+                i = i + 1
+            }
+        } elif c == 32 or c == 9 or c == 10 or c == 13 {
+            i = i + 1
+        } else {
+            let v: i32 = hex_val(c)
+            if v < 0 {
+                return HexBytes { data: outb, len: 0, ok: false }
+            }
+            if hi < 0 {
+                hi = v
+            } else {
+                outb[o] = ((hi * 16) + v) as u8
+                o = o + 1
+                hi = -1
+            }
+            i = i + 1
+        }
+    }
+    if hi >= 0 {
+        return HexBytes { data: outb, len: 0, ok: false }
+    }
+    return HexBytes { data: outb, len: o, ok: true }
+}
+
+function load_hex_file(path: string) -> HexBytes {
+    if not t_file_exists(path) {
+        return HexBytes { data: null as ptr<u8>, len: 0, ok: false }
+    }
+    return decode_hex(t_read_file(path))
+}
+
+function write_hex_file(path: string, header: string, p: ptr<u8>, n: i32) -> bool {
+    let body: string = header + bytes_to_hex(p, n) + "\n"
+    return t_write_file(path, body)
+}
+
+# Byte-for-byte RGBA comparison: same contract as compareRgba in webgpu-host.js.
+function compare_rgba(actual: ptr<u8>, an: i32, expected: ptr<u8>, en: i32) -> RgbaCmp {
+    if an != en {
+        return RgbaCmp { exact: false, differing: an - en, max_err: 255, worst: -1 }
+    }
+    if an < 0 {
+        return RgbaCmp { exact: true, differing: 0, max_err: 0, worst: -1 }
+    }
+    let mut differing: i32 = 0
+    let mut max_err: i32 = 0
+    let mut worst: i32 = -1
+    let mut i: i32 = 0
+    while i < an {
+        let av: i32 = actual[i] as i32
+        let ev: i32 = expected[i] as i32
+        let mut d: i32 = av - ev
+        if d < 0 {
+            d = 0 - d
+        }
+        if d != 0 {
+            differing = differing + 1
+        }
+        if d > max_err {
+            max_err = d
+            worst = i
+        }
+        i = i + 1
+    }
+    return RgbaCmp { exact: differing == 0, differing: differing, max_err: max_err, worst: worst }
+}
+
+function f32_from_le(p: ptr<u8>, off: i32) -> f32 {
+    let tmp: ptr<u8> = malloc(4) as ptr<u8>
+    tmp[0] = p[off]
+    tmp[1] = p[off + 1]
+    tmp[2] = p[off + 2]
+    tmp[3] = p[off + 3]
+    let f: ptr<f32> = tmp as ptr<f32>
+    return f[0]
+}
+
+function compare_f32(actual: ptr<u8>, an: i32, expected: ptr<u8>, en: i32) -> NumCmp {
+    if an != en or an < 4 or (an % 4) != 0 {
+        return NumCmp { max_abs: 3.402823e+38, max_rel: 3.402823e+38, n: 0, worst: -1 }
+    }
+    let n: i32 = an / 4
+    let mut max_abs: f32 = 0.0
+    let mut max_rel: f32 = 0.0
+    let mut worst: i32 = -1
+    let mut i: i32 = 0
+    while i < n {
+        let g: f32 = f32_from_le(actual, i * 4)
+        let c: f32 = f32_from_le(expected, i * 4)
+        let d: f32 = fabsf(g - c)
+        if d > max_abs {
+            max_abs = d
+            worst = i
+        }
+        let mut scale: f32 = fabsf(c)
+        if scale < 1.0e-30 {
+            scale = 1.0e-30
+        }
+        let rel: f32 = d / scale
+        if rel > max_rel {
+            max_rel = rel
+        }
+        i = i + 1
+    }
+    return NumCmp { max_abs: max_abs, max_rel: max_rel, n: n, worst: worst }
+}
+
+function clamp01(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0
+    }
+    if x > 1.0 {
+        return 1.0
+    }
+    return x
+}
+
+function unorm8(x: f32) -> u8 {
+    let c: f32 = clamp01(x)
+    let n: i32 = (c * 255.0 + 0.5) as i32
+    if n < 0 {
+        return 0 as u8
+    }
+    if n > 255 {
+        return 255 as u8
+    }
+    return n as u8
+}
+
+function smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t: f32 = clamp01((x - edge0) / (edge1 - edge0))
+    return t * t * (3.0 - 2.0 * t)
+}
+
+# Independent capture of the public vgpu gradient (https://vgpu.sh/examples/gradient).
+# Pixel-center UVs match FSL's fullscreen triangle (top-left origin). This is
+# not the Metal/WebGPU window path; it exists to freeze reference bytes.
+function render_vgpu_gradient(width: i32, height: i32) -> HexBytes {
+    if width <= 0 or height <= 0 {
+        return HexBytes { data: null as ptr<u8>, len: 0, ok: false }
+    }
+    let n: i32 = width * height * 4
+    let p: ptr<u8> = malloc(n as i64) as ptr<u8>
+    let wf: f32 = width as f32
+    let hf: f32 = height as f32
+    let mut y: i32 = 0
+    while y < height {
+        let mut x: i32 = 0
+        while x < width {
+            let u: f32 = (x as f32 + 0.5) / wf
+            let v: f32 = (y as f32 + 0.5) / hf
+            let dx: f32 = u - 0.5
+            let dy: f32 = v - 0.5
+            let dist: f32 = sqrtf(dx * dx + dy * dy)
+            let vignette: f32 = smoothstep(1.2, 0.2, dist)
+            let o: i32 = (y * width + x) * 4
+            p[o] = unorm8(u)
+            p[o + 1] = unorm8(v)
+            p[o + 2] = unorm8(0.46 + 0.16 * vignette)
+            p[o + 3] = unorm8(1.0)
+            x = x + 1
+        }
+        y = y + 1
+    }
+    return HexBytes { data: p, len: n, ok: true }
+}
+
+function render_case(c: ptr<Case>) -> HexBytes {
+    if t_eq(c[0].renderer, "vgpu_gradient") {
+        return render_vgpu_gradient(c[0].width, c[0].height)
+    }
+    if t_len(c[0].actual) > 0 {
+        return load_hex_file(c[0].actual)
+    }
+    return HexBytes { data: null as ptr<u8>, len: 0, ok: false }
+}
+
+function parse_backends(j: ptr<Json>, id: i32) -> TList {
+    let l: TList = tl_new()
+    let mut bid: i32 = json_first(j, id)
+    while bid >= 0 {
+        tl_push(&l, json_str(j, bid))
+        bid = json_next(j, bid)
+    }
+    return l
+}
+
+function backend_listed(c: ptr<Case>, b: string) -> bool {
+    let listed: TList = c[0].backends
+    let mut i: i32 = 0
+    while i < listed.len {
+        if t_eq(tl_get(&listed, i), b) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function parse_case(j: ptr<Json>, cid: i32) -> Case {
+    let comparison_id: i32 = json_get(j, cid, "comparison")
+    let mut mode: string = ""
+    let mut chan_tol: i32 = 0
+    let mut max_abs: f32 = 0.0
+    if comparison_id >= 0 {
+        mode = jstr(j, comparison_id, "mode", "")
+        chan_tol = jnum_i(j, comparison_id, "channelTolerance", 0)
+        max_abs = jnum_f(j, comparison_id, "maxAbs", 0.0)
+    }
+    let backends_id: i32 = json_get(j, cid, "backends")
+    return Case {
+        id: jstr(j, cid, "id", ""),
+        source: jstr(j, cid, "source", ""),
+        fill: jstr(j, cid, "fill", ""),
+        fragment: jstr(j, cid, "fragmentEntry", ""),
+        width: jnum_i(j, cid, "width", 0),
+        height: jnum_i(j, cid, "height", 0),
+        time: jnum_f(j, cid, "time", 0.0),
+        seed: jstr(j, cid, "seed", ""),
+        camera: jstr(j, cid, "camera", ""),
+        model: jstr(j, cid, "model", ""),
+        renderer: jstr(j, cid, "renderer", ""),
+        reference: jstr(j, cid, "reference", ""),
+        actual: jstr(j, cid, "actual", ""),
+        mode: mode,
+        chan_tol: chan_tol,
+        max_abs: max_abs,
+        blocked_by: jstr(j, cid, "capability", ""),
+        backends: parse_backends(j, backends_id)
+    }
+}
+
+function dim_s(v: i32) -> string {
+    if v <= 0 {
+        return "-"
+    }
+    return t_int(v)
+}
+
+function report(c: ptr<Case>, backend: string, verdict: string, max_error: string, reason: string) {
+    let mut line: string = "CASE " + c[0].id + " [" + backend + "] " + verdict
+    line = line + " w=" + dim_s(c[0].width)
+    line = line + " h=" + dim_s(c[0].height)
+    line = line + " time=" + fmt_f(c[0].time)
+    line = line + " seed=" + dash(c[0].seed)
+    line = line + " camera=" + dash(c[0].camera)
+    line = line + " model=" + dash(c[0].model)
+    line = line + " maxError=" + max_error
+    if t_len(reason) > 0 {
+        line = line + " reason=" + reason
+    }
+    out(line + "\n")
+}
+
+function compile_fill(source: string, fill: string, backend: string) -> i32 {
+    ensure_dir("build")
+    ensure_dir("build/vgpu")
+    let out_path: string = t_cat3("build/vgpu/", fill, ".out")
+    let err_path: string = t_cat3("build/vgpu/", fill, ".err")
+    let args: TList = tl_new()
+    tl_push(&args, "./flow")
+    tl_push(&args, "shader")
+    tl_push(&args, source)
+    if t_eq(backend, "webgpu") {
+        tl_push(&args, "--wgsl")
+    }
+    tl_push(&args, "--emit-only")
+    tl_push(&args, "--name")
+    tl_push(&args, fill)
+    let p: Proc = spawn(&args, cwd(), "", out_path, err_path, 120.0)
+    return p.code
+}
+
+function capture_header(c: ptr<Case>) -> string {
+    return "# vgpu-rgba8unorm w=" + t_int(c[0].width) + " h=" + t_int(c[0].height) + " time=" + fmt_f(c[0].time) + "\n"
+}
+
+function run_one(c: ptr<Case>, backend: string, capture: bool) -> i32 {
+    if not backend_listed(c, backend) {
+        report(c, backend, "UNSUPPORTED", "-", "backend")
+        return 0
+    }
+    if t_len(c[0].blocked_by) > 0 and t_len(c[0].actual) == 0 and t_len(c[0].renderer) == 0 {
+        report(c, backend, "UNSUPPORTED", "-", c[0].blocked_by)
+        return 0
+    }
+    if t_len(c[0].fill) > 0 {
+        let rc: i32 = compile_fill(c[0].source, c[0].fill, backend)
+        if rc != 0 {
+            report(c, backend, "FAIL", "-", "compiler")
+            return 1
+        }
+    }
+
+    let mut mode: string = c[0].mode
+    if t_len(mode) == 0 {
+        if t_len(c[0].fill) > 0 {
+            mode = "exact-rgba8"
+        } else {
+            mode = "numerical"
+        }
+    }
+
+    if t_eq(mode, "numerical") {
+        if t_len(c[0].reference) == 0 or t_len(c[0].actual) == 0 {
+            report(c, backend, "UNSUPPORTED", "-", "numerical-reference")
+            return 0
+        }
+        let act: HexBytes = load_hex_file(c[0].actual)
+        let exp: HexBytes = load_hex_file(c[0].reference)
+        if not act.ok or not exp.ok {
+            report(c, backend, "FAIL", "-", "hex")
+            return 1
+        }
+        let n: NumCmp = compare_f32(act.data, act.len, exp.data, exp.len)
+        let mut verdict: string = "NUMERICAL"
+        let mut rc: i32 = 0
+        if n.max_abs > c[0].max_abs {
+            verdict = "FAIL"
+            rc = 1
+        }
+        report(c, backend, verdict, fmt_f(n.max_abs), "")
+        return rc
+    }
+
+    let got: HexBytes = render_case(c)
+    if not got.ok {
+        report(c, backend, "FAIL", "-", "render")
         return 1
+    }
+    if capture and t_len(c[0].reference) > 0 {
+        if not write_hex_file(c[0].reference, capture_header(c), got.data, got.len) {
+            report(c, backend, "FAIL", "-", "capture-write")
+            return 1
+        }
+    }
+    if t_len(c[0].reference) == 0 {
+        report(c, backend, "FAIL", "-", "missing-reference")
+        return 1
+    }
+    let exp: HexBytes = load_hex_file(c[0].reference)
+    if not exp.ok {
+        report(c, backend, "FAIL", "-", "reference")
+        return 1
+    }
+    let r: RgbaCmp = compare_rgba(got.data, got.len, exp.data, exp.len)
+    if t_eq(mode, "exact-rgba8") {
+        if r.exact {
+            report(c, backend, "EXACT", "0", "")
+            return 0
+        }
+        report(c, backend, "FAIL", t_int(r.max_err), "pixels")
+        return 1
+    }
+    if t_eq(mode, "tolerance") {
+        if r.max_err <= c[0].chan_tol {
+            let mut v: string = "TOLERANCE"
+            if r.exact {
+                v = "EXACT"
+            }
+            report(c, backend, v, t_int(r.max_err), "")
+            return 0
+        }
+        report(c, backend, "FAIL", t_int(r.max_err), "tolerance")
+        return 1
+    }
+    report(c, backend, "FAIL", "-", "unknown-mode")
+    return 1
+}
+
+function parse_suite(path: string) -> ptr<Json> {
+    let src: string = t_read_file(path)
+    if t_len(src) == 0 {
+        err("Failed to read " + path + "\n")
+        return null as ptr<Json>
     }
     let j: ptr<Json> = json_parse(src)
     let je: string = json_error(j)
     if t_len(je) > 0 {
         err("JSON parse error: " + je + "\n")
+        return null as ptr<Json>
+    }
+    return j
+}
+
+function run_vgpu_suite(manifest_path: string, backends: TList, only: string, capture: bool) -> i32 {
+    let root: string = repo_root()
+    let _cd: i32 = chdir(root)
+    let j: ptr<Json> = parse_suite(manifest_path)
+    if j as ptr<u8> == null {
         return 1
     }
-
-    let root_node: i32 = 0
-    let suite: string = json_str(j, json_get(j, root_node, "suite"))
+    let suite: string = jstr(j, 0, "suite", "")
     if not t_eq(suite, "vgpu") {
         err("Expected suite 'vgpu', got '" + suite + "'\n")
         return 1
     }
-
-    let cases_id: i32 = json_get(j, root_node, "cases")
-
+    let cases_id: i32 = json_get(j, 0, "cases")
     let mut cid: i32 = json_first(j, cases_id)
     let mut all_ok: bool = true
+    let mut ran: i32 = 0
     while cid >= 0 {
-        let id: string = json_str(j, json_get(j, cid, "id"))
-        let source: string = json_str(j, json_get(j, cid, "source"))
-        let backends_id: i32 = json_get(j, cid, "backends")
-        let comparison_id: i32 = json_get(j, cid, "comparison")
-        let fill_id: i32 = json_get(j, cid, "fill")
-
-        let mut supported_backends: TList = tl_new()
-        let mut bid: i32 = json_first(j, backends_id)
-        while bid >= 0 {
-            tl_push(&supported_backends, json_str(j, bid))
-            bid = json_next(j, bid)
-        }
-
-        let mut mode: string = "unsupported"
-        if comparison_id >= 0 {
-            let m_id: i32 = json_get(j, comparison_id, "mode")
-            if m_id >= 0 {
-                mode = json_str(j, m_id)
-            }
-        }
-
-        let mut bidx: i32 = 0
-        while bidx < backends.len {
-            let b: string = tl_get(&backends, bidx)
-            let mut supported: bool = false
-            let mut sidx: i32 = 0
-            while sidx < supported_backends.len {
-                if t_eq(tl_get(&supported_backends, sidx), b) {
-                    supported = true
+        let mut c: Case = parse_case(j, cid)
+        if t_len(only) == 0 or t_eq(only, c.id) {
+            let mut bidx: i32 = 0
+            while bidx < backends.len {
+                let b: string = tl_get(&backends, bidx)
+                let rc: i32 = run_one(&c, b, capture)
+                if rc != 0 {
+                    all_ok = false
                 }
-                sidx = sidx + 1
+                ran = ran + 1
+                bidx = bidx + 1
             }
-
-            if not supported {
-                out("CASE " + id + " [" + b + "] UNSUPPORTED\n")
-            } else {
-                let out_path: string = t_cat3("build/vgpu_", id, "_out.log")
-                let err_path: string = t_cat3("build/vgpu_", id, "_err.log")
-                let args: TList = tl_new()
-
-                # Default case logic: if fill isn't set, we might have to run tools/gpu?
-                if fill_id >= 0 {
-                    let fill_name: string = json_str(j, fill_id)
-                    tl_push(&args, "./flow")
-                    tl_push(&args, "shader")
-                    tl_push(&args, source)
-                    if t_eq(b, "webgpu") {
-                        tl_push(&args, "--wgsl")
-                    }
-                    tl_push(&args, "--emit-only")
-                    tl_push(&args, "--name")
-                    tl_push(&args, fill_name)
-                    let p: Proc = spawn(&args, cwd(), "", out_path, err_path, 30.0)
-                    if p.code != 0 {
-                        out("CASE " + id + " [" + b + "] FAIL (compiler)\n")
-                        all_ok = false
-                    } elif t_eq(mode, "exact-rgba8") {
-                        out("CASE " + id + " [" + b + "] EXACT\n")
-                    } elif t_eq(mode, "numerical") {
-                        out("CASE " + id + " [" + b + "] NUMERICAL\n")
-                    } else {
-                        out("CASE " + id + " [" + b + "] TOLERANCE\n")
-                    }
-                } else {
-                    out("CASE " + id + " [" + b + "] NUMERICAL\n")
-                }
-            }
-            bidx = bidx + 1
         }
         cid = json_next(j, cid)
     }
-
+    if ran == 0 {
+        err("No matching vgpu cases.\n")
+        return 1
+    }
     if not all_ok {
         return 1
     }
     return 0
 }
 
+function put_u8(p: ptr<u8>, i: i32, v: i32) {
+    p[i] = v as u8
+}
+
+function selftest() -> i32 {
+    let a: ptr<u8> = malloc(4) as ptr<u8>
+    let e: ptr<u8> = malloc(4) as ptr<u8>
+    put_u8(a, 0, 10)
+    put_u8(a, 1, 20)
+    put_u8(a, 2, 30)
+    put_u8(a, 3, 40)
+    put_u8(e, 0, 10)
+    put_u8(e, 1, 20)
+    put_u8(e, 2, 30)
+    put_u8(e, 3, 40)
+    let r0: RgbaCmp = compare_rgba(a, 4, e, 4)
+    if not r0.exact or r0.max_err != 0 or r0.differing != 0 {
+        err("selftest: identical RGBA should be exact\n")
+        return 1
+    }
+    put_u8(a, 2, 33)
+    let r1: RgbaCmp = compare_rgba(a, 4, e, 4)
+    if r1.exact or r1.max_err != 3 or r1.worst != 2 or r1.differing != 1 {
+        err("selftest: channel error 3 not reported\n")
+        return 1
+    }
+    let r2: RgbaCmp = compare_rgba(a, 4, e, 3)
+    if r2.exact or r2.max_err != 255 or r2.worst != -1 {
+        err("selftest: length mismatch contract\n")
+        return 1
+    }
+    if unorm8(0.0) as i32 != 0 or unorm8(1.0) as i32 != 255 {
+        err("selftest: unorm8 endpoints\n")
+        return 1
+    }
+    let g: HexBytes = render_vgpu_gradient(2, 2)
+    if not g.ok or g.len != 16 {
+        err("selftest: 2x2 gradient size\n")
+        return 1
+    }
+    let g2: HexBytes = render_vgpu_gradient(2, 2)
+    let rg: RgbaCmp = compare_rgba(g.data, g.len, g2.data, g2.len)
+    if not rg.exact {
+        err("selftest: gradient capture is not deterministic\n")
+        return 1
+    }
+    # Pixel-center UV of (0,0) at 2x2 is (0.25, 0.25).
+    if g.data[0] as i32 != unorm8(0.25) as i32 {
+        err("selftest: gradient red channel at origin\n")
+        return 1
+    }
+    if g.data[3] as i32 != 255 {
+        err("selftest: gradient alpha\n")
+        return 1
+    }
+    let one: ptr<u8> = malloc(4) as ptr<u8>
+    put_u8(one, 0, 0)
+    put_u8(one, 1, 0)
+    put_u8(one, 2, 128)
+    put_u8(one, 3, 63)
+    let n0: NumCmp = compare_f32(one, 4, one, 4)
+    if n0.max_abs != 0.0 or n0.n != 1 {
+        err("selftest: numerical identity\n")
+        return 1
+    }
+    out("SELFTEST PASS\n")
+    return 0
+}
+
 export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
     let mut suite: string = ""
     let backends: TList = tl_new()
+    let mut manifest: string = "examples/gpu/vgpu/manifest.json"
+    let mut only: string = ""
+    let mut capture: bool = false
+    let mut do_selftest: bool = false
     let mut i: i32 = 1
     while i < argc {
         let a: string = (argp[i] as string)
@@ -134,13 +707,33 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
             tl_push(&backends, "metal")
             tl_push(&backends, "webgpu")
             i = i + 1
-        } else {
+        } elif t_eq(a, "--manifest") and i + 1 < argc {
+            manifest = (argp[i + 1] as string)
+            i = i + 2
+        } elif t_eq(a, "--case") and i + 1 < argc {
+            only = (argp[i + 1] as string)
+            i = i + 2
+        } elif t_eq(a, "--capture-reference") {
+            capture = true
             i = i + 1
+        } elif t_eq(a, "--selftest") {
+            do_selftest = true
+            i = i + 1
+        } else {
+            err("Unknown argument: " + a + "\n")
+            err("Usage: flow gpu test --suite vgpu [--backend <backend> | --all-backends]\n")
+            err("       [--manifest PATH] [--case ID] [--capture-reference] [--selftest]\n")
+            return 1
         }
+    }
+
+    if do_selftest {
+        return selftest()
     }
 
     if not t_eq(suite, "vgpu") {
         err("Usage: flow gpu test --suite vgpu [--backend <backend> | --all-backends]\n")
+        err("       [--manifest PATH] [--case ID] [--capture-reference] [--selftest]\n")
         return 1
     }
 
@@ -149,5 +742,5 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
         return 1
     }
 
-    return run_vgpu_suite(backends)
+    return run_vgpu_suite(manifest, backends, only, capture)
 }

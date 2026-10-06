@@ -32,6 +32,7 @@ applicable.
 | `flow record FILE OPTIONS` | headless frames or GIF |
 | `flow shader FILE` | compile and run a fill shader |
 | `flow gpu FILE` | generate Metal sources from `@gpu` functions |
+| `flow gpu test --suite vgpu` | vgpu exact-pixel / numerical conformance (`--backend`, `--all-backends`) |
 | <code>flow ml run&#124;jit&#124;bench&#124;test [FILE]</code> | MLIR-first ML operations |
 
 Recording options include `--frames`, `--skip`, `--out`, `--gif`, `--keys`,
