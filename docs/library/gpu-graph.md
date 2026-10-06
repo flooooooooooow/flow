@@ -17,15 +17,16 @@ hazards.
 import "stdlib/gpu_graph.flow"
 
 function main() -> i32 {
-    let mut g: GpuGraph = gpu_graph_vgpu_fluid()
-    let err: GpuGraphError = gpu_graph_validate(&g)
-    if err.code != GPU_GRAPH_OK {
+    let mut g: GpuGraph = gpu_graph_new()
+    let source: i32 = gpu_graph_add_storage_buffer(&g, "src",
+        GPU_ACCESS_READ, GPU_LIFE_PERSISTENT, 64)
+    let dest: i32 = gpu_graph_add_storage_buffer(&g, "dst",
+        GPU_ACCESS_WRITE, GPU_LIFE_PERSISTENT, 64)
+    let copy: i32 = gpu_graph_add_copy_f32(&g, "copy", source, dest)
+    if copy < 0 or gpu_graph_validate(&g).code != GPU_GRAPH_OK {
         return 1
     }
-    # Same Flow graph lowers to both backends.
-    let wgsl: string = gpu_graph_emit_wgsl_pass(g, 0)
-    let metal: string = gpu_graph_emit_metal_pass(g, 0)
-    if wgsl == "" or metal == "" {
+    if not gpu_graph_same_source_both_backends(g) {
         return 2
     }
     return 0
@@ -92,14 +93,22 @@ recorded.
 
 ## Backends
 
-`gpu_graph_emit_wgsl_pass` / `gpu_graph_emit_metal_pass` emit one pass
-from the same graph: storage bindings, workgroup size, and a skeleton
-entry. `gpu_graph_same_source_both_backends` is true when every pass
-produces both modules.
+`gpu_graph_add_copy_f32` constructs a *real* backend-neutral buffer
+copy operation with checked source/destination capacities and distinct
+resources. `gpu_graph_emit_wgsl_pass` and `gpu_graph_emit_metal_pass`
+lower it into actual indexed assignments with bounds checks and shader
+entry-point declarations. The WGSL buffer destination uses the required
+`read_write` storage access (WGSL has no write-only storage-buffer mode).
 
-Device dispatch, readback and reference-image compare are the P4
-compatibility runner (`flow gpu test --suite vgpu`). The fluid and
-FFT-ocean examples validate the graph and print both modules.
+**No-op shaders do not count as execution.** A structural
+`gpu_graph_add_compute` or `gpu_graph_add_render` pass that has not yet
+been assigned a supported numerical operation returns an empty shader
+string, and `gpu_graph_same_source_both_backends` is false. In particular,
+the fluid and FFT-ocean builders currently validate hazard graphs but
+still lack their numerical body, dispatch wiring and image comparison.
+Their examples and `flow gpu test --suite vgpu` report `UNSUPPORTED`,
+not parity. Actual device execution and readback remain acceptance work
+for #812.
 
 ## vgpu families
 
