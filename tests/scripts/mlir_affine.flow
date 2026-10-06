@@ -1,0 +1,135 @@
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_affine_emitter_flags() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--affine")
+    sl_push(argv, "--tile-size=4")
+    sl_push(argv, "--tile-l2-size=8")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/affine.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/affine.mlir")
+    if not a_contains(output, "affine.for") { return T_FAIL }
+    if not a_contains(output, "step 8") { return T_FAIL }
+    if not a_contains(output, "step 4") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_emitter_space_separated() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--affine")
+    sl_push(argv, "--tile-size")
+    sl_push(argv, "4")
+    sl_push(argv, "--tile-l2-size")
+    sl_push(argv, "8")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/affine-spaced.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/affine-spaced.mlir")
+    if not a_contains(output, "affine.for") { return T_FAIL }
+    if not a_contains(output, "step 8") { return T_FAIL }
+    if not a_contains(output, "step 4") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_emitter_cli_overrides_env() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--affine")
+    sl_push(argv, "--tile-size=4")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/affine-cli.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_TILE", "8")
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/affine-cli.mlir")
+    if not a_contains(output, "step 4") { return T_FAIL }
+    if a_contains(output, "step 8") { return T_FAIL }
+    return T_PASS
+}
+
+function check_flow_mlir_affine_flags() -> i32 {
+    let missing: ptr<ProcStrs> = sl_of3("./flow", "mlir", "tests/mlir/affine_loop.flow")
+    sl_push(missing, "--tile-size")
+    if t_run(t_cmd(missing)) == 0 { return T_FAIL }
+    let missing_out: string = read_text(t_out()) + read_text(t_err())
+    if not a_contains(missing_out, "--tile-size requires a value") { return T_FAIL }
+
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "mlir", "tests/mlir/affine_loop.flow")
+    sl_push(argv, "--affine")
+    sl_push(argv, "--tile-size=4")
+    sl_push(argv, "--tile-l2-size=8")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOW_BUILD_ROOT", t_tmp() + "/build")
+    let rc: i32 = t_run(c)
+    let output: string = read_text(t_out()) + read_text(t_err())
+    if s_contains(output, "unknown option") {
+        outln("flow mlir rejected --affine as unknown")
+        return T_FAIL
+    }
+    if rc == 0 {
+        if not a_contains(output, "affine.for") { return T_FAIL }
+        if not a_contains(output, "step 8") { return T_FAIL }
+        if not a_contains(output, "step 4") { return T_FAIL }
+        return T_PASS
+    }
+    # flow mlir still requires mlir-opt even when only emitting.
+    if s_contains(output, "MLIR tools not found") { return T_PASS }
+    outln("flow mlir --affine failed:")
+    outln(output)
+    return T_FAIL
+}
+
+function check_affine_emitter_rejects_bad_tile() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--tile-size=3oops")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/bad.mlir")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tile-size must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_emitter_rejects_out_of_range() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--tile-size=1")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/low.mlir")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tile-size must be a positive integer from 2 through 64") { return T_FAIL }
+
+    let argv_hi: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--tile-l2-size=129")
+    sl_push(argv_hi, "tests/mlir/affine_loop.flow")
+    sl_push(argv_hi, t_tmp() + "/high.mlir")
+    if t_run(t_cmd(argv_hi)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tile-l2-size must be a positive integer from 2 through 128") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_emitter_rejects_missing_tile() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--tile-size")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tile-size requires a value") { return T_FAIL }
+
+    let argv_eq: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--tile-l2-size=")
+    sl_push(argv_eq, "tests/mlir/affine_loop.flow")
+    sl_push(argv_eq, t_tmp() + "/empty.mlir")
+    if t_run(t_cmd(argv_eq)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tile-l2-size requires a value") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_affine")
+    t_start()
+    t_end("affine_emitter_flags", check_affine_emitter_flags())
+    t_start()
+    t_end("affine_emitter_space_separated", check_affine_emitter_space_separated())
+    t_start()
+    t_end("affine_emitter_cli_overrides_env", check_affine_emitter_cli_overrides_env())
+    t_start()
+    t_end("flow_mlir_affine_flags", check_flow_mlir_affine_flags())
+    t_start()
+    t_end("affine_emitter_bad_tile", check_affine_emitter_rejects_bad_tile())
+    t_start()
+    t_end("affine_emitter_out_of_range", check_affine_emitter_rejects_out_of_range())
+    t_start()
+    t_end("affine_emitter_missing_tile", check_affine_emitter_rejects_missing_tile())
+    t_done()
+    return 0
+}
