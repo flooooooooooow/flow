@@ -1074,7 +1074,13 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut report: bool = false
     let mut print_pipeline: bool = false
     let mut gpu: bool = false
+    let mut affine: bool = false
+    let mut tile_size: string = ""
+    let mut tile_l2_size: string = ""
     let mut register_tiles: bool = false
+    let mut register_tile_intrinsics: bool = false
+    let mut register_target: string = ""
+    let mut register_max_lanes: string = ""
     let mut aosoa_pad: bool = false
     let mut aosoa_pad_auto: bool = false
     let mut aosoa_bank_count: string = ""
@@ -1108,8 +1114,52 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
             print_pipeline = true
         } elif s_eq(a, "--mlir-gpu") {
             gpu = true
+        } elif s_eq(a, "--affine") {
+            affine = true
+        } elif s_eq(a, "--tile-size") {
+            if i + 1 >= n {
+                error("flow mlir: --tile-size requires a value")
+                cli_exit(2)
+            }
+            affine = true
+            tile_size = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--tile-size=") {
+            affine = true
+            tile_size = s_from(a, 12)
+            if s_len(tile_size) == 0 {
+                error("flow mlir: --tile-size requires a value")
+                cli_exit(2)
+            }
+        } elif s_eq(a, "--tile-l2-size") {
+            if i + 1 >= n {
+                error("flow mlir: --tile-l2-size requires a value")
+                cli_exit(2)
+            }
+            affine = true
+            tile_l2_size = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--tile-l2-size=") {
+            affine = true
+            tile_l2_size = s_from(a, 15)
+            if s_len(tile_l2_size) == 0 {
+                error("flow mlir: --tile-l2-size requires a value")
+                cli_exit(2)
+            }
         } elif s_eq(a, "--register-tiles") {
             register_tiles = true
+        } elif s_eq(a, "--register-tile-intrinsics") {
+            register_tile_intrinsics = true
+        } elif s_starts(a, "--register-tile-target=") {
+            register_target = s_from(a, 23)
+        } elif s_eq(a, "--register-tile-target") {
+            register_target = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--register-tile-max-lanes=") {
+            register_max_lanes = s_from(a, 26)
+        } elif s_eq(a, "--register-tile-max-lanes") {
+            register_max_lanes = sl_get(args, i + 1)
+            i = i + 1
         } elif s_eq(a, "--aosoa-pad") {
             aosoa_pad = true
         } elif s_eq(a, "--aosoa-pad-auto") {
@@ -1198,8 +1248,26 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     if gpu {
         sl_push(emit_flags, "--gpu")
     }
+    if affine {
+        sl_push(emit_flags, "--affine")
+    }
+    if s_len(tile_size) > 0 {
+        sl_push(emit_flags, "--tile-size=" + tile_size)
+    }
+    if s_len(tile_l2_size) > 0 {
+        sl_push(emit_flags, "--tile-l2-size=" + tile_l2_size)
+    }
     if register_tiles {
         sl_push(emit_flags, "--register-tiles")
+    }
+    if register_tile_intrinsics {
+        sl_push(emit_flags, "--register-tile-intrinsics")
+    }
+    if s_len(register_target) > 0 {
+        sl_push(emit_flags, "--register-tile-target=" + register_target)
+    }
+    if s_len(register_max_lanes) > 0 {
+        sl_push(emit_flags, "--register-tile-max-lanes=" + register_max_lanes)
     }
     if aosoa_pad {
         sl_push(emit_flags, "--aosoa-pad")

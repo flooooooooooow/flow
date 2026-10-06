@@ -340,12 +340,16 @@ function main() -> i32 {
     compile_module(host, "type_id", "ast")
     hdrs(hdr, "type_id")
 
+    # Constraint-based local region inference (#694).
+    compile_module(host, "region", "token ast")
+    hdrs(hdr, "region")
+
     # Proven noalias / restrict certificate used by cgen (#731).
     compile_module(host, "noalias", "token ast")
     hdrs(hdr, "noalias")
 
-    # Sixth module: cgen.flow (imports token/ast/type_id/noalias; extern gives string.h).
-    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites type_id noalias")
+    # Sixth module: cgen.flow (imports token/ast/type_id/noalias/region).
+    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites type_id noalias region")
     let cg: ptr<ProcStrs> = sl_of3("flowc_cgen_emit", "flowc_cgen_emit_ex", "typedef struct CgenBuf")
     sl_push2(cg, "#include <string.h>", " % ")
     module_needs("cgen", cg)
@@ -396,7 +400,7 @@ function main() -> i32 {
     hdrs(hdr, "sem_cheader")
     compile_module(host, "sem_model", "token ast lexer sem_util sem_types")
     hdrs(hdr, "sem_model")
-    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary")
+    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary region")
     hdrs(hdr, "sem_check")
 
     compile_module(host, "pipeline_fusion", "ast")

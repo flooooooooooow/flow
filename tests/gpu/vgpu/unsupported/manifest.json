@@ -1,0 +1,11 @@
+{
+  "suite": "vgpu",
+  "cases": [
+    {
+      "id": "blocked",
+      "comparison": { "mode": "numerical" },
+      "capability": "fixture-block",
+      "backends": ["webgpu"]
+    }
+  ]
+}
