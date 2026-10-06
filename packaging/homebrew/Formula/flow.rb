@@ -32,7 +32,7 @@ class Flow < Formula
     system libexec/"flow", "version" if build.head?
 
     python = formula_opt_bin("python@3.12")/"python3.12"
-    venv = virtualenv_create(libexec/"venv", python)
+    virtualenv_create(libexec/"venv", python)
 
     env = {
       PATH: "#{libexec}/venv/bin:#{formula_opt_libexec("python@3.12")}/bin:$PATH",
