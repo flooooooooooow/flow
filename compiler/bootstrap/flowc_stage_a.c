@@ -11974,24 +11974,23 @@ NoaliasView na_local_field(int32_t root, int32_t field, int32_t off, int32_t len
 }
 
 NoaliasView na_copy_field(NoaliasView base, int32_t off, int32_t len) {
+  if ((base).known == 0 || off < 0 || len < (-1)) {
+  return na_unknown();
+}
   return (NoaliasView){ .kind = (base).kind, .root = (base).root, .off = off, .len = len, .known = 1, .field = (base).field };
 }
 
 int32_t na_field_hash(uint8_t* src, int32_t start, int32_t end) {
-  int32_t h = 1;
+  int64_t h = 1;
   int32_t i = start;
   while (i < end) {
-  h = (h + (int32_t)(src[i]));
-  h = (h * 17);
+  h = (((h * 17) + (int64_t)(src[i])) % 2147483629);
   i = (i + 1);
-}
-  if (h <= 0) {
-  h = (h + 2000000000);
 }
   if (h == 0) {
   return 1;
 }
-  return h;
+  return (int32_t)(h);
 }
 
 int32_t na_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
@@ -12500,6 +12499,9 @@ NoaliasView na_view_of_expr(AstArena arena, uint8_t* src, int32_t fn, int32_t ex
   if (start_v < 0) {
   return na_unknown();
 }
+  if ((base).off < 0 || (base).off > (2147483647 - start_v)) {
+  return na_unknown();
+}
   int32_t new_off = ((base).off + start_v);
   if (((arena).nodes[expr]).ival == 1) {
   int32_t end_e = ((arena).nodes[expr]).c;
@@ -12517,7 +12519,7 @@ NoaliasView na_view_of_expr(AstArena arena, uint8_t* src, int32_t fn, int32_t ex
   return na_unknown();
 }
   int32_t end_v = na_const_int(arena, end_e);
-  if (end_v < start_v) {
+  if (end_v < start_v || (base).len < 0 || end_v > (base).len) {
   return na_unknown();
 }
   return na_copy_field(base, new_off, (end_v - start_v));
@@ -12542,6 +12544,9 @@ NoaliasView na_view_of_expr(AstArena arena, uint8_t* src, int32_t fn, int32_t ex
 }
   int32_t add = na_const_int(arena, rhs);
   if (add < 0) {
+  return na_unknown();
+}
+  if ((lhs).off < 0 || (lhs).off > (2147483647 - add)) {
   return na_unknown();
 }
   int32_t new_off = ((lhs).off + add);
@@ -12574,8 +12579,14 @@ int32_t flowc_noalias_views_disjoint(NoaliasView a, NoaliasView b) {
   return 1;
 }
   if ((a).kind == NA_LOCAL && (b).kind == NA_LOCAL) {
+  if ((a).off < 0 || (b).off < 0) {
+  return 0;
+}
   if ((a).root != (b).root) {
   return 1;
+}
+  if ((a).len <= 0 || (b).len <= 0) {
+  return 0;
 }
   if ((a).field != 0 && (b).field != 0 && (a).field != (b).field) {
   return 1;
@@ -12583,13 +12594,10 @@ int32_t flowc_noalias_views_disjoint(NoaliasView a, NoaliasView b) {
   if ((a).field != (b).field) {
   return 0;
 }
-  if ((a).len < 0 || (b).len < 0) {
-  return 0;
-}
-  if (((a).off + (a).len) <= (b).off) {
+  if ((a).off <= (b).off && (a).len <= ((b).off - (a).off)) {
   return 1;
 }
-  if (((b).off + (b).len) <= (a).off) {
+  if ((b).off <= (a).off && (b).len <= ((a).off - (b).off)) {
   return 1;
 }
   return 0;
