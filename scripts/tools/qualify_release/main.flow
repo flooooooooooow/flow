@@ -598,24 +598,29 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return validate_formula_path(formula_path, brew)
     }
 
-    let vtext: string = ft_read_file("VERSION")
-    if vtext as ptr<u8> == null {
-        return fail("cannot read VERSION")
-    }
-    let mut version: string = first_line(vtext)
-    if version as ptr<u8> == null {
-        return fail("VERSION is empty")
-    }
-    if version_arg as ptr<u8> != null {
-        version = version_arg
-    }
-    if is_semver(version) == false {
-        return fail("not a semantic version: " + version)
-    }
-
     let commit: string = git_commit(rev)
     if commit as ptr<u8> == null {
         return fail("git rev-parse failed for " + rev)
+    }
+    # The archived commit, not a possibly newer/dirty checkout, owns VERSION.
+    let vtext: string = capture_cmd(rp_argv3("git", "show", commit + ":VERSION"))
+    if vtext as ptr<u8> == null {
+        return fail("cannot read VERSION from " + commit)
+    }
+    let version: string = first_line(vtext)
+    if version as ptr<u8> == null or is_semver(version) == false {
+        return fail("invalid VERSION at " + commit)
+    }
+    if version_arg as ptr<u8> != null and ft_eq(version_arg, version) == false {
+        return fail("--version differs from the archived commit VERSION (" + version + ")")
+    }
+    # Local/full tool gates execute from the checked-out tree; refuse a
+    # different revision rather than associating HEAD results with --rev.
+    if artifacts_only == false and check_formula == false {
+        let head: string = git_commit("HEAD")
+        if head as ptr<u8> == null or ft_eq(head, commit) == false {
+            return fail("checkout --rev before running gates; --artifacts-only can archive another commit")
+        }
     }
 
     if print_tag and artifacts_only == false and promote_rc == false and ft_eq(mode, "local") {
