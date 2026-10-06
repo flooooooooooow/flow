@@ -95,14 +95,14 @@ function main() -> i32 {
     let p_norm: ptr<f32> = gpu_tensor_ptr(norm)
     let p_probs: ptr<f32> = gpu_tensor_ptr(probs)
 
-    # Pre @gpu kernel, then model, then post @gpu kernel — same pointers.
+    # GPU-native model ops share exactly the GpuBuffer storage exposed to
+    # the separately compiled @gpu kernels. This demo does not dispatch
+    # the user-authored @gpu shaders: the emit path and launcher are distinct.
     if gpu_tensor_normalize(raw, norm, 255.0) != 0 { return 4 }
-    mnist_preprocess(gpu_tensor_ptr(raw), gpu_tensor_ptr(norm), input_dim)
     if gpu_tensor_linear(h1, norm, w1) != 0 { return 5 }
     if gpu_tensor_relu(h1, h1) != 0 { return 6 }
     if gpu_tensor_linear(logits, h1, w2) != 0 { return 7 }
     if gpu_tensor_relu(logits, probs) != 0 { return 8 }
-    mnist_postprocess(gpu_tensor_ptr(logits), gpu_tensor_ptr(probs), num_classes)
 
     if gpu_tensor_ptr(norm) != p_norm { return 9 }
     if gpu_tensor_ptr(probs) != p_probs { return 10 }
@@ -120,7 +120,13 @@ function main() -> i32 {
 
     println("vgpu mnist")
     println(gpu_backend_name())
-    if gpu_model_dispatch_count() > dispatch_before and gpu_backend_name() == "metal" {
+    # Require *all five* model stages on Metal. Emitting @gpu shaders and
+    # invoking a one-thread CPU fallback are not device execution.
+    let device_stages: i64 = gpu_model_dispatch_count() - dispatch_before
+    if device_stages >= 5 and gpu_available() and gpu_backend_name() == "metal" and
+       gpu_tensor_is_zero_copy(raw) and gpu_tensor_is_zero_copy(norm) and
+       gpu_tensor_is_zero_copy(h1) and gpu_tensor_is_zero_copy(logits) and
+       gpu_tensor_is_zero_copy(probs) {
         println("GPU_DEVICE_EXECUTED metal")
     } else {
         println("GPU_DEVICE_UNAVAILABLE")
