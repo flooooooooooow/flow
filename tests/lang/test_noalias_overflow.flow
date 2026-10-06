@@ -17,9 +17,11 @@ function main() -> i32 {
     let overlapped: NoaliasView = view(10, 3, 4, 0)
     if flowc_noalias_views_disjoint(a, overlapped) != 0 { return 3 }
     let far: NoaliasView = view(10, 2147483640, 100, 0)
-    # Old a.off + a.len wrapped to negative and certified disjointness.
-    if flowc_noalias_views_disjoint(far, b) != 0 { return 4 }
-    if flowc_noalias_views_disjoint(b, far) != 0 { return 5 }
+    let near: NoaliasView = view(10, 2147483643, 2, 0)
+    # Old far.off + far.len wrapped to negative, certifying disjointness
+    # even though near's two elements are INSIDE far's range.
+    if flowc_noalias_views_disjoint(far, near) != 0 { return 4 }
+    if flowc_noalias_views_disjoint(near, far) != 0 { return 5 }
     let negative: NoaliasView = view(10, 0 - 4, 2, 0)
     if flowc_noalias_views_disjoint(negative, b) != 0 { return 6 }
     let unknown_length: NoaliasView = view(10, 0, -1, 0)
