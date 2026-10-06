@@ -617,6 +617,15 @@ export function gpu_tensor_linear(out: GpuTensor, inp: GpuTensor, weight: GpuTen
     if out.dim0 != inp.dim0 or out.dim1 != weight.dim1 {
         return 3
     }
+    # GEMM cannot overwrite a source/weight tile while it is being read.
+    # Reject host-pointer aliasing AND distinct host views of one device
+    # buffer. The model API uses explicit destination tensors.
+    if out.data == inp.data or out.data == weight.data or
+       (not gpu_is_null(out.buffer) and
+        (out.buffer.device == inp.buffer.device or
+         out.buffer.device == weight.buffer.device)) {
+        return 4
+    }
     let M: i32 = inp.dim0
     let K: i32 = inp.dim1
     let N: i32 = weight.dim1
