@@ -26,6 +26,7 @@
     "attribute:python": "python-target.md",
     "attribute:rt_safe": "library/rt-safety.md",
     "attribute:safe": "language/README.md",
+    "attribute:schema_revision": "language/type-identity.md",
     "attribute:target": "LANGUAGE_SPEC.md",
     "attribute:test": "AI_FLOW_HANDBOOK.md",
     "attribute:unsafe": "language/README.md",

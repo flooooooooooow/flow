@@ -132,7 +132,7 @@ PASS test_mlir
 PASS compile_no_runtime
   out differs:
     --- /app/tests/cli/goldens/linux/compile_audio_hello.out	2026-10-05 23:10:39.650193607 +0000
-    +++ /tmp/flow-cli-tests.DNL7ne/compile_audio_hello.out	2026-10-06 00:18:56.830147476 +0000
+    +++ /tmp/flow-cli-tests.R74QgC/compile_audio_hello.out	2026-10-06 01:35:18.223260701 +0000
     @@ -1,5 +1,4 @@
      [0;34mℹ️  Compiling tests/cli/fixtures/hello.flow (audio backend)...[0m
      [0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
@@ -142,7 +142,7 @@ PASS compile_no_runtime
     +[0;31m❌ C compilation/linking failed[0m
   err differs:
     --- /app/tests/cli/goldens/linux/compile_audio_hello.err	2026-10-05 23:10:39.650193607 +0000
-    +++ /tmp/flow-cli-tests.DNL7ne/compile_audio_hello.err	2026-10-06 00:18:56.830147476 +0000
+    +++ /tmp/flow-cli-tests.R74QgC/compile_audio_hello.err	2026-10-06 01:35:18.223260701 +0000
     @@ -0,0 +1,20 @@
     +error: "Never use <enqcmdintrin.h> directly; include <immintrin.h> instead."
     +error: "Never use <f16cintrin.h> directly; include <immintrin.h> instead."
@@ -166,14 +166,14 @@ PASS compile_no_runtime
     +   76 | #define _SC_CHILD_MAX                   _SC_CHILD_MAX
   code differs:
     --- /app/tests/cli/goldens/linux/compile_audio_hello.code	2026-10-05 23:10:39.650193607 +0000
-    +++ /tmp/flow-cli-tests.DNL7ne/compile_audio_hello.code	2026-10-06 00:18:56.830147476 +0000
+    +++ /tmp/flow-cli-tests.R74QgC/compile_audio_hello.code	2026-10-06 01:35:18.223260701 +0000
     @@ -1 +1 @@
     -0
     +1
 FAIL compile_audio_hello
   out differs:
     --- /app/tests/cli/goldens/linux/run_sanitize_ub.out	2026-10-05 23:10:39.682193607 +0000
-    +++ /tmp/flow-cli-tests.DNL7ne/run_sanitize_ub.out	2026-10-06 00:19:07.126147361 +0000
+    +++ /tmp/flow-cli-tests.R74QgC/run_sanitize_ub.out	2026-10-06 01:35:18.851260694 +0000
     @@ -1,11 +1,4 @@
      [0;34mℹ️  Compiling tests/cli/fixtures/hello.flow (host=flowc)...[0m
      [0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
@@ -189,13 +189,13 @@ FAIL compile_audio_hello
     +[0;31m❌ C compilation/linking failed (flowc host)[0m
   err differs:
     --- /app/tests/cli/goldens/linux/run_sanitize_ub.err	2026-10-05 23:10:39.682193607 +0000
-    +++ /tmp/flow-cli-tests.DNL7ne/run_sanitize_ub.err	2026-10-06 00:19:07.126147361 +0000
+    +++ /tmp/flow-cli-tests.R74QgC/run_sanitize_ub.err	2026-10-06 01:35:18.851260694 +0000
     @@ -0,0 +1,2 @@
     +/usr/bin/ld: cannot find /usr/lib/llvm-18/lib/clang/18/lib/linux/libclang_rt.ubsan_standalone-x86_64.a: No such file or directory
     +clang: error: linker command failed with exit code 1 (use -v to see invocation)
   code differs:
     --- /app/tests/cli/goldens/linux/run_sanitize_ub.code	2026-10-05 23:10:39.682193607 +0000
-    +++ /tmp/flow-cli-tests.DNL7ne/run_sanitize_ub.code	2026-10-06 00:19:07.126147361 +0000
+    +++ /tmp/flow-cli-tests.R74QgC/run_sanitize_ub.code	2026-10-06 01:35:18.851260694 +0000
     @@ -1 +1 @@
     -0
     +1
@@ -210,3 +210,15 @@ PASS shader_wgsl
 PASS gpu_wgsl
 PASS record_two_frames
 PASS analyze_c
+PASS fir_hello
+PASS check_idioms
+PASS repl_session
+PASS install_tools
+PASS search_none
+PASS info_hello_lib
+PASS run_native_proj
+PASS pkg_install_proj
+PASS test_gpu
+PASS test_interop
+tests/cli: 152 passed, 2 failed
+failed: compile_audio_hello run_sanitize_ub
