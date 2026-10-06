@@ -10,12 +10,13 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
-#ifndef O_NOFOLLOW
-#error \"Flow cache security requires O_NOFOLLOW on its supported POSIX hosts\"
-#endif
 #ifndef O_CLOEXEC
 #define O_CLOEXEC 0
 #endif
+/* libc may hide these POSIX declarations under strict C11 feature macros.
+   Their POSIX signatures are identical when headers also declare them. */
+extern int lstat(const char *path, struct stat *st);
+extern FILE *fdopen(int fd, const char *mode);
 int flowc_cache_secure_dir_raw(const char *path, int strict) {
   struct stat st;
   if (!path || path[0] != '/') return 0;
@@ -39,10 +40,16 @@ static int flowc_cache_secure_fd(int fd, int64_t max_bytes) {
 void *flowc_cache_read_raw(const char *path, int64_t max_bytes) {
   int fd;
   FILE *fp;
+  struct stat before, after;
   if (!path) return NULL;
-  fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  /* lstat rejects symlinks; inode/device comparison closes the
+     replacement race if a directory entry changes before open(). */
+  if (lstat(path, &before) != 0 || !S_ISREG(before.st_mode)) return NULL;
+  fd = open(path, O_RDONLY | O_CLOEXEC);
   if (fd < 0) return NULL;
-  if (!flowc_cache_secure_fd(fd, max_bytes)) {
+  if (fstat(fd, &after) != 0 ||
+      before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
+      !flowc_cache_secure_fd(fd, max_bytes)) {
     close(fd);
     return NULL;
   }
@@ -54,7 +61,8 @@ void *flowc_cache_create_raw(const char *path) {
   int fd;
   FILE *fp;
   if (!path) return NULL;
-  fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+  /* O_CREAT|O_EXCL refuses a pre-existing symlink per POSIX. */
+  fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
   if (fd < 0) return NULL;
   if (!flowc_cache_secure_fd(fd, 0)) {
     close(fd);
