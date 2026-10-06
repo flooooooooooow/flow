@@ -28,7 +28,7 @@ done
 
 [[ "$(uname -s)" == Linux ]] || { echo "Linux host required" >&2; exit 2; }
 [[ -f "$archive" && "$expected" =~ ^[0-9a-f]{64}$ ]] || { usage; exit 2; }
-for tool in sha256sum tar mktemp find cc realpath awk; do
+for tool in sha256sum tar mktemp find cc realpath awk cut; do
     command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 2; }
 done
 archive="$(realpath "$archive")"
