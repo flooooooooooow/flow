@@ -212,3 +212,8 @@ export function gpu_copy_device_to_device(dst: GpuBuffer, src: GpuBuffer, nbytes
 export function unified_allocate(size: i64) -> GpuBuffer {
     return gpu_alloc_unified(size)
 }
+
+# Only completed device-side tensor dispatches count as GPU execution proof.
+export function gpu_model_dispatch_count() -> i64 {
+    return flow_gpu_model_dispatch_count()
+}
