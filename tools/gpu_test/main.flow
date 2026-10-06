@@ -81,7 +81,17 @@ function run_vgpu_suite(backends: TList) -> i32 {
                 let args: TList = tl_new()
 
                 # Default case logic: if fill isn't set, we might have to run tools/gpu?
-                if fill_id >= 0 {
+                if t_eq(mode, "graph-validate") {
+                    # Graph topology and hazard validation are not numerical
+                    # device execution. Never treat a no-op shader as parity.
+                    let graph_rc: i32 = run_flow_program(source, out_path, err_path)
+                    if graph_rc != 0 {
+                        out("CASE " + id + " [" + b + "] FAIL (graph)\n")
+                        all_ok = false
+                    } else {
+                        out("CASE " + id + " [" + b + "] UNSUPPORTED reason=compute-bodies-not-implemented\n")
+                    }
+                } elif fill_id >= 0 {
                     let fill_name: string = json_str(j, fill_id)
                     tl_push(&args, "./flow")
                     tl_push(&args, "shader")
