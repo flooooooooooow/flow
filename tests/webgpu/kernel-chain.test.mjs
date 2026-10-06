@@ -164,7 +164,7 @@ test("invalid dispatch fails before submission and cleans allocations",async()=>
 test("two arguments cannot alias same physical GPU buffer in a pass",async()=>{
     const {device}=fakeDevice();
     await assert.rejects(runFlowKernelChain(device,{
-        resources:{data:{length:4}},
+        resources:{data:{length:4,initial:new Float32Array(4)}},
         stages:[stage("preprocess","data","data")],
         readback:["data"]
     }), /same GPU resource/);
@@ -175,7 +175,7 @@ test("Flow shader compilation errors are never interpreted as success",async()=>
         shaderErrors:[{type:"error",lineNum:1,message:"bad compute body"}]
     });
     await assert.rejects(runFlowKernelChain(device,{
-        resources:{input:{length:4},output:{length:4}},
+        resources:{input:{length:4,initial:new Float32Array(4)},output:{length:4}},
         stages:[stage("preprocess","input","output")],
         readback:["output"]
     }), /WGSL compile failed/);
@@ -189,4 +189,56 @@ test("host rejects incorrectly shaped input buffers",async()=>{
         resources:{input:{length:4,initial:new Float32Array(3)},output:{length:4}},
         stages:[stage("preprocess","input","output")],readback:["output"]
     }), /Float32Array length/);
+});
+
+test("uninitialised read and output-only readback are rejected",async()=>{
+    const {device,stats}=fakeDevice();
+    await assert.rejects(runFlowKernelChain(device,{
+        resources:{input:{length:4},output:{length:4}},
+        stages:[stage("preprocess","input","output")],
+        readback:["output"]
+    }),/read before write/);
+    assert.equal(stats.submits,0);
+    const valid={
+        resources:{input:{length:4,initial:new Float32Array(4)},output:{length:4}},
+        stages:[stage("preprocess","input","output")],
+        readback:["input"]
+    };
+    // Input has initial bytes, so it is permitted as an explicit readback.
+    const result=await runFlowKernelChain(device,valid);
+    assert.equal(result.execution,"webgpu-device");
+    await assert.rejects(runFlowKernelChain(device,{
+        resources:{input:{length:4,initial:new Float32Array(4)},unwritten:{length:4},
+                   output:{length:4}},
+        stages:[stage("preprocess","input","output")],
+        readback:["unwritten"]
+    }),/readback before write/);
+    assert.ok(stats.allocated.every(x=>x.destroyed));
+});
+
+test("nonlinear matrix access needs checked per-binding element extents",async()=>{
+    const {device,stats}=fakeDevice();
+    const mat=stage("preprocess","input","output",4);
+    mat.allowNonlinear=true;
+    await assert.rejects(runFlowKernelChain(device,{
+        resources:{input:{length:4,initial:new Float32Array(4)},output:{length:4}},
+        stages:[mat],readback:["output"]
+    }),/requiredElements/);
+    mat.requiredElements={x:5,y:4};
+    await assert.rejects(runFlowKernelChain(device,{
+        resources:{input:{length:4,initial:new Float32Array(4)},output:{length:4}},
+        stages:[mat],readback:["output"]
+    }),/more elements/);
+    assert.equal(stats.submits,0);
+});
+
+test("oversized workgroup is rejected independently of dispatch groups",async()=>{
+    const {device,stats}=fakeDevice();
+    device.limits.maxComputeInvocationsPerWorkgroup=64;
+    const kernel=stage("preprocess","input","output",128,128);
+    await assert.rejects(runFlowKernelChain(device,{
+        resources:{input:{length:128,initial:new Float32Array(128)},output:{length:128}},
+        stages:[kernel],readback:["output"]
+    }),/workgroup exceeds/);
+    assert.equal(stats.submits,0);
 });
