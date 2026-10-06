@@ -8,7 +8,7 @@ for runtime pieces it never uses.
 
 `./flow compile` (and `./flow run` on the C backend) emit C with flowc and
 link against the Flow runtime archive. The archive still contains optional
-pieces — Python embedding, the Metal GPU shim, OpenSSL, OpenMP — so a program
+pieces :  Python embedding, the Metal GPU shim, OpenSSL, OpenMP :  so a program
 that calls them keeps working.
 
 Those optional libraries must not become load commands on a program that
