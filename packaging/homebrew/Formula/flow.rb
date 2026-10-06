@@ -12,11 +12,16 @@ class Flow < Formula
   depends_on "python@3.12"
 
   def install
-    # Keep the repo layout intact — the `flow` driver resolves SCRIPT_DIR via
-    # realpath and expects src/, lib/, runtime/ next to itself.
+    # Stable v1.0.1 uses the Python src/ tree, while HEAD uses the
+    # self-hosted CLI plus VERSION/tools. Both keep their repo-relative layout.
     libexec.install "flow", "flow-lsp"
-    libexec.install "src", "lib", "runtime", "compiler"
-    libexec.install "tools" if (buildpath/"tools").exist?
+    libexec.install "lib", "runtime", "compiler"
+    if build.head?
+      libexec.install "VERSION", "tools"
+    else
+      libexec.install "src"
+      libexec.install "tools" if (buildpath/"tools").exist?
+    end
     libexec.install "wasm" if (buildpath/"wasm").exist?
     libexec.install "examples" if (buildpath/"examples").exist?
     libexec.install "pyproject.toml" if (buildpath/"pyproject.toml").exist?
@@ -24,6 +29,8 @@ class Flow < Formula
 
     chmod 0755, libexec/"flow"
     chmod 0755, libexec/"flow-lsp" if (libexec/"flow-lsp").exist?
+    # HEAD builds its Flow-native CLI from checked-in bootstrap C.
+    system libexec/"flow", "version" if build.head?
 
     python = Formula["python@3.12"].opt_bin/"python3.12"
     venv = virtualenv_create(libexec/"venv", python)
