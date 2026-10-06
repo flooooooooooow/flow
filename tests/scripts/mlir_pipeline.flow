@@ -20,12 +20,13 @@ function check_normalization_stays_opt_in() -> i32 {
 }
 
 function check_l2_less_than_inner_tile() -> i32 {
-    let args: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--affine")
-    sl_push(args, "--tile-size=16")
-    sl_push(args, "--tile-l2-size=8")
-    sl_push(args, "tests/mlir/affine_loop.flow")
+    let args: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "tests/mlir/affine_loop.flow")
     sl_push(args, t_tmp() + "/invalid-l2.mlir")
-    if t_run(t_cmd(args)) == 0 { return T_FAIL }
+    let c: ptr<ProcCmd> = t_cmd(args)
+    cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    cmd_env(c, "FLOWC_MLIR_TILE", "16")
+    cmd_env(c, "FLOWC_MLIR_TILE_L2", "8")
+    if t_run(c) == 0 { return T_FAIL }
     if not a_contains(read_text(t_err()), "affine L2 tile must be >= the inner tile") { return T_FAIL }
     return T_PASS
 }
