@@ -15,6 +15,11 @@ All notable changes to FLOW will be documented in this file.
   independently of shader windows. The gradient case is byte-for-byte against
   the captured upstream image; MNIST/depth report `UNSUPPORTED` until tensor
   execution lands. (#813)
+- Type checker: memory from `arena_alloc` / `frame_alloc_*` of a module-static
+  arena carries that arena's declared `@lifetime(D)` (default `application`).
+  Storing it in a longer-lived static is an LD1 domain escape even when the
+  writing function is unannotated. A parameter or local arena keeps the
+  writer-domain rule; `malloc` is unchanged. (#690)
 - Cold start (#746): `flow compile` probe-links without optional Python/GPU/OpenSSL load commands when the program reaches none of their symbols (`FLOW_NO_LINK_TRIM=1` keeps the full link). `./flow tool compile_bench --python-code` records `python_ms`, `run_vs_python_x100` and `bin_bytes` next to `run_ms`.
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)

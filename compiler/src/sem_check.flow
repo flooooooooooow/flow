@@ -1017,6 +1017,65 @@ function sem_call_name(c: ptr<Sem>, e: i32) -> string {
     return nm
 }
 
+# arena_alloc / frame_alloc_* : the first argument names the allocator.
+function sem_is_arena_alloc_name(nm: string) -> bool {
+    return sem_s_starts(nm, "arena_alloc") or sem_s_starts(nm, "frame_alloc")
+}
+
+# `&arena` and `arena` name the same instance.
+function sem_alloc_arena_arg_name(c: ptr<Sem>, arg: i32) -> string {
+    if arg < 0 or arg == AST_NONE {
+        return null as string
+    }
+    let mut e: i32 = arg
+    if sem_is_unary_op(c, e, TOK_AMP) {
+        e = sem_na(c, e)
+    }
+    return sem_borrow_root_name(c, e)
+}
+
+# A name that is a module static here, not a local that shadows it.
+function sem_arg_is_module_static(c: ptr<Sem>, name: string) -> bool {
+    if name as ptr<u8> == null {
+        return false
+    }
+    if sem_sm_has(c.static_names, name) == false {
+        return false
+    }
+    let s: i32 = sem_lookup(c, name)
+    if s < 0 {
+        return true
+    }
+    return s == sem_sm_get(c.g_scope, name)
+}
+
+# Declared domain of the arena a value bumps memory from (issue #690).
+# Returns the arena's static name when value is arena_alloc / frame_alloc
+# of a module-static instance, or a local whose origin is that instance.
+# Unannotated statics default to application and never outlive a target.
+function sem_arena_instance_name(c: ptr<Sem>, value: i32) -> string {
+    if value < 0 {
+        return null as string
+    }
+    if sem_is_function_call(c, value) {
+        if sem_is_arena_alloc_name(sem_nname(c, value)) == false {
+            return null as string
+        }
+        let name: string = sem_alloc_arena_arg_name(c, sem_na(c, value))
+        if sem_arg_is_module_static(c, name) {
+            return name
+        }
+        return null as string
+    }
+    if sem_is_variable(c, value) {
+        let origin: string = sem_span_origin_get(c, sem_nname(c, value))
+        if origin as ptr<u8> != null and sem_sm_has(c.static_names, origin) {
+            return origin
+        }
+    }
+    return null as string
+}
+
 function sem_span_origin_get(c: ptr<Sem>, name: string) -> string {
     let k: i32 = sem_sm_get(c.span_origin, name)
     if k < 0 {
@@ -1031,12 +1090,8 @@ function sem_local_borrow_origin(c: ptr<Sem>, e: i32) -> string {
         return null as string
     }
     if sem_is_function_call(c, e) {
-        let nm: string = sem_nname(c, e)
-        if sem_s_starts(nm, "arena_alloc") or sem_s_starts(nm, "frame_alloc") {
-            if sem_na(c, e) != AST_NONE {
-                return sem_borrow_root_name(c, sem_na(c, e))
-            }
-            return null as string
+        if sem_is_arena_alloc_name(sem_nname(c, e)) {
+            return sem_alloc_arena_arg_name(c, sem_na(c, e))
         }
         return null as string
     }
@@ -1065,12 +1120,8 @@ function sem_domain_borrow_root(c: ptr<Sem>, e: i32) -> string {
         return null as string
     }
     if sem_is_function_call(c, e) {
-        let nm: string = sem_nname(c, e)
-        if sem_s_starts(nm, "arena_alloc") or sem_s_starts(nm, "frame_alloc") {
-            if sem_na(c, e) != AST_NONE {
-                return sem_borrow_root_name(c, sem_na(c, e))
-            }
-            return null as string
+        if sem_is_arena_alloc_name(sem_nname(c, e)) {
+            return sem_alloc_arena_arg_name(c, sem_na(c, e))
         }
         return null as string
     }
@@ -1153,13 +1204,30 @@ function sem_domain_escape_to_static(c: ptr<Sem>, stmt: i32, value: i32, target:
             sem_sm_put(c.esc_static, c.current_function_name + "\x01" + sem_s_itoa(pi as i64), 1)
         }
     }
-    if c.current_domain < 0 or sem_sm_has(c.static_names, target) == false {
+    if sem_sm_has(c.static_names, target) == false {
         return false
     }
     if sem_is_reference_type(c, target_type) == false {
         return false
     }
     let td: i32 = sem_static_domain(c, target)
+
+    # #690: memory bumped from a module-static arena carries that arena's
+    # own declared domain, even when the writing function has no domain.
+    let arena: string = sem_arena_instance_name(c, value)
+    if arena as ptr<u8> != null {
+        let ad: i32 = sem_static_domain(c, arena)
+        if td > ad {
+            sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+            sem_err(c, "lifetime domain escape: `" + arena + "` lives in the `" + sem_domain_name(ad) + "` domain but is stored in `" + target + "`, which lives in the `" + sem_domain_name(td) + "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)" + sem_location_suffix(c, stmt))
+            return true
+        }
+        return false
+    }
+
+    if c.current_domain < 0 {
+        return false
+    }
     if td <= c.current_domain {
         return false
     }
@@ -3561,7 +3629,7 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
                 let reported: bool = sem_domain_escape_to_static(c, s, value, base, tt)
                 if reported == false and sem_is_reference_type(c, tt) {
                     let origin: string = sem_local_borrow_origin(c, value)
-                    if origin as ptr<u8> != null {
+                    if origin as ptr<u8> != null and sem_sv_has(c.local_storage, origin) {
                         sem_err(c, "span outlives borrowed storage `" + origin + "`" + sem_location_suffix(c, s))
                     }
                 }
@@ -3587,7 +3655,7 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
     let reported2: bool = sem_domain_escape_to_static(c, s, value, target, st)
     if reported2 == false and sem_is_reference_type(c, st) and sem_sm_has(c.static_names, target) {
         let origin2: string = sem_local_borrow_origin(c, value)
-        if origin2 as ptr<u8> != null {
+        if origin2 as ptr<u8> != null and sem_sv_has(c.local_storage, origin2) {
             sem_err(c, "span outlives borrowed storage `" + origin2 + "`" + sem_location_suffix(c, s))
         }
     }
