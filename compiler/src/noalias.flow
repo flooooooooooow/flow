@@ -88,24 +88,25 @@ function na_local_field(root: i32, field: i32, off: i32, len: i32) -> NoaliasVie
 }
 
 function na_copy_field(base: NoaliasView, off: i32, len: i32) -> NoaliasView {
+    # A pointer offset outside the representable, nonnegative range
+    # cannot provide a provenance certificate for restrict/noalias.
+    if base.known == 0 or off < 0 or len < -1 {
+        return na_unknown()
+    }
     return NoaliasView { kind: base.kind, root: base.root, off: off, len: len, known: 1, field: base.field }
 }
 
+# Avoid signed-i32 overflow while identifying embedded fields. Hash
+# collisions only lose optimisation opportunities (same hash => may alias).
 function na_field_hash(src: ptr<u8>, start: i32, end: i32) -> i32 {
-    let mut h: i32 = 1
+    let mut h: i64 = 1
     let mut i: i32 = start
     while i < end {
-        h = h + (src[i] as i32)
-        h = h * 17
+        h = (h * 17 + (src[i] as i64)) % 2147483629
         i = i + 1
     }
-    if h <= 0 {
-        h = h + 2000000000
-    }
-    if h == 0 {
-        return 1
-    }
-    return h
+    if h == 0 { return 1 }
+    return h as i32
 }
 
 function na_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -578,6 +579,10 @@ function na_view_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, dept
         if start_v < 0 {
             return na_unknown()
         }
+        # Do not wrap i32 offsets to manufacture non-overlapping ranges.
+        if base.off < 0 or base.off > 2147483647 - start_v {
+            return na_unknown()
+        }
         let new_off: i32 = base.off + start_v
         if arena.nodes[expr].ival == 1 {
             let end_e: i32 = arena.nodes[expr].c
@@ -595,7 +600,7 @@ function na_view_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, dept
                 return na_unknown()
             }
             let end_v: i32 = na_const_int(arena, end_e)
-            if end_v < start_v {
+            if end_v < start_v or base.len < 0 or end_v > base.len {
                 return na_unknown()
             }
             return na_copy_field(base, new_off, end_v - start_v)
@@ -620,6 +625,9 @@ function na_view_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, dept
         }
         let add: i32 = na_const_int(arena, rhs)
         if add < 0 {
+            return na_unknown()
+        }
+        if lhs.off < 0 or lhs.off > 2147483647 - add {
             return na_unknown()
         }
         let new_off: i32 = lhs.off + add
@@ -652,22 +660,24 @@ export function flowc_noalias_views_disjoint(a: NoaliasView, b: NoaliasView) -> 
         return 1
     }
     if a.kind == NA_LOCAL and b.kind == NA_LOCAL {
+        if a.off < 0 or b.off < 0 { return 0 }
         if a.root != b.root {
             return 1
         }
+        if a.len <= 0 or b.len <= 0 { return 0 }
         if a.field != 0 and b.field != 0 and a.field != b.field {
             return 1
         }
         if a.field != b.field {
             return 0
         }
-        if a.len < 0 or b.len < 0 {
-            return 0
-        }
-        if a.off + a.len <= b.off {
+        # Checking disjoint intervals by addition can overflow signed i32,
+        # incorrectly proving overlap-free memory and enabling UB via restrict.
+        # Subtract only after ordering two nonnegative offsets.
+        if a.off <= b.off and a.len <= b.off - a.off {
             return 1
         }
-        if b.off + b.len <= a.off {
+        if b.off <= a.off and b.len <= a.off - b.off {
             return 1
         }
         return 0
