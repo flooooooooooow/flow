@@ -3,10 +3,9 @@ class Flow < Formula
 
   desc "Statically typed language with algebraic effects, autodiff, and a C backend"
   homepage "https://flooooooooooow.github.io/flow/"
-  license "MIT"
   url "https://github.com/flooooooooooow/flow/releases/download/v1.0.1/flow-v1.0.1.tar.gz"
   sha256 "deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b"
-  version "1.0.1"
+  license "MIT"
   head "https://github.com/flooooooooooow/flow.git", branch: "main"
 
   depends_on "python@3.12"
@@ -32,12 +31,11 @@ class Flow < Formula
     # HEAD builds its Flow-native CLI from checked-in bootstrap C.
     system libexec/"flow", "version" if build.head?
 
-    python = Formula["python@3.12"].opt_bin/"python3.12"
+    python = formula_opt_bin("python@3.12")/"python3.12"
     venv = virtualenv_create(libexec/"venv", python)
-    venv.pip_install "numpy"
 
     env = {
-      PATH: "#{libexec}/venv/bin:#{Formula["python@3.12"].opt_libexec}/bin:$PATH",
+      PATH: "#{libexec}/venv/bin:#{formula_opt_libexec("python@3.12")}/bin:$PATH",
     }
     (bin/"flow").write_env_script libexec/"flow", env
     (bin/"flow-lsp").write_env_script libexec/"flow-lsp", env if (libexec/"flow-lsp").exist?
