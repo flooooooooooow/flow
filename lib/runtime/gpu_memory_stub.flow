@@ -72,3 +72,19 @@ export function flow_gpu_mul_backward_a_f32(grad_a_gpu: ptr<void>, grad_out_gpu:
 export function flow_gpu_mul_backward_b_f32(grad_b_gpu: ptr<void>, grad_out_gpu: ptr<void>, a_gpu: ptr<void>, n: i64) -> i32 {
     return -1
 }
+
+# GPU tensor model kernels. The non-Metal runtime cannot dispatch them.
+@flow_api
+export function flow_gpu_scale_bias_f32(out: ptr<void>, input: ptr<void>, scale: f32, bias: f32, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_relu_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_gemm_f32(out: ptr<void>, input: ptr<void>, weights: ptr<void>, m: i64, k: i64, n: i64) -> i32 {
+    return -1
+}
