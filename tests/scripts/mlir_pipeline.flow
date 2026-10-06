@@ -184,6 +184,35 @@ function check_multi_buffering_factor_requires_value() -> i32 {
     return T_PASS
 }
 
+function check_async_copy_supplies_staging_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-async-copy")
+    sl_push(argv, "--async-copy-target=gpu")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "test-multi-buffering{multiplier=2}") { return T_FAIL }
+    if not a_contains(output, "test-scf-pipelining") { return T_FAIL }
+    if not a_contains(output, "gpu-async-region") { return T_FAIL }
+    return T_PASS
+}
+
+function check_async_copy_preserves_explicit_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-async-copy")
+    sl_push(argv, "--async-copy-target=nvptx")
+    sl_push(argv, "--enable-multi-buffering")
+    sl_push(argv, "--multi-buffering-factor=4")
+    sl_push(argv, "--enable-loop-pipelining")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "test-multi-buffering{multiplier=4}") { return T_FAIL }
+    if not a_contains(output, "test-scf-pipelining") { return T_FAIL }
+    if not a_contains(output, "gpu-async-region") { return T_FAIL }
+    return T_PASS
+}
+
 function check_affine_unrolling() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -334,6 +363,10 @@ function main() -> i32 {
     t_end("multi_buffering_factor_range", check_multi_buffering_factor_rejects_out_of_range())
     t_start()
     t_end("multi_buffering_factor_value", check_multi_buffering_factor_requires_value())
+    t_start()
+    t_end("async_copy_staging_schedule", check_async_copy_supplies_staging_schedule())
+    t_start()
+    t_end("async_copy_explicit_schedule", check_async_copy_preserves_explicit_schedule())
     t_start()
     t_end("affine_unrolling", check_affine_unrolling())
     t_start()
