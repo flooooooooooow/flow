@@ -6,16 +6,37 @@ function main() -> i32 {
         return 1
     }
 
+    let ctor: c64 = a * c64(b, 0.0)
+    if creal(ctor) != 3.0 or cimag(ctor) != 6.0 {
+        return 2
+    }
+    let ctor_swap: c64 = c64(b, 0.0) * a
+    if creal(ctor_swap) != 3.0 or cimag(ctor_swap) != 6.0 {
+        return 3
+    }
+    let ctor1: c64 = a * c64(b)
+    if creal(ctor1) != 3.0 or cimag(ctor1) != 6.0 {
+        return 4
+    }
+
     let d: c128 = c128(1.0, 2.0)
     let e: f64 = 3.0
     let f: c128 = d * e
     if creal(f) != 3.0 or cimag(f) != 6.0 {
-        return 1
+        return 5
+    }
+    let fctor: c128 = d * c128(e, 0.0)
+    if creal(fctor) != 3.0 or cimag(fctor) != 6.0 {
+        return 6
     }
 
     let g: c64 = a / b
     if cabs(g) < 0.0 {
-        return 1
+        return 7
+    }
+    let h: c64 = a / c64(b, 0.0)
+    if creal(h) != creal(g) or cimag(h) != cimag(g) {
+        return 8
     }
     return 0
 }

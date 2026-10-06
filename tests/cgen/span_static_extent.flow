@@ -1,0 +1,13 @@
+# A literal index on a static-extent span is proven in range (#615, #729).
+
+function corners(xs: span<i32, 4>) -> i32 {
+    return xs[0] + xs[3]
+}
+
+function main() -> i32 {
+    let values: [i32; 4] = [1, 2, 3, 4]
+    if corners(values) != 5 {
+        return 1
+    }
+    return 0
+}

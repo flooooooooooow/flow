@@ -4,6 +4,8 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- MLIR tuner: analytic cost model, genetic and Bayesian search over tile schedules, `unroll` transform strategy, and IPC / stalled-cycle PMU events (#668)
+- Release qualification: `./flow tool qualify_release` writes source archives, SHA-256 sums and an RC-promotion record for an exact commit without tagging or publishing. `--check-formula` validates the in-repo Homebrew formula; `--publish` is refused. Hosted dry-run is `.github/workflows/release-qualify.yml`; `release.yml` no longer publishes RC tags (`-rc`) or `qualify_only` dispatches. (#652)
 - Cold start (#746): `flow compile` probe-links without optional Python/GPU/OpenSSL load commands when the program reaches none of their symbols (`FLOW_NO_LINK_TRIM=1` keeps the full link). `./flow tool compile_bench --python-code` records `python_ms`, `run_vs_python_x100` and `bin_bytes` next to `run_ms`.
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
@@ -18,6 +20,7 @@ All notable changes to FLOW will be documented in this file.
 - Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy volume. The #728 harness records those fields without workload source rewrites. (#740)
 - flowc emits C `restrict` and MLIR `{llvm.noalias}` for pointer parameters and locals only when a fail-closed provenance certificate proves disjointness: distinct local arrays, non-overlapping constant slices, and internal functions whose every call site is proven. Overlapping views, a buffer passed twice, exported/`@flow_api` functions, and pointers copied from parameters stay aliasable (#731).
 - FFI: Zero-copy contiguous buffer ABI (`FlowFfiBuffer` in `runtime/flow_ffi_buffer.h`, Flow `FFIBuffer`), borrowed vs owned lifetime, fail-closed layout checks that never silently copy, a pointer-identity lang test, and a microbenchmark identity row. (#737)
+- FFI: C / Python / native-library boundary audit (`ffi_crossing_class`, PEP 3118 mapping, fail-closed dtype/stride), #728 harness rows (`runtime_ffi_scalar`, `runtime_ffi_batch`, `runtime_ffi_buffer`, `memory_ffi_handoff`, `memory_ffi_copy`), and live break-even measurements on real C crossings (`benchmarks/micro/ffi_breakeven.flow`). (#737)
 
 ### Type checker diagnostics
 

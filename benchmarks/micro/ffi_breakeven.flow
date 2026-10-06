@@ -1,0 +1,293 @@
+# Break-even measurements on real FFI crossings (#737).
+# Times scalar C calls, batched pointer calls, a zero-copy buffer handoff,
+# an explicit copy fallback, a C string borrow, a by-value struct, and a
+# function-pointer callback. Prints the live batch size where one batched
+# crossing beats N scalar calls.
+#
+#   ./flow run benchmarks/micro/ffi_breakeven.flow
+
+import "benchmarks/bench_tools.flow"
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/boundary_audit.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+
+__attribute__((noinline)) int64_t ffi_be_scalar(int64_t v) { return v + 1; }
+
+__attribute__((noinline)) int64_t ffi_be_batch(int64_t *ptr, int64_t n) {
+    int64_t sum = 0;
+    int64_t i;
+    for (i = 0; i < n; i++) { sum += ptr[i]; }
+    return sum;
+}
+
+__attribute__((noinline)) int64_t ffi_be_strlen(const char *s) {
+    int64_t n = 0;
+    if (s == 0) { return 0; }
+    while (s[n] != 0) { n++; }
+    return n;
+}
+
+__attribute__((noinline)) int64_t ffi_be_pair(int64_t a, int64_t b) { return a + b; }
+
+typedef int64_t (*ffi_be_cb)(int64_t);
+__attribute__((noinline)) int64_t ffi_be_add1(int64_t v) { return v + 1; }
+__attribute__((noinline)) void *ffi_be_add1_ptr(void) { return (void *)ffi_be_add1; }
+__attribute__((noinline)) int64_t ffi_be_apply(void *fn, int64_t v) {
+    return ((ffi_be_cb)fn)(v);
+}
+")
+
+extern {
+    function ffi_be_scalar(v: i64) -> i64
+    function ffi_be_batch(ptr: ptr<i64>, n: i64) -> i64
+    function ffi_be_strlen(s: string) -> i64
+    function ffi_be_pair(a: i64, b: i64) -> i64
+    function ffi_be_add1_ptr() -> ptr<void>
+    function ffi_be_apply(fn: ptr<void>, v: i64) -> i64
+}
+
+function fill_i64(p: ptr<i64>, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = i as i64
+        i = i + 1
+    }
+}
+
+function time_scalar(iters: i32, sink: ptr<i64>) -> i64 {
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut i: i32 = 0
+    while i < iters {
+        sum = sum + ffi_be_scalar(i as i64)
+        i = i + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = sum
+    if sum < 0 {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function time_batch(n: i32, repeats: i32, sink: ptr<i64>) -> i64 {
+    let raw: ptr<i8> = ffi_alloc((n as i64) * 8)
+    if (raw as i64) == 0 {
+        return 0 - 1
+    }
+    let p: ptr<i64> = raw as ptr<i64>
+    fill_i64(p, n)
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut r: i32 = 0
+    while r < repeats {
+        sum = sum + ffi_be_batch(p, n as i64)
+        r = r + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = sum
+    ffi_free(raw)
+    if sum < 0 {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function time_zero_copy(n: i32, repeats: i32, sink: ptr<i64>) -> i64 {
+    let raw: ptr<i8> = ffi_alloc((n as i64) * 8)
+    if (raw as i64) == 0 {
+        return 0 - 1
+    }
+    let p: ptr<i64> = raw as ptr<i64>
+    fill_i64(p, n)
+    let have: FFILayout = ffi_layout_contiguous(8, 8)
+    let handoff: FFIHandoff = ffi_buffer_try_borrow(raw as ptr<void>, n as i64, have, have)
+    if handoff.status != FFI_OK or ffi_buffer_addr(handoff.buf) != (raw as i64) {
+        ffi_free(raw)
+        return 0 - 1
+    }
+    let view: ptr<i64> = handoff.buf.data as ptr<i64>
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut r: i32 = 0
+    while r < repeats {
+        sum = sum + ffi_be_batch(view, handoff.buf.len)
+        r = r + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = sum
+    ffi_free(raw)
+    if sum < 0 {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function time_explicit_copy(n: i32, repeats: i32, sink: ptr<i64>) -> i64 {
+    let src: ptr<i8> = ffi_alloc((n as i64) * 8)
+    let dst: ptr<i8> = ffi_alloc((n as i64) * 8)
+    if (src as i64) == 0 or (dst as i64) == 0 {
+        return 0 - 1
+    }
+    fill_i64(src as ptr<i64>, n)
+    let nbytes: i64 = (n as i64) * 8
+    let mut copied: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut r: i32 = 0
+    while r < repeats {
+        if ffi_buffer_copy_explicit(dst as ptr<void>, src as ptr<void>, nbytes) != FFI_OK {
+            ffi_free(src)
+            ffi_free(dst)
+            return 0 - 1
+        }
+        copied = copied + nbytes
+        r = r + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = copied
+    ffi_free(src)
+    ffi_free(dst)
+    if copied != nbytes * (repeats as i64) {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function time_string(iters: i32, sink: ptr<i64>) -> i64 {
+    let s: string = "flow-ffi-boundary-string-crossing"
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut i: i32 = 0
+    while i < iters {
+        sum = sum + ffi_be_strlen(s)
+        i = i + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = sum
+    if sum != (iters as i64) * 33 {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function time_struct(iters: i32, sink: ptr<i64>) -> i64 {
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut i: i32 = 0
+    while i < iters {
+        sum = sum + ffi_be_pair(i as i64, 1)
+        i = i + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = sum
+    if sum < 0 {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function time_callback(iters: i32, sink: ptr<i64>) -> i64 {
+    let fn: ptr<void> = ffi_be_add1_ptr()
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    let mut i: i32 = 0
+    while i < iters {
+        sum = sum + ffi_be_apply(fn, i as i64)
+        i = i + 1
+    }
+    let elapsed: i64 = bench_now_us() - start
+    sink[0] = sum
+    if sum < 0 {
+        return 0 - 1
+    }
+    return elapsed
+}
+
+function print_us_row(name: string, us: i64, n: i64, copied: i64, sink: i64) {
+    print("row name=")
+    print(name)
+    print(" us=")
+    print(bench_fixed(us as f64, 0))
+    print(" n=")
+    print(bench_fixed(n as f64, 0))
+    print(" copied_bytes=")
+    print(bench_fixed(copied as f64, 0))
+    print(" sink=")
+    print(bench_fixed(sink as f64, 0))
+    print("\n")
+}
+
+function main() -> i32 {
+    let iters: i32 = 400000
+    let batch_n: i32 = 8192
+    let repeats: i32 = 4000
+
+    let raw: ptr<i8> = ffi_alloc(64)
+    if (raw as i64) == 0 {
+        print("zero-copy identity: FAIL\n")
+        return 1
+    }
+    let have: FFILayout = ffi_layout_contiguous(8, 8)
+    let handoff: FFIHandoff = ffi_buffer_try_borrow(raw as ptr<void>, 8, have, have)
+    if handoff.status != FFI_OK or ffi_buffer_addr(handoff.buf) != (raw as i64) {
+        print("zero-copy identity: FAIL\n")
+        ffi_free(raw)
+        return 2
+    }
+    print("zero-copy identity: PASS copied_bytes=0\n")
+    ffi_free(raw)
+
+    let mut sink: i64 = 0
+    let scalar_us: i64 = time_scalar(iters, &sink)
+    if scalar_us < 0 { return 3 }
+    print_us_row("c_scalar", scalar_us, iters as i64, 0, sink)
+
+    let batch_us: i64 = time_batch(batch_n, repeats, &sink)
+    if batch_us < 0 { return 4 }
+    print_us_row("c_batch", batch_us, (batch_n as i64) * (repeats as i64), 0, sink)
+
+    let zc_us: i64 = time_zero_copy(batch_n, repeats, &sink)
+    if zc_us < 0 { return 5 }
+    print_us_row("c_buffer_zero_copy", zc_us, (batch_n as i64) * (repeats as i64), 0, sink)
+
+    let copy_us: i64 = time_explicit_copy(batch_n, repeats, &sink)
+    if copy_us < 0 { return 6 }
+    print_us_row("c_buffer_copy", copy_us, (batch_n as i64) * (repeats as i64), (batch_n as i64) * 8 * (repeats as i64), sink)
+
+    let str_us: i64 = time_string(iters, &sink)
+    if str_us < 0 { return 7 }
+    print_us_row("c_string_borrow", str_us, iters as i64, 0, sink)
+
+    let pair_us: i64 = time_struct(iters, &sink)
+    if pair_us < 0 { return 8 }
+    print_us_row("c_struct_value", pair_us, iters as i64, 0, sink)
+
+    let cb_us: i64 = time_callback(iters, &sink)
+    if cb_us < 0 { return 9 }
+    print_us_row("c_callback", cb_us, iters as i64, 0, sink)
+
+    # Per-call microseconds, kept in integer microseconds * 1000 so the
+    # break-even helper stays on i64. Scale both sides the same way.
+    let mut scalar_cost: i64 = (scalar_us * 1000) / (iters as i64)
+    if scalar_cost <= 0 {
+        scalar_cost = 1
+    }
+    let batch_total: i64 = (batch_us * 1000) / (repeats as i64)
+    let work: i64 = (zc_us * 1000) / (repeats as i64)
+    let batch_per_elem: i64 = work / (batch_n as i64)
+    let mut batch_fixed: i64 = batch_total - (batch_per_elem * (batch_n as i64))
+    if batch_fixed < scalar_cost {
+        batch_fixed = scalar_cost
+    }
+    let n_star: i64 = ffi_breakeven_batch(scalar_cost, batch_fixed, batch_per_elem)
+    print("breakeven_batch=")
+    print(bench_fixed(n_star as f64, 0))
+    print("\n")
+    print("guidance: batch into one contiguous view once N >= breakeven_batch; ")
+    print("a compatible handoff stays O(1) and must not copy.\n")
+    return 0
+}

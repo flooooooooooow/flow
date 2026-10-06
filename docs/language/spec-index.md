@@ -43,6 +43,7 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 | [GPU memory](../library/gpu-memory.md) | Unified GPU buffers (Metal) |
 | [RT-safety](../library/rt-safety.md) | `@rt_safe` |
 | [FFI buffer ABI](ffi-buffer.md) | Zero-copy pointer/span/array handoff |
+| [FFI boundary audit](ffi-boundary-audit.md) | C / Python / native crossings, #728 rows, break-even |
 | [Async via Effects](async-effects.md) | FiberAsync / ThreadedAsync / NetpollAsyncIO |
 | [Concurrency vs Go](concurrency-vs-go.md) | Channels, fibers, OpenMP, benches |
 | [Replacing Go](replace-go.md) | Scorecard for Go-shaped workloads |
