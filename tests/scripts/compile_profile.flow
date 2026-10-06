@@ -93,6 +93,35 @@ function check_off_by_default() -> i32 {
     return T_PASS
 }
 
+# All documented false values must keep the profiler dormant. The
+# constructor must not call clock_gettime before main for these modes.
+function check_disabled_value(host: string, val: string) -> i32 {
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", t_root() + "/examples/basics/hello_world.flow")
+    proc_env(c, "FLOWC_OUT", t_tmp() + "/disabled.c")
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_DIR", t_root())
+    proc_env(c, "FLOWC_PROFILE", val)
+    if t_run(c) != 0 {
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_err()), "[flow-profile]") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_explicitly_disabled() -> i32 {
+    if t_need_cc() != T_PASS { return T_SKIP }
+    let host: string = host_bin()
+    if s_len(host) == 0 { return T_FAIL }
+    if check_disabled_value(host, "0") != T_PASS { return T_FAIL }
+    if check_disabled_value(host, "false") != T_PASS { return T_FAIL }
+    if check_disabled_value(host, "off") != T_PASS { return T_FAIL }
+    if check_disabled_value(host, "no") != T_PASS { return T_FAIL }
+    return T_PASS
+}
+
 function check_compile_bench() -> i32 {
     if t_need_cc() != T_PASS {
         return T_SKIP
@@ -224,6 +253,8 @@ function main() -> i32 {
     t_end("profile_json", check_profile_json())
     t_start()
     t_end("off_by_default", check_off_by_default())
+    t_start()
+    t_end("explicitly_disabled", check_explicitly_disabled())
     t_start()
     t_end("compile_bench_phases", check_compile_bench())
     t_start()
