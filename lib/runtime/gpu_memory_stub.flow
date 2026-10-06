@@ -88,3 +88,8 @@ export function flow_gpu_relu_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i
 export function flow_gpu_gemm_f32(out: ptr<void>, input: ptr<void>, weights: ptr<void>, m: i64, k: i64, n: i64) -> i32 {
     return -1
 }
+
+@flow_api
+export function flow_gpu_model_dispatch_count() -> i64 {
+    return 0
+}
