@@ -51,6 +51,10 @@ function count_lines(path: string) -> i64 {
         }
         i = i + 1
     }
+    # A final unterminated line is still a source line (#735).
+    if n > 0 and s_byte(text, n - 1) != 10 {
+        lines = lines + 1
+    }
     return lines
 }
 
@@ -341,9 +345,14 @@ function main() -> i32 {
         let mut cold_run: i64 = 0 - 1
         let mut warm_profile: string = ""
         let mut cold_profile: string = ""
+        let mut stage_failed: bool = false
         let mut r: i32 = 0
         while r < repeat {
             let e: i64 = timed_emit(emit_a, emit_env2, err_path)
+            if e < 0 {
+                stage_failed = true
+                break
+            }
             let prof: string = extract_profile(read_text(err_path))
             if e >= 0 {
                 if cold_emit < 0 {
@@ -356,6 +365,10 @@ function main() -> i32 {
                 }
             }
             let ct: i64 = timed_ms(cc_a, no_env)
+            if ct < 0 {
+                stage_failed = true
+                break
+            }
             if ct >= 0 {
                 if cold_cc < 0 {
                     cold_cc = ct
@@ -365,6 +378,10 @@ function main() -> i32 {
                 }
             }
             let rn: i64 = timed_ms_rc(run_a, no_env, false)
+            if rn < 0 {
+                stage_failed = true
+                break
+            }
             if rn >= 0 {
                 if cold_run < 0 {
                     cold_run = rn
@@ -375,12 +392,10 @@ function main() -> i32 {
             }
             r = r + 1
         }
-        if emit_min < 0 {
-            errln("compile_bench: flowc emit failed for " + path)
+        if stage_failed or emit_min < 0 or cc_min < 0 or run_min < 0 {
+            errln("compile_bench: incomplete emit/compile/run sample for " + path)
             rc = 1
-        } elif cc_min < 0 {
-            errln("compile_bench: cc failed for " + path)
-            rc = 1
+            continue
         }
         let mut total: i64 = emit_min + cc_min
         if run_min >= 0 {
