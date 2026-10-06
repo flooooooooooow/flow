@@ -54,6 +54,16 @@ void flow_gpu_sync(void);
  *   mul_backward_a: grad_a[i] = grad_out[i] * b[i]
  *   mul_backward_b: grad_b[i] = grad_out[i] * a[i]
  */
+/* Zero-copy model kernels over the *same* GpuBuffer storage as @gpu.
+ * All counts and byte capacities are checked at dispatch time; the Metal
+ * implementation executes on device and waits for completion.  The stub
+ * returns -1 and callers may use an explicitly synchronized CPU path.
+ */
+int flow_gpu_scale_bias_f32(void *out, void *input, float scale, float bias, int64_t n);
+int flow_gpu_relu_f32(void *out, void *input, int64_t n);
+int flow_gpu_gemm_f32(void *out, void *input, void *weights,
+                      int64_t m, int64_t k, int64_t n);
+
 int flow_gpu_mul_f32(void *out_gpu, void *a_gpu, void *b_gpu, int64_t n);
 int flow_gpu_mul_backward_a_f32(void *grad_a_gpu, void *grad_out_gpu, void *b_gpu, int64_t n);
 int flow_gpu_mul_backward_b_f32(void *grad_b_gpu, void *grad_out_gpu, void *a_gpu, int64_t n);
