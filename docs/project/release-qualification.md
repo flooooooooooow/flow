@@ -70,9 +70,10 @@ unless you intend to wait for that matrix.
 
 This is the local structural check: the in-repo formula must name a
 `flow-vVERSION.tar.gz` URL, a 64-digit SHA-256, and a semantic `version` that
-matches the URL. The formula may still point at the last *published* release
-while the candidate version in `VERSION` is newer. That mismatch is printed,
-not treated as a failure. Update url/sha256 only after the real artifact
+matches the URL. Without a `version` line, the version is read from the URL,
+as Homebrew does. The formula may still point at the last *published* release
+while the candidate version in `VERSION` is newer. That mismatch is printed and
+does not count as a failure. Update url/sha256 only after the real artifact
 exists; do not guess a digest.
 
 When `--mode full` is used and `brew` is on `PATH`, the same check also runs:

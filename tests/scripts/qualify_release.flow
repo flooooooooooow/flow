@@ -164,6 +164,48 @@ function check_broken_formula_reports_sha() -> i32 {
     return T_PASS
 }
 
+function check_formula_version_from_url() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    let path: string = t_tmp() + "/no-version.rb"
+    let sha: string = "deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b"
+    let _w: bool = write_text(path, "class Flow < Formula\n  url \"https://example.invalid/download/v1.2.3/flow-v1.2.3.tar.gz\"\n  sha256 \"" + sha + "\"\nend\n")
+    let args: ptr<ProcStrs> = sl_of3("--check-formula", "--formula", path)
+    if t_run_argv(qual_cmd(args)) != 0 {
+        outln("expected a formula without a version line to pass")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "formula.version: 1.2.3 (from url)") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_formula_without_any_version() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    let path: string = t_tmp() + "/unversioned.rb"
+    let sha: string = "deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b"
+    let _w: bool = write_text(path, "class Flow < Formula\n  url \"https://example.invalid/download/latest/flow.tar.gz\"\n  sha256 \"" + sha + "\"\nend\n")
+    let args: ptr<ProcStrs> = sl_of3("--check-formula", "--formula", path)
+    if t_run_argv(qual_cmd(args)) != 1 {
+        outln("expected a formula with no version anywhere to fail")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "no version field and its url names no flow-vX.Y.Z.tar.gz") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function check_artifacts_dry_run() -> i32 {
     let n: i32 = need_qual()
     if n != T_PASS {
@@ -319,6 +361,12 @@ function main() -> i32 {
 
     t_start()
     t_end("formula_missing_sha256", check_broken_formula_reports_sha())
+
+    t_start()
+    t_end("formula_version_from_url", check_formula_version_from_url())
+
+    t_start()
+    t_end("formula_without_any_version", check_formula_without_any_version())
 
     t_start()
     t_end("artifacts_dry_run", check_artifacts_dry_run())

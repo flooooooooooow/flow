@@ -41,7 +41,7 @@ Compatible sources (contiguous, matching `item_size`, pointer meets
 | Source | How to form the view |
 |---|---|
 | `ptr<T>` + length | `data`, `len`, `item_size = sizeof(T)` |
-| `span<T>` / `span<mut T>` | `values.data`, `values.len` — already `{pointer, length}` |
+| `span<T>` / `span<mut T>` | `values.data`, `values.len` (already `{pointer, length}`) |
 | `array<T, N>` / `array<T>` | `&arr[0]`, `N` or `length(arr)` |
 
 `stride` must equal `item_size`. A strided, padded, or mixed-endian buffer
