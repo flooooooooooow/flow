@@ -639,6 +639,10 @@
           "path": "language/mlir-opt-flags.md"
         },
         {
+          "label": "MLIR Autotuning",
+          "path": "language/mlir-autotuning.md"
+        },
+        {
           "label": "Export ABI",
           "path": "language/export-abi.md"
         },
