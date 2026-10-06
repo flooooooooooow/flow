@@ -1,0 +1,47 @@
+# #728 memory row: borrowed FFIBuffer handoff copies no payload (issue #737).
+
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+")
+
+function main() -> i32 {
+    let n: i32 = 1024
+    let raw: ptr<i8> = ffi_alloc((n as i64) * 8)
+    if (raw as i64) == 0 {
+        return 1
+    }
+    let p: ptr<i64> = raw as ptr<i64>
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = (i + 1) as i64
+        i = i + 1
+    }
+    let have: FFILayout = ffi_layout_contiguous(8, 8)
+    let handoff: FFIHandoff = ffi_buffer_try_borrow(raw as ptr<void>, n as i64, have, have)
+    if handoff.status != FFI_OK {
+        ffi_free(raw)
+        return 2
+    }
+    if ffi_buffer_addr(handoff.buf) != (raw as i64) {
+        ffi_free(raw)
+        return 3
+    }
+    let view: ptr<i64> = handoff.buf.data as ptr<i64>
+    view[0] = 7
+    if p[0] != 7 {
+        ffi_free(raw)
+        return 4
+    }
+    let mut inst: FFIInstrumentation = ffi_instrumentation_new()
+    ffi_record_zero_copy(&inst, ffi_buffer_nbytes(handoff.buf))
+    if inst.total_bytes_copied != 0 {
+        ffi_free(raw)
+        return 5
+    }
+    ffi_free(raw)
+    return 0
+}

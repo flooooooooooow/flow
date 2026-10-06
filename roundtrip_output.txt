@@ -1,0 +1,489 @@
+=== stage_a_sum ===
+exit=45
+PASS stage_a_sum
+=== stage_a_for_sum ===
+exit=45
+PASS stage_a_for_sum
+=== stage_a_const ===
+exit=12
+PASS stage_a_const
+=== stage_a_struct ===
+exit=42
+PASS stage_a_struct
+=== stage_a_token_consts ===
+exit=29
+PASS stage_a_token_consts
+=== stage_a_strcat ===
+exit=42
+PASS stage_a_strcat
+=== stage_a_infer_struct ===
+exit=42
+PASS stage_a_infer_struct
+=== stage_a_token_struct ===
+exit=26
+PASS stage_a_token_struct
+=== stage_a_ptr ===
+exit=42
+PASS stage_a_ptr
+=== stage_a_cast ===
+exit=42
+PASS stage_a_cast
+=== stage_a_index_assign ===
+exit=42
+PASS stage_a_index_assign
+=== stage_a_array_else ===
+ok
+exit=42
+PASS stage_a_array_else
+=== stage_a_fib ===
+exit=55
+PASS stage_a_fib
+=== compile_module token ===
+PASS compile_module token
+PASS compile_module token greps
+=== compile_module ast ===
+PASS compile_module ast
+PASS compile_module ast greps
+=== compile_module lexer ===
+PASS compile_module lexer
+PASS compile_module lexer greps+link
+=== compile_module fileio ===
+PASS compile_module fileio
+PASS compile_module fileio greps
+=== compile_module field_dsl ===
+PASS compile_module field_dsl
+=== compile_module bytebuf ===
+PASS compile_module bytebuf
+=== compile_module dynamics_dsl ===
+PASS compile_module dynamics_dsl
+=== compile_module flow_blocks ===
+PASS compile_module flow_blocks
+=== compile_module shader_dsl ===
+PASS compile_module shader_dsl
+=== compile_module effects ===
+PASS compile_module effects
+=== compile_module attributes ===
+PASS compile_module attributes
+=== compile_module ordering_hints ===
+PASS compile_module ordering_hints
+=== compile_module sort_plans ===
+compiler/build/sort_plans_flowc.c: In function ‘flowc_plan_put_i64’:
+compiler/build/sort_plans_flowc.c:414:44: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  414 |   int32_t _n = snprintf((&buf[0]), 32, "%lld", v);
+      |                                         ~~~^   ~
+      |                                            |   |
+      |                                            |   int64_t {aka long int}
+      |                                            long long int
+      |                                         %ld
+PASS compile_module sort_plans
+=== compile_module sort_sites ===
+PASS compile_module sort_sites
+=== compile_module parser ===
+PASS compile_module parser
+PASS compile_module parser greps
+=== compile_module proof_lower ===
+PASS compile_module proof_lower
+=== compile_module type_id ===
+PASS compile_module type_id
+=== compile_module region ===
+PASS compile_module region
+=== compile_module noalias ===
+PASS compile_module noalias
+=== compile_module cgen ===
+compiler/build/cgen_flowc.c: In function ‘flowc_cgen_put_i64’:
+compiler/build/cgen_flowc.c:5733:44: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+ 5733 |   int32_t _sn = snprintf((&nb[0]), 32, "%lld", v);
+      |                                         ~~~^   ~
+      |                                            |   |
+      |                                            |   int64_t {aka long int}
+      |                                            long long int
+      |                                         %ld
+PASS compile_module cgen
+PASS compile_module cgen greps
+=== compile_module overload ===
+PASS compile_module overload
+=== compile_module overload_table ===
+PASS compile_module overload_table
+=== compile_module type_name ===
+PASS compile_module type_name
+=== compile_module expr_type ===
+PASS compile_module expr_type
+=== compile_module overload_args ===
+compiler/build/overload_args_flowc.c: In function ‘flowc_overload_classify_args’:
+compiler/build/overload_args_flowc.c:321:415: warning: excess elements in array initializer
+  321 |   uint8_t ident_name[128] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+      |                                                                                                                                                                                                                                                                                                                                                                                                                               ^
+compiler/build/overload_args_flowc.c:321:415: note: (near initialization for ‘ident_name’)
+PASS compile_module overload_args
+=== compile_module overload_select ===
+PASS compile_module overload_select
+=== compile_module overload_registry ===
+PASS compile_module overload_registry
+=== compile_module overload_call ===
+PASS compile_module overload_call
+=== compile_module rt_summary ===
+PASS compile_module rt_summary
+=== compile_module typecheck ===
+PASS compile_module typecheck
+PASS compile_module typecheck greps
+=== compile_module strutil ===
+PASS compile_module strutil
+=== compile_module version ===
+PASS compile_module version
+=== compile_module denotation ===
+PASS compile_module denotation
+=== compile_module sem_util ===
+PASS compile_module sem_util
+=== compile_module sem_types ===
+PASS compile_module sem_types
+=== compile_module sem_cheader ===
+PASS compile_module sem_cheader
+=== compile_module sem_model ===
+PASS compile_module sem_model
+=== compile_module sem_check ===
+PASS compile_module sem_check
+=== compile_module pipeline_fusion ===
+PASS compile_module pipeline_fusion
+=== compile_module profile ===
+compiler/build/profile_flowc.c: In function ‘flowc_prof_i64_str’:
+compiler/build/profile_flowc.c:528:36: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  528 |   int32_t _n = snprintf(b, 32, "%lld", v);
+      |                                 ~~~^   ~
+      |                                    |   |
+      |                                    |   int64_t {aka long int}
+      |                                    long long int
+      |                                 %ld
+compiler/build/profile_flowc.c: In function ‘flowc_prof_format_json’:
+compiler/build/profile_flowc.c:575:85: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  575 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "{\"name\": \"%s\", \"ms\": %lld, \"us\": %lld}", flowc_prof_name(i), flowc_prof_ns_to_ms(flowc_prof_get_raw(i)), flowc_prof_ns_to_us(flowc_prof_get_raw(i))));
+      |                                                                                  ~~~^                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                                     |                                      |
+      |                                                                                     long long int                          int64_t {aka long int}
+      |                                                                                  %ld
+compiler/build/profile_flowc.c:575:99: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 6 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  575 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "{\"name\": \"%s\", \"ms\": %lld, \"us\": %lld}", flowc_prof_name(i), flowc_prof_ns_to_ms(flowc_prof_get_raw(i)), flowc_prof_ns_to_us(flowc_prof_get_raw(i))));
+      |                                                                                                ~~~^                                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                                                   |                                                                    |
+      |                                                                                                   long long int                                                        int64_t {aka long int}
+      |                                                                                                %ld
+compiler/build/profile_flowc.c:578:77: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  578 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast));
+      |                                                                          ~~~^                        ~~~
+      |                                                                             |                        |
+      |                                                                             long long int            int64_t {aka long int}
+      |                                                                          %ld
+compiler/build/profile_flowc.c:578:98: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  578 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast));
+      |                                                                                               ~~~^        ~~~
+      |                                                                                                  |        |
+      |                                                                                                  |        int64_t {aka long int}
+      |                                                                                                  long long int
+      |                                                                                               %ld
+compiler/build/profile_flowc.c:579:74: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  579 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms));
+      |                                                                       ~~~^                         ~~~~~~~~
+      |                                                                          |                         |
+      |                                                                          long long int             int64_t {aka long int}
+      |                                                                       %ld
+compiler/build/profile_flowc.c:579:96: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  579 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms));
+      |                                                                                             ~~~^             ~~~~~~~~~~
+      |                                                                                                |             |
+      |                                                                                                long long int int64_t {aka long int}
+      |                                                                                             %ld
+compiler/build/profile_flowc.c:580:75: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  580 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s));
+      |                                                                        ~~~^                               ~~~~~
+      |                                                                           |                               |
+      |                                                                           long long int                   int64_t {aka long int}
+      |                                                                        %ld
+compiler/build/profile_flowc.c:580:102: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  580 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s));
+      |                                                                                                   ~~~^           ~~~~~
+      |                                                                                                      |           |
+      |                                                                                                      |           int64_t {aka long int}
+      |                                                                                                      long long int
+      |                                                                                                   %ld
+compiler/build/profile_flowc.c: In function ‘flowc_prof_emit’:
+compiler/build/profile_flowc.c:616:49: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  616 |   int32_t _ln = snprintf(line, 96, "  %-18s %6lld ms  %3lld%%", flowc_prof_name(i), ms, pct);
+      |                                             ~~~~^                                   ~~
+      |                                                 |                                   |
+      |                                                 long long int                       int64_t {aka long int}
+      |                                             %6ld
+compiler/build/profile_flowc.c:616:59: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 6 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  616 |   int32_t _ln = snprintf(line, 96, "  %-18s %6lld ms  %3lld%%", flowc_prof_name(i), ms, pct);
+      |                                                       ~~~~^                             ~~~
+      |                                                           |                             |
+      |                                                           long long int                 int64_t {aka long int}
+      |                                                       %3ld
+compiler/build/profile_flowc.c:621:48: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  621 |   int32_t _tn = snprintf(tot, 64, "  %-18s %6lld ms", "total", flowc_prof_ns_to_ms(total_ns));
+      |                                            ~~~~^               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                |               |
+      |                                                long long int   int64_t {aka long int}
+      |                                            %6ld
+PASS compile_module profile
+=== compile_module resolve ===
+compiler/build/resolve_flowc.c: In function ‘flowc_resolve_abspath’:
+compiler/build/resolve_flowc.c:573:6: warning: assignment discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  573 |   cp = cwd;
+      |      ^
+PASS compile_module resolve
+PASS compile_module resolve greps
+=== compile_module jsgen ===
+PASS compile_module jsgen
+PASS compile_module jsgen greps
+=== compile_module fmt ===
+PASS compile_module fmt
+PASS compile_module fmt greps
+PASS link smoke flowc_jsgen_fmt.o
+=== jsgen fixture smoke (FLOWC_BACKEND=js) ===
+PASS jsgen fixture smoke
+=== fmt fixture smoke (FLOWC_BACKEND=fmt) ===
+PASS fmt fixture smoke
+=== stage_a_link_two (pkg_add) ===
+resolve_import .math -> compiler/fixtures/pkg_add/math.flow
+pkg_add exit=42
+PASS stage_a_link_two
+=== FLOWC_BUNDLE fixtures ===
+bundle_main exit=42
+compiler/fixtures/bundle_tc_bad.flow:5:12: error: Undefined function 'no_such'
+compiler/fixtures/bundle_tc_bad.flow:4:1: error: Function 'main' returns void but should return i32
+flowc emit: bundle typecheck failed
+flowc emit: tc_errs=2
+bundle_tc_bad emit rc=1
+bundle_infer_main exit=42
+PASS FLOWC_BUNDLE fixtures
+=== FLOWC_BUNDLE lexer (token+lexer one TU) ===
+PASS FLOWC_BUNDLE lexer (token+lexer one TU)
+=== FLOWC_BUNDLE parser (token+ast+lexer+parser one TU) ===
+PASS FLOWC_BUNDLE parser (token+ast+lexer+parser one TU)
+=== FLOWC_TYPECHECK fixtures (default on) ===
+typecheck_ok exit=42
+typecheck_undef emit rc=1
+PASS FLOWC_TYPECHECK fixtures
+PASS link smoke flowc_frontend.o
+=== stage_a_driver ===
+driven_sum exit=45
+PASS stage_a_driver
+=== stage_a_driver_flow ===
+=== compile_module driver ===
+PASS compile_module driver
+driven_sum_flow_cli exit=45
+driven_sum_flow exit=45
+PASS stage_a_driver_flow
+=== stage_a_float ===
+exit=42
+PASS stage_a_float
+=== stage_a_match ===
+exit=42
+PASS stage_a_match
+=== stage_a_match_ext ===
+exit=42
+PASS stage_a_match_ext
+PASS stage_a_match fixtures
+PASS keyword_param diagnostic
+=== stage_a_sizeof ===
+exit=42
+PASS stage_a_sizeof
+stage_a_self_emit: using compiler/build/stage_a_driver_flow
+=== self_emit token ===
+PASS self_emit token
+=== self_emit ast ===
+PASS self_emit ast
+=== self_emit lexer ===
+PASS self_emit lexer
+=== self_emit fileio ===
+PASS self_emit fileio
+=== self_emit bytebuf ===
+PASS self_emit bytebuf
+=== self_emit field_dsl ===
+PASS self_emit field_dsl
+=== self_emit dynamics_dsl ===
+PASS self_emit dynamics_dsl
+=== self_emit flow_blocks ===
+PASS self_emit flow_blocks
+=== self_emit shader_dsl ===
+PASS self_emit shader_dsl
+=== self_emit effects ===
+PASS self_emit effects
+=== self_emit attributes ===
+PASS self_emit attributes
+=== self_emit ordering_hints ===
+PASS self_emit ordering_hints
+=== self_emit sort_plans ===
+compiler/build/self_sort_plans.c: In function ‘flowc_plan_put_i64’:
+compiler/build/self_sort_plans.c:414:44: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  414 |   int32_t _n = snprintf((&buf[0]), 32, "%lld", v);
+      |                                         ~~~^   ~
+      |                                            |   |
+      |                                            |   int64_t {aka long int}
+      |                                            long long int
+      |                                         %ld
+PASS self_emit sort_plans
+=== self_emit sort_sites ===
+PASS self_emit sort_sites
+=== self_emit parser ===
+PASS self_emit parser
+=== self_emit proof_lower ===
+PASS self_emit proof_lower
+=== self_emit type_id ===
+PASS self_emit type_id
+=== self_emit region ===
+PASS self_emit region
+=== self_emit noalias ===
+PASS self_emit noalias
+=== self_emit cgen ===
+compiler/build/self_cgen.c: In function ‘flowc_cgen_put_i64’:
+compiler/build/self_cgen.c:5733:44: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+ 5733 |   int32_t _sn = snprintf((&nb[0]), 32, "%lld", v);
+      |                                         ~~~^   ~
+      |                                            |   |
+      |                                            |   int64_t {aka long int}
+      |                                            long long int
+      |                                         %ld
+PASS self_emit cgen
+=== self_emit overload ===
+PASS self_emit overload
+=== self_emit overload_table ===
+PASS self_emit overload_table
+=== self_emit type_name ===
+PASS self_emit type_name
+=== self_emit expr_type ===
+PASS self_emit expr_type
+=== self_emit overload_args ===
+compiler/build/self_overload_args.c: In function ‘flowc_overload_classify_args’:
+compiler/build/self_overload_args.c:321:415: warning: excess elements in array initializer
+  321 |   uint8_t ident_name[128] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+      |                                                                                                                                                                                                                                                                                                                                                                                                                               ^
+compiler/build/self_overload_args.c:321:415: note: (near initialization for ‘ident_name’)
+PASS self_emit overload_args
+=== self_emit overload_select ===
+PASS self_emit overload_select
+=== self_emit overload_registry ===
+PASS self_emit overload_registry
+=== self_emit overload_call ===
+PASS self_emit overload_call
+=== self_emit rt_summary ===
+PASS self_emit rt_summary
+=== self_emit typecheck ===
+PASS self_emit typecheck
+=== self_emit strutil ===
+PASS self_emit strutil
+=== self_emit version ===
+PASS self_emit version
+=== self_emit denotation ===
+PASS self_emit denotation
+=== self_emit sem_util ===
+PASS self_emit sem_util
+=== self_emit sem_types ===
+PASS self_emit sem_types
+=== self_emit sem_cheader ===
+PASS self_emit sem_cheader
+=== self_emit sem_model ===
+PASS self_emit sem_model
+=== self_emit sem_check ===
+PASS self_emit sem_check
+=== self_emit pipeline_fusion ===
+PASS self_emit pipeline_fusion
+=== self_emit profile ===
+compiler/build/self_profile.c: In function ‘flowc_prof_i64_str’:
+compiler/build/self_profile.c:528:36: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  528 |   int32_t _n = snprintf(b, 32, "%lld", v);
+      |                                 ~~~^   ~
+      |                                    |   |
+      |                                    |   int64_t {aka long int}
+      |                                    long long int
+      |                                 %ld
+compiler/build/self_profile.c: In function ‘flowc_prof_format_json’:
+compiler/build/self_profile.c:575:85: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  575 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "{\"name\": \"%s\", \"ms\": %lld, \"us\": %lld}", flowc_prof_name(i), flowc_prof_ns_to_ms(flowc_prof_get_raw(i)), flowc_prof_ns_to_us(flowc_prof_get_raw(i))));
+      |                                                                                  ~~~^                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                                     |                                      |
+      |                                                                                     long long int                          int64_t {aka long int}
+      |                                                                                  %ld
+compiler/build/self_profile.c:575:99: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 6 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  575 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "{\"name\": \"%s\", \"ms\": %lld, \"us\": %lld}", flowc_prof_name(i), flowc_prof_ns_to_ms(flowc_prof_get_raw(i)), flowc_prof_ns_to_us(flowc_prof_get_raw(i))));
+      |                                                                                                ~~~^                                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                                                   |                                                                    |
+      |                                                                                                   long long int                                                        int64_t {aka long int}
+      |                                                                                                %ld
+compiler/build/self_profile.c:578:77: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  578 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast));
+      |                                                                          ~~~^                        ~~~
+      |                                                                             |                        |
+      |                                                                             long long int            int64_t {aka long int}
+      |                                                                          %ld
+compiler/build/self_profile.c:578:98: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  578 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast));
+      |                                                                                               ~~~^        ~~~
+      |                                                                                                  |        |
+      |                                                                                                  |        int64_t {aka long int}
+      |                                                                                                  long long int
+      |                                                                                               %ld
+compiler/build/self_profile.c:579:74: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  579 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms));
+      |                                                                       ~~~^                         ~~~~~~~~
+      |                                                                          |                         |
+      |                                                                          long long int             int64_t {aka long int}
+      |                                                                       %ld
+compiler/build/self_profile.c:579:96: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  579 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms));
+      |                                                                                             ~~~^             ~~~~~~~~~~
+      |                                                                                                |             |
+      |                                                                                                long long int int64_t {aka long int}
+      |                                                                                             %ld
+compiler/build/self_profile.c:580:75: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 4 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  580 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s));
+      |                                                                        ~~~^                               ~~~~~
+      |                                                                           |                               |
+      |                                                                           long long int                   int64_t {aka long int}
+      |                                                                        %ld
+compiler/build/self_profile.c:580:102: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  580 |   n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s));
+      |                                                                                                   ~~~^           ~~~~~
+      |                                                                                                      |           |
+      |                                                                                                      |           int64_t {aka long int}
+      |                                                                                                      long long int
+      |                                                                                                   %ld
+compiler/build/self_profile.c: In function ‘flowc_prof_emit’:
+compiler/build/self_profile.c:616:49: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  616 |   int32_t _ln = snprintf(line, 96, "  %-18s %6lld ms  %3lld%%", flowc_prof_name(i), ms, pct);
+      |                                             ~~~~^                                   ~~
+      |                                                 |                                   |
+      |                                                 long long int                       int64_t {aka long int}
+      |                                             %6ld
+compiler/build/self_profile.c:616:59: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 6 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  616 |   int32_t _ln = snprintf(line, 96, "  %-18s %6lld ms  %3lld%%", flowc_prof_name(i), ms, pct);
+      |                                                       ~~~~^                             ~~~
+      |                                                           |                             |
+      |                                                           long long int                 int64_t {aka long int}
+      |                                                       %3ld
+compiler/build/self_profile.c:621:48: warning: format ‘%lld’ expects argument of type ‘long long int’, but argument 5 has type ‘int64_t’ {aka ‘long int’} [-Wformat=]
+  621 |   int32_t _tn = snprintf(tot, 64, "  %-18s %6lld ms", "total", flowc_prof_ns_to_ms(total_ns));
+      |                                            ~~~~^               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                |               |
+      |                                                long long int   int64_t {aka long int}
+      |                                            %6ld
+PASS self_emit profile
+=== self_emit resolve ===
+compiler/build/self_resolve.c: In function ‘flowc_resolve_abspath’:
+compiler/build/self_resolve.c:573:6: warning: assignment discards ‘const’ qualifier from pointer target type [-Wdiscarded-qualifiers]
+  573 |   cp = cwd;
+      |      ^
+PASS self_emit resolve
+PASS stage_a_self_emit flowc_frontend_self.o
+=== stage_a_driver_flow_self build ===
+=== stage_a_driver_flow_self smoke (stage_a_sum → exit 45) ===
+driven_sum_flow_self exit=45
+PASS stage_a_driver_flow_self
+=== stage_a_driver_self build ===
+=== stage_a_driver_self smoke (stage_a_sum → exit 45) ===
+driven_sum_self exit=45
+PASS stage_a_driver_self
+=== g2_emit token ===
+PASS g2_emit token
+=== g2_emit ast ===
+PASS g2_emit ast
+=== g2_emit lexer ===
