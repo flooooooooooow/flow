@@ -6,6 +6,15 @@ All notable changes to FLOW will be documented in this file.
 
 - MLIR tuner: analytic cost model, genetic and Bayesian search over tile schedules, `unroll` transform strategy, and IPC / stalled-cycle PMU events (#668)
 - Release qualification: `./flow tool qualify_release` writes source archives, SHA-256 sums and an RC-promotion record for an exact commit without tagging or publishing. `--check-formula` validates the in-repo Homebrew formula; `--publish` is refused. Hosted dry-run is `.github/workflows/release-qualify.yml`; `release.yml` no longer publishes RC tags (`-rc`) or `qualify_only` dispatches. (#652)
+- GPU: `flow gpu test --suite vgpu [--backend … | --all-backends]` is a real
+  exact-pixel / tolerance / numerical conformance runner. It reads
+  `examples/gpu/vgpu/manifest.json`, compiles each fill, compares against
+  captured `rgba8unorm` or f32 references with the WebGPU host's `compareRgba`
+  contract, records backend/dimensions/inputs/max error/verdict, and exits
+  non-zero on unexpected `FAIL`. `--capture-reference` rewrites frozen refs
+  independently of shader windows. The gradient case is byte-for-byte against
+  the captured upstream image; MNIST/depth report `UNSUPPORTED` until tensor
+  execution lands. (#813)
 - Type checker: memory from `arena_alloc` / `frame_alloc_*` of a module-static
   arena carries that arena's declared `@lifetime(D)` (default `application`).
   Storing it in a longer-lived static is an LD1 domain escape even when the
