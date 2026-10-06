@@ -25,6 +25,7 @@ static id<MTLCommandQueue> g_queue = nil;
 static id<MTLComputePipelineState> g_mulElemPSO = nil;
 static id<MTLComputePipelineState> g_scaleBiasPSO = nil;
 static id<MTLComputePipelineState> g_reluPSO = nil;
+static id<MTLComputePipelineState> g_invertPSO = nil;
 static id<MTLComputePipelineState> g_gemmPSO = nil;
 static _Atomic uint64_t g_modelDispatchCount = 0;
 
@@ -56,6 +57,12 @@ static const char *kGpuGradMetalSource =
     "                     constant uint& n [[buffer(2)]],\n"
     "                     uint gid [[thread_position_in_grid]]) {\n"
     "    if (gid < n) out[gid] = max(x[gid], 0.0f);\n"
+    "}\n"
+    "kernel void invert_clamp01_f32(device float* out [[buffer(0)]],\n"
+    "                     const device float* x [[buffer(1)]],\n"
+    "                     constant uint& n [[buffer(2)]],\n"
+    "                     uint gid [[thread_position_in_grid]]) {\n"
+    "    if (gid < n) out[gid] = 1.0f - clamp(x[gid], 0.0f, 1.0f);\n"
     "}\n"
     "kernel void gemm_f32(device float* out [[buffer(0)]],\n"
     "                     const device float* input [[buffer(1)]],\n"
@@ -298,10 +305,13 @@ static int flow_gpu_compute_init(void) {
         fn = [lib newFunctionWithName:@"relu_f32"];
         if (!fn) return -1;
         g_reluPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
+        fn = [lib newFunctionWithName:@"invert_clamp01_f32"];
+        if (!fn) return -1;
+        g_invertPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
         fn = [lib newFunctionWithName:@"gemm_f32"];
         if (!fn) return -1;
         g_gemmPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
-        if (!g_scaleBiasPSO || !g_reluPSO || !g_gemmPSO) return -1;
+        if (!g_scaleBiasPSO || !g_reluPSO || !g_invertPSO || !g_gemmPSO) return -1;
     }
     return 0;
 }
@@ -396,7 +406,7 @@ static int flow_gpu_f32_count_fits(const FlowGpuBuffer *b, int64_t n) {
  * A unified buffer is still a real Metal buffer; no CPU element loop runs. */
 static int flow_gpu_dispatch_unary(void *out_gpu, void *input_gpu,
                                    float scale, float bias, int64_t n,
-                                   int use_relu) {
+                                   int kind) {
     if (!out_gpu || !input_gpu) return -1;
     FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
     FlowGpuBuffer *input = (FlowGpuBuffer *)input_gpu;
@@ -404,7 +414,7 @@ static int flow_gpu_dispatch_unary(void *out_gpu, void *input_gpu,
         flow_gpu_compute_init() != 0) return -1;
 
     @autoreleasepool {
-        id<MTLComputePipelineState> pso = use_relu ? g_reluPSO : g_scaleBiasPSO;
+        id<MTLComputePipelineState> pso = kind == 1 ? g_reluPSO : (kind == 2 ? g_invertPSO : g_scaleBiasPSO);
         id<MTLBuffer> out_buf = flow_gpu_mtl(out);
         id<MTLBuffer> in_buf = flow_gpu_mtl(input);
         if (!pso || !out_buf || !in_buf) return -1;
@@ -416,7 +426,7 @@ static int flow_gpu_dispatch_unary(void *out_gpu, void *input_gpu,
         [enc setBuffer:out_buf offset:0 atIndex:0];
         [enc setBuffer:in_buf offset:0 atIndex:1];
         uint32_t count = (uint32_t)n;
-        if (use_relu) {
+        if (kind != 0) {
             [enc setBytes:&count length:sizeof(count) atIndex:2];
         } else {
             float factors[2] = {scale, bias};
@@ -444,6 +454,10 @@ int flow_gpu_scale_bias_f32(void *out_gpu, void *input_gpu,
 
 int flow_gpu_relu_f32(void *out_gpu, void *input_gpu, int64_t n) {
     return flow_gpu_dispatch_unary(out_gpu, input_gpu, 0.0f, 0.0f, n, 1);
+}
+
+int flow_gpu_invert_clamp01_f32(void *out_gpu, void *input_gpu, int64_t n) {
+    return flow_gpu_dispatch_unary(out_gpu, input_gpu, 0.0f, 0.0f, n, 2);
 }
 
 int flow_gpu_gemm_f32(void *out_gpu, void *input_gpu, void *weights_gpu,
