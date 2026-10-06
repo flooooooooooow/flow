@@ -1,0 +1,25 @@
+# Copy lowering MUST preserve sequential elementwise assignment semantics
+# when pointers may overlap. memmove(dst,src,n) is not equivalent to a
+# forward loop when dst=src+1, because the loop propagates each write.
+
+function copy_forward(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
+
+function main() -> i32 {
+    let mut a: [i32; 5] = [1, 2, 3, 4, 5]
+    copy_forward(&a[1], &a[0], 4)
+    if a[0] != 1 or a[1] != 1 or a[2] != 1 or
+       a[3] != 1 or a[4] != 1 {
+        return 1
+    }
+    let mut b: [i32; 5] = [1, 2, 3, 4, 5]
+    copy_forward(&b[0], &b[1], 4)
+    if b[0] != 2 or b[1] != 3 or b[2] != 4 or
+       b[3] != 5 or b[4] != 5 {
+        return 2
+    }
+    return 0
+}
