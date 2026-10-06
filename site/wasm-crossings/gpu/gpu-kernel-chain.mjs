@@ -69,12 +69,16 @@ function reportShaderErrors(info, name) {
     }
 }
 
-function assertDescriptor(stage, index, gpuBuffers, resources, device) {
+function assertDescriptor(stage, index, gpuBuffers, resources, device, initialized) {
     const d = stage.descriptor;
     if (!d || typeof d.entryPoint !== "string" || !d.entryPoint) {
         throw new TypeError("stage " + index + ": no Flow kernel entryPoint");
     }
     const wg = positiveInteger(d.workgroupSize, "workgroupSize");
+    if (wg > maxLimit(device, "maxComputeInvocationsPerWorkgroup", 256) ||
+        wg > maxLimit(device, "maxComputeWorkgroupSizeX", 256)) {
+        throw new RangeError("Flow workgroup exceeds WebGPU device limits");
+    }
     const n = positiveInteger(stage.count, "dispatch element count");
     const dispatch = Math.ceil(n / wg);
     if (dispatch > maxLimit(device, "maxComputeWorkgroupsPerDimension", 65535)) {
@@ -102,8 +106,17 @@ function assertDescriptor(stage, index, gpuBuffers, resources, device) {
             throw new TypeError("unknown Flow buffer access mode " + binding.access);
         }
         const record = resources[resourceId];
-        if (record.length < n && !stage.allowNonlinear) {
+        if (stage.allowNonlinear &&
+            stage.requiredElements?.[binding.name] === undefined) {
+            throw new RangeError("nonlinear Flow kernel requires per-buffer requiredElements");
+        }
+        const needed = stage.requiredElements?.[binding.name] ?? n;
+        if (!Number.isSafeInteger(needed) || needed < 1 ||
+            record.length < needed) {
             throw new RangeError("stage accesses more elements than " + resourceId);
+        }
+        if (binding.access !== "write" && !initialized.has(resourceId)) {
+            throw new Error("Flow GPU resource read before write: " + resourceId);
         }
         if (record.length * 4 > maxLimit(device, "maxStorageBufferBindingSize", Number.MAX_SAFE_INTEGER)) {
             throw new RangeError("storage resource exceeds device binding limit");
@@ -140,6 +153,7 @@ export async function runFlowKernelChain(device, {resources, stages, readback = 
     const buffers = new Map();
     const owned = [];
     const staging = new Map();
+    const initialized = new Set();
     const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
     const t0 = typeof performance === "object" ? performance.now() : Date.now();
 
@@ -162,13 +176,14 @@ export async function runFlowKernelChain(device, {resources, stages, readback = 
             buffers.set(name, buffer);
             if (desc.initial !== undefined) {
                 device.queue.writeBuffer(buffer, 0, desc.initial);
+                initialized.add(name);
             }
         }
 
         const encoder = device.createCommandEncoder();
         for (const [index, stage] of stages.entries()) {
             const {entries, seenBindings, dispatch} =
-                assertDescriptor(stage, index, buffers, resources, device);
+                assertDescriptor(stage, index, buffers, resources, device, initialized);
             if (typeof stage.wgsl !== "string" || !stage.wgsl) {
                 throw new TypeError("missing Flow-produced WGSL for stage " + index);
             }
@@ -209,11 +224,18 @@ export async function runFlowKernelChain(device, {resources, stages, readback = 
             pass.setBindGroup(0, group);
             pass.dispatchWorkgroups(dispatch);
             pass.end();
+            for (const binding of d.buffers) {
+                if (binding.access !== "read")
+                    initialized.add(stage.bindings[binding.name]);
+            }
         }
 
         for (const name of readback) {
             if (!buffers.has(name) || staging.has(name)) {
                 throw new TypeError("readback resource unknown/duplicated: " + name);
+            }
+            if (!initialized.has(name)) {
+                throw new Error("Flow GPU readback before write: " + name);
             }
             const bytes = resources[name].length * 4;
             const rb = device.createBuffer({
