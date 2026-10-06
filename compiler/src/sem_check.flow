@@ -2563,6 +2563,33 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_transport_safe") and sem_lookup(c, "type_transport_safe") < 0 {
         return sem_tmk(c, TK_BOOL)
     }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_schema_revision") and sem_lookup(c, "type_schema_revision") < 0 {
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_member_count") and sem_lookup(c, "type_member_count") < 0 {
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_member_table") and sem_lookup(c, "type_member_table") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_layout_native64") and sem_lookup(c, "type_layout_native64") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_layout_wasm32") and sem_lookup(c, "type_layout_wasm32") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_sizeof_native64") and sem_lookup(c, "type_sizeof_native64") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_sizeof_wasm32") and sem_lookup(c, "type_sizeof_wasm32") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_alignof_native64") and sem_lookup(c, "type_alignof_native64") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_alignof_wasm32") and sem_lookup(c, "type_alignof_wasm32") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
     let nm: string = sem_call_name(c, e)
     let sym: i32 = sem_lookup(c, nm)
     if sym >= 0 and sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION {

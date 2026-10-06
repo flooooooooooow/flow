@@ -46,6 +46,9 @@ import .resolve {
 }
 import .type_id {
     flowc_type_family_id, flowc_type_schema_id, flowc_type_transport_safe,
+    flowc_type_schema_revision, flowc_type_member_count, flowc_type_member_table,
+    flowc_type_layout_native64, flowc_type_layout_wasm32,
+    flowc_type_sizeof_native64, flowc_type_sizeof_wasm32,
     flowc_type_id_hash_selftest
 }
 import .profile {
@@ -2528,13 +2531,13 @@ function test_type_id_find_type(arena: AstArena, src: ptr<u8>, lit: string) -> i
     return AST_NONE
 }
 
-# family/schema IDs are deterministic, distinct across types, and independent
-# of C lowering. TransportSafe admits only fixed-width payloads (#775).
+# family/schema IDs, member tables, schema revision, and native64/wasm32
+# layout certificates (#775).
 function test_type_id() -> i32 {
     if flowc_type_id_hash_selftest() != 1 {
         return 0
     }
-    let src: string = "struct Point { x: f32, y: f32 }\nstruct Named { x: f32, y: f32, tag: i32 }\nfunction f(a: Point, b: Point, c: Named, d: i32, e: ptr<i32>) -> i32 { return 0 }\n"
+    let src: string = "@schema_revision(2)\nstruct Point { x: f32, y: f32 }\nstruct Named { x: f32, y: f32, tag: i32 }\nstruct HasPtr { p: ptr<i32>, n: i32 }\nfunction f(a: Point, b: Point, c: Named, d: i32, e: ptr<i32>, g: HasPtr) -> i32 { return 0 }\n"
     let sp: ptr<u8> = src
     let len: i32 = strlen(src) as i32
     let mut p: Parser = flowc_parser_new(sp, len, 256)
@@ -2546,7 +2549,8 @@ function test_type_id() -> i32 {
     let nm: i32 = test_type_id_find_type(p.arena, sp, "Named")
     let i32t: i32 = test_type_id_find_type(p.arena, sp, "i32")
     let ptrt: i32 = test_type_id_find_type(p.arena, sp, "ptr")
-    if pt == AST_NONE or nm == AST_NONE or i32t == AST_NONE or ptrt == AST_NONE {
+    let hp: i32 = test_type_id_find_type(p.arena, sp, "HasPtr")
+    if pt == AST_NONE or nm == AST_NONE or i32t == AST_NONE or ptrt == AST_NONE or hp == AST_NONE {
         ok = 0
     }
     if ok == 1 {
@@ -2566,6 +2570,26 @@ function test_type_id() -> i32 {
         if flowc_type_transport_safe(p.arena, sp, pt) != 1 { ok = 0 }
         if flowc_type_transport_safe(p.arena, sp, i32t) != 1 { ok = 0 }
         if flowc_type_transport_safe(p.arena, sp, ptrt) != 0 { ok = 0 }
+        if flowc_type_schema_revision(p.arena, sp, pt) != 2 { ok = 0 }
+        if flowc_type_schema_revision(p.arena, sp, nm) != 0 { ok = 0 }
+        if flowc_type_member_count(p.arena, sp, pt) != 2 { ok = 0 }
+        if flowc_type_member_count(p.arena, sp, nm) != 3 { ok = 0 }
+        if flowc_type_member_count(p.arena, sp, i32t) != 0 { ok = 0 }
+        let mt: u64 = flowc_type_member_table(p.arena, sp, pt)
+        let mn: u64 = flowc_type_member_table(p.arena, sp, nm)
+        if mt == (0 as u64) { ok = 0 }
+        if mt == mn { ok = 0 }
+        if flowc_type_sizeof_native64(p.arena, sp, pt) != 8 { ok = 0 }
+        if flowc_type_sizeof_wasm32(p.arena, sp, pt) != 8 { ok = 0 }
+        if flowc_type_layout_native64(p.arena, sp, pt) != flowc_type_layout_wasm32(p.arena, sp, pt) {
+            # Point is TransportSafe; both ABIs must agree.
+            ok = 0
+        }
+        if flowc_type_sizeof_native64(p.arena, sp, hp) != 16 { ok = 0 }
+        if flowc_type_sizeof_wasm32(p.arena, sp, hp) != 8 { ok = 0 }
+        if flowc_type_layout_native64(p.arena, sp, hp) == flowc_type_layout_wasm32(p.arena, sp, hp) {
+            ok = 0
+        }
     }
     flowc_parser_free(p)
     return ok

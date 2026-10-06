@@ -518,6 +518,10 @@
           "path": "language/types.md"
         },
         {
+          "label": "Type identity",
+          "path": "language/type-identity.md"
+        },
+        {
           "label": "Variables",
           "path": "language/variables.md"
         },

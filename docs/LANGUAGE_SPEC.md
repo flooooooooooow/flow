@@ -487,7 +487,8 @@ See [library/os.md](library/os.md).
 ### 3.6 Attributes
 
 An attribute is written `@name` or `@name(arg, …)` immediately before a
-`function` declaration. Several may be stacked. The full vocabulary lives in
+`function` declaration, or before a `struct` / `enum` / `type` alias
+(`@schema_revision`). Several may be stacked. The full vocabulary lives in
 `compiler/src/attributes.flow`. A name outside it is a type error, so a
 misspelled attribute gets reported. Under `--lenient` it is a warning and
 the attribute is ignored; it never reaches the C.
@@ -508,6 +509,7 @@ function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
 | `@noinline` | ✅ | Inline barrier (below) |
 | `@always_inline` | ✅ | Forced inline (below) |
 | `@target("…")` | ✅ | Per-function C target features (below) |
+| `@schema_revision(N)` | ✅ | Type-level schema revision; feeds `type_schema_id` (#775) |
 
 #### Code-generation attributes
 
@@ -626,15 +628,23 @@ Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are 
 | `min` | `(a: T, b: T) -> T` | ✅ |
 | `max` | `(a: T, b: T) -> T` | ✅ |
 | `sum` | `(range) -> i32` | ✅ |
-| `sizeof` | `<T>() -> i64` | ✅ target ABI size |
-| `alignof` | `<T>() -> i64` | ✅ target ABI alignment |
+| `sizeof` | `<T>() -> i64` | ✅ host ABI size |
+| `alignof` | `<T>() -> i64` | ✅ host ABI alignment |
 | `type_family_id` | `<T>() -> u64` | ✅ nominal family identity (#775) |
 | `type_schema_id` | `<T>() -> u64` | ✅ target-independent schema digest (#775) |
+| `type_schema_revision` | `<T>() -> i32` | ✅ `@schema_revision(N)` or 0 (#775) |
+| `type_member_count` | `<T>() -> i32` | ✅ public field count (#775) |
+| `type_member_table` | `<T>() -> u64` | ✅ member description digest (#775) |
 | `type_transport_safe` | `<T>() -> bool` | ✅ conservative cross-target payload predicate (#775) |
+| `type_sizeof_native64` / `type_sizeof_wasm32` | `<T>() -> i64` | ✅ size for pointer width 8 / 4 (#775) |
+| `type_alignof_native64` / `type_alignof_wasm32` | `<T>() -> i64` | ✅ alignment for those ABIs (#775) |
+| `type_layout_native64` / `type_layout_wasm32` | `<T>() -> u64` | ✅ layout certificate (#775) |
 
-`sizeof<T>()` and `alignof<T>()` are the target ABI. `type_family_id<T>()` and
+`sizeof<T>()` and `alignof<T>()` are the host ABI. `type_family_id<T>()` and
 `type_schema_id<T>()` are compile-time `u64` constants derived from the Flow
-type, independent of C/MLIR/Wasm lowering; see [types.md](language/types.md).
+type, independent of C/MLIR/Wasm lowering. Member tables, `@schema_revision`,
+and native64/wasm32 layout certificates are in
+[type-identity.md](language/type-identity.md).
 
 `sum` takes a range rather than a value: `sum(0..1000 step 3)`. It applies the
 closed form for an arithmetic progression, so it does not iterate. Inside

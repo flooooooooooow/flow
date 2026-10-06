@@ -195,6 +195,9 @@ function is_semantic_attr(name: string) -> i32 {
     if streq(name, "libm") == 1 {
         return 1
     }
+    if streq(name, "schema_revision") == 1 {
+        return 1
+    }
     return 0
 }
 
@@ -227,6 +230,9 @@ export function flowc_attr_takes_args(name: string) -> i32 {
         return 1
     }
     if streq(name, "python") == 1 {
+        return 1
+    }
+    if streq(name, "schema_revision") == 1 {
         return 1
     }
     return 0

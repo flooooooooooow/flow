@@ -473,6 +473,33 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "type_transport_safe") == 1 {
         return 1
     }
+    if flowc_tc_span_is(ctx.src, start, end, "type_schema_revision") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_member_count") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_member_table") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_layout_native64") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_layout_wasm32") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_sizeof_native64") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_sizeof_wasm32") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_alignof_native64") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_alignof_wasm32") == 1 {
+        return 1
+    }
     # Complex constructors and <complex.h> functions (#942).
     if flowc_tc_is_complex_builtin(ctx.src, start, end) == 1 {
         return 1
@@ -3468,7 +3495,22 @@ function ut_builtin_ret(src: ptr<u8>, s: i32, e: i32) -> UTy {
     if flowc_tc_span_is(src, s, e, "type_transport_safe") == 1 {
         return ut_prim(UP_BOOL)
     }
-    if flowc_tc_span_in_words(src, s, e, "sizeof alignof len time clock") == 1 {
+    if flowc_tc_span_is(src, s, e, "type_schema_revision") == 1 {
+        return ut_prim(UP_I32)
+    }
+    if flowc_tc_span_is(src, s, e, "type_member_count") == 1 {
+        return ut_prim(UP_I32)
+    }
+    if flowc_tc_span_is(src, s, e, "type_member_table") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_is(src, s, e, "type_layout_native64") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_is(src, s, e, "type_layout_wasm32") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_in_words(src, s, e, "sizeof alignof type_sizeof_native64 type_sizeof_wasm32 type_alignof_native64 type_alignof_wasm32 len time clock") == 1 {
         return ut_prim(UP_I64)
     }
     if flowc_tc_span_in_words(src, s, e, "get_current_time creal cimag cabs carg") == 1 {

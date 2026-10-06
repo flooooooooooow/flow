@@ -1,0 +1,85 @@
+# Remaining #775 surface: member description tables, @schema_revision,
+# and native64-vs-wasm32 layout certificates.
+#
+# family_id ignores revision. schema_id and the member table include
+# public field names/types (and revision when set). Layout certificates
+# are size/align/offsets for pointer width 8 vs 4; TransportSafe payloads
+# match, pointer-bearing structs diverge.
+
+struct Point {
+    x: f32
+    y: f32
+}
+
+@schema_revision(3)
+struct PointRev {
+    x: f32
+    y: f32
+}
+
+struct RecXY {
+    x: f32
+    y: f32
+}
+
+struct RecYX {
+    y: f32
+    x: f32
+}
+
+struct Pair {
+    a: i64
+    b: i32
+}
+
+struct HasPtr {
+    p: ptr<i32>
+    n: i32
+}
+
+function main() -> i32 {
+    if type_schema_revision<Point>() != 0 { return 1 }
+    if type_schema_revision<PointRev>() != 3 { return 2 }
+
+    # Same field list, different revision: family stays with the public name.
+    if type_family_id<Point>() == type_family_id<PointRev>() { return 3 }
+    if type_schema_id<Point>() == type_schema_id<PointRev>() { return 4 }
+
+    if type_member_count<i32>() != 0 { return 5 }
+    if type_member_count<Point>() != 2 { return 6 }
+    if type_member_count<Pair>() != 2 { return 7 }
+    if type_member_count<HasPtr>() != 2 { return 8 }
+
+    # Member table is the ordered (name, field-schema) description.
+    if type_member_table<Point>() == (0 as u64) { return 9 }
+    if type_member_table<Point>() == type_member_table<Pair>() { return 10 }
+    if type_member_table<RecXY>() == type_member_table<RecYX>() { return 11 }
+    if type_member_table<Point>() != type_member_table<PointRev>() { return 12 }
+
+    if type_sizeof_native64<i32>() != 4 { return 13 }
+    if type_sizeof_wasm32<i32>() != 4 { return 14 }
+    if type_sizeof_native64<ptr<i32>>() != 8 { return 15 }
+    if type_sizeof_wasm32<ptr<i32>>() != 4 { return 16 }
+
+    if type_sizeof_native64<Point>() != 8 { return 17 }
+    if type_sizeof_wasm32<Point>() != 8 { return 18 }
+    if type_alignof_native64<Point>() != 4 { return 19 }
+    if type_alignof_wasm32<Point>() != 4 { return 20 }
+
+    # TransportSafe payload: same ABI on native64 and wasm32.
+    if type_layout_native64<Point>() != type_layout_wasm32<Point>() { return 21 }
+    if type_layout_native64<Pair>() != type_layout_wasm32<Pair>() { return 22 }
+    if type_layout_native64<Point>() == (0 as u64) { return 23 }
+
+    # Pointer-bearing: native64 {ptr8, i32, pad4}=16 vs wasm32 {ptr4, i32}=8.
+    if type_sizeof_native64<HasPtr>() != 16 { return 24 }
+    if type_sizeof_wasm32<HasPtr>() != 8 { return 25 }
+    if type_alignof_native64<HasPtr>() != 8 { return 26 }
+    if type_alignof_wasm32<HasPtr>() != 4 { return 27 }
+    if type_layout_native64<HasPtr>() == type_layout_wasm32<HasPtr>() { return 28 }
+
+    if type_transport_safe<Point>() == false { return 29 }
+    if type_transport_safe<HasPtr>() { return 30 }
+
+    return 0
+}

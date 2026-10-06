@@ -23,8 +23,15 @@ import .fileio { flowc_write_file }
 import .proof_lower { flowc_proof_erase }
 import .type_id {
     flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
-    flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
-    FLOWC_TID_TRANSPORT, FLOWC_TID_ALIGNOF, FLOWC_TID_NONE
+    flowc_type_transport_safe, flowc_type_schema_revision, flowc_type_member_count,
+    flowc_type_member_table, flowc_type_layout_native64, flowc_type_layout_wasm32,
+    flowc_type_sizeof_native64, flowc_type_sizeof_wasm32,
+    flowc_type_alignof_native64, flowc_type_alignof_wasm32,
+    FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA, FLOWC_TID_TRANSPORT, FLOWC_TID_ALIGNOF,
+    FLOWC_TID_REVISION, FLOWC_TID_MEMBERS, FLOWC_TID_MEMBER_TABLE,
+    FLOWC_TID_LAYOUT_N64, FLOWC_TID_LAYOUT_W32, FLOWC_TID_SIZEOF_N64,
+    FLOWC_TID_SIZEOF_W32, FLOWC_TID_ALIGNOF_N64, FLOWC_TID_ALIGNOF_W32,
+    FLOWC_TID_NONE
 }
 import .noalias { flowc_noalias_param_restrict, flowc_noalias_local_restrict }
 import .token {
@@ -4359,8 +4366,8 @@ function mlg_alignof_ty(m: ptr<Mlg>, ty: i32) -> i64 {
     return 1
 }
 
-# type_family_id / type_schema_id / type_transport_safe / alignof<T>() (#775).
-# Identity is the same u64 the C backend emits; alignof is host ABI.
+# type identity, member tables, and native64/wasm32 layout certificates (#775).
+# Identity and layout certs are the same constants the C backend emits.
 function mlg_emit_type_meta(m: ptr<Mlg>, e: i32) -> i32 {
     let ty: i32 = m[0].arena.nodes[e].b
     if ty == AST_NONE {
@@ -4376,11 +4383,38 @@ function mlg_emit_type_meta(m: ptr<Mlg>, e: i32) -> i32 {
     if kind == FLOWC_TID_SCHEMA {
         return mlg_const_u64(m, flowc_type_schema_id(m[0].arena, m[0].src, ty))
     }
+    if kind == FLOWC_TID_MEMBER_TABLE {
+        return mlg_const_u64(m, flowc_type_member_table(m[0].arena, m[0].src, ty))
+    }
+    if kind == FLOWC_TID_LAYOUT_N64 {
+        return mlg_const_u64(m, flowc_type_layout_native64(m[0].arena, m[0].src, ty))
+    }
+    if kind == FLOWC_TID_LAYOUT_W32 {
+        return mlg_const_u64(m, flowc_type_layout_wasm32(m[0].arena, m[0].src, ty))
+    }
     if kind == FLOWC_TID_TRANSPORT {
         return mlg_const_int(m, flowc_type_transport_safe(m[0].arena, m[0].src, ty), MT_I1)
     }
+    if kind == FLOWC_TID_REVISION {
+        return mlg_const_int(m, flowc_type_schema_revision(m[0].arena, m[0].src, ty), MT_I32)
+    }
+    if kind == FLOWC_TID_MEMBERS {
+        return mlg_const_int(m, flowc_type_member_count(m[0].arena, m[0].src, ty), MT_I32)
+    }
     if kind == FLOWC_TID_ALIGNOF {
         return mlg_const_int(m, mlg_alignof_ty(m, ty) as i32, MT_I64)
+    }
+    if kind == FLOWC_TID_SIZEOF_N64 {
+        return mlg_const_int(m, flowc_type_sizeof_native64(m[0].arena, m[0].src, ty) as i32, MT_I64)
+    }
+    if kind == FLOWC_TID_SIZEOF_W32 {
+        return mlg_const_int(m, flowc_type_sizeof_wasm32(m[0].arena, m[0].src, ty) as i32, MT_I64)
+    }
+    if kind == FLOWC_TID_ALIGNOF_N64 {
+        return mlg_const_int(m, flowc_type_alignof_native64(m[0].arena, m[0].src, ty) as i32, MT_I64)
+    }
+    if kind == FLOWC_TID_ALIGNOF_W32 {
+        return mlg_const_int(m, flowc_type_alignof_wasm32(m[0].arena, m[0].src, ty) as i32, MT_I64)
     }
     return V_NONE
 }

@@ -1,0 +1,5 @@
+=== parity_mlir: flowc = compiler/build/flowc_bootstrap ===
+fixtures (text): pass=23 of 23
+fixtures (gpu text): pass=2
+fixtures (wasm32 text): pass=1
+fixtures (run): skipped, mlir-opt not found (brew install llvm)

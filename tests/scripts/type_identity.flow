@@ -52,6 +52,14 @@ function printer(prefix: string, suffix: string) -> string {
     return prefix + "function main() -> i32 {\n    printf(\"%llu %llu\\n\", type_family_id<Rec>(), type_schema_id<Rec>())\n    return 0\n}\n" + suffix
 }
 
+function printer_meta(prefix: string) -> string {
+    return prefix + "function main() -> i32 {\n    printf(\"%llu %llu %d %d %lld %lld\\n\", type_family_id<Rec>(), type_schema_id<Rec>(), type_schema_revision<Rec>(), type_member_count<Rec>(), type_sizeof_native64<Rec>(), type_sizeof_wasm32<Rec>())\n    return 0\n}\n"
+}
+
+function printer_layout(prefix: string) -> string {
+    return prefix + "function main() -> i32 {\n    printf(\"%llu %llu\\n\", type_layout_native64<Rec>(), type_layout_wasm32<Rec>())\n    return 0\n}\n"
+}
+
 function check_declaration_order_does_not_change_ids() -> i32 {
     let need: i32 = t_need_cc()
     if need != T_PASS {
@@ -129,6 +137,87 @@ function check_field_type_changes_schema() -> i32 {
     return T_PASS
 }
 
+function check_schema_revision_changes_schema_not_family() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let v0: string = ids_of(printer("struct Rec { x: f32, y: f32 }\n", ""))
+    let v1: string = ids_of(printer("@schema_revision(1)\nstruct Rec { x: f32, y: f32 }\n", ""))
+    if s_len(v0) == 0 or s_len(v1) == 0 {
+        return T_FAIL
+    }
+    let a: ptr<ProcStrs> = s_words(v0)
+    let b: ptr<ProcStrs> = s_words(v1)
+    if sl_len(a) < 2 or sl_len(b) < 2 {
+        outln("expected two IDs per program")
+        return T_FAIL
+    }
+    if not a_eq(sl_get(a, 0), sl_get(b, 0), "family_id after schema_revision") {
+        return T_FAIL
+    }
+    if a_eq(sl_get(a, 1), sl_get(b, 1), "schema_id after schema_revision") {
+        outln("schema_id ignored @schema_revision")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_member_table_and_revision() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let out: string = ids_of(printer_meta("@schema_revision(4)\nstruct Rec { x: f32, y: f32, z: i32 }\n"))
+    if s_len(out) == 0 {
+        return T_FAIL
+    }
+    let p: ptr<ProcStrs> = s_words(out)
+    if sl_len(p) < 6 {
+        outln("expected family schema rev count sz64 sz32")
+        return T_FAIL
+    }
+    if not a_eq(sl_get(p, 2), "4", "type_schema_revision") {
+        return T_FAIL
+    }
+    if not a_eq(sl_get(p, 3), "3", "type_member_count") {
+        return T_FAIL
+    }
+    if not a_eq(sl_get(p, 4), "12", "type_sizeof_native64") {
+        return T_FAIL
+    }
+    if not a_eq(sl_get(p, 5), "12", "type_sizeof_wasm32") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_native64_wasm32_layout_certs() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let safe: string = ids_of(printer_layout("struct Rec { x: f32, y: f32 }\n"))
+    let ptrs: string = ids_of(printer_layout("struct Rec { p: ptr<i32>, n: i32 }\n"))
+    if s_len(safe) == 0 or s_len(ptrs) == 0 {
+        return T_FAIL
+    }
+    let a: ptr<ProcStrs> = s_words(safe)
+    let b: ptr<ProcStrs> = s_words(ptrs)
+    if sl_len(a) < 2 or sl_len(b) < 2 {
+        outln("expected two layout certificates")
+        return T_FAIL
+    }
+    if not a_eq(sl_get(a, 0), sl_get(a, 1), "TransportSafe native64 vs wasm32 layout") {
+        return T_FAIL
+    }
+    if a_eq(sl_get(b, 0), sl_get(b, 1), "pointer layout should diverge") {
+        outln("pointer-bearing layout certs matched across targets")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("type_identity")
     t_start()
@@ -137,6 +226,12 @@ function main() -> i32 {
     t_end("field_order_changes_schema_not_family", check_field_order_changes_schema_not_family())
     t_start()
     t_end("field_type_changes_schema", check_field_type_changes_schema())
+    t_start()
+    t_end("schema_revision_changes_schema_not_family", check_schema_revision_changes_schema_not_family())
+    t_start()
+    t_end("member_table_and_revision", check_member_table_and_revision())
+    t_start()
+    t_end("native64_wasm32_layout_certs", check_native64_wasm32_layout_certs())
     t_done()
     return 0
 }
