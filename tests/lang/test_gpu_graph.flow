@@ -235,98 +235,37 @@ function main() -> i32 {
         return 30
     }
 
-    # 11. Fluid family validates, derives deps, emits both backends.
+    # 11. The fluid graph describes hazards and dependencies, but *not*
+    # the numerical algorithms yet. Empty shaders must NOT certify parity.
     let mut fluid: GpuGraph = gpu_graph_vgpu_fluid()
     let fp: ptr<GpuGraph> = &fluid
     let fe: GpuGraphError = gpu_graph_validate(fp)
-    if expect_ok(fe, 31) != 0 {
-        return 31
-    }
-    if fluid.pass_count != 8 {
-        return 32
-    }
-    if fluid.resource_count != 8 {
-        return 33
-    }
-    if fluid.pingpong_count != 3 {
-        return 34
-    }
-    if fluid.passes[4].iterations != 20 {
-        return 35
-    }
-    if !gpu_graph_has_dep(fluid, 0, 1) {
-        return 36
-    }
-    if !gpu_graph_has_dep(fluid, 3, 4) {
-        return 37
-    }
-    if !gpu_graph_has_dep(fluid, 6, 7) {
-        return 38
-    }
-    if !gpu_graph_same_source_both_backends(fluid) {
-        return 39
-    }
-    let fw: string = gpu_graph_emit_wgsl_pass(fluid, 0)
-    if !str_has(fw, "texture_storage_2d<rgba16float, read>") {
-        return 40
-    }
-    if !str_has(fw, "texture_storage_2d<rgba16float, write>") {
-        return 41
-    }
-    if !str_has(fw, "@workgroup_size(8, 8, 1)") {
-        return 42
-    }
-    let fm: string = gpu_graph_emit_metal_pass(fluid, 0)
-    if !str_has(fm, "texture2d<float, access::read>") {
-        return 43
-    }
-    if !str_has(fm, "texture2d<float, access::write>") {
-        return 44
-    }
-    if !str_has(fm, "kernel void advect_velocity") {
-        return 45
-    }
+    if expect_ok(fe, 31) != 0 { return 31 }
+    if fluid.pass_count != 8 { return 32 }
+    if fluid.resource_count != 8 { return 33 }
+    if fluid.pingpong_count != 3 { return 34 }
+    if fluid.passes[4].iterations != 20 { return 35 }
+    if !gpu_graph_has_dep(fluid, 0, 1) { return 36 }
+    if !gpu_graph_has_dep(fluid, 3, 4) { return 37 }
+    if !gpu_graph_has_dep(fluid, 6, 7) { return 38 }
+    if gpu_graph_same_source_both_backends(fluid) { return 39 }
+    if gpu_graph_emit_wgsl_pass(fluid, 0) != "" { return 40 }
+    if gpu_graph_emit_metal_pass(fluid, 0) != "" { return 41 }
 
-    # 12. FFT-ocean family: storage buffers, workgroup memory, barrier.
+    # 12. Same for FFT ocean; IFFT requires an actual compute body.
     let mut ocean: GpuGraph = gpu_graph_vgpu_fft_ocean()
     let op: ptr<GpuGraph> = &ocean
     let oe: GpuGraphError = gpu_graph_validate(op)
-    if expect_ok(oe, 46) != 0 {
-        return 46
-    }
-    if ocean.passes[2].workgroup_bytes != 4096 {
-        return 47
-    }
-    if ocean.passes[2].barrier != 1 {
-        return 48
-    }
-    if ocean.passes[2].workgroup.x != 256 {
-        return 49
-    }
-    if ocean.passes[2].iterations != 6 {
-        return 50
-    }
-    if !gpu_graph_same_source_both_backends(ocean) {
-        return 51
-    }
-    let ow: string = gpu_graph_emit_wgsl_pass(ocean, 2)
-    if !str_has(ow, "var<storage, read>") {
-        return 52
-    }
-    if !str_has(ow, "var<storage, write>") {
-        return 53
-    }
-    if !str_has(ow, "@workgroup_size(256, 1, 1)") {
-        return 54
-    }
-    let om: string = gpu_graph_emit_metal_pass(ocean, 2)
-    if !str_has(om, "device float* spectrum") {
-        return 55
-    }
+    if expect_ok(oe, 46) != 0 { return 46 }
+    if ocean.passes[2].workgroup_bytes != 4096 { return 47 }
+    if ocean.passes[2].barrier != 1 { return 48 }
+    if ocean.passes[2].workgroup.x != 256 { return 49 }
+    if ocean.passes[2].iterations != 6 { return 50 }
+    if gpu_graph_same_source_both_backends(ocean) { return 51 }
+    if gpu_graph_emit_wgsl_pass(ocean, 2) != "" { return 52 }
+    if gpu_graph_emit_metal_pass(ocean, 2) != "" { return 53 }
     let surf: GpuGraph = gpu_graph_vgpu_fft_ocean_surface()
-    if surf.passes[surf.pass_count - 1].name != "surface" {
-        return 56
-    }
+    if surf.passes[surf.pass_count - 1].name != "surface" { return 56 }
 
     # 13. Binding line helpers stay exact for both backends.
     let res: GpuGraphResource = fluid.resources[0]
@@ -338,6 +277,29 @@ function main() -> i32 {
     if mline != "texture2d<float, access::write> vel_a [[texture(1)]]" {
         return 58
     }
+
+    # 14. Actual backend-neutral op: generate an executable 16-element
+    # storage-buffer copy with bounds checks in both shader languages.
+    let mut copy: GpuGraph = gpu_graph_new()
+    let cop: ptr<GpuGraph> = &copy
+    let src: i32 = gpu_graph_add_storage_buffer(cop, "source", GPU_ACCESS_READ,
+        GPU_LIFE_PERSISTENT, 64)
+    let dst: i32 = gpu_graph_add_storage_buffer(cop, "target", GPU_ACCESS_WRITE,
+        GPU_LIFE_PERSISTENT, 64)
+    let copied: i32 = gpu_graph_add_copy_f32(cop, "copy_f32", src, dst)
+    if copied != 0 { return 59 }
+    if gpu_graph_validate(cop).code != GPU_GRAPH_OK { return 60 }
+    if !gpu_graph_same_source_both_backends(copy) { return 61 }
+    let cw: string = gpu_graph_emit_wgsl_pass(copy, copied)
+    let cm: string = gpu_graph_emit_metal_pass(copy, copied)
+    if !str_has(cw, "@builtin(global_invocation_id)") { return 62 }
+    if !str_has(cw, "target[gid.x] = source[gid.x]") { return 63 }
+    if !str_has(cw, "var<storage, read_write> target") { return 64 }
+    if !str_has(cm, "uint gid [[thread_position_in_grid]]") { return 65 }
+    if !str_has(cm, "target[gid] = source[gid]") { return 66 }
+    if gpu_graph_add_copy_f32(cop, "self", src, src) != -1 { return 67 }
+    if gpu_graph_add_copy_f32(cop, "wrong_direction", dst, src) != -1 { return 68 }
+    if gpu_graph_add_copy_f32(cop, "wrong_bytes", dst, dst) != -1 { return 69 }
 
     return 0
 }
