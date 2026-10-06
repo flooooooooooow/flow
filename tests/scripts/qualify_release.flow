@@ -295,6 +295,16 @@ function check_promote_rc_does_not_tag() -> i32 {
     return T_PASS
 }
 
+function check_version_matches_archived_commit() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS { return n }
+    # A supplied version must never relabel the bytes of a different commit.
+    let args: ptr<ProcStrs> = sl_of3("--version", "999.999.999", "--print-tag-command")
+    if t_run_argv(qual_cmd(args)) != 1 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "differs from the archived commit") { return T_FAIL }
+    return T_PASS
+}
+
 function check_print_tag_command() -> i32 {
     let n: i32 = need_qual()
     if n != T_PASS {
@@ -376,6 +386,8 @@ function main() -> i32 {
 
     t_start()
     t_end("print_tag_command", check_print_tag_command())
+    t_start()
+    t_end("commit_version_guard", check_version_matches_archived_commit())
 
     t_start()
     t_end("releasing_docs", check_releasing_docs_point_at_the_tool())
