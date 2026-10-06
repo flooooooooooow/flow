@@ -1,0 +1,156 @@
+# @module tools.mlir_tune.cost
+# @means  Analytic schedule cost for the transform-dialect tuner. The score
+#         is a stand-in for a measured kernel when mlir-opt is absent, and
+#         the oracle for genetic / Bayesian search in tests.
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+}
+
+function ct_len(s: string) -> i32 {
+    return strlen(s) as i32
+}
+
+function ct_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+function ct_byte(s: string, i: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    return p[i] as i32
+}
+
+function tune_abs(v: i32) -> i32 {
+    if v < 0 {
+        return 0 - v
+    }
+    return v
+}
+
+function tune_vol(tm: i32, tn: i32, tk: i32) -> i32 {
+    if tm <= 0 or tn <= 0 or tk <= 0 {
+        return 0
+    }
+    if tm > 1290 or tn > 1290 or tk > 1290 {
+        return 2147483647
+    }
+    return tm * tn * tk
+}
+
+# One to three comma-separated tile sizes. Missing trailing dimensions
+# reuse the last parsed value, matching a 1-D `tile_sizes [N]` schedule.
+export function tune_tile_dim(s: string, dim: i32) -> i32 {
+    let n: i32 = ct_len(s)
+    let mut i: i32 = 0
+    let mut values: i32 = 0
+    let mut last: i32 = -1
+    let mut want: i32 = -1
+    while i < n {
+        while i < n and (ct_byte(s, i) == 32 or ct_byte(s, i) == 9) {
+            i = i + 1
+        }
+        if i >= n {
+            break
+        }
+        let mut value: i32 = 0
+        let mut digits: i32 = 0
+        while i < n and ct_byte(s, i) >= 48 and ct_byte(s, i) <= 57 {
+            if value > 214748364 {
+                return -1
+            }
+            value = value * 10 + ct_byte(s, i) - 48
+            digits = digits + 1
+            i = i + 1
+        }
+        if digits == 0 {
+            return -1
+        }
+        last = value
+        if values == dim {
+            want = value
+        }
+        values = values + 1
+        while i < n and (ct_byte(s, i) == 32 or ct_byte(s, i) == 9) {
+            i = i + 1
+        }
+        if i < n and ct_byte(s, i) == 44 {
+            i = i + 1
+        }
+    }
+    if values == 0 {
+        return -1
+    }
+    if want >= 0 {
+        return want
+    }
+    return last
+}
+
+export function tune_is_gpu_target(s: string) -> bool {
+    return ct_eq(s, "gpu") or ct_eq(s, "nvptx") or ct_eq(s, "amdgpu")
+}
+
+# Lower is better. The model rewards cache reuse and vector-friendly tiles,
+# and penalises remainder waste, tiny tiles, and working sets that miss L1.
+export function tune_tile_cost(tm: i32, tn: i32, tk: i32, extent: i32, gpu: bool) -> i32 {
+    if tm <= 0 or tn <= 0 or tk <= 0 or extent <= 0 {
+        return 1000000
+    }
+    let ws: i32 = tm * tk + tk * tn + tm * tn
+    let vol: i32 = tune_vol(tm, tn, tk)
+    let mut cost: i32 = 1000
+    if vol > 0 and vol != 2147483647 {
+        cost = (ws * 1000) / vol
+    } else {
+        cost = 1000000
+    }
+    if ws > 8192 {
+        cost = cost + 2000
+    } elif ws > 2048 {
+        cost = cost + 500
+    }
+    let extra_m: i32 = ((extent + tm - 1) / tm) * tm - extent
+    let extra_n: i32 = ((extent + tn - 1) / tn) * tn - extent
+    let extra_k: i32 = ((extent + tk - 1) / tk) * tk - extent
+    cost = cost + (extra_m + extra_n + extra_k) * 2
+    if tm % 8 != 0 {
+        cost = cost + 400
+    }
+    if tn % 8 != 0 {
+        cost = cost + 400
+    }
+    if tk % 8 != 0 {
+        cost = cost + 100
+    }
+    if tm < 16 {
+        cost = cost + 300
+    }
+    if tn < 16 {
+        cost = cost + 300
+    }
+    if tm > 64 {
+        cost = cost + 800
+    }
+    if tn > 64 {
+        cost = cost + 800
+    }
+    if gpu {
+        cost = cost - (tm + tn) / 4
+        if cost < 1 {
+            cost = 1
+        }
+    }
+    return cost
+}
+
+export function tune_schedule_cost(tiles: string, extent: i32, gpu: bool) -> i32 {
+    let tm: i32 = tune_tile_dim(tiles, 0)
+    let tn: i32 = tune_tile_dim(tiles, 1)
+    let tk: i32 = tune_tile_dim(tiles, 2)
+    return tune_tile_cost(tm, tn, tk, extent, gpu)
+}
+
+export function tune_l1(a0: i32, a1: i32, a2: i32, b0: i32, b1: i32, b2: i32) -> i32 {
+    return tune_abs(a0 - b0) + tune_abs(a1 - b1) + tune_abs(a2 - b2)
+}

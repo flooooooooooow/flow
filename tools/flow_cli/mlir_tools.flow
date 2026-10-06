@@ -7,7 +7,7 @@ import "tools/flow_cli/shape_specializer.flow"
 # Each step is a function the other CLI modules call directly, and a
 # command of its own for callers outside the CLI (CI, benchmarks, scripts):
 #
-#   flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir
+#   flow flow-to-mlir [--gpu] [--wasm32] [--affine] [--tile-size N] [--tile-l2-size N] [--register-tiles] [--register-tile-intrinsics] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-bank-count N] [--aosoa-swizzle [--aosoa-swizzle-width N]] [--jit] [--lenient] IN.flow OUT.mlir
 #   flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll
 #   flow mlir-lower IN.mlir OUT.ll | --tools
 #   flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir
@@ -22,10 +22,16 @@ import "tools/flow_cli/shape_specializer.flow"
 # the MLIR.
 #   --gpu     @gpu kernels as a gpu.module (FLOWC_MLIR_GPU=1)
 #   --wasm32  ILP32 ABI: libc size_t/long as i32 (FLOWC_MLIR_SIZE_T=32)
+#   --affine  enable static-bound affine.for lowering
+#   --tile-size N  set the inner affine tile size
+#   --tile-l2-size N  set the outer affine tile size
 #   --aosoa-pad  enable one-element AoSoA conflict padding
 #   --aosoa-pad-auto  pad power-of-two AoSoA extents
-#   --aosoa-swizzle  enable four-way AoSoA index swizzling
+#   --aosoa-bank-count N  pad extents that are a multiple of N (1..128)
+#   --aosoa-swizzle  enable AoSoA index swizzling
+#   --aosoa-swizzle-width N  set the target's power-of-two swizzle width
 #   --register-tiles  enable vector.outerproduct register-tile lowering
+#   --register-tile-intrinsics  emit target-specific intrinsic operations
 #   --jit     guard modes jit, mlir and compile (FLOWC_MODE=jit), as the JIT
 #   --shape-spec=<SHAPE_STR> (e.g. "memref<?xf32>=memref<1024xf32>")
 #             runner used; it also implies --lenient
@@ -189,16 +195,52 @@ function env_restore(name: string, old: string) {
     }
 }
 
+function parse_bounded_decimal(s: string, lo: i32, hi: i32) -> i32 {
+    if s_len(s) == 0 or s_len(s) > 3 { return -1 }
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < s_len(s) {
+        let c: i32 = s[i]
+        if c < 48 or c > 57 { return -1 }
+        n = n * 10 + (c - 48)
+        i = i + 1
+    }
+    if n < lo or n > hi { return -1 }
+    return n
+}
+
+function valid_aosoa_swizzle_width(s: string) -> bool {
+    let n: i32 = parse_bounded_decimal(s, 2, 32)
+    if n < 0 { return false }
+    let mut p: i32 = 1
+    while p < n { p = p * 2 }
+    return p == n
+}
+
+function valid_aosoa_bank_count(s: string) -> bool {
+    return parse_bounded_decimal(s, 1, 128) > 0
+}
+
+function valid_positive_bounded(s: string, lo: i32, hi: i32) -> bool {
+    return parse_bounded_decimal(s, lo, hi) > 0
+}
+
 # Emit IN.flow as MLIR into OUT. `args` are flow-to-mlir's arguments.
 export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut gpu: bool = false
     let mut wasm32: bool = false
+    let mut affine: bool = false
+    let mut tile_size: string = ""
+    let mut tile_l2_size: string = ""
     let mut register_tiles: bool = false
+    let mut register_tile_intrinsics: bool = false
     let mut register_target: string = ""
     let mut register_max_lanes: string = ""
     let mut aosoa_pad: bool = false
     let mut aosoa_pad_auto: bool = false
+    let mut aosoa_bank_count: string = ""
     let mut aosoa_swizzle: bool = false
+    let mut aosoa_swizzle_width: string = "4"
     let mut jit: bool = false
     let mut shape_spec: string = ""
     let mut lenient: bool = false
@@ -209,8 +251,42 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
             gpu = true
         } elif s_eq(a, "--wasm32") {
             wasm32 = true
+        } elif s_eq(a, "--affine") {
+            affine = true
+        } elif s_eq(a, "--tile-size") {
+            if i + 1 >= sl_len(args) {
+                errln("flow_to_mlir: --tile-size requires a value")
+                return 2
+            }
+            affine = true
+            tile_size = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--tile-size=") {
+            affine = true
+            tile_size = s_from(a, 12)
+            if s_len(tile_size) == 0 {
+                errln("flow_to_mlir: --tile-size requires a value")
+                return 2
+            }
+        } elif s_eq(a, "--tile-l2-size") {
+            if i + 1 >= sl_len(args) {
+                errln("flow_to_mlir: --tile-l2-size requires a value")
+                return 2
+            }
+            affine = true
+            tile_l2_size = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--tile-l2-size=") {
+            affine = true
+            tile_l2_size = s_from(a, 15)
+            if s_len(tile_l2_size) == 0 {
+                errln("flow_to_mlir: --tile-l2-size requires a value")
+                return 2
+            }
         } elif s_eq(a, "--register-tiles") {
             register_tiles = true
+        } elif s_eq(a, "--register-tile-intrinsics") {
+            register_tile_intrinsics = true
         } elif s_starts(a, "--register-tile-target=") {
             register_target = s_from(a, 23)
         } elif s_starts(a, "--register-tile-max-lanes=") {
@@ -219,8 +295,30 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
             aosoa_pad = true
         } elif s_eq(a, "--aosoa-pad-auto") {
             aosoa_pad_auto = true
+        } elif s_eq(a, "--aosoa-bank-count") {
+            if i + 1 >= sl_len(args) {
+                errln("flow_to_mlir: --aosoa-bank-count requires a value")
+                return 2
+            }
+            aosoa_pad_auto = true
+            aosoa_bank_count = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--aosoa-bank-count=") {
+            aosoa_pad_auto = true
+            aosoa_bank_count = s_from(a, 19)
         } elif s_eq(a, "--aosoa-swizzle") {
             aosoa_swizzle = true
+        } elif s_eq(a, "--aosoa-swizzle-width") {
+            if i + 1 >= sl_len(args) {
+                errln("flow_to_mlir: --aosoa-swizzle-width requires a value")
+                return 2
+            }
+            aosoa_swizzle = true
+            aosoa_swizzle_width = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--aosoa-swizzle-width=") {
+            aosoa_swizzle = true
+            aosoa_swizzle_width = s_from(a, 22)
         } elif s_eq(a, "--jit") {
             jit = true
             lenient = true
@@ -234,7 +332,15 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         i = i + 1
     }
     if sl_len(args) - i != 2 {
-        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir")
+        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--affine] [--tile-size N] [--tile-l2-size N] [--register-tiles] [--register-tile-intrinsics] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-bank-count N] [--aosoa-swizzle] [--aosoa-swizzle-width N] [--jit] [--lenient] IN.flow OUT.mlir")
+        return 2
+    }
+    if s_len(tile_size) > 0 and not valid_positive_bounded(tile_size, 2, 64) {
+        errln("flow_to_mlir: --tile-size must be a positive integer from 2 through 64")
+        return 2
+    }
+    if s_len(tile_l2_size) > 0 and not valid_positive_bounded(tile_l2_size, 2, 128) {
+        errln("flow_to_mlir: --tile-l2-size must be a positive integer from 2 through 128")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -262,8 +368,26 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     if wasm32 {
         cmd_env(c, "FLOWC_MLIR_SIZE_T", "32")
     }
+    if affine {
+        cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    } elif env_isset("FLOWC_MLIR_AFFINE") {
+        cmd_env(c, "FLOWC_MLIR_AFFINE", env("FLOWC_MLIR_AFFINE"))
+    }
+    if s_len(tile_size) > 0 {
+        cmd_env(c, "FLOWC_MLIR_TILE", tile_size)
+    } elif env_isset("FLOWC_MLIR_TILE") {
+        cmd_env(c, "FLOWC_MLIR_TILE", env("FLOWC_MLIR_TILE"))
+    }
+    if s_len(tile_l2_size) > 0 {
+        cmd_env(c, "FLOWC_MLIR_TILE_L2", tile_l2_size)
+    } elif env_isset("FLOWC_MLIR_TILE_L2") {
+        cmd_env(c, "FLOWC_MLIR_TILE_L2", env("FLOWC_MLIR_TILE_L2"))
+    }
     if register_tiles {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILES", "1")
+    }
+    if register_tile_intrinsics {
+        cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_INTRINSICS", "1")
     }
     if s_len(register_target) > 0 {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", register_target)
@@ -271,14 +395,28 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     if s_len(register_max_lanes) > 0 {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES", register_max_lanes)
     }
+    if env_isset("FLOWC_MLIR_REGISTER_TILE_INTRINSICS") {
+        cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_INTRINSICS", env("FLOWC_MLIR_REGISTER_TILE_INTRINSICS"))
+    }
     if aosoa_pad {
         cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "1")
     }
     if aosoa_pad_auto {
         cmd_env(c, "FLOWC_MLIR_AOSOA_AUTO_PAD", "1")
     }
+    if s_len(aosoa_bank_count) > 0 {
+        if not valid_aosoa_bank_count(aosoa_bank_count) {
+            errln("flow_to_mlir: --aosoa-bank-count must be an integer from 1 through 128")
+            return 2
+        }
+        cmd_env(c, "FLOWC_MLIR_AOSOA_BANK_COUNT", aosoa_bank_count)
+    }
     if aosoa_swizzle {
-        cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", "4")
+        if not valid_aosoa_swizzle_width(aosoa_swizzle_width) {
+            errln("flow_to_mlir: --aosoa-swizzle-width must be a power of two from 2 through 32")
+            return 2
+        }
+        cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", aosoa_swizzle_width)
     }
     if jit {
         cmd_env(c, "FLOWC_MODE", "jit")
@@ -287,13 +425,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         cmd_env(c, "FLOWC_LENIENT", "1")
     }
     # Forward generator-side opt-in transforms when flow mlir invokes the
-    # compiler through flow-to-mlir.
-    if env_isset("FLOWC_MLIR_AFFINE") {
-        cmd_env(c, "FLOWC_MLIR_AFFINE", env("FLOWC_MLIR_AFFINE"))
-    }
-    if env_isset("FLOWC_MLIR_TILE") {
-        cmd_env(c, "FLOWC_MLIR_TILE", env("FLOWC_MLIR_TILE"))
-    }
+    # compiler through flow-to-mlir. Affine CLI flags already won above.
     if env_isset("FLOWC_MLIR_AOSOA_PAD") {
         cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", env("FLOWC_MLIR_AOSOA_PAD"))
     }

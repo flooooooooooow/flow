@@ -52,6 +52,12 @@ function arena_example() -> i32 {
 
 An arena owns one backing slab; individual arena allocations are not freed separately. `arena_reset` reuses the slab and `arena_destroy` releases it.
 
+A module-static `ptr<Arena>` or `ptr<FrameArena>` may carry `@lifetime(D)`.
+Pointers returned by `arena_alloc` / `frame_alloc_*` from that instance
+inherit `D`, so they cannot be stored in a longer-lived static (the
+domain boundary is the reset boundary). See
+[lifetime domains](../language/lifetime-domains.md).
+
 ## Frame arena
 
 `FrameArena` adds per-frame reset and high-water accounting. The full example includes the library import and lifetime annotation it depends on:

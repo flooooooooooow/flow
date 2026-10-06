@@ -46,6 +46,14 @@ import .noalias {
     flowc_noalias_local_restrict,
     flowc_noalias_ty_is_ptr
 }
+import .region {
+    flowc_region_disjoint,
+    flowc_region_restrict_candidate,
+    flowc_region_of_binding,
+    flowc_region_report_on,
+    Region,
+    RI_LOCAL, RI_PARAM, RI_UNKNOWN
+}
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
@@ -65,6 +73,28 @@ extern {
     function atoi(s: string) -> i32
     function write(fd: i32, buf: string, n: i64) -> i64
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function flowc_prof_mode_raw() -> i32
+    function flowc_prof_now_raw() -> i64
+    function flowc_prof_add_raw(id: i32, ns: i64)
+}
+
+# FLOWC_PROF_MONO / FLOWC_PROF_LOWERING. Kept numeric so cgen does not
+# import profile.flow (self-emit plan and frontend link order stay put).
+const CGEN_PROF_MONO: i32 = 5
+const CGEN_PROF_LOWERING: i32 = 6
+
+function flowc_cgen_prof_begin() -> i64 {
+    if flowc_prof_mode_raw() == 0 {
+        return 0 - 1
+    }
+    return flowc_prof_now_raw()
+}
+
+function flowc_cgen_prof_end(id: i32, start: i64) {
+    if start < 0 {
+        return
+    }
+    flowc_prof_add_raw(id, flowc_prof_now_raw() - start)
 }
 
 # Fixed-buffer writer for C text.
@@ -4041,6 +4071,105 @@ function flowc_cgen_ty_is_float_name(arena: AstArena, src: ptr<u8>, ty: i32) -> 
     return 0
 }
 
+# 1 when `id` is a positive integer or float literal zero. `-0.0` stays
+# out: signed-zero imag is not a source-level real-scalar form (#630).
+function flowc_cgen_is_literal_pos_zero(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if arena.nodes[id].kind == AST_INT {
+        if arena.nodes[id].ival == 0 {
+            return 1
+        }
+        return 0
+    }
+    if arena.nodes[id].kind != AST_FLOAT {
+        return 0
+    }
+    let s: i32 = arena.nodes[id].name_start
+    let e: i32 = arena.nodes[id].name_end
+    if s < 0 or e <= s {
+        return 0
+    }
+    let mut i: i32 = s
+    let mut digits: i32 = 0
+    while i < e {
+        let c: i32 = src[i]
+        if c == 48 {
+            digits = digits + 1
+        } elif c != 46 and ((c != 102 and c != 70) or i != e - 1) {
+            return 0
+        }
+        i = i + 1
+    }
+    if digits < 1 {
+        return 0
+    }
+    return 1
+}
+
+# Real operand of `c64(re)`, `c64(re, 0)`, `c128(re)` or `c128(re, 0)`,
+# else AST_NONE. A non-zero imag stays a strict complex value (#630).
+function flowc_cgen_complex_ctor_real_operand(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE or arena.nodes[id].kind != AST_CALL {
+        return AST_NONE
+    }
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    if flowc_cgen_span_is(src, ns, ne, "c64") == 0 and flowc_cgen_span_is(src, ns, ne, "c128") == 0 {
+        return AST_NONE
+    }
+    let args: i32 = arena.nodes[id].a
+    let n: i32 = flowc_ast_chain_len(arena, args)
+    if n == 1 {
+        return args
+    }
+    if n == 2 {
+        let im: i32 = arena.nodes[args].next
+        if flowc_cgen_is_literal_pos_zero(arena, src, im) == 1 {
+            return args
+        }
+    }
+    return AST_NONE
+}
+
+# 1 when the call names the c64 constructor.
+function flowc_cgen_call_is_c64(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE or arena.nodes[id].kind != AST_CALL {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "c64")
+}
+
+# Complex × real-scalar as two real multiplies/divides so clang does not
+# emit `__mulsc3` / `__muldc3` (#630, #729). Temps keep each operand
+# single-evaluation.
+function flowc_cgen_emit_complex_scale_real(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, c_expr: i32, r_expr: i32, is_c64: i32, op: i32) {
+    let f_suffix: string = if is_c64 == 1 { "f" } else { "" }
+    let c_cast: string = if is_c64 == 1 { "float" } else { "double" }
+    flowc_cgen_puts(w, "(__extension__ ({ __typeof__(")
+    flowc_cgen_emit_expr(w, arena, src, c_expr)
+    flowc_cgen_puts(w, ") __c = (")
+    flowc_cgen_emit_expr(w, arena, src, c_expr)
+    flowc_cgen_puts(w, "); __typeof__(")
+    flowc_cgen_emit_expr(w, arena, src, r_expr)
+    flowc_cgen_puts(w, ") __r = (")
+    flowc_cgen_emit_expr(w, arena, src, r_expr)
+    flowc_cgen_puts(w, "); ((")
+    flowc_cgen_puts(w, c_cast)
+    flowc_cgen_puts(w, ")(creal")
+    flowc_cgen_puts(w, f_suffix)
+    flowc_cgen_puts(w, "(__c) ")
+    flowc_cgen_emit_binop_op(w, op)
+    flowc_cgen_puts(w, " __r) + (")
+    flowc_cgen_puts(w, c_cast)
+    flowc_cgen_puts(w, ")(cimag")
+    flowc_cgen_puts(w, f_suffix)
+    flowc_cgen_puts(w, "(__c) ")
+    flowc_cgen_emit_binop_op(w, op)
+    flowc_cgen_puts(w, " __r) * _Complex_I); }))")
+}
+
 function flowc_cgen_emit_binop_op(w: ptr<CgenBuf>, op: i32) {
     if op == TOK_PLUS {
         flowc_cgen_puts(w, " + ")
@@ -6224,25 +6353,51 @@ function flowc_cgen_len_hoist_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return base
 }
 
-function flowc_cgen_is_proven_span_index(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
-    if w[0].bounds_loop_start < 0 or w[0].bounds_span_start < 0 {
+# Compile-time extent of a `span<T, N>` / `&[T; N]` variable, else 0.
+function flowc_cgen_span_static_extent(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32) -> i32 {
+    if arena.nodes[base].kind != AST_IDENT {
         return 0
     }
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, base)
+    if decl == AST_NONE {
+        return 0
+    }
+    let ty: i32 = arena.nodes[decl].a
+    if flowc_cgen_type_is_span(arena, src, ty) == 0 {
+        return 0
+    }
+    if arena.nodes[ty].ival > 0 {
+        return arena.nodes[ty].ival
+    }
+    return 0
+}
+
+function flowc_cgen_is_proven_span_index(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let base: i32 = arena.nodes[id].a
     let idx: i32 = arena.nodes[id].b
     if base == AST_NONE or idx == AST_NONE {
         return 0
     }
-    if arena.nodes[base].kind != AST_IDENT or arena.nodes[idx].kind != AST_IDENT {
+    if arena.nodes[base].kind != AST_IDENT {
         return 0
     }
-    if flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, w[0].bounds_span_start, w[0].bounds_span_end) == 0 {
-        return 0
+    if w[0].bounds_loop_start >= 0 and w[0].bounds_span_start >= 0 {
+        if arena.nodes[idx].kind == AST_IDENT {
+            if flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, w[0].bounds_span_start, w[0].bounds_span_end) == 1 {
+                if flowc_cgen_span_eq(src, arena.nodes[idx].name_start, arena.nodes[idx].name_end, w[0].bounds_loop_start, w[0].bounds_loop_end) == 1 {
+                    return 1
+                }
+            }
+        }
     }
-    if flowc_cgen_span_eq(src, arena.nodes[idx].name_start, arena.nodes[idx].name_end, w[0].bounds_loop_start, w[0].bounds_loop_end) == 0 {
-        return 0
+    # A literal index on a static-extent span is in range when 0 <= i < N.
+    let ext: i32 = flowc_cgen_span_static_extent(w, arena, src, base)
+    if ext > 0 and arena.nodes[idx].kind == AST_INT {
+        if arena.nodes[idx].ival >= 0 and arena.nodes[idx].ival < ext {
+            return 1
+        }
     }
-    return 1
+    return 0
 }
 
 # A checked read `base[idx]`: `(((unsigned)(i) < N) ? a[i] : (..., a[0]))`
@@ -6742,50 +6897,64 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
         }
-        # Complex * real scalar multiplication and division (#630).
-        # A * R -> c64(crealf(A) * R, cimagf(A) * R) to avoid C99 complex promotion.
+        # Complex × real-scalar (#630, #729): typed `c64 * f32` / `c128 * f64`
+        # and `z * c64(r, 0)` / `c64(r)` (literal-zero imag). General
+        # `c64 * c64` stays a C99 complex multiply.
         if op == TOK_STAR or op == TOK_SLASH {
-            let lt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
-            let rt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].b)
+            let left: i32 = arena.nodes[id].a
+            let right: i32 = arena.nodes[id].b
+            let lt: i32 = flowc_cgen_expr_type_node(w, arena, src, left)
+            let rt: i32 = flowc_cgen_expr_type_node(w, arena, src, right)
             let lc: i32 = flowc_cgen_ty_is_complex_name(arena, src, lt)
             let rc: i32 = flowc_cgen_ty_is_complex_name(arena, src, rt)
             let lr: i32 = flowc_cgen_ty_is_float_name(arena, src, lt) | flowc_cgen_ty_is_int_name(arena, src, lt)
             let rr: i32 = flowc_cgen_ty_is_float_name(arena, src, rt) | flowc_cgen_ty_is_int_name(arena, src, rt)
-            if (lc == 1 and rr == 1) or (lr == 1 and rc == 1 and op == TOK_STAR) {
+            let ctor_r: i32 = flowc_cgen_complex_ctor_real_operand(arena, src, right)
+            let ctor_l: i32 = flowc_cgen_complex_ctor_real_operand(arena, src, left)
+            let mut scale_right: i32 = 0
+            let mut scale_left: i32 = 0
+            if lc == 1 and rr == 1 {
+                scale_right = 1
+            }
+            if lc == 1 and ctor_r != AST_NONE {
+                scale_right = 1
+            }
+            if lr == 1 and rc == 1 and op == TOK_STAR {
+                scale_left = 1
+            }
+            if ctor_l != AST_NONE and rc == 1 and op == TOK_STAR {
+                scale_left = 1
+            }
+            if scale_right == 1 or scale_left == 1 {
+                let mut c_expr: i32 = left
+                let mut r_expr: i32 = right
                 let mut cty: i32 = lt
-                let mut is_c64: i32 = 0
-                if lc == 1 {
-                    if flowc_cgen_span_is(src, arena.nodes[lt].name_start, arena.nodes[lt].name_end, "c64") == 1 { is_c64 = 1 }
+                let mut ctor: i32 = right
+                if scale_right == 1 {
+                    if ctor_r != AST_NONE {
+                        r_expr = ctor_r
+                    }
                 } else {
+                    c_expr = right
                     cty = rt
-                    if flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "c64") == 1 { is_c64 = 1 }
+                    ctor = left
+                    if ctor_l != AST_NONE {
+                        r_expr = ctor_l
+                    } else {
+                        r_expr = left
+                    }
                 }
-                let c_expr: i32 = if lc == 1 { arena.nodes[id].a } else { arena.nodes[id].b }
-                let r_expr: i32 = if lc == 1 { arena.nodes[id].b } else { arena.nodes[id].a }
-                let f_suffix: string = if is_c64 == 1 { "f" } else { "" }
-                let c_cast: string = if is_c64 == 1 { "float" } else { "double" }
-
-                flowc_cgen_puts(w, "(__extension__ ({ __typeof__(")
-                flowc_cgen_emit_expr(w, arena, src, c_expr)
-                flowc_cgen_puts(w, ") __c = (")
-                flowc_cgen_emit_expr(w, arena, src, c_expr)
-                flowc_cgen_puts(w, "); __typeof__(")
-                flowc_cgen_emit_expr(w, arena, src, r_expr)
-                flowc_cgen_puts(w, ") __r = (")
-                flowc_cgen_emit_expr(w, arena, src, r_expr)
-                flowc_cgen_puts(w, "); ((")
-                flowc_cgen_puts(w, c_cast)
-                flowc_cgen_puts(w, ")(creal")
-                flowc_cgen_puts(w, f_suffix)
-                flowc_cgen_puts(w, "(__c) ")
-                flowc_cgen_emit_binop_op(w, op)
-                flowc_cgen_puts(w, " __r) + (")
-                flowc_cgen_puts(w, c_cast)
-                flowc_cgen_puts(w, ")(cimag")
-                flowc_cgen_puts(w, f_suffix)
-                flowc_cgen_puts(w, "(__c) ")
-                flowc_cgen_emit_binop_op(w, op)
-                flowc_cgen_puts(w, " __r) * _Complex_I); }))")
+                let mut is_c64: i32 = 0
+                if cty != AST_NONE and flowc_cgen_ty_is_complex_name(arena, src, cty) == 1 {
+                    if flowc_cgen_span_is(src, arena.nodes[cty].name_start, arena.nodes[cty].name_end, "c64") == 1 {
+                        is_c64 = 1
+                    }
+                } else {
+                    if flowc_cgen_call_is_c64(arena, src, ctor) == 1 {
+                        is_c64 = 1
+                    }
+                }
+                flowc_cgen_emit_complex_scale_real(w, arena, src, c_expr, r_expr, is_c64, op)
                 return
             }
         }
@@ -9084,11 +9253,23 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
             return 0
         }
     }
+    let disjoint: i32 = flowc_region_disjoint(arena, src, w[0].cur_fn, dst, srcb)
+    if disjoint == 1 {
+        flowc_cgen_puts(w, "  /* region: disjoint */\n")
+    } else {
+        flowc_cgen_puts(w, "  /* region: unproven */\n")
+    }
     flowc_cgen_puts(w, "  if ((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ") > (")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-    flowc_cgen_puts(w, ")) {\n    memmove((void*)(&(")
+    flowc_cgen_puts(w, ")) {\n    ")
+    if disjoint == 1 {
+        flowc_cgen_puts(w, "memcpy")
+    } else {
+        flowc_cgen_puts(w, "memmove")
+    }
+    flowc_cgen_puts(w, "((void*)(&(")
     flowc_cgen_emit_expr(w, arena, src, dst)
     flowc_cgen_puts(w, ")[")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -9328,6 +9509,35 @@ function flowc_cgen_line_directive(w: ptr<CgenBuf>, src: ptr<u8>, pos: i32) {
     flowc_cgen_puts(w, "\"\n")
 }
 
+# Opt-in remarks for the #694 region-inference slice. Backends that emit
+# restrict (#731) consume the same proofs; these comments name the region
+# so tests can check the analysis without depending on restrict spelling.
+function flowc_cgen_region_let_remark(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if flowc_region_report_on() == 0 {
+        return
+    }
+    if w[0].cur_fn == AST_NONE {
+        return
+    }
+    let r: Region = flowc_region_of_binding(arena, src, w[0].cur_fn, id)
+    flowc_cgen_puts(w, "  /* region[")
+    if r.kind == RI_LOCAL {
+        flowc_cgen_puts(w, "local")
+    } elif r.kind == RI_PARAM {
+        flowc_cgen_puts(w, "param")
+    } else {
+        flowc_cgen_puts(w, "unknown")
+    }
+    flowc_cgen_puts(w, "]: `")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, "` */\n")
+    if flowc_region_restrict_candidate(arena, src, w[0].cur_fn, id) == 1 {
+        flowc_cgen_puts(w, "  /* region[restrict-candidate]: `")
+        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_puts(w, "` */\n")
+    }
+}
+
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
@@ -9337,6 +9547,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     }
     let kind: i32 = arena.nodes[id].kind
     if kind == AST_LET {
+        flowc_cgen_region_let_remark(w, arena, src, id)
         # Stage-A: emit annotated type (ptr/struct/primitives/array); default int32_t.
         # array<T,N> name → T name[N]; ptr lets wrap init in (T*)(expr).
         # No annotation → infer from the initialiser (see flowc_cgen_infer_type_node).
@@ -11834,9 +12045,11 @@ export function flowc_cgen_library_mode() -> i32 {
 
 # Opt-in runtime memory profiler (#740). Dormant unless FLOW_MEM_PROFILE is
 # set when the program starts: one predictable branch per routed allocation
-# and no output otherwise. Reports heap count/bytes, peak live heap, peak
-# RSS, compiler-temp bytes and copy volume. Stack/arena promotion and
-# per-site copy attribution stay labelled deferred (need #669).
+# and no output otherwise. Init is lazy on the first routed allocation so
+# a program that never allocates pays no constructor (#746). Reports heap
+# count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy
+# volume. Stack/arena promotion and per-site copy attribution stay labelled
+# deferred (need #669).
 function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "#include <sys/resource.h>\n")
     flowc_cgen_puts(w, "#ifndef FLOWC_MEM_PROFILE\n#define FLOWC_MEM_PROFILE\n")
@@ -11923,9 +12136,6 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  e = getenv(\"FLOW_MEM_PROFILE\");\n")
     flowc_cgen_puts(w, "  flow_mem_profile_on = (e != 0 && e[0] != 0 && !(e[0] == '0' && e[1] == 0));\n")
     flowc_cgen_puts(w, "  if (flow_mem_profile_on && !flow_mem_report_set) { flow_mem_report_set = 1; atexit(flow_mem_report); }\n}\n")
-    flowc_cgen_puts(w, "#if defined(__GNUC__)\n")
-    flowc_cgen_puts(w, "__attribute__((constructor)) static void flow_mem_profile_ctor(void) { flow_mem_profile_init(); }\n")
-    flowc_cgen_puts(w, "#endif\n")
     flowc_cgen_puts(w, "#endif\n")
 }
 
@@ -12277,11 +12487,14 @@ export function flowc_cgen_emit_sigs(
     if arena.nodes[root].kind != AST_PROGRAM {
         return 0 - 1
     }
+    let t_low: i64 = flowc_cgen_prof_begin()
     flowc_proof_erase(arena, root)
     # Record update lowers here (flowc_cgen_emit_expr); the rest refuse.
     if flowc_ast_reject_unsupported_but(arena, src, "flowc cgen", AST_RECORD_UPDATE) != 0 {
+        flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_low)
         return 0 - 1
     }
+    flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_low)
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
     w.sigs = sigs
     w.sigs_len = sigs_len
@@ -12351,7 +12564,9 @@ export function flowc_cgen_emit_sigs(
         }
     }
     # Ordering provenance for `|> sort` / `|> find` plan selection.
+    let t_plan: i64 = flowc_cgen_prof_begin()
     flowc_cgen_plan_init(&w, arena, src)
+    flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_plan)
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
@@ -12833,7 +13048,9 @@ while item != AST_NONE {
 
     # Pass 1.6: monomorphization: emit specialized generic structs and functions.
     # Scan all AST nodes for type-arg instantiations and emit specialized C.
+    let t_mono: i64 = flowc_cgen_prof_begin()
     flowc_cgen_emit_mono(&w, arena, src, root)
+    flowc_cgen_prof_end(CGEN_PROF_MONO, t_mono)
 
     # Pass 1.65: the remaining closure typedefs, after the types they name.
     flowc_cgen_emit_fat_typedefs(&w, arena, src, 1)

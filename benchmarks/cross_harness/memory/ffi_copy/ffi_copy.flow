@@ -1,0 +1,46 @@
+# #728 memory row: explicit O(n) fallback, recorded as a copy (issue #737).
+
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+")
+
+extern {
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+}
+
+function main() -> i32 {
+    let n: i32 = 1024
+    let src: ptr<i8> = ffi_alloc(n as i64)
+    let dst: ptr<i8> = ffi_alloc(n as i64)
+    if (src as i64) == 0 or (dst as i64) == 0 {
+        return 1
+    }
+    src[0] = 1
+    src[n - 1] = 9
+    let st: i32 = ffi_buffer_copy_explicit(dst as ptr<void>, src as ptr<void>, n as i64)
+    if st != FFI_OK {
+        ffi_free(src)
+        ffi_free(dst)
+        return 2
+    }
+    let _m: ptr<u8> = memcpy(dst as ptr<u8>, src as ptr<u8>, n as i64)
+    if dst[0] != 1 or dst[n - 1] != 9 {
+        ffi_free(src)
+        ffi_free(dst)
+        return 3
+    }
+    let mut inst: FFIInstrumentation = ffi_instrumentation_new()
+    ffi_record_copy(&inst, n as i64)
+    if inst.total_bytes_copied != (n as i64) {
+        ffi_free(src)
+        ffi_free(dst)
+        return 4
+    }
+    ffi_free(src)
+    ffi_free(dst)
+    return 0
+}

@@ -1123,7 +1123,8 @@ callback  <  frame  <  session  <  application
 in, and on a module static, where it declares the domain of that storage
 (default `application`). It is the only attribute allowed on a static. A value
 takes its domain from its allocation site: a local belongs to the enclosing
-function's domain, a static to its own.
+function's domain, a static to its own, and memory from `arena_alloc` /
+`frame_alloc_*` of a module-static arena to that arena's declared domain.
 
 ```flow-pseudocode
 @lifetime(application)
@@ -1157,13 +1158,16 @@ inside it. The annotation is erased after checking: every domain lowers to the
 same C.
 
 **Not checked** (documented rather than half-enforced): escape through a call,
-a struct field, a closure, or heap storage; the domain of arena-allocated
-memory; domains on parameters or in types. Cross-module calls consult a
-compact effect/lifetime summary for each public function (#765); see
+a struct field, a closure, or heap storage; intra-function use after
+`arena_reset` / `frame_begin`; domains on parameters or in types.
+Cross-module calls consult a compact effect/lifetime summary for each
+public function (#765); see
 [lifetime-domains.md](language/lifetime-domains.md).
 
-**Status:** ✅ C-backend type checker. Tests: `tests/unit/test_lifetime_domains.py`,
-`tests/lang/test_lifetime_domains.flow`. Example:
+**Status:** ✅ C-backend type checker. Tests:
+`compiler/fixtures/typecheck_rules/domain_arena_*.flow`,
+`tests/lang/test_lifetime_domains.flow`,
+`tests/lang/test_arena_domains.flow`. Example:
 `examples/audio/lifetime_domains.flow`.
 
 ---

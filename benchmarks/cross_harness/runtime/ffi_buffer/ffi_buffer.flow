@@ -1,0 +1,55 @@
+# #728 row: zero-copy FFIBuffer handoff of a contiguous buffer (issue #737).
+
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+__attribute__((noinline)) int64_t ffi_h_sum(int64_t *ptr, int64_t n) {
+    int64_t sum = 0;
+    int64_t i;
+    for (i = 0; i < n; i++) { sum += ptr[i]; }
+    return sum;
+}
+")
+
+extern {
+    function ffi_h_sum(ptr: ptr<i64>, n: i64) -> i64
+}
+
+function main() -> i32 {
+    let n: i32 = 4096
+    let raw: ptr<i8> = ffi_alloc((n as i64) * 8)
+    if (raw as i64) == 0 {
+        return 1
+    }
+    let p: ptr<i64> = raw as ptr<i64>
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = i as i64
+        i = i + 1
+    }
+    let have: FFILayout = ffi_layout_contiguous(8, 8)
+    let handoff: FFIHandoff = ffi_buffer_try_borrow(raw as ptr<void>, n as i64, have, have)
+    if handoff.status != FFI_OK {
+        ffi_free(raw)
+        return 2
+    }
+    if ffi_buffer_addr(handoff.buf) != (raw as i64) {
+        ffi_free(raw)
+        return 3
+    }
+    let view: ptr<i64> = handoff.buf.data as ptr<i64>
+    let mut sum: i64 = 0
+    let mut r: i32 = 0
+    while r < 64 {
+        sum = sum + ffi_h_sum(view, handoff.buf.len)
+        r = r + 1
+    }
+    ffi_free(raw)
+    if sum <= 0 {
+        return 4
+    }
+    return 0
+}

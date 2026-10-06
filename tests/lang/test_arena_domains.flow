@@ -1,0 +1,78 @@
+# Domain-bound arena allocation (#690, docs/language/lifetime-domains.md).
+#
+# Accepted cases: a module-static arena pointer's memory may be stored in a
+# location that lives no longer than the arena's own declared @lifetime, and
+# a parameter arena in an unannotated function stays on the v0 writer-domain
+# rule (no false positive). Rejected programs live in
+# compiler/fixtures/typecheck_rules/domain_arena_*.flow.
+#
+# Module statics are ptr<Arena> because value-typed struct statics are not
+# representable. Exit 0 on success.
+
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+function arena_alloc(a: ptr<Arena>, size: i64) -> ptr<void> {
+    if a == null {
+        return null
+    }
+    let off: i64 = a[0].offset
+    let base: ptr<i8> = a[0].buffer
+    if base == null {
+        return null
+    }
+    a[0].offset = off + size
+    return base + off
+}
+
+function arena_reset(a: ptr<Arena>) -> void {
+    if a == null {
+        return
+    }
+    a[0].offset = 0
+}
+
+@lifetime(application)
+let mut app_arena: ptr<Arena> = null
+
+@lifetime(application)
+let mut app_cache: ptr<void> = null
+
+@lifetime(session)
+let mut sess_arena: ptr<Arena> = null
+
+@lifetime(session)
+let mut sess_cache: ptr<void> = null
+
+@lifetime(frame)
+let mut frame_arena: ptr<Arena> = null
+
+function store_application() -> void {
+    app_cache = arena_alloc(app_arena, 8)
+}
+
+function store_session() -> void {
+    sess_cache = arena_alloc(sess_arena, 8)
+}
+
+@lifetime(frame)
+function bump_frame_local() -> void {
+    arena_reset(frame_arena)
+    let mut p: ptr<void> = null
+    p = arena_alloc(frame_arena, 8)
+}
+
+function from_param(a: ptr<Arena>) -> ptr<void> {
+    return arena_alloc(a, 8)
+}
+
+function main() -> i32 {
+    store_application()
+    store_session()
+    bump_frame_local()
+    from_param(app_arena)
+    return 0
+}
