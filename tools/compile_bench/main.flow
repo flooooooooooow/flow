@@ -4,7 +4,7 @@
 # emit, the C toolchain, and the program run, for tiny/medium/large
 # programs. When the compiler under test understands FLOWC_PROFILE=json
 # it also reports per-phase timings (parse, import resolution, typecheck,
-# codegen, plus the still-zero monomorphize/lowering slots).
+# monomorphize, lowering, codegen, incremental_cache).
 #
 #   ./flow tool compile_bench                 three stock programs, 5 reps
 #   ./flow tool compile_bench --repeat 3 prog.flow ...
@@ -17,11 +17,11 @@
 # per program plus, after the stock set, a summary that names the top
 # fixed and scaling costs. Fields: program, loc, emit_ms, cc_ms, run_ms,
 # total_ms, cold_total_ms, warm_total_ms, reps, loc_per_emit_s, and when
-# present profile (the [flow-profile] object) plus phase_*_ms, and
-# bin_bytes of the linked program. With --python-code, each row also
+# present profile (the [flow-profile] object) plus phase_*_ms, and bin_bytes of the linked program. With --python-code, each row also
 # reports the matching `python3 -c` minimum as python_ms and
 # run_vs_python_x100. #746 uses those fields as the machine-readable
-# cold-start comparison against equivalent Python invocations.
+# cold-start comparison against equivalent Python invocations. Stock runs
+# also print a Tier-1 matrix row and >10% bottleneck follow-ups.
 #
 # Exit codes: 0 pass, 1 a stage failed, 2 bad arguments or setup.
 
@@ -130,6 +130,26 @@ function timed_emit(argv: ptr<ProcStrs>, env: ptr<ProcStrs>, err_path: string) -
     return r.elapsed_ms
 }
 
+# Linked optimization issue for a phase that is a >10% bottleneck (#735).
+function followup_issue(name: string) -> string {
+    if s_eq(name, "parse") or s_eq(name, "import_resolution") or s_eq(name, "incremental_cache") or s_eq(name, "source_read") or s_eq(name, "typecheck") or s_eq(name, "monomorphize") {
+        return "#736"
+    }
+    if s_eq(name, "codegen") or s_eq(name, "lowering") or s_eq(name, "emit") {
+        return "#729"
+    }
+    if s_eq(name, "cc") or s_eq(name, "external_compile") {
+        return "#728"
+    }
+    if s_eq(name, "startup") or s_eq(name, "run") or s_eq(name, "process_launch") {
+        return "#746"
+    }
+    if s_eq(name, "mlir") or s_eq(name, "jit") {
+        return "#748"
+    }
+    return ""
+}
+
 function append_phase(line: string, profile: string, name: string) -> string {
     let ms: i64 = phase_ms(profile, name)
     if ms < 0 {
@@ -158,11 +178,11 @@ function main() -> i32 {
     let mut repeat: i32 = 5
     let mut want_host: bool = false
     let mut compiler: string = ""
-    let mut python_code: string = ""
     let progs: ptr<ProcStrs> = proc_strs_new()
     let mut stock: bool = true
 
     let mut i: i32 = 1
+    let mut python_code: string = ""
     while i < proc_argc() {
         let a: string = proc_argv(i)
         if s_eq(a, "--repeat") {
@@ -284,6 +304,10 @@ function main() -> i32 {
     let tcs: ptr<ProcStrs> = proc_strs_new()
     let gens: ptr<ProcStrs> = proc_strs_new()
     let startups: ptr<ProcStrs> = proc_strs_new()
+    let imports: ptr<ProcStrs> = proc_strs_new()
+    let monos: ptr<ProcStrs> = proc_strs_new()
+    let lows: ptr<ProcStrs> = proc_strs_new()
+    let caches: ptr<ProcStrs> = proc_strs_new()
 
     let mut rc: i32 = 0
     i = 0
@@ -379,9 +403,6 @@ function main() -> i32 {
                 line = line + ", \"run_vs_python_x100\": " + i64_str(run_min * 100 / python_min)
             }
         }
-        if cc_min >= 0 and exists(out_bin) {
-            line = line + ", \"bin_bytes\": " + i64_str(file_size(out_bin))
-        }
         line = line + ", \"reps\": " + i64_str(repeat as i64)
         if loc > 0 and emit_min > 0 {
             line = line + ", \"loc_per_emit_s\": " + i64_str((loc * 1000) / emit_min)
@@ -393,7 +414,10 @@ function main() -> i32 {
             line = append_phase(line, warm_profile, "parse")
             line = append_phase(line, warm_profile, "import_resolution")
             line = append_phase(line, warm_profile, "typecheck")
+            line = append_phase(line, warm_profile, "monomorphize")
+            line = append_phase(line, warm_profile, "lowering")
             line = append_phase(line, warm_profile, "codegen")
+            line = append_phase(line, warm_profile, "incremental_cache")
         }
         if s_len(cold_profile) > 0 and not s_eq(cold_profile, warm_profile) {
             line = line + ", \"cold_profile\": " + cold_profile
@@ -410,10 +434,14 @@ function main() -> i32 {
         proc_strs_push(tcs, i64_str(phase_ms(warm_profile, "typecheck")))
         proc_strs_push(gens, i64_str(phase_ms(warm_profile, "codegen")))
         proc_strs_push(startups, i64_str(phase_ms(warm_profile, "startup")))
+        proc_strs_push(imports, i64_str(phase_ms(warm_profile, "import_resolution")))
+        proc_strs_push(monos, i64_str(phase_ms(warm_profile, "monomorphize")))
+        proc_strs_push(lows, i64_str(phase_ms(warm_profile, "lowering")))
+        proc_strs_push(caches, i64_str(phase_ms(warm_profile, "incremental_cache")))
     }
 
-    if stock and proc_strs_len(names) >= 2 {
-        print_summary(names, locs, totals, emits, ccs, parses, tcs, gens, startups)
+    if proc_strs_len(names) >= 1 {
+        print_summary(names, locs, totals, emits, ccs, parses, tcs, gens, startups, imports, monos, lows, caches)
     }
     return rc
 }
@@ -429,6 +457,42 @@ function abs_i64(v: i64) -> i64 {
     return v
 }
 
+function bottleneck_item(program: string, phase: string, ms: i64, total: i64, of: string) -> string {
+    if ms < 0 or total <= 0 {
+        return ""
+    }
+    let pct: i64 = (ms * 100) / total
+    if pct < 10 {
+        return ""
+    }
+    let issue: string = followup_issue(phase)
+    return "{\"program\": \"" + program + "\", \"phase\": \"" + phase + "\", \"ms\": " + i64_str(ms) + ", \"pct\": " + i64_str(pct) + ", \"of\": \"" + of + "\", \"followup\": \"" + issue + "\"}"
+}
+
+function append_bottleneck(list: string, item: string) -> string {
+    if s_len(item) == 0 {
+        return list
+    }
+    if s_len(list) > 0 {
+        return list + ", " + item
+    }
+    return item
+}
+
+function tier1_slot(os: string, arch: string) -> string {
+    let is_linux: bool = s_eq(os, "Linux") or s_eq(os, "linux")
+    let is_darwin: bool = s_eq(os, "Darwin") or s_eq(os, "darwin")
+    let x64: bool = s_eq(arch, "x86_64") or s_eq(arch, "amd64")
+    let arm: bool = s_eq(arch, "arm64") or s_eq(arch, "aarch64")
+    if is_linux and x64 {
+        return "linux-x86_64"
+    }
+    if is_darwin and arm {
+        return "macos-arm64"
+    }
+    return "other"
+}
+
 # Name the phase whose time changes least vs most with program size.
 function print_summary(
     names: ptr<ProcStrs>,
@@ -439,7 +503,11 @@ function print_summary(
     parses: ptr<ProcStrs>,
     tcs: ptr<ProcStrs>,
     gens: ptr<ProcStrs>,
-    startups: ptr<ProcStrs>
+    startups: ptr<ProcStrs>,
+    imports: ptr<ProcStrs>,
+    monos: ptr<ProcStrs>,
+    lows: ptr<ProcStrs>,
+    caches: ptr<ProcStrs>
 ) {
     let n: i32 = proc_strs_len(names)
     let last: i32 = n - 1
@@ -474,6 +542,18 @@ function print_summary(
     proc_strs_push(keys, "startup")
     proc_strs_push(tiny, proc_strs_get(startups, 0))
     proc_strs_push(large, proc_strs_get(startups, last))
+    proc_strs_push(keys, "import_resolution")
+    proc_strs_push(tiny, proc_strs_get(imports, 0))
+    proc_strs_push(large, proc_strs_get(imports, last))
+    proc_strs_push(keys, "monomorphize")
+    proc_strs_push(tiny, proc_strs_get(monos, 0))
+    proc_strs_push(large, proc_strs_get(monos, last))
+    proc_strs_push(keys, "lowering")
+    proc_strs_push(tiny, proc_strs_get(lows, 0))
+    proc_strs_push(large, proc_strs_get(lows, last))
+    proc_strs_push(keys, "incremental_cache")
+    proc_strs_push(tiny, proc_strs_get(caches, 0))
+    proc_strs_push(large, proc_strs_get(caches, last))
 
     let mut top_fixed: string = "cc"
     let mut top_scale: string = "emit"
@@ -504,15 +584,66 @@ function print_summary(
         k = k + 1
     }
 
+    let os: string = uname_s()
+    let arch: string = uname_m()
+    let slot: string = tier1_slot(os, arch)
+    let mut tier1: string = "false"
+    if not s_eq(slot, "other") {
+        tier1 = "true"
+    }
+
+    let hello: string = proc_strs_get(names, 0)
+    let large_name: string = proc_strs_get(names, last)
+    let hello_total: i64 = s_to_i64(proc_strs_get(totals, 0))
+    let large_total: i64 = s_to_i64(proc_strs_get(totals, last))
+    let hello_emit: i64 = s_to_i64(proc_strs_get(emits, 0))
+    let large_emit: i64 = s_to_i64(proc_strs_get(emits, last))
+
+    let mut bottlenecks: string = ""
+    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "cc", s_to_i64(proc_strs_get(ccs, 0)), hello_total, "compile_to_result"))
+    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "emit", hello_emit, hello_total, "compile_to_result"))
+    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "import_resolution", s_to_i64(proc_strs_get(imports, 0)), hello_emit, "emit"))
+    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "parse", s_to_i64(proc_strs_get(parses, 0)), hello_emit, "emit"))
+    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "codegen", s_to_i64(proc_strs_get(gens, 0)), hello_emit, "emit"))
+    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "incremental_cache", s_to_i64(proc_strs_get(caches, 0)), hello_emit, "emit"))
+    if last > 0 {
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "cc", s_to_i64(proc_strs_get(ccs, last)), large_total, "compile_to_result"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "emit", large_emit, large_total, "compile_to_result"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "codegen", s_to_i64(proc_strs_get(gens, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "typecheck", s_to_i64(proc_strs_get(tcs, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "monomorphize", s_to_i64(proc_strs_get(monos, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "lowering", s_to_i64(proc_strs_get(lows, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "incremental_cache", s_to_i64(proc_strs_get(caches, last)), large_emit, "emit"))
+    }
+
     let mut line: string = "{\"summary\": true"
-    line = line + ", \"hello_program\": \"" + proc_strs_get(names, 0) + "\""
+    line = line + ", \"hello_program\": \"" + hello + "\""
     line = line + ", \"hello_total_ms\": " + proc_strs_get(totals, 0)
-    line = line + ", \"large_program\": \"" + proc_strs_get(names, last) + "\""
+    line = line + ", \"large_program\": \"" + large_name + "\""
     line = line + ", \"large_total_ms\": " + proc_strs_get(totals, last)
     line = line + ", \"top_fixed\": \"" + top_fixed + "\""
     line = line + ", \"top_scaling\": \"" + top_scale + "\""
+    line = line + ", \"os\": \"" + os + "\""
+    line = line + ", \"arch\": \"" + arch + "\""
+    line = line + ", \"tier1_slot\": \"" + slot + "\""
+    line = line + ", \"tier1\": " + tier1
+    line = line + ", \"bottlenecks\": [" + bottlenecks + "]"
     line = line + ", \"schema\": \"flow-compile-profile/1\"}"
     outln(line)
+
+    let mut matrix: string = "{\"matrix\": true, \"schema\": \"flow-compile-profile-matrix/1\""
+    matrix = matrix + ", \"os\": \"" + os + "\", \"arch\": \"" + arch + "\""
+    matrix = matrix + ", \"tier1_slot\": \"" + slot + "\", \"tier1\": " + tier1
+    matrix = matrix + ", \"sizes\": [\"tiny\", \"medium\", \"large\"]"
+    matrix = matrix + ", \"tiny\": \"" + hello + "\", \"tiny_total_ms\": " + proc_strs_get(totals, 0)
+    if n >= 2 {
+        matrix = matrix + ", \"medium\": \"" + proc_strs_get(names, 1) + "\", \"medium_total_ms\": " + proc_strs_get(totals, 1)
+    }
+    matrix = matrix + ", \"large\": \"" + large_name + "\", \"large_total_ms\": " + proc_strs_get(totals, last)
+    matrix = matrix + ", \"top_fixed\": \"" + top_fixed + "\", \"top_scaling\": \"" + top_scale + "\""
+    matrix = matrix + ", \"bottlenecks\": [" + bottlenecks + "]"
+    matrix = matrix + ", \"notes\": \"Live source is ./flow tool compile_bench. Do not compare stored timings across machines as regressions (#727).\"}"
+    outln(matrix)
 }
 
 function argv_to_strs(a: string) -> ptr<ProcStrs> {
