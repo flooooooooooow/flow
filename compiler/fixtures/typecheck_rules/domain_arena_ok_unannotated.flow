@@ -1,0 +1,26 @@
+# expect: ok
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+function arena_alloc(a: ptr<Arena>, size: i64) -> ptr<void> {
+    let off: i64 = a[0].offset
+    let base: ptr<i8> = a[0].buffer
+    a[0].offset = off + size
+    return base + off
+}
+
+let mut fa: ptr<Arena> = null
+
+@lifetime(application)
+let mut cache: ptr<void> = null
+
+function build() -> void {
+    cache = arena_alloc(fa, 64)
+}
+
+function main() -> i32 {
+    return 0
+}
