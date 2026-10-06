@@ -71,7 +71,8 @@ export SOURCE_DATE_EPOCH TZ=UTC LC_ALL=C
 find "$tmp/package" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 filename="flow_$version-1_all.deb"
 dpkg-deb --root-owner-group --build -Zgzip "$tmp/package" "$out/$filename"
-sha256sum "$out/$filename" | sed "s@  $out/@  @" > "$out/SHA256SUMS.deb.txt"
+digest="$(sha256sum "$out/$filename" | cut -d" " -f1)"
+printf '%s  %s\n' "$digest" "$filename" > "$out/SHA256SUMS.deb.txt"
 printf 'source-commit: %s\nsource-version: %s\npublished: false\n' "$commit" "$version" > "$out/deb-provenance.txt"
 echo "Wrote $out/$filename"
 echo "Wrote $out/SHA256SUMS.deb.txt (local package, not a published release)"
