@@ -145,4 +145,4 @@ a GIF for every entry.
 
 macOS for the live window and recorded Metal output; `--emit-only` works anywhere.
 
-Related: [Photoreal FSL Gallery](../demos/shaders.md) · [Demo Showcase](../demos/overview.md) · [Recording contract](../demos/README.md)
+Related: [Photoreal FSL Gallery](../demos/shaders.md) · [Demo Showcase](../demos/overview.md) · [Recording contract](../demos/README.md) · [vgpu conformance](../gpu/vgpu-conformance.md)
