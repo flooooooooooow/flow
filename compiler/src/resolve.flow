@@ -2503,7 +2503,10 @@ function flowc_parse_cached(
         return flowc_parse_program(p)
     }
     let mut clen: i32 = flowc_ast_cache_dir(cache_dir, 512)
-    if clen <= 0 {
+    # The key suffix needs "/" + 16 hex bytes + ".ast" + NUL (22 bytes).
+    # A cache root too long to hold it parses without the cache instead of
+    # writing past the 512-byte buffer (#736).
+    if clen <= 0 or clen + 22 > 512 {
         free(cache_dir)
         let t_parse: i64 = flowc_prof_span_begin()
         let root0: i32 = flowc_parse_program(p)
@@ -2529,7 +2532,8 @@ function flowc_parse_cached(
             if header[0] == FLOWC_AST_CACHE_MAGIC and header[1] == FLOWC_AST_CACHE_SCHEMA and header[2] == FLOWC_AST_NODE_SIZE {
                 let ast_len: i32 = header[3]
                 let root: i32 = header[4]
-                if ast_len > 0 and ast_len <= p[0].arena.cap {
+                # Never treat an out-of-range root as a cache hit (#736).
+                if ast_len > 0 and ast_len <= p[0].arena.cap and root >= 0 and root < ast_len {
                     if flowc_io_fread(p[0].arena.nodes as ptr<u8>, FLOWC_AST_NODE_SIZE, ast_len, fp) == ast_len {
                         p[0].arena.len = ast_len
                         p[0].cur.start = nsrc
