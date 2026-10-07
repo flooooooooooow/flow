@@ -1119,6 +1119,7 @@
   "unlisted": {
     "coverage_plan.md": "internal test-coverage plan for src/flow, not reader documentation",
     "discord-webhooks.md": "operations runbook for the project's Discord integration",
+    "project/ci-runners.md": "operations runbook for the self-hosted CI runners",
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",
     "project/archive-tags.md": "maintainer index of archive/* git tags, not reader documentation",
     "project/SIZE_REPORT.md": "generated binary-size measurements, regenerated per run rather than written for a reader",
