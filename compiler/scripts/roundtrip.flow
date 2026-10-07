@@ -9,6 +9,9 @@
 #   FLOWC_FORCE_HOST=1     emit fixtures with the flowc built from
 #                          compiler/src even when a Stage-A driver exists
 #   FLOWC_PHASE_A_ONLY=1   stop after the Phase-A checks
+#   FLOWC_ROUNDTRIP_SKIP_SELF_HOST_FULL=1
+#                          leave out self_host_full, for a caller that
+#                          runs it separately (CI's self-host job)
 #
 # It leaves stage_a_driver, stage_a_driver_flow and the self-emitted
 # drivers in compiler/build for the gates and packaging that follow.
@@ -678,8 +681,14 @@ function main() -> i32 {
 
     # Whole-compiler self-host: bundle all of compiler/src through flowc, run
     # its self-tests, and check three consecutive generations are
-    # byte-identical.
-    sub_gate(root, "self_host_full", sl_new())
+    # byte-identical. Its gen0 is compiler/build/flowc_bootstrap (#1435), so
+    # the run is the same wherever it starts; CI runs it once, in the
+    # self-host job, and sets FLOWC_ROUNDTRIP_SKIP_SELF_HOST_FULL=1 here.
+    if s_eq(env("FLOWC_ROUNDTRIP_SKIP_SELF_HOST_FULL"), "1") {
+        outln("SKIP self_host_full (FLOWC_ROUNDTRIP_SKIP_SELF_HOST_FULL=1)")
+    } else {
+        sub_gate(root, "self_host_full", sl_new())
+    }
 
     outln("ALL PASS")
     return 0

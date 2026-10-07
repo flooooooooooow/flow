@@ -39,8 +39,8 @@ on:
   pull_request:
     branches: [main, master]
   # The merge queue tests each batch on a temporary branch before it lands
-  # on main. Every gated job runs for a batch (see the `changes` job), so
-  # every required check reports on it.
+  # on main. The `changes` job gates a batch on its diff against the queue
+  # base, so every required check reports on it.
   merge_group:
     types: [checks_requested]
 
@@ -55,33 +55,57 @@ permissions:
   contents: read
   pull-requests: read
 
+# Job layout. Runner slots are the scarce resource (20 concurrent jobs for
+# the whole repository), so small checks share a job:
+#   - `checks` (Doc links) runs the version, ratchet, link, coverage, lint,
+#     security and pygments checks as steps.
+#   - `parity` (flowc parity gates) also runs parse coverage.
+#   - `lang-tests` (Language tests) also runs tests/runtime.
+#   - `smoke` runs the conformance corpus, the fuzzer, the example smoke and
+#     the plugin DSP test.
+# Each required check that moved into a shared job keeps its name as a small
+# job below the one that runs it. That job is skipped when its step passed or
+# was not needed (a skipped job counts as passing for a required check) and
+# runs, and fails, when its step failed or never ran. So it needs no runner
+# on a green run.
 jobs:
-  # Path flags that gate the jobs below. A merge queue batch can hold several
-  # pull requests, and its diff base is the queue head rather than the
-  # branch each one was written against, so on merge_group every flag is
-  # true and the batch runs every job.
+  # Path flags that gate the jobs below. On pull_request the diff is the
+  # pull request's; on merge_group it is the batch against the queue base
+  # (merge_group.base_sha), which covers every pull request in the batch.
+  # Both go through this one filter, so a pull request runs what its queue
+  # batch would. If the filter cannot run, every flag is true.
+  #
+  # This job also fills the flowc and flow CLI build cache
+  # (.github/actions/flow-bin-cache) when this commit's inputs are not in it,
+  # so the jobs after it restore the binaries instead of building them. A
+  # failed build is left to the jobs that need the binaries, which build
+  # them again and report the error where it matters.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      src: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.src }}
-      compiler: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.compiler }}
-      docs: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.docs }}
-      tests: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.tests }}
-      examples: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.examples }}
-      libs: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.libs }}
-      runtime: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.runtime }}
-      workflow: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.workflow }}
-      plugins: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.plugins }}
-      tools: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.tools }}
-      deps: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.deps }}
+      src: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.src || 'true' }}
+      compiler: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.compiler || 'true' }}
+      docs: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.docs || 'true' }}
+      tests: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.tests || 'true' }}
+      examples: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.examples || 'true' }}
+      libs: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.libs || 'true' }}
+      runtime: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.runtime || 'true' }}
+      workflow: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.workflow || 'true' }}
+      plugins: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.plugins || 'true' }}
+      tools: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.tools || 'true' }}
+      deps: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.deps || 'true' }}
+      pygments: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.pygments || 'true' }}
+      goldens: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.goldens || 'true' }}
+      flowfiles: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.flowfiles || 'true' }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
-        if: github.event_name != 'merge_group'
+        continue-on-error: true
         with:
+          base: ${{ github.event.merge_group.base_sha || '' }}
           filters: |
             src:
               - 'compiler/src/**'
@@ -120,111 +144,221 @@ jobs:
             deps:
               - 'requirements.lock'
               - 'requirements.txt'
+            pygments:
+              - 'third_party/integrations/pygments-flow/**'
+              - '.github/**'
+            # Everything the goldens and MLIR job reads: the compiler, the
+            # MLIR corpus (compiler/fixtures/mlir/corpus.txt names programs
+            # under examples, tests, lib, compiler and benchmarks), the
+            # runtime, the GPU tools and the wasm crossing assets.
+            # `./flow tool ci_gating` (in the Doc links job) fails when a
+            # corpus program or one of these surfaces is missing here.
+            goldens:
+              - 'compiler/**'
+              - 'lib/**'
+              - 'runtime/**'
+              - 'examples/**'
+              - 'tests/**'
+              - 'tools/**'
+              - 'scripts/**'
+              - 'wasm/**'
+              - 'benchmarks/**'
+              - '.github/**'
+              - 'flow'
+              - 'Makefile'
+            # Any Flow source: parse coverage and fmt_check read them all.
+            flowfiles:
+              - '**.flow'
 
-  # Almost every job runs ./flow, which first builds flowc from the 2.7 MB
-  # bootstrap C (cc -O2), the flow CLI, and a second flowc for `flow tool`:
-  # about 35 seconds each time. .github/actions/flow-bin-cache restores the
-  # three binaries, keyed on the content of everything they are built from.
-  # This job is the only one that saves that cache, from a clean build of
-  # this commit, and nothing waits for it: on a miss the other jobs build
-  # their own copy as before.
-  build-cache:
-    name: Build cache (flowc and flow CLI)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
       - id: bin
         uses: ./.github/actions/flow-bin-cache
       - name: Build flowc, the flow CLI and the tool flowc
+        id: build
         if: steps.bin.outputs.cache-hit != 'true'
+        continue-on-error: true
         run: ./flow tool --path python_ratchet
       - name: Save the build cache
-        if: steps.bin.outputs.cache-hit != 'true'
+        if: steps.bin.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.bin.outputs.paths }}
           key: ${{ steps.bin.outputs.key }}
 
-  # Manifests, docs headers and the CLI banner all mirror VERSION.
-  # They have drifted before: 0.11.0 nearly shipped with the canonical file still
-  # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
-  # Deliberately ungated: the drift-prone files (README.md, CITATION.cff,
-  # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every paths-filter above.
-  # The checker is a Flow program built from the bootstrap C with cc, so no
-  # toolchain setup is needed.
+  # The small checks, one step each. The job's own result (the Doc links
+  # check) covers the link, coverage, security and pygments steps; version,
+  # the two ratchets and lint report through their own jobs below.
+  checks:
+    name: Doc links
+    runs-on: ubuntu-latest
+    needs: changes
+    outputs:
+      version: ${{ steps.version.outcome }}
+      python: ${{ steps.python.outcome }}
+      shell: ${{ steps.shell.outcome }}
+      lint: ${{ steps.lint.outcome }}
+      links: ${{ steps.links.outcome }}
+      coverage: ${{ steps.coverage.outcome }}
+      security: ${{ steps.security.outcome }}
+      pygments: ${{ steps.pygments.outcome }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
+
+      # Manifests, docs headers and the CLI banner all mirror VERSION. They
+      # have drifted before: 0.11.0 nearly shipped with the canonical file
+      # still reading 0.3.3 and three hardcoded 0.10.0 strings in the flow
+      # driver. Ungated: the drift-prone files (README.md, CITATION.cff,
+      # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every path flag.
+      - name: Version consistency
+        id: version
+        continue-on-error: true
+        run: ./flow tool sync_version --check
+
+      # New code is written in Flow. Fails when a new .py file appears or
+      # tracked Python grows past tools/python_ratchet/baseline.txt.
+      - name: Python ratchet (Flow first)
+        id: python
+        continue-on-error: true
+        run: ./flow tool python_ratchet
+
+      # The same rule for shell: a new shell script, or tracked shell outside
+      # tools/shell_ratchet/allow.txt past tools/shell_ratchet/baseline.txt.
+      - name: Shell ratchet (Flow first)
+        id: shell
+        continue-on-error: true
+        run: ./flow tool shell_ratchet
+
+      # Relative links in tracked markdown, as a reader meets them on GitHub.
+      # `flow tool wiki_links` validates the built site instead; the two
+      # catch different breakage. script_refs fails when a .flow file names
+      # a scripts/ or compiler/scripts/ path that does not exist.
+      # docs/library/stdlib-api.md is generated from lib/stdlib; it fails
+      # when the committed page is behind the generator. ci_gating fails
+      # when a file the goldens job reads is outside its path filter.
+      - name: Doc links, script refs, layout, stdlib API page, CI gating, harness tests
+        id: links
+        continue-on-error: true
+        run: |
+          set -e
+          ./flow tool doc_links
+          ./flow tool script_refs
+          ./flow tool tool_layout
+          ./flow tool makefile_contract
+          ./flow tool project_state
+          ./flow tool gen_stdlib_docs --check
+          ./flow tool ci_gating
+          ./flow tool scripts/tools/jules_dispatch/test.flow
+          ./flow tool tests/bench_harness/run.flow
+
+      # Every part of the language needs a page. The feature list is read
+      # from the compiler, so this fails when something is added and left
+      # undocumented. Ungated.
+      - name: Doc coverage
+        id: coverage
+        continue-on-error: true
+        run: ./flow tool doc_coverage
+
+      # The launchers that stay shell (tools/shell_ratchet/allow.txt), and
+      # any .sh left in scripts/; find keeps an empty set from failing
+      # (#1153).
+      - name: Lint (shellcheck)
+        id: lint
+        if: needs.changes.outputs.workflow == 'true'
+        continue-on-error: true
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck flow flow-lsp $(find scripts -maxdepth 1 -type f -name '*.sh' -print)
+
+      - name: Set up Python for pip-audit
+        if: needs.changes.outputs.src == 'true' || needs.changes.outputs.deps == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/setup-python
+      - name: Security scan (pip-audit)
+        id: security
+        if: needs.changes.outputs.src == 'true' || needs.changes.outputs.deps == 'true'
+        continue-on-error: true
+        run: pip-audit -r requirements.lock
+
+      - name: flow-pygments lexer tests
+        id: pygments
+        if: needs.changes.outputs.pygments == 'true'
+        continue-on-error: true
+        run: |
+          cd third_party/integrations/pygments-flow
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install -e .
+          python3 test_lexer.py
+
+      - name: Fail when a doc, security or pygments step failed
+        if: always()
+        env:
+          LINKS: ${{ steps.links.outcome }}
+          COVERAGE: ${{ steps.coverage.outcome }}
+          SECURITY: ${{ steps.security.outcome }}
+          PYGMENTS: ${{ steps.pygments.outcome }}
+        run: |
+          fail=0
+          for pair in "links=$LINKS" "coverage=$COVERAGE" "security=$SECURITY" "pygments=$PYGMENTS"; do
+            case "${pair#*=}" in
+              success|skipped) ;;
+              *) echo "failed: ${pair%%=*} (${pair#*=})"; fail=1 ;;
+            esac
+          done
+          exit "$fail"
+
+  # Required checks whose work runs as a step of `checks`. Each is skipped
+  # when its step passed or was skipped, and fails otherwise.
   version:
     name: Version consistency
     runs-on: ubuntu-latest
+    needs: checks
+    if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.version)
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-      - run: ./flow tool sync_version --check
+      - run: |
+          echo "Version consistency: '${{ needs.checks.outputs.version }}' (job ${{ needs.checks.result }}); see the Doc links job"
+          exit 1
 
-  # New code is written in Flow. Fails when a new .py file appears or tracked
-  # Python grows past tools/python_ratchet/baseline.txt. The checker is a Flow
-  # program that ./flow builds from the checked-in C bootstrap, so no Python
-  # is installed. Deliberately ungated, like the version check above.
   python-ratchet:
     name: Python ratchet (Flow first)
     runs-on: ubuntu-latest
+    needs: checks
+    if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.python)
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-      - run: ./flow tool python_ratchet
+      - run: |
+          echo "Python ratchet: '${{ needs.checks.outputs.python }}' (job ${{ needs.checks.result }}); see the Doc links job"
+          exit 1
 
-  # The same rule for shell. Fails when a new shell script appears or the
-  # tracked shell outside tools/shell_ratchet/allow.txt grows past
-  # tools/shell_ratchet/baseline.txt. std.process runs commands from Flow,
-  # so tooling no longer needs a shell wrapper. Deliberately ungated.
   shell-ratchet:
     name: Shell ratchet (Flow first)
     runs-on: ubuntu-latest
+    needs: checks
+    if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.shell)
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-      - run: ./flow tool shell_ratchet
+      - run: |
+          echo "Shell ratchet: '${{ needs.checks.outputs.shell }}' (job ${{ needs.checks.result }}); see the Doc links job"
+          exit 1
 
-  # Relative links in tracked markdown, as a reader meets them on GitHub.
-  # `flow tool wiki_links` validates the built site instead; the two catch
-  # different breakage. Both are Flow programs built with cc alone, so no
-  # toolchain setup. script_refs fails when a .flow file names a scripts/ or
-  # compiler/scripts/ path that does not exist (a deleted script).
-  doc-links:
-    name: Doc links
+  # The lint step only runs when the workflow, the launchers or scripts/
+  # changed, so a skipped step passes. An empty outcome means the checks
+  # job did not get that far, which fails.
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    needs: checks
+    if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.lint)
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-      - run: ./flow tool doc_links
-      - run: ./flow tool script_refs
-      - run: ./flow tool tool_layout
-      - run: ./flow tool makefile_contract
-      - run: ./flow tool project_state
-      # docs/library/stdlib-api.md is generated from lib/stdlib; fail when the
-      # committed page is behind the generator.
-      - name: Stdlib API page matches lib/stdlib
-        run: ./flow tool gen_stdlib_docs --check
-      - name: Jules dispatch backpressure tests
-        run: ./flow tool scripts/tools/jules_dispatch/test.flow
-      - name: Benchmark harness tests (no Python)
-        run: ./flow tool tests/bench_harness/run.flow
+      - run: |
+          echo "Lint: '${{ needs.checks.outputs.lint }}' (job ${{ needs.checks.result }}); see the Doc links job"
+          exit 1
 
-  # Every part of the language needs a page. The feature list is read from the
-  # compiler, so this fails when something is added and left undocumented.
-  # A Flow program built with cc, like the checkers above, so no toolchain
-  # setup.
-  doc-coverage:
-    name: Doc coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-      - run: ./flow tool doc_coverage
-
-  # Documented examples are compiled. A ratchet, not a wall: the examples that
-  # do not build today are recorded in docs/generated/example-status.json and
-  # grandfathered. Rows are keyed by a hash of the block, so editing one
-  # revokes its exemption and the new text has to compile.
+  # Documented examples are compiled, then the complete programs are run.
+  # A ratchet, not a wall: the examples that do not build today are
+  # recorded in docs/generated/example-status.json and grandfathered. Rows
+  # are keyed by a hash of the block, so editing one revokes its exemption
+  # and the new text has to compile. Running answers a different question:
+  # a `defer` freeing memory before the return value was read compiled
+  # cleanly (#594).
   doc-examples:
     name: Doc examples
     runs-on: ubuntu-latest
@@ -237,59 +371,9 @@ jobs:
       - uses: ./.github/actions/flow-bin-cache
       - name: Compile every ```flow block in the documentation
         run: ./flow tool doc_examples --check-ledger
-
-  doc-examples-run:
-    name: Doc examples (run)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.src == 'true' ||
-      needs.changes.outputs.docs == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-      # Separate from the compile gate because it takes about two minutes,
-      # and because it answers a different question: compiling proves an
-      # example is well-formed, running proves it works. A `defer` freeing
-      # memory before the return value was read compiled cleanly (#594).
       - name: Run every complete program in the documentation
+        if: always()
         run: ./flow tool doc_examples --run --check-ledger
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.src == 'true' ||
-      needs.changes.outputs.workflow == 'true' ||
-      needs.changes.outputs.deps == 'true'
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/install-toolchain
-        with:
-          shellcheck: 'true'
-
-      # The launchers that stay shell (tools/shell_ratchet/allow.txt), and any
-      # .sh left in scripts/; find keeps an empty set from failing (#1153).
-      - name: Shellcheck
-        if: needs.changes.outputs.workflow == 'true'
-        run: shellcheck flow flow-lsp $(find scripts -maxdepth 1 -type f -name '*.sh' -print)
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.src == 'true' ||
-      needs.changes.outputs.deps == 'true'
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup-python
-
-      - name: pip-audit
-        run: pip-audit -r requirements.lock
 
   flow-tier2:
     name: FLOW tier-2
@@ -332,6 +416,10 @@ jobs:
       # and parity_proofs default to half of them; both print their results
       # in input order, whatever the job count.
       FLOW_GATE_JOBS: '4'
+      # self_host_full starts from compiler/build/flowc_bootstrap wherever
+      # it runs (#1435); the self-host job runs it, so the roundtrip leaves
+      # it out.
+      FLOWC_ROUNDTRIP_SKIP_SELF_HOST_FULL: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
@@ -386,11 +474,27 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+      # Phase D: user-facing compile with the Stage-A driver must not
+      # pip-install the Python compiler. This was a separate job that
+      # downloaded the artifact above; it runs on the staged copy here.
+      - name: Stage-A compile without Python/pip (flowc compile)
+        env:
+          FLOW_HOST: flowc
+          FLOWC_BIN: /tmp/flowc-driver/flowc
+        run: |
+          rm -rf build/fibonacci build/hello_world
+          ./flow run examples/basics/hello_world.flow
+          ./flow compile examples/basics/fibonacci.flow
+          # fibonacci.flow main returns fib(10) == 55 as process exit status
+          set +e
+          ./build/fibonacci
+          ec=$?
+          set -e
+          test "$ec" -eq 55
+
   # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
   # three consecutive generations of flowc must agree byte for byte.
   # Deliberately no setup-python step. That is the point of this job.
-  # The goldens and the MLIR checks that used to follow in this job run in
-  # flowc-goldens and flowc-mlir below, in parallel with it.
   flowc-selfhost:
     name: flowc self-host (no Python)
     runs-on: ubuntu-latest
@@ -463,16 +567,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Goldens for the compiler's outputs and the commands built on it. Each
-  # runner builds what it needs from a clean checkout, so they need nothing
-  # from the self-host job and run beside it.
+  # Goldens for the compiler's outputs and the commands built on it, then
+  # the MLIR emitter and commands with LLVM/MLIR 22. Each runner builds what
+  # it needs from a clean checkout, so nothing here waits on the self-host
+  # job. Gated on the `goldens` filter, which `./flow tool ci_gating` holds
+  # to everything these goldens read.
   flowc-goldens:
-    name: flowc goldens (no Python)
+    name: flowc goldens and MLIR (no Python)
     runs-on: ubuntu-latest
     needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.workflow == 'true'
+    if: needs.changes.outputs.goldens == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
@@ -509,18 +613,6 @@ jobs:
 
       - name: GPU and shader crossing pages
         run: ./flow tool tests/gpu/crossing.flow
-
-  # The MLIR emitter and the MLIR commands, with LLVM/MLIR 22.
-  flowc-mlir:
-    name: flowc MLIR goldens (no Python)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
 
       - uses: ./.github/actions/install-toolchain
         with:
@@ -596,32 +688,12 @@ jobs:
       - name: CLI goldens (tests/cli)
         run: ./flow tool tests/cli/run.flow
 
-  # flowc must keep parsing every .flow file the Python parser accepts. The
-  # count of files that parse may not fall below compiler/parse_coverage/
-  # floor.txt. Needs only cc: the reference list of files the Python parser
-  # rejects is checked in.
-  flowc-parse-coverage:
-    name: flowc parse coverage
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.examples == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-
-      - name: Parse every tracked .flow file with flowc
-        run: |
-          ./flow tool compiler/scripts/parse_coverage.flow --check
-
   # Non-regression gates for the Flow ports. Each runs in golden mode against
   # outputs recorded from the Python reference, so it needs only a C
   # compiler. parity_shader_dsl skips its xcrun metal step where there is no
-  # Metal toolchain. parse_coverage.flow --check runs in its own job above.
+  # Metal toolchain. Parse coverage runs first and reports through the
+  # `flowc parse coverage` job below. Parse coverage and fmt_check read every
+  # tracked .flow file, so any .flow change runs this job.
   flowc-parity-gates:
     name: flowc parity gates (golden)
     runs-on: ubuntu-latest
@@ -631,12 +703,22 @@ jobs:
       needs.changes.outputs.tests == 'true' ||
       needs.changes.outputs.examples == 'true' ||
       needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.workflow == 'true'
+      needs.changes.outputs.workflow == 'true' ||
+      needs.changes.outputs.flowfiles == 'true'
+    outputs:
+      parse: ${{ steps.parse.outcome }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
       - name: Build flowc from the bootstrap C
         run: ./flow tool compiler/scripts/ensure_flowc.flow
+      # flowc must keep parsing every .flow file the Python parser accepts.
+      # The count of files that parse may not fall below
+      # compiler/parse_coverage/floor.txt.
+      - name: Parse every tracked .flow file with flowc (parse coverage)
+        id: parse
+        continue-on-error: true
+        run: ./flow tool compiler/scripts/parse_coverage.flow --check
       - name: parity_lowering
         run: timeout 20m ./flow tool compiler/scripts/parity_lowering.flow
       - name: parity_field_dsl
@@ -656,9 +738,20 @@ jobs:
       - name: fmt_check --check
         run: timeout 20m ./flow tool compiler/scripts/fmt_check.flow --check
 
+  flowc-parse-coverage:
+    name: flowc parse coverage
+    runs-on: ubuntu-latest
+    needs: flowc-parity-gates
+    if: always() && needs.flowc-parity-gates.result != 'skipped' && !contains(fromJSON('["success","skipped"]'), needs.flowc-parity-gates.outputs.parse)
+    steps:
+      - run: |
+          echo "flowc parse coverage: '${{ needs.flowc-parity-gates.outputs.parse }}' (job ${{ needs.flowc-parity-gates.result }}); see the parity gates job"
+          exit 1
+
   # Whole-corpus parity between the flowc and Python hosts on the C backend,
   # against recorded Python goldens (no Python). The floor is kept per OS;
-  # --check passes with a note on an OS that has none recorded yet.
+  # --check passes with a note on an OS that has none recorded yet. Files
+  # with no Python golden are reported without being built.
   flowc-corpus-parity:
     name: flowc corpus parity
     runs-on: ubuntu-latest
@@ -676,7 +769,9 @@ jobs:
   # locally: strict transpile, link (with the concurrency runtime when a
   # program imports it), run, and compare the exit code and any .expected
   # output. Each program runs under a time limit and a hang fails with a
-  # timeout line (#1174).
+  # timeout line (#1174). Before it, tests/runtime, compiled with the flowc
+  # host and linked against the runtime archive, which reports through the
+  # `Runtime tests` job below.
   lang-tests:
     name: Language tests
     runs-on: ubuntu-latest
@@ -689,29 +784,8 @@ jobs:
       needs.changes.outputs.tests == 'true' ||
       needs.changes.outputs.tools == 'true' ||
       needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-
-      - uses: ./.github/actions/install-toolchain
-
-      - name: Language tests (tests/lang)
-        run: ./flow test-lang
-
-  # tests/runtime compiled with the flowc host, linked against the runtime
-  # archive and run, under the same per-program time limit.
-  runtime-tests:
-    name: Runtime tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.runtime == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.tools == 'true' ||
-      needs.changes.outputs.workflow == 'true'
+    outputs:
+      runtime: ${{ steps.runtime.outcome }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
@@ -719,118 +793,67 @@ jobs:
       - uses: ./.github/actions/install-toolchain
 
       - name: Runtime tests (tests/runtime)
+        id: runtime
+        continue-on-error: true
+        timeout-minutes: 30
         run: ./flow test-runtime
 
-  # Phase D: user-facing compile must not pip-install the Python compiler.
-  flowc-compile:
-    name: flowc compile (no pip)
+      - name: Language tests (tests/lang)
+        run: ./flow test-lang
+
+  runtime-tests:
+    name: Runtime tests
     runs-on: ubuntu-latest
-    needs: [changes, flowc-bootstrap]
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.workflow == 'true'
+    needs: lang-tests
+    if: always() && needs.lang-tests.result != 'skipped' && !contains(fromJSON('["success","skipped"]'), needs.lang-tests.outputs.runtime)
     steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
+      - run: |
+          echo "Runtime tests: '${{ needs.lang-tests.outputs.runtime }}' (job ${{ needs.lang-tests.result }}); see the Language tests job"
+          exit 1
 
-      - name: Download Stage-A flowc driver
-        uses: actions/download-artifact@v4
-        with:
-          name: flowc-driver
-          path: compiler/build
-
-      - name: Stage-A compile without Python/pip
-        env:
-          FLOW_HOST: flowc
-        run: |
-          chmod +x ./flow
-          FLOWC_BIN="compiler/build/flowc"
-          if [[ ! -f "$FLOWC_BIN" ]]; then
-            echo "Missing downloaded flowc at $FLOWC_BIN"
-            ls -laR compiler/build || true
-            exit 1
-          fi
-          chmod +x "$FLOWC_BIN"
-          export FLOWC_BIN
-          echo "Using flowc: $FLOWC_BIN"
-          # FLOWC_BIN is the downloaded driver, so ensure_flowc does not run here.
-          ./flow run examples/basics/hello_world.flow
-          ./flow compile examples/basics/fibonacci.flow
-          # fibonacci.flow main returns fib(10) == 55 as process exit status
-          set +e
-          ./build/fibonacci
-          ec=$?
-          set -e
-          test "$ec" -eq 55
-
-  # The pytest job used to live here. Its tests are Flow programs now
-  # (tests/scripts, run by native-tools), so this job keeps only the corpus.
-  conformance:
-    name: Conformance corpus
+  # Quick end-to-end checks, each a step gated on its own paths: the Stable
+  # conformance corpus, the fuzzer (crash pins, deep nesting and 30s of
+  # seeded mutation; fails on a signal or a hang), the example smoke and the
+  # plugin DSP correctness tests.
+  smoke:
+    name: Smoke (conformance, fuzz, examples, plugin DSP)
     runs-on: ubuntu-latest
     needs: changes
     if: |
       needs.changes.outputs.src == 'true' ||
-      needs.changes.outputs.tests == 'true'
+      needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.examples == 'true' ||
+      needs.changes.outputs.plugins == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
 
       - name: Stable conformance corpus
+        if: needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true'
         run: ./flow tool tests/conformance/run.flow
 
-  fuzz:
-    name: Fuzz (flowc)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.src == 'true' ||
-      needs.changes.outputs.tests == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-
-      - name: Build flowc from the bootstrap C
-        run: ./flow tool compiler/scripts/ensure_flowc.flow
-
-      # Crash pins, deep nesting and 30s of seeded mutation; fails on a
-      # signal or a hang.
       - name: Fuzz flowc
-        run: ./flow tool tests/fuzz/run.flow --seconds 30 --seed 1234
+        if: always() && (needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')
+        run: |
+          ./flow tool compiler/scripts/ensure_flowc.flow
+          ./flow tool tests/fuzz/run.flow --seconds 30 --seed 1234
 
-  plugin-dsp:
-    name: Plugin DSP test
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.plugins == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
+      - name: Set up Python for the example smoke
+        if: always() && (needs.changes.outputs.src == 'true' || needs.changes.outputs.examples == 'true')
+        uses: ./.github/actions/setup-python
+
+      - name: Example smoke (hello_world + fibonacci)
+        if: always() && (needs.changes.outputs.src == 'true' || needs.changes.outputs.examples == 'true')
+        run: |
+          ./flow run examples/basics/hello_world.flow
+          ./flow compile examples/basics/fibonacci.flow
 
       - name: Build and run Schur DSP correctness tests
+        if: always() && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.workflow == 'true')
         run: |
           cd plugins/SchurPhaser
           ./tests/run.sh
-
-  flow-examples:
-    name: Example smoke
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.src == 'true' ||
-      needs.changes.outputs.examples == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/flow-bin-cache
-
-      - uses: ./.github/actions/setup-python
-
-      - name: hello_world + fibonacci
-        run: |
-          chmod +x ./flow
-          ./flow run examples/basics/hello_world.flow
-          ./flow compile examples/basics/fibonacci.flow
 
   windows-gfx-stub:
     name: Windows gfx stub smoke
@@ -881,22 +904,14 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - lint
-      - security
-      - doc-coverage
+      - checks
       - doc-examples
       - flow-tier2
       - flowc-bootstrap
       - flowc-selfhost
       - flowc-goldens
-      - flowc-mlir
-      - flowc-compile
       - lang-tests
-      - runtime-tests
-      - conformance
-      - fuzz
-      - flow-examples
-      - plugin-dsp
+      - smoke
       - windows-gfx-stub
     if: always()
     steps:
@@ -935,38 +950,32 @@ jobs:
           plugins='${{ needs.changes.outputs.plugins }}'
           deps='${{ needs.changes.outputs.deps }}'
           tools='${{ needs.changes.outputs.tools }}'
-          lint_req=false;  if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
-          sec_req=false;   if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
-          tier_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
-          conf_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ]; then conf_req=true; fi
-          fuzz_req=$conf_req
-          ex_req=false;    if [ "$src" = "true" ] || [ "$examples" = "true" ]; then ex_req=true; fi
+          docs='${{ needs.changes.outputs.docs }}'
+          goldens='${{ needs.changes.outputs.goldens }}'
+          tier_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$examples" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
           compiler_req=false; if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
-          plugin_req=false; if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
           gfx_req=false;   if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
           suite_req=false; if [ "$compiler" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ] || [ "$tests" = "true" ] || [ "$tools" = "true" ] || [ "$workflow" = "true" ]; then suite_req=true; fi
-          docs='${{ needs.changes.outputs.docs }}'
-          # Coverage is ungated: a new keyword or subcommand in src/ must not
-          # land undocumented just because the PR touched no markdown.
-          doccov_req=true
+          smoke_req=false; if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$examples" = "true" ] || [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then smoke_req=true; fi
           docex_req=false; if [ "$src" = "true" ] || [ "$docs" = "true" ]; then docex_req=true; fi
-          add doc-coverage      '${{ needs.doc-coverage.result }}'      "$doccov_req"
+          goldens_req=false; if [ "$goldens" = "true" ]; then goldens_req=true; fi
+          # The checks job is ungated; its steps report one by one.
+          add checks            '${{ needs.checks.result }}'            true
+          add version           '${{ needs.checks.outputs.version }}'   true
+          add python-ratchet    '${{ needs.checks.outputs.python }}'    true
+          add shell-ratchet     '${{ needs.checks.outputs.shell }}'     true
+          add doc-coverage      '${{ needs.checks.outputs.coverage }}'  true
+          add lint              '${{ needs.checks.outputs.lint }}'      true
+          add security          '${{ needs.checks.outputs.security }}'  true
           add doc-examples      '${{ needs.doc-examples.result }}'      "$docex_req"
-          add lint              '${{ needs.lint.result }}'              "$lint_req"
-          add security          '${{ needs.security.result }}'          "$sec_req"
           add flow-tier2        '${{ needs.flow-tier2.result }}'        "$tier_req"
-          add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'    "$compiler_req"
-          add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'     "$compiler_req"
-          add flowc-goldens     '${{ needs.flowc-goldens.result }}'      "$compiler_req"
-          add flowc-mlir        '${{ needs.flowc-mlir.result }}'         "$compiler_req"
-          add flowc-compile     '${{ needs.flowc-compile.result }}'      "$compiler_req"
+          add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'   "$compiler_req"
+          add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'    "$compiler_req"
+          add flowc-goldens     '${{ needs.flowc-goldens.result }}'     "$goldens_req"
           add lang-tests        '${{ needs.lang-tests.result }}'        "$suite_req"
-          add runtime-tests     '${{ needs.runtime-tests.result }}'     "$suite_req"
-          add conformance       '${{ needs.conformance.result }}'       "$conf_req"
-          add fuzz              '${{ needs.fuzz.result }}'              "$fuzz_req"
-          add flow-examples     '${{ needs.flow-examples.result }}'      "$ex_req"
-          add plugin-dsp        '${{ needs.plugin-dsp.result }}'         "$plugin_req"
-          add windows-gfx-stub  '${{ needs.windows-gfx-stub.result }}'   "$gfx_req"
+          add runtime-tests     '${{ needs.lang-tests.outputs.runtime }}' "$suite_req"
+          add smoke             '${{ needs.smoke.result }}'             "$smoke_req"
+          add windows-gfx-stub  '${{ needs.windows-gfx-stub.result }}'  "$gfx_req"
           # meta fields so the embed also carries where to look.
           SERVER="$GITHUB_SERVER_URL"
           REPO="${{ github.repository }}"
@@ -1012,18 +1021,3 @@ jobs:
           fields: ${{ steps.summarize.outputs.fields }}
           footer_text: Flow CI · run ${{ github.run_id }}
           footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
-  test-pygments:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Install and test flow-pygments
-        run: |
-          cd third_party/integrations/pygments-flow
-          python3 -m venv .venv
-          . .venv/bin/activate
-          pip install -e .
-          python3 test_lexer.py
