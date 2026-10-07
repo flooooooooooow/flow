@@ -1053,6 +1053,20 @@ function sem_arena_instance_name(c: ptr<Sem>, value: i32) -> string {
     if value < 0 {
         return null as string
     }
+    # Casts and pointer +/- offsets preserve allocator provenance. Without
+    # this, an unannotated writer could launder a frame/session arena pointer
+    # before storing it into a longer-lived module static (#690).
+    if sem_nk(c, value) == AST_CAST {
+        return sem_arena_instance_name(c, sem_na(c, value))
+    }
+    if sem_nk(c, value) == AST_BINOP and
+       (sem_nival(c, value) == TOK_PLUS or sem_nival(c, value) == TOK_MINUS) {
+        let left_origin: string = sem_arena_instance_name(c, sem_na(c, value))
+        if left_origin as ptr<u8> != null {
+            return left_origin
+        }
+        return sem_arena_instance_name(c, sem_nb(c, value))
+    }
     if sem_is_function_call(c, value) {
         if sem_is_arena_alloc_name(sem_nname(c, value)) == false {
             return null as string
@@ -1085,6 +1099,17 @@ function sem_local_borrow_origin(c: ptr<Sem>, e: i32) -> string {
     if e < 0 {
         return null as string
     }
+    if sem_nk(c, e) == AST_CAST {
+        return sem_local_borrow_origin(c, sem_na(c, e))
+    }
+    if sem_nk(c, e) == AST_BINOP and
+       (sem_nival(c, e) == TOK_PLUS or sem_nival(c, e) == TOK_MINUS) {
+        let left_origin: string = sem_local_borrow_origin(c, sem_na(c, e))
+        if left_origin as ptr<u8> != null {
+            return left_origin
+        }
+        return sem_local_borrow_origin(c, sem_nb(c, e))
+    }
     if sem_is_function_call(c, e) {
         if sem_is_arena_alloc_name(sem_nname(c, e)) {
             return sem_alloc_arena_arg_name(c, sem_na(c, e))
@@ -1114,6 +1139,17 @@ function sem_local_borrow_origin(c: ptr<Sem>, e: i32) -> string {
 function sem_domain_borrow_root(c: ptr<Sem>, e: i32) -> string {
     if e < 0 {
         return null as string
+    }
+    if sem_nk(c, e) == AST_CAST {
+        return sem_domain_borrow_root(c, sem_na(c, e))
+    }
+    if sem_nk(c, e) == AST_BINOP and
+       (sem_nival(c, e) == TOK_PLUS or sem_nival(c, e) == TOK_MINUS) {
+        let left_origin: string = sem_domain_borrow_root(c, sem_na(c, e))
+        if left_origin as ptr<u8> != null {
+            return left_origin
+        }
+        return sem_domain_borrow_root(c, sem_nb(c, e))
     }
     if sem_is_function_call(c, e) {
         if sem_is_arena_alloc_name(sem_nname(c, e)) {
