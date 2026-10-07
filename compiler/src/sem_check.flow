@@ -3644,6 +3644,21 @@ function sem_check_var_decl(c: ptr<Sem>, s: i32) -> i32 {
             }
             sem_local_storage_discard(c, name)
         }
+    } elif ek == TK_STRUCT or ek == TK_ARRAY {
+        # Preserve a nested borrow after the composite literal is named.
+        # Otherwise a named Holder/array can forget the shorter-lived root.
+        let composite_origin: string = sem_composite_domain_root(c, init)
+        if composite_origin as ptr<u8> != null {
+            sem_sm_put(c.span_origin, name, sem_sv_len(c.origin_pool))
+            sem_sv_push(c.origin_pool, composite_origin)
+        } else {
+            if sem_sm_has(c.span_origin, name) {
+                sem_sm_put(c.span_origin, name, 0 - 1)
+            }
+        }
+        if c.current_function_name as ptr<u8> != null {
+            sem_sv_add(c.local_storage, name)
+        }
     } elif c.current_function_name as ptr<u8> != null {
         sem_sv_add(c.local_storage, name)
     }
@@ -3757,6 +3772,20 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
     sem_record_rt_safe_binding(c, value, et2, st)
     if sem_can_coerce(c, et2, st) == false {
         sem_err(c, "Cannot assign " + sem_tstr(c, et2) + " to variable '" + target + "' of type " + sem_tstr(c, st))
+    }
+    # Reassignment must refresh composite provenance. Keeping an old root
+    # or dropping a new one both make later field/return checks unsound.
+    let sk: i32 = sem_tkind(c, st)
+    if sk == TK_STRUCT or sk == TK_ARRAY {
+        let composite_origin2: string = sem_composite_domain_root(c, value)
+        if composite_origin2 as ptr<u8> != null {
+            sem_sm_put(c.span_origin, target, sem_sv_len(c.origin_pool))
+            sem_sv_push(c.origin_pool, composite_origin2)
+        } else {
+            if sem_sm_has(c.span_origin, target) {
+                sem_sm_put(c.span_origin, target, 0 - 1)
+            }
+        }
     }
     return et2
 }
