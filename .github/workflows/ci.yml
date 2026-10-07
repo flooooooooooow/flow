@@ -72,7 +72,8 @@ jobs:
   # Path flags that gate the jobs below. On pull_request the diff is the
   # pull request's; on merge_group it is the batch against the queue base
   # (merge_group.base_sha), which covers every pull request in the batch.
-  # If the filter cannot run, every flag is true and everything runs.
+  # Both go through this one filter, so a pull request runs what its queue
+  # batch would. If the filter cannot run, every flag is true.
   #
   # This job also fills the flowc and flow CLI build cache
   # (.github/actions/flow-bin-cache) when this commit's inputs are not in it,
@@ -95,6 +96,8 @@ jobs:
       tools: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.tools || 'true' }}
       deps: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.deps || 'true' }}
       pygments: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.pygments || 'true' }}
+      goldens: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.goldens || 'true' }}
+      flowfiles: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.flowfiles || 'true' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -144,6 +147,28 @@ jobs:
             pygments:
               - 'third_party/integrations/pygments-flow/**'
               - '.github/**'
+            # Everything the goldens and MLIR job reads: the compiler, the
+            # MLIR corpus (compiler/fixtures/mlir/corpus.txt names programs
+            # under examples, tests, lib, compiler and benchmarks), the
+            # runtime, the GPU tools and the wasm crossing assets.
+            # `./flow tool ci_gating` (in the Doc links job) fails when a
+            # corpus program or one of these surfaces is missing here.
+            goldens:
+              - 'compiler/**'
+              - 'lib/**'
+              - 'runtime/**'
+              - 'examples/**'
+              - 'tests/**'
+              - 'tools/**'
+              - 'scripts/**'
+              - 'wasm/**'
+              - 'benchmarks/**'
+              - '.github/**'
+              - 'flow'
+              - 'Makefile'
+            # Any Flow source: parse coverage and fmt_check read them all.
+            flowfiles:
+              - '**.flow'
 
       - id: bin
         uses: ./.github/actions/flow-bin-cache
@@ -208,8 +233,9 @@ jobs:
       # catch different breakage. script_refs fails when a .flow file names
       # a scripts/ or compiler/scripts/ path that does not exist.
       # docs/library/stdlib-api.md is generated from lib/stdlib; it fails
-      # when the committed page is behind the generator.
-      - name: Doc links, script refs, layout, stdlib API page, harness tests
+      # when the committed page is behind the generator. ci_gating fails
+      # when a file the goldens job reads is outside its path filter.
+      - name: Doc links, script refs, layout, stdlib API page, CI gating, harness tests
         id: links
         continue-on-error: true
         run: |
@@ -220,6 +246,7 @@ jobs:
           ./flow tool makefile_contract
           ./flow tool project_state
           ./flow tool gen_stdlib_docs --check
+          ./flow tool ci_gating
           ./flow tool scripts/tools/jules_dispatch/test.flow
           ./flow tool tests/bench_harness/run.flow
 
@@ -543,14 +570,13 @@ jobs:
   # Goldens for the compiler's outputs and the commands built on it, then
   # the MLIR emitter and commands with LLVM/MLIR 22. Each runner builds what
   # it needs from a clean checkout, so nothing here waits on the self-host
-  # job.
+  # job. Gated on the `goldens` filter, which `./flow tool ci_gating` holds
+  # to everything these goldens read.
   flowc-goldens:
     name: flowc goldens and MLIR (no Python)
     runs-on: ubuntu-latest
     needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.workflow == 'true'
+    if: needs.changes.outputs.goldens == 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
@@ -666,7 +692,8 @@ jobs:
   # outputs recorded from the Python reference, so it needs only a C
   # compiler. parity_shader_dsl skips its xcrun metal step where there is no
   # Metal toolchain. Parse coverage runs first and reports through the
-  # `flowc parse coverage` job below.
+  # `flowc parse coverage` job below. Parse coverage and fmt_check read every
+  # tracked .flow file, so any .flow change runs this job.
   flowc-parity-gates:
     name: flowc parity gates (golden)
     runs-on: ubuntu-latest
@@ -676,7 +703,8 @@ jobs:
       needs.changes.outputs.tests == 'true' ||
       needs.changes.outputs.examples == 'true' ||
       needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.workflow == 'true'
+      needs.changes.outputs.workflow == 'true' ||
+      needs.changes.outputs.flowfiles == 'true'
     outputs:
       parse: ${{ steps.parse.outcome }}
     steps:
@@ -923,12 +951,14 @@ jobs:
           deps='${{ needs.changes.outputs.deps }}'
           tools='${{ needs.changes.outputs.tools }}'
           docs='${{ needs.changes.outputs.docs }}'
+          goldens='${{ needs.changes.outputs.goldens }}'
           tier_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$examples" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
           compiler_req=false; if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
           gfx_req=false;   if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
           suite_req=false; if [ "$compiler" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ] || [ "$tests" = "true" ] || [ "$tools" = "true" ] || [ "$workflow" = "true" ]; then suite_req=true; fi
           smoke_req=false; if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$examples" = "true" ] || [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then smoke_req=true; fi
           docex_req=false; if [ "$src" = "true" ] || [ "$docs" = "true" ]; then docex_req=true; fi
+          goldens_req=false; if [ "$goldens" = "true" ]; then goldens_req=true; fi
           # The checks job is ungated; its steps report one by one.
           add checks            '${{ needs.checks.result }}'            true
           add version           '${{ needs.checks.outputs.version }}'   true
@@ -941,7 +971,7 @@ jobs:
           add flow-tier2        '${{ needs.flow-tier2.result }}'        "$tier_req"
           add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'   "$compiler_req"
           add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'    "$compiler_req"
-          add flowc-goldens     '${{ needs.flowc-goldens.result }}'     "$compiler_req"
+          add flowc-goldens     '${{ needs.flowc-goldens.result }}'     "$goldens_req"
           add lang-tests        '${{ needs.lang-tests.result }}'        "$suite_req"
           add runtime-tests     '${{ needs.lang-tests.outputs.runtime }}' "$suite_req"
           add smoke             '${{ needs.smoke.result }}'             "$smoke_req"

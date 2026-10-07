@@ -1,0 +1,189 @@
+# CI gating check, written in Flow.
+#
+# The `flowc goldens and MLIR (no Python)` job in .github/workflows/ci.yml
+# runs only when the `goldens` path filter of the `changes` job matches.
+# Pull requests and merge queue batches go through the same filter, so if a
+# file the goldens read is outside it, a pull request that edits the file
+# skips the job and the change lands untested. This program fails when:
+#
+#   - a program in compiler/fixtures/mlir/corpus.txt (the MLIR emitter's
+#     recorded corpus) does not match a `goldens` glob;
+#   - one of the surfaces the goldens job reads (compiler, lib, runtime,
+#     examples, tests, tools, scripts, wasm crossing assets, benchmarks) does
+#     not match one;
+#   - the job is not gated on `needs.changes.outputs.goldens`, or the
+#     filter step is missing.
+#
+#   ./flow tool ci_gating            check; list each uncovered path
+#
+# Globs follow the path filter: `**` matches any run of characters,
+# `*` any run without `/`.
+#
+# Exit codes: 0 covered, 1 something is not, 2 an input is missing.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcStrs }
+
+const CI: string = ".github/workflows/ci.yml"
+const CORPUS: string = "compiler/fixtures/mlir/corpus.txt"
+const JOB_NAME: string = "    name: flowc goldens and MLIR (no Python)"
+
+# True when `path` from byte `pi` matches `pat` from byte `qi`.
+function glob_at(pat: string, qi: i32, path: string, pi: i32) -> bool {
+    if qi >= s_len(pat) {
+        return pi >= s_len(path)
+    }
+    let c: i32 = s_byte(pat, qi)
+    if c == 42 {
+        let double: bool = qi + 1 < s_len(pat) and s_byte(pat, qi + 1) == 42
+        let mut next: i32 = qi + 1
+        if double {
+            next = qi + 2
+        }
+        let mut k: i32 = pi
+        while k <= s_len(path) {
+            if glob_at(pat, next, path, k) {
+                return true
+            }
+            if k < s_len(path) and not double and s_byte(path, k) == 47 {
+                return false
+            }
+            k = k + 1
+        }
+        return false
+    }
+    if pi >= s_len(path) or s_byte(path, pi) != c {
+        return false
+    }
+    return glob_at(pat, qi + 1, path, pi + 1)
+}
+
+export function glob_match(pat: string, path: string) -> bool {
+    return glob_at(pat, 0, path, 0)
+}
+
+function covered(globs: ptr<ProcStrs>, path: string) -> bool {
+    let mut i: i32 = 0
+    while i < sl_len(globs) {
+        if glob_match(sl_get(globs, i), path) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Leading spaces in `line`.
+function indent(line: string) -> i32 {
+    let mut i: i32 = 0
+    while i < s_len(line) and s_byte(line, i) == 32 {
+        i = i + 1
+    }
+    return i
+}
+
+# The globs listed under filter `name` in the `filters: |` block, or an
+# empty list. A filter name sits at 12 spaces, its globs at 14 as
+# `- 'glob'`.
+function filter_globs(lines: ptr<ProcStrs>, name: string) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    let mut inside: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        let ind: i32 = indent(line)
+        if ind == 12 and s_ends(line, ":") {
+            inside = s_eq(s_from(line, 12), name + ":")
+        } elif inside and ind == 14 and s_starts(s_from(line, 14), "- '") and s_ends(line, "'") {
+            sl_push(out, s_slice(line, 17, s_len(line) - 1))
+        } elif inside and s_len(line) > 0 and ind < 12 {
+            inside = false
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# The `if:` text of the job whose name line is `job` (the lines after it,
+# up to `steps:`).
+function job_condition(lines: ptr<ProcStrs>, job: string) -> string {
+    let mut text: string = ""
+    let mut inside: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        if s_eq(line, job) {
+            inside = true
+        } elif inside and s_eq(line, "    steps:") {
+            return text
+        } elif inside {
+            text = text + line + "\n"
+        }
+        i = i + 1
+    }
+    return text
+}
+
+function main() -> i32 {
+    let mut root: string = env("FLOW_REPO_ROOT")
+    if s_len(root) == 0 {
+        root = cwd_physical()
+    }
+    if not is_file(root + "/" + CI) or not is_file(root + "/" + CORPUS) {
+        errln("ci_gating: missing " + CI + " or " + CORPUS)
+        return 2
+    }
+    let lines: ptr<ProcStrs> = s_lines(read_text(root + "/" + CI))
+    let globs: ptr<ProcStrs> = filter_globs(lines, "goldens")
+    let mut bad: i32 = 0
+    if sl_len(globs) == 0 {
+        errln("ci_gating: no `goldens` filter in " + CI)
+        return 1
+    }
+    let cond: string = job_condition(lines, JOB_NAME)
+    if not s_contains(cond, "needs.changes.outputs.goldens == 'true'") {
+        errln("ci_gating: the goldens job is not gated on needs.changes.outputs.goldens")
+        bad = bad + 1
+    }
+
+    let paths: ptr<ProcStrs> = sl_new()
+    let corpus: ptr<ProcStrs> = s_lines(read_text(root + "/" + CORPUS))
+    let mut i: i32 = 0
+    while i < sl_len(corpus) {
+        let row: string = sl_get(corpus, i)
+        if s_len(row) > 0 and not s_starts(row, "#") {
+            let w: ptr<ProcStrs> = s_words(row)
+            if sl_len(w) >= 2 {
+                sl_push(paths, sl_get(w, 1))
+            }
+        }
+        i = i + 1
+    }
+    # The surfaces the goldens job reads besides the MLIR corpus.
+    let fixed: ptr<ProcStrs> = s_words("compiler/src/main.flow compiler/fixtures/mlir/control.flow lib/stdlib/gpu_sim.flow runtime/flow_runtime.c examples/gpu/flow_gpu_vector_add.flow tests/core/test_gpu_sim.flow tests/runtime/x.flow tests/cgen/run.flow tests/mlir_commands/run.flow tests/gpu/crossing.flow tools/gpu/main.flow tools/flow_cli/main.flow scripts/tools/wasm_crossings/main.flow wasm/crossing_assets/webgpu-host.js benchmarks/aosoa.flow flow")
+    let mut f: i32 = 0
+    while f < sl_len(fixed) {
+        sl_push(paths, sl_get(fixed, f))
+        f = f + 1
+    }
+
+    let mut shown: i32 = 0
+    let mut p: i32 = 0
+    while p < sl_len(paths) {
+        let path: string = sl_get(paths, p)
+        if not covered(globs, path) {
+            bad = bad + 1
+            if shown < 20 {
+                errln("ci_gating: not in the goldens filter: " + path)
+                shown = shown + 1
+            }
+        }
+        p = p + 1
+    }
+    if bad > 0 {
+        errln("ci_gating: " + s_itoa(bad) + " problem(s); a pull request touching these would skip the goldens job")
+        return 1
+    }
+    outln("ci_gating: " + s_itoa(sl_len(paths)) + " paths the goldens job reads are all in its filter")
+    return 0
+}
