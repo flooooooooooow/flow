@@ -68,6 +68,24 @@ permissions:
 # was not needed (a skipped job counts as passing for a required check) and
 # runs, and fails, when its step failed or never ran. So it needs no runner
 # on a green run.
+#
+# Runners. The light jobs (Detect changes, the checks job and the small
+# report jobs, doc examples, smoke and CI) run on two self-hosted runners,
+# flow-vps-1 and flow-vps-2 (labels self-hosted and flow-vps), to take load
+# off the hosted pool. The heavy jobs stay on ubuntu-latest, which has more
+# cores. Every routed job uses the `&flow-runner` anchor on `changes`, which
+# picks the VPS only for trusted events: a push to main, a merge queue
+# batch, and a pull request from a branch of this repository. A pull
+# request from a fork, and any other event, runs on ubuntu-latest, so
+# outside code never reaches the VPS.
+#
+# If the VPS runners are down, routed jobs wait in the queue for them.
+# Set the repository variable FLOW_VPS_RUNNERS to `off` to send every job
+# back to ubuntu-latest, then re-run the waiting runs:
+#   gh variable set FLOW_VPS_RUNNERS --body off -R flooooooooooow/flow
+# Delete the variable (or set it to `on`) to use the VPS again. Each routed
+# job has a timeout-minutes, so a job that hangs on the VPS fails instead of
+# holding a runner. The runner setup is in docs/project/ci-runners.md.
 jobs:
   # Path flags that gate the jobs below. On pull_request the diff is the
   # pull request's; on merge_group it is the batch against the queue base
@@ -82,7 +100,8 @@ jobs:
   # them again and report the error where it matters.
   changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: &flow-runner ${{ vars.FLOW_VPS_RUNNERS != 'off' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","flow-vps"]') || 'ubuntu-latest' }}
+    timeout-minutes: 15
     outputs:
       src: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.src || 'true' }}
       compiler: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.compiler || 'true' }}
@@ -189,7 +208,8 @@ jobs:
   # the two ratchets and lint report through their own jobs below.
   checks:
     name: Doc links
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 30
     needs: changes
     outputs:
       version: ${{ steps.version.outcome }}
@@ -311,7 +331,8 @@ jobs:
   # when its step passed or was skipped, and fails otherwise.
   version:
     name: Version consistency
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 5
     needs: checks
     if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.version)
     steps:
@@ -321,7 +342,8 @@ jobs:
 
   python-ratchet:
     name: Python ratchet (Flow first)
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 5
     needs: checks
     if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.python)
     steps:
@@ -331,7 +353,8 @@ jobs:
 
   shell-ratchet:
     name: Shell ratchet (Flow first)
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 5
     needs: checks
     if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.shell)
     steps:
@@ -344,7 +367,8 @@ jobs:
   # job did not get that far, which fails.
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 5
     needs: checks
     if: always() && !contains(fromJSON('["success","skipped"]'), needs.checks.outputs.lint)
     steps:
@@ -361,7 +385,8 @@ jobs:
   # cleanly (#594).
   doc-examples:
     name: Doc examples
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 40
     needs: changes
     if: |
       needs.changes.outputs.src == 'true' ||
@@ -740,7 +765,8 @@ jobs:
 
   flowc-parse-coverage:
     name: flowc parse coverage
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 5
     needs: flowc-parity-gates
     if: always() && needs.flowc-parity-gates.result != 'skipped' && !contains(fromJSON('["success","skipped"]'), needs.flowc-parity-gates.outputs.parse)
     steps:
@@ -803,7 +829,8 @@ jobs:
 
   runtime-tests:
     name: Runtime tests
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 5
     needs: lang-tests
     if: always() && needs.lang-tests.result != 'skipped' && !contains(fromJSON('["success","skipped"]'), needs.lang-tests.outputs.runtime)
     steps:
@@ -817,7 +844,8 @@ jobs:
   # plugin DSP correctness tests.
   smoke:
     name: Smoke (conformance, fuzz, examples, plugin DSP)
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 40
     needs: changes
     if: |
       needs.changes.outputs.src == 'true' ||
@@ -901,7 +929,8 @@ jobs:
 
   ci-ok:
     name: CI
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
+    timeout-minutes: 10
     needs:
       - changes
       - checks
