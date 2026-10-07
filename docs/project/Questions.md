@@ -11,6 +11,42 @@ Format:
 
 ## Open Questions
 
+### 2026-10-08: AST parse cache: how far should flowc distrust its own cache directory? (#736)
+
+**Context:** #1345 set the trust boundary for the native parse cache. Records
+are non-executable `FCAC` integer records, keyed by a schema and compiler
+salt, and written only under `$XDG_CACHE_HOME/flow/ast` or
+`$HOME/.cache/flow/ast`. A project checkout cannot plant a record. #1402
+adds two fixes inside that boundary: an over-long cache root parses
+uncached instead of writing past the 512-byte key buffer, and a record whose
+root index lies outside its stored arena is a miss. The closed #1413 also
+proposed hardening that would move the boundary, and it was not ported:
+
+- refuse a cache directory that is a symlink, is group- or other-writable,
+  or is owned by another user;
+- create records with `O_CREAT|O_EXCL` and mode 0600, then rename into place;
+- cap the payload size and store a 64-bit payload checksum checked on read.
+
+These assume another local user or process can write to the user's own
+cache directory. Under the current model that directory is as trusted as
+the user's home. A record that passes
+the header checks but holds a corrupt node array can still steer the parser
+state of that one compile.
+
+**Options:**
+1. Keep the #1345 model: the user cache is trusted; only bounds and header
+   validation apply (what #1402 lands).
+2. Add the checksum and size cap only. This catches torn writes and disk
+   corruption without changing who is trusted.
+3. Port the full #1413 set: ownership and mode checks, exclusive 0600
+   writes, checksum.
+
+**Recommendation:** Option 2. It covers the realistic failure (a torn or
+corrupt record) and leaves the ownership policy, which is platform-specific,
+for a separate decision.
+
+**Status:** Open. #1402 implements option 1 only.
+
 ### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
 
 **Context:** Issue #564 records that shipped handlers are tail-resumptive
