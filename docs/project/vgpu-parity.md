@@ -182,3 +182,16 @@ FSL AST and emits a WebGPU-compatible fullscreen vertex/fragment module, includi
 FSL helper functions and standard noise/palette functions. `gradient.flow` is the
 first vgpu compatibility fixture, and unit tests cover WGSL generation, helper
 functions, loops, named output and the required color assignment contract.
+
+### CPU-backed dispatch and layout safety (#812 partial)
+
+`stdlib/gpu_sim.flow` returns an empty `LaunchConfig` (zero grid, block
+and thread count) when a dimension or block size is zero or negative,
+when a block has more than 1024 threads, or when the launch would
+overflow a signed 32-bit count. The ceil division is `(n - 1) / b + 1`,
+which cannot overflow. Buffer allocation, CPU-backed copies and the
+layout helpers reject invalid lengths before they multiply or copy.
+
+Regression: `./flow test-runtime tests/runtime/test_gpu_launch_validation.flow`.
+This is host-side validation. The typed render/compute pass graph, hazard
+analysis and Metal/WebGPU fluid and ocean parity for #812 are separate.
