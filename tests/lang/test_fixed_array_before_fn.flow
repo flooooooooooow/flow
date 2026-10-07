@@ -1,0 +1,28 @@
+function first() -> i32 {
+    let a: [i32; 4] = [1, 2, 3, 4]
+    return a[2]
+}
+
+# A `[T; N]` local in a function that another function follows (#1423).
+# flowc used to overflow its stack in rt_collect_calls on this file: the
+# type node keeps the tag AST_TYPE_FIXED_ARRAY (2) in a link field, and
+# node 2 is inside `first`. Keep `first` at the top of the file.
+
+function sum_all() -> i32 {
+    let b: [i32; 3] = [5, 6, 7]
+    let mut s: i32 = 0
+    for i in 0 to 3 {
+        s = s + b[i]
+    }
+    return s
+}
+
+function main() -> i32 {
+    if first() != 3 {
+        return 1
+    }
+    if sum_all() != 18 {
+        return 2
+    }
+    return 0
+}

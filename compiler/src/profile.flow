@@ -37,10 +37,16 @@ static int64_t flowc_prof_now_ns_c(void) {
   }
   return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
 }
+/* The compiler profiles only when explicitly requested. The old
+   unconditional constructor called clock_gettime() for EVERY flowc
+   invocation, adding hidden fixed startup overhead to short builds. */
+static int32_t flowc_prof_mode_c(void);
 #ifdef __GNUC__
 __attribute__((constructor))
 static void flowc_prof_ctor(void) {
-  flowc_prof_process_start = flowc_prof_now_ns_c();
+  if (flowc_prof_mode_c() != 0) {
+    flowc_prof_process_start = flowc_prof_now_ns_c();
+  }
 }
 #endif
 static int32_t flowc_prof_mode_c(void) {

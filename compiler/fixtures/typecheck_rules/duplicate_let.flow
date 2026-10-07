@@ -1,0 +1,6 @@
+# expect: variable 'a' is already declared in this scope
+function main() -> i32 {
+    let a: i32 = 1
+    let a: i32 = 2
+    return a - 2
+}

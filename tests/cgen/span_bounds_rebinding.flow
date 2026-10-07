@@ -1,0 +1,18 @@
+# #729: A 0..xs.len loop is NOT proof for xs[i] when the body changes
+# the span value. Keep the runtime bounds check even though the range
+# expression initially mentions the same span.
+function rebound(xs: &[i32], ys: &[i32]) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to xs.len {
+        if i == 1 {
+            xs = ys
+        }
+        total = total + xs[i]
+    }
+    return total
+}
+
+function main() -> i32 {
+    let values: [i32; 3] = [4, 5, 6]
+    return rebound(values, values) - 15
+}

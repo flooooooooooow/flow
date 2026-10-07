@@ -4,6 +4,7 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- C SIMD hints (#739): `#pragma omp simd` and `#pragma GCC ivdep` are emitted only for a loop body that is one reduction whose other operand does not read the accumulator, or one store (or select `if`) into `dst[i]` where the noalias analysis made `dst` restrict and every expression in the body reads `dst` only at `[i]`. Rotated while loops use the same rule for `ivdep`. Other elementwise loops keep only the clang vectorize request, because `dst[i] = src[i] + 1` may alias a shifted `src`.
 - MLIR tuner: analytic cost model, genetic and Bayesian search over tile schedules, `unroll` transform strategy, and IPC / stalled-cycle PMU events (#668)
 - Release qualification: `./flow tool qualify_release` writes source archives, SHA-256 sums and an RC-promotion record for an exact commit without tagging or publishing. `--check-formula` validates the in-repo Homebrew formula; `--publish` is refused. Hosted dry-run is `.github/workflows/release-qualify.yml`; `release.yml` no longer publishes RC tags (`-rc`) or `qualify_only` dispatches. (#652)
 - GPU: `flow gpu test --suite vgpu [--backend … | --all-backends]` is a real

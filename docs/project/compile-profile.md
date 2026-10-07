@@ -16,7 +16,7 @@ FLOWC_PROFILE=json FLOWC_BUNDLE=1 FLOWC_IN=examples/basics/hello_world.flow \
 ./flow tool compile_bench --repeat 3 examples/basics/hello_world.flow
 ```
 
-`FLOWC_PROFILE` is opt-in. Unset / `0` / `false` / `off` is a no-op besides one `getenv`. It is not `FLOW_PROFILE` (safety/flight) and not `FLOW_MEM_PROFILE` (runtime heap).
+`FLOWC_PROFILE` is opt-in. Unset, `0`, `false`, `off` and `no` cost one cached `getenv`, and the pre-main constructor then skips `clock_gettime`. An enabled profile takes its startup timestamp in the constructor. It is not `FLOW_PROFILE` (safety/flight) and not `FLOW_MEM_PROFILE` (runtime heap).
 
 JSON is one stderr line:
 

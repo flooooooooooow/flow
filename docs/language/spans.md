@@ -87,6 +87,31 @@ error: cannot write through `values`: span<i32> is an immutable view
        (declare it span<mut i32>)
 ```
 
+## Bounds checks in range loops
+
+In `for i in 0 to samples.len`, the C backend drops the per-element bounds
+check on `samples[i]`, because the loop bound proves the index is in range.
+The proof holds only while the body leaves `samples` and `i` alone. If the
+body assigns `samples`, takes its address, or rebinds or shadows `i`, the
+checks stay in:
+
+```flow
+function sum_with_rebind(xs: &[i32], ys: &[i32]) -> i32 {
+    let mut view: &[i32] = xs
+    let mut sum: i32 = 0
+    for i in 0 to view.len {
+        if i == 1 {
+            view = ys
+        }
+        sum = sum + view[i]  # checked: view was reassigned in the loop
+    }
+    return sum
+}
+```
+
+`tests/cgen/span_bounds_elision.flow` covers the loop that drops the
+check, and `tests/cgen/span_bounds_rebinding.flow` the loop that keeps it.
+
 ## Reference sugar
 
 The bracket forms are sugar for the same semantic type:

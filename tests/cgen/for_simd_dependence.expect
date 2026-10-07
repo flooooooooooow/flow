@@ -1,0 +1,7 @@
+# With no alias or dependence proof, the C compiler still decides whether to
+# vectorize. It must not be told to ignore the dependence in the shifted
+# pointer loop or in the nonlinear accumulator (#739).
++ #pragma clang loop vectorize(enable) interleave(enable)
+- #pragma omp simd
+- #pragma GCC ivdep
+exit 0
