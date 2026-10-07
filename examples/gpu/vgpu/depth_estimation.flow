@@ -129,6 +129,16 @@ function main() -> i32 {
     }
     print("match ")
     println(ok)
+    # The host reference, for backends that run the kernels outside this
+    # process (`flow gpu test` compares the WebGPU run against it).
+    print("reference")
+    i = 0
+    while i < depth_out {
+        print(" ")
+        print(cpu.data[i])
+        i = i + 1
+    }
+    println("")
 
     tensor_free(img_h)
     tensor_free(w_h)
