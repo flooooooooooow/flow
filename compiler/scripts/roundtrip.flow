@@ -230,7 +230,9 @@ function main() -> i32 {
 
     # Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
     run_case(host, "stage_a_infer_struct", 42)
-    if not has("compiler/build/stage_a_infer_struct.c", "Pair p = make_pair(20, 22);") {
+    # #732: a struct-returning internal function takes a destination, so
+    # the let is `Pair p;` followed by `make_pair(&p, ...)`.
+    if not has("compiler/build/stage_a_infer_struct.c", "Pair p = make_pair(20, 22);") and not has("compiler/build/stage_a_infer_struct.c", "Pair p;\n  make_pair(&p, 20, 22);") {
         errln("FAIL stage_a_infer_struct: inferred let should be typed Pair")
         show_matches("compiler/build/stage_a_infer_struct.c", "make_pair(20")
         cli_exit(1)

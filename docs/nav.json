@@ -675,6 +675,10 @@
           "path": "language/ffi-boundary-audit.md"
         },
         {
+          "label": "Copy Elision",
+          "path": "language/copy-elision.md"
+        },
+        {
           "label": "C Function Pointers",
           "path": "language/c-fnptr-call.md"
         }

@@ -4,6 +4,8 @@
 + flow_mem_malloc
 + flow_mem_free
 + flow_mem_note_temp
++ flow_mem_copy_count
++ copy_count:
 + (deferred, needs #669)
 + __flowc_str_concat
 - (malloc(32)

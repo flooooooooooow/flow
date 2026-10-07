@@ -122,6 +122,9 @@ function check_report_when_set() -> i32 {
     if not a_contains(report, "peak_rss_kb:") {
         return T_FAIL
     }
+    if not a_contains(report, "copy_count:") {
+        return T_FAIL
+    }
     if not a_contains(report, "(deferred, needs #669)") {
         return T_FAIL
     }

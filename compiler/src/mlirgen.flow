@@ -9420,10 +9420,19 @@ function mlg_same_struct_text(m: ptr<Mlg>, a: i32, b: i32, depth: i32) -> i32 {
     return 1
 }
 
-# Python generate_record_update: `Name { ..base, f: v }` copies base and
-# inserts the listed fields. The struct comes from the base's declared type
-# (or, for other expressions, the first struct whose MLIR type matches);
-# with none, the value is just the base.
+function mlg_is_record_update(m: ptr<Mlg>, e: i32) -> i32 {
+    if e == AST_NONE or mlg_kind(m, e) != AST_STRUCT_LIT {
+        return 0
+    }
+    if m[0].arena.nodes[e].c == AST_NONE {
+        return 0
+    }
+    return 1
+}
+
+# `Name { ..base, f: v }` insertvalues the listed fields onto the base SSA.
+# A later stabilize/materialize is skipped for let/return destinations so
+# the update is not copied field-by-field a second time (#732).
 function mlg_emit_record_update(m: ptr<Mlg>, e: i32) -> i32 {
     let base: i32 = m[0].arena.nodes[e].c
     let mut k: i32 = 0 - 1
@@ -10332,8 +10341,15 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
         mlg_set_vuns(m, v, 1)
     }
     if mlg_is_struct_mt(mt) == 1 and v >= 0 and m[0].vtx[v] > 0 {
-        # Python stabilizes an aggregate initialized from a Tensor field.
-        v = mlg_stabilize(m, v, mt)
+        # A record update already insertvalued onto the base; a second
+        # field-by-field materialize is the copy #732 elides.
+        if mlg_is_record_update(m, init) == 0 {
+            v = mlg_stabilize(m, v, mt)
+        } else {
+            mlg_line(m)
+            mlg_s(m, "// flowc.copy_elision record-update")
+            mlg_nl(m)
+        }
     }
     let l: i32 = mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), vt, ty, v)
     let is_mut: i32 = m[0].arena.nodes[st].ival
@@ -10641,7 +10657,13 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
         }
     }
     if mlg_is_struct_mt(rt) == 1 {
-        v = mlg_stabilize(m, v, rt)
+        if mlg_is_record_update(m, e) == 0 {
+            v = mlg_stabilize(m, v, rt)
+        } else {
+            mlg_line(m)
+            mlg_s(m, "// flowc.copy_elision record-update")
+            mlg_nl(m)
+        }
     }
     if mlg_is_memref_mt(rt) == 1 {
         # An array returned by value outlives the callee's stack: copy it to

@@ -1,10 +1,13 @@
 # Let-bound record updates construct into the variable (#732).
-~ Point q = \(p\);
-~ q\.y = 40;
-# A returned update that reads the base still uses a temporary.
-~ Point __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.x =
-# Call result is copied into the binding, then listed fields are written.
-~ Point s = \(make\(\)\);
++ flow_mem_note_copy(sizeof(q));
++ q = (p);
++ q.y = 40;
+# A returned update constructs into the sret dest (no statement-expression temp).
++ void moved(Point* __flowc_sret
++ *__flowc_sret = (p);
+- Point __flowc_sl
+# Call result is destination-passed into the binding, then listed fields are written.
++ make(&s
 # An array field update copies into the declared variable.
 ~ memcpy\(&b\.v,
 exit 0

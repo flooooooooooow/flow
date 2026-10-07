@@ -7,8 +7,10 @@
 # Memory-suite commands run with FLOW_MEM_PROFILE=1 and
 # FLOW_MEM_PROFILE_OUT pointing at a temp file so the #740 runtime
 # profiler can fill allocations, heap_bytes, peak_live_heap, temp_bytes,
-# copies and peak RSS without rewriting the workload sources. Runtime
-# rows leave the profiler off so flow_vs_native is not the wrapper tax.
+# copies (bytes), copy_count (operations) and peak RSS without rewriting
+# the workload sources. copy_count is the #732 / #728 aggregate-copy metric.
+# Runtime rows leave the profiler off so flow_vs_native is not the wrapper
+# tax.
 #
 # Run it as `./flow tool bench_harness`, which passes the repository root
 # in FLOW_REPO_ROOT.
@@ -435,6 +437,7 @@ struct Metrics {
     rss: ptr<f64>
     allocs: ptr<f64>
     copies: ptr<f64>
+    copy_count: ptr<f64>
     heap_bytes: ptr<f64>
     peak_live: ptr<f64>
     temp_bytes: ptr<f64>
@@ -456,6 +459,7 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
     m[0].rss = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].allocs = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].copies = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
+    m[0].copy_count = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].heap_bytes = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].peak_live = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].temp_bytes = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
@@ -483,6 +487,7 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
     let rss: ptr<f64> = m[0].rss
     let allocs: ptr<f64> = m[0].allocs
     let copies: ptr<f64> = m[0].copies
+    let copy_count: ptr<f64> = m[0].copy_count
     let heap_bytes: ptr<f64> = m[0].heap_bytes
     let peak_live: ptr<f64> = m[0].peak_live
     let temp_bytes: ptr<f64> = m[0].temp_bytes
@@ -513,15 +518,18 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
         let prof: string = ft_read_file(mem_out)
         allocs[k] = counter(bn_out(r), "allocations")
         copies[k] = counter(bn_out(r), "copies")
+        copy_count[k] = counter(bn_out(r), "copy_count")
         heap_bytes[k] = 0.0
         peak_live[k] = 0.0
         temp_bytes[k] = 0.0
         if prof as ptr<u8> != null and ft_len(prof) > 0 {
             let pa: f64 = counter(prof, "allocations")
             let pc: f64 = counter(prof, "copies")
-            if pa > 0.0 or pc > 0.0 or counter(prof, "heap_bytes") > 0.0 {
+            let pn: f64 = counter(prof, "copy_count")
+            if pa > 0.0 or pc > 0.0 or pn > 0.0 or counter(prof, "heap_bytes") > 0.0 {
                 allocs[k] = pa
                 copies[k] = pc
+                copy_count[k] = pn
             }
             heap_bytes[k] = counter(prof, "heap_bytes")
             peak_live[k] = counter(prof, "peak_live_heap")
@@ -557,6 +565,7 @@ function metrics_json(m: ptr<Metrics>, memory: bool, ind: string) -> string {
     o = o + ind + "  \"dispersion\": " + bn_py_repr(stdev(m[0].times, n)) + ",\n"
     o = o + ind + "  \"allocations\": " + int_median_json(m[0].allocs, n) + ",\n"
     o = o + ind + "  \"copies\": " + int_median_json(m[0].copies, n) + ",\n"
+    o = o + ind + "  \"copy_count\": " + int_median_json(m[0].copy_count, n) + ",\n"
     o = o + ind + "  \"heap_bytes\": " + int_median_json(m[0].heap_bytes, n) + ",\n"
     o = o + ind + "  \"peak_live_heap\": " + int_median_json(m[0].peak_live, n) + ",\n"
     o = o + ind + "  \"temp_bytes\": " + int_median_json(m[0].temp_bytes, n)

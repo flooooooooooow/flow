@@ -157,6 +157,7 @@ function main() -> i32 {
     sl_push2(want_keys, "\"median\": ", "\"p95\": ")
     sl_push2(want_keys, "\"dispersion\": ", "\"flow_vs_native\": null")
     sl_push2(want_keys, "\"allocations\": 0", "\"copies\": 0")
+    sl_push(want_keys, "\"copy_count\": 0")
     sl_push2(want_keys, "\"heap_bytes\": 0", "\"peak_live_heap\": 0")
     sl_push(want_keys, "\"temp_bytes\": 0")
     let mut k: i32 = 0

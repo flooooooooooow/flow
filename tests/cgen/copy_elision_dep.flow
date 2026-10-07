@@ -1,0 +1,38 @@
+# Overwrite-dependence certification for same-storage record updates (#732).
+#
+# Acyclic: y_x reads old y, y is also written. Write x first, then y.
+# Cyclic: a field swap. Keep the statement-expression temporary.
+
+struct Point {
+    x: i32,
+    y: i32,
+    z: i32
+}
+
+function acyclic_shift(p: Point) -> Point {
+    let mut q: Point = p
+    q = Point { ..q, x: q.y, y: 0 }
+    return q
+}
+
+function cyclic_swap(p: Point) -> Point {
+    let mut q: Point = p
+    q = Point { ..q, x: q.y, y: q.x }
+    return q
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 1, y: 2, z: 3 }
+    let a: Point = acyclic_shift(p)
+    if a.x != 2 or a.y != 0 or a.z != 3 {
+        return 1
+    }
+    let s: Point = cyclic_swap(p)
+    if s.x != 2 or s.y != 1 or s.z != 3 {
+        return 2
+    }
+    if p.x != 1 or p.y != 2 {
+        return 3
+    }
+    return 0
+}

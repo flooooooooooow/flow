@@ -1,0 +1,10 @@
+# Acyclic same-storage: write the reader first, then the overwritten slot.
++ q.x = (q).y;
++ q.y = 0;
+# Cyclic swap keeps the statement-expression copy so both reads see old fields.
+~ Point __flowc_sl[0-9]+
++ .x = (q).y
+# Sret destination-passing for the Point-returning helpers.
++ void acyclic_shift(Point* __flowc_sret
++ void cyclic_swap(Point* __flowc_sret
+exit 0
