@@ -231,6 +231,32 @@ function check_final_line_loc() -> i32 {
     return T_PASS
 }
 
+# A program that does not compile must not produce a timing row (#746).
+# The old harness printed a row with emit_ms -1 next to the error.
+function check_failed_stage_has_no_row() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let input: string = t_tmp() + "/broken.flow"
+    let _w: bool = write_text(input, "function main() -> i32 { return undefined_name_746 }\n")
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compile_bench")
+    sl_push(argv, "--repeat")
+    sl_push(argv, "1")
+    sl_push(argv, input)
+    if t_run_argv(argv) == 0 {
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_out()), "\"emit_ms\"") {
+        t_cat(t_out())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "incomplete emit/compile/run sample") {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function check_no_python() -> i32 {
     if have("python") or have("python3") {
         # tests/scripts/run.flow stubs these to exit 127; they still "exist".
@@ -249,6 +275,8 @@ function main() -> i32 {
     t_end("compile_bench_phases", check_compile_bench())
     t_start()
     t_end("last_unterminated_line_loc", check_final_line_loc())
+    t_start()
+    t_end("failed_stage_has_no_row", check_failed_stage_has_no_row())
     t_start()
     t_end("split_and_cache", check_split_and_cache())
     t_start()
