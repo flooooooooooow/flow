@@ -1,0 +1,111 @@
+# Smoke-test a Flow Debian package without root or a system-wide
+# installation (#652).
+#
+#   ./flow tool qualify_deb --package flow_VERSION-1_all.deb --sha256 DIGEST [--out DIR]
+#
+# Checks the package's SHA-256, its Package field, extracts it with
+# `dpkg-deb --extract` into a temporary directory, checks the payload and
+# the /usr/bin/flow symlink, then boots the packaged `flow` CLI, compiles
+# examples/basics/fibonacci.flow with FLOW_HOST=flowc and requires exit 55.
+# The record goes to DIR/qualification-deb.txt (default
+# build/linux-deb-qualification) and is never published.
+#
+# Exit codes: 0 pass, 1 the package failed a check, 2 bad arguments or host.
+
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_argc, proc_argv }
+import "tools/flow_cli/sys.flow"
+import "tools/build_deb/linux_pkg.flow"
+
+function usage() {
+    errln("usage: ./flow tool qualify_deb --package flow_VERSION_all.deb --sha256 DIGEST [--out DIR]")
+}
+
+function deb_field(deb: string, name: string) -> string {
+    let argv: ptr<ProcStrs> = sl_of3("dpkg-deb", "--field", deb)
+    sl_push(argv, name)
+    return capture(cmd(argv))
+}
+
+function main() -> i32 {
+    let mut deb: string = ""
+    let mut digest: string = ""
+    let mut out_dir: string = "build/linux-deb-qualification"
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        let a: string = proc_argv(i)
+        if s_eq(a, "--package") or s_eq(a, "--sha256") or s_eq(a, "--out") {
+            if i + 1 >= proc_argc() {
+                usage()
+                return 2
+            }
+            let v: string = proc_argv(i + 1)
+            if s_eq(a, "--package") {
+                deb = v
+            } elif s_eq(a, "--sha256") {
+                digest = v
+            } else {
+                out_dir = v
+            }
+            i = i + 2
+        } elif s_eq(a, "-h") or s_eq(a, "--help") {
+            usage()
+            return 0
+        } else {
+            usage()
+            return 2
+        }
+    }
+
+    if not s_eq(uname_s(), "Linux") or not is_file(deb) or not lp_is_sha256(digest) {
+        usage()
+        return 2
+    }
+    let tools: ptr<ProcStrs> = sl_of3("dpkg-deb", "sha256sum", "cc")
+    sl_push(tools, "readlink")
+    lp_require_tools(tools)
+    deb = abs_file_physical(deb)
+    out_dir = lp_abs_path(out_dir)
+    let actual: string = lp_sha256(deb)
+    if not s_eq(actual, digest) {
+        lp_fail("Debian artifact SHA-256 mismatch", 1)
+    }
+    if not s_eq(deb_field(deb, "Package"), "flow") {
+        lp_fail("not a Flow package", 1)
+    }
+
+    let tmp: string = mktemp_dir_default()
+    if s_len(tmp) == 0 {
+        lp_fail("cannot create a temporary directory", 1)
+    }
+    on_exit_remove(tmp)
+    let x: ptr<ProcCmd> = cmd(sl_of3("dpkg-deb", "--extract", deb))
+    proc_arg(x, tmp)
+    let xrc: i32 = run(x)
+    if xrc != 0 {
+        cli_exit(xrc)
+    }
+    let root: string = tmp + "/usr/lib/flow"
+    if not is_file(root + "/flow") or not is_file(root + "/VERSION") or not is_dir(root + "/compiler") or not is_dir(root + "/tools") {
+        lp_fail("incomplete Debian payload", 1)
+    }
+    let link: string = tmp + "/usr/bin/flow"
+    if not is_link(link) or not s_eq(capture(cmd(sl_of2("readlink", link))), "../lib/flow/flow") {
+        lp_fail("broken Debian command symlink", 1)
+    }
+    lp_fibonacci_smoke(root, "missing smoke-test fixture", "no compiled binary", "Debian fibonacci returned ")
+
+    mkdir_p_or_exit(out_dir)
+    let mut rec: string = "status: PASS\npublished: false\n"
+    rec = rec + "package: " + path_basename(deb) + "\nsha256: " + actual + "\n"
+    rec = rec + "version: " + deb_field(deb, "Version") + "\n"
+    rec = rec + "platform: " + lp_platform() + "\n"
+    rec = rec + "test: extract, version, compile and execute fibonacci (exit 55)\n"
+    let record: string = out_dir + "/qualification-deb.txt"
+    if not write_text(record, rec) {
+        lp_fail("cannot write " + record, 1)
+    }
+    outln("PASS: Linux Debian package qualification (" + actual + ")")
+    outln("Record: " + record)
+    cli_exit(0)
+    return 0
+}

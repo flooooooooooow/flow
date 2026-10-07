@@ -86,3 +86,28 @@ intend to publish the tap.
 - Verify https://flooooooooooow.github.io/flow/.
 - Ensure the next milestone exists and the roadmap names the current release.
 - Announce compatibility changes explicitly.
+
+## Linux archive and Debian acceptance (local, no hosted qualification)
+
+On Linux x86-64, verify the **exact released** source tarball and its published
+digest before proceeding with candidate promotion:
+
+```bash
+./flow tool qualify_linux_archive \
+  --archive /path/to/flow-vVERSION.tar.gz --sha256 ACTUAL_PUBLISHED_SHA256
+```
+
+The tool extracts into a fresh temporary directory, checks `flow version`,
+compiles/runs the packaged Fibonacci sample, and writes a Linux qualification
+record. For a Debian development package made from a frozen commit:
+
+```bash
+./flow tool build_deb --rev QUALIFIED_COMMIT --out dist/deb
+./flow tool qualify_deb \
+  --package /path/to/flow_VERSION-1_all.deb --sha256 ACTUAL_DEB_SHA256
+```
+
+These steps require a Linux host with a C compiler and (for Debian packages)
+`dpkg-deb`. They do **not** install system-wide, create signed Debian packages,
+publish APT repositories, tag a commit or update Homebrew. A Linux pass cannot
+substitute for macOS Homebrew validation.
