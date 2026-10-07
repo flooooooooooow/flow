@@ -115,7 +115,9 @@ function assertDescriptor(stage, index, gpuBuffers, resources, device, initializ
             record.length < needed) {
             throw new RangeError("stage accesses more elements than " + resourceId);
         }
-        if (binding.access !== "write" && !initialized.has(resourceId)) {
+        // Flow reflects every output as read_write (WGSL has no write-only
+        // storage buffer), so only read-only bindings need prior contents.
+        if (binding.access === "read" && !initialized.has(resourceId)) {
             throw new Error("Flow GPU resource read before write: " + resourceId);
         }
         if (record.length * 4 > maxLimit(device, "maxStorageBufferBindingSize", Number.MAX_SAFE_INTEGER)) {
@@ -212,7 +214,7 @@ export async function runFlowKernelChain(device, {resources, stages, readback = 
                     label:"Flow " + d.entryPoint + " uniforms"
                 });
                 owned.push(ub);
-                device.queue.writeBuffer(ub, 0, params);
+                device.queue.writeBuffer(ub, 0, new Uint8Array(params));
                 entries.push({binding,resource:{buffer:ub}});
             }
 
