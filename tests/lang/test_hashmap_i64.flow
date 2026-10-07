@@ -1,0 +1,51 @@
+# HashMap_i64_i64: mix hash, grow, insert/get (#745).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "stdlib/collections.flow"
+
+function main() -> i32 {
+    if hash_string("alpha") == hash_string("beta") {
+        return 1
+    }
+    if hash_i64(1) == hash_i64(2) {
+        return 2
+    }
+
+    let mut m: HashMap_i64_i64 = hashmap_i64_i64_new(8)
+    let mut i: i32 = 0
+    while i < 64 {
+        m = hashmap_i64_i64_insert(m, i as i64, (i as i64) * 3)
+        i = i + 1
+    }
+    if hashmap_i64_i64_len(m) != 64 {
+        hashmap_i64_i64_free(m)
+        return 3
+    }
+    if m.capacity < 128 {
+        hashmap_i64_i64_free(m)
+        return 4
+    }
+    i = 0
+    while i < 64 {
+        if hashmap_i64_i64_get(m, i as i64, 0 - 1) != (i as i64) * 3 {
+            hashmap_i64_i64_free(m)
+            return 5
+        }
+        i = i + 1
+    }
+    if hashmap_i64_i64_get(m, 999, 0 - 1) != 0 - 1 {
+        hashmap_i64_i64_free(m)
+        return 6
+    }
+    if hashmap_i64_i64_contains(m, 10) == false {
+        hashmap_i64_i64_free(m)
+        return 7
+    }
+    m = hashmap_i64_i64_insert(m, 10, 99)
+    if hashmap_i64_i64_get(m, 10, 0) != 99 {
+        hashmap_i64_i64_free(m)
+        return 8
+    }
+    hashmap_i64_i64_free(m)
+    return 0
+}

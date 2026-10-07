@@ -25,6 +25,7 @@ benchmarks/
 │   ├── c/                   # Hand-written C equivalents
 │   └── rust/                # Rust equivalents
 ├── baselines/python/        # CPython and NumPy subjects for every comparison
+├── baselines/native/        # Hand-written C twins for native attribution
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
 │   ├── ffi_boundary_benchmark.flow  # FFI scalar / batched / buffer timings
@@ -38,10 +39,24 @@ benchmarks/
 
 ## Memory instrumentation
 
-`./flow tool bench_harness` sets `FLOW_MEM_PROFILE=1` on every subject.
+Runtime primitive attribution (#745) lives under
+`baselines/native/cross_harness/runtime/`. Every runtime workload has a
+hand-written C twin compiled with the same `clang -O3 -march=native -lm`
+flags as generated Flow C. The harness records `flow_vs_python`,
+`flow_vs_native` and `python_vs_native`. See
+[docs/project/runtime-primitive-attribution.md](../docs/project/runtime-primitive-attribution.md).
+
+```bash
+./flow tool bench_harness --check-runtime-natives
+./flow tool bench_harness --smoke --out /tmp/flow-runtime-attr.json
+./flow tool bench_harness --eval-tax /tmp/flow-runtime-attr.json
+```
+
+`./flow tool bench_harness` sets `FLOW_MEM_PROFILE=1` on the memory suite
+so runtime `flow_vs_native` ratios are not the #740 wrapper tax.
 Compiled Flow programs then write heap count/bytes, peak live heap, peak
-RSS, compiler-temp bytes and copy volume into the schema (issue #740).
-No workload source rewrite is required. See [docs/library/memory.md](../docs/library/memory.md).
+RSS, compiler-temp bytes and copy volume into the schema. No workload
+source rewrite is required. See [docs/library/memory.md](../docs/library/memory.md).
 
 ## Running Benchmarks
 

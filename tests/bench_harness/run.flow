@@ -125,6 +125,11 @@ function main() -> i32 {
     let _n: bool = write_text(WORK + "/new.json", "{\"os\": \"Linux\", \"cpu\": \"x86_64\", \"semantic_parity_status\": \"verified\", \"flow_metrics\": {}}\n")
     check("no median is no_data", "no_data", bin_out("--eval-regression " + WORK + "/old.json " + WORK + "/new.json"))
 
+    let _t: bool = write_text(WORK + "/tax.json", "{\"benchmarks\": [{\"workload_id\": \"runtime_loops\", \"attribution\": {\"flow_vs_native\": 1.02}}, {\"workload_id\": \"runtime_calls\", \"attribution\": {\"flow_vs_native\": 1.10}}, {\"workload_id\": \"runtime_strings\", \"attribution\": {\"flow_vs_native\": null}}]}\n")
+    check("tax ok row", "runtime_loops: ok", lines_starting(bin_out("--eval-tax " + WORK + "/tax.json"), "runtime_loops:"))
+    check("tax over 5%", "runtime_calls: tax", lines_starting(bin_out("--eval-tax " + WORK + "/tax.json"), "runtime_calls:"))
+    check("tax missing native", "runtime_strings: no_native", lines_starting(bin_out("--eval-tax " + WORK + "/tax.json"), "runtime_strings:"))
+
     # --- get_system_info ----------------------------------------------------
     let info: string = bin_out("--system-info")
     let keys: ptr<ProcStrs> = s_words("os cpu arch flow_version git_sha python_version threads")
@@ -147,8 +152,10 @@ function main() -> i32 {
     sl_push2(want_keys, "\"semantic_parity_status\": \"verified\"", "\"flow_command\": \"echo flow_mock\"")
     sl_push2(want_keys, "\"python_command\": \"echo python_mock\"", "\"warm_mode\": true")
     sl_push2(want_keys, "\"repeats\": 3", "\"flow_metrics\": {")
-    sl_push2(want_keys, "\"python_metrics\": {", "\"median\": ")
-    sl_push2(want_keys, "\"p95\": ", "\"dispersion\": ")
+    sl_push2(want_keys, "\"python_metrics\": {", "\"native_command\": null")
+    sl_push2(want_keys, "\"native_metrics\": {", "\"attribution\": {")
+    sl_push2(want_keys, "\"median\": ", "\"p95\": ")
+    sl_push2(want_keys, "\"dispersion\": ", "\"flow_vs_native\": null")
     sl_push2(want_keys, "\"allocations\": 0", "\"copies\": 0")
     sl_push2(want_keys, "\"heap_bytes\": 0", "\"peak_live_heap\": 0")
     sl_push(want_keys, "\"temp_bytes\": 0")
@@ -185,6 +192,14 @@ function main() -> i32 {
     tr_cmd_cd(bc, WORK)
     cmd_quiet(bc)
     check("unknown argument exit", "2", s_itoa(run(bc)))
+
+    # Real-repo gate: every runtime workload has a native C twin (#745).
+    let nc: ptr<ProcCmd> = cmd(sl_of2(BIN, "--check-runtime-natives"))
+    cmd_env(nc, "FLOW_REPO_ROOT", _root)
+    tr_cmd_cd(nc, _root)
+    let natives_out: string = capture(nc)
+    check("runtime natives exit", "0", s_itoa(last_status()))
+    count(s_contains(natives_out, "runtime natives: complete"), "FAIL runtime natives were not complete:\n" + natives_out)
 
     # Python may only be asked for its version (the availability probe).
     let calls: ptr<ProcStrs> = s_lines(read_text(log))

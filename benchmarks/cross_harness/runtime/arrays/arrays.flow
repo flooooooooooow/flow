@@ -1,7 +1,18 @@
 function main() -> i32 {
-    let mut arr: [i32; 1000] = [0; 1000];
-    for i in 0..1000 {
-        arr[i] = i;
+    let mut arr: [i32; 1000] = [0; 1000]
+    let mut checksum: i64 = 0
+    let mut rep: i32 = 0
+    while rep < 10000 {
+        let mut i: i32 = 0
+        while i < 1000 {
+            arr[i] = i
+            checksum = checksum + (arr[i] as i64)
+            i = i + 1
+        }
+        rep = rep + 1
     }
-    return 0;
+    if checksum != 4995000000 {
+        return 1
+    }
+    return 0
 }

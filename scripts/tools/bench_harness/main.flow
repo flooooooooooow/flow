@@ -1,12 +1,14 @@
 # Cross-dimensional benchmark harness: runs the workloads under
-# benchmarks/cross_harness in Flow, and their CPython twins under
-# benchmarks/baselines/python/cross_harness when python3 is available, then
+# benchmarks/cross_harness in Flow, their CPython twins under
+# benchmarks/baselines/python/cross_harness when python3 is available, and
+# their native C twins under benchmarks/baselines/native/cross_harness. It
 # writes one JSON file of timings and can compare it with an earlier one.
 #
-# Each measured command runs with FLOW_MEM_PROFILE=1 and
+# Memory-suite commands run with FLOW_MEM_PROFILE=1 and
 # FLOW_MEM_PROFILE_OUT pointing at a temp file so the #740 runtime
 # profiler can fill allocations, heap_bytes, peak_live_heap, temp_bytes,
-# copies and peak RSS without rewriting the workload sources.
+# copies and peak RSS without rewriting the workload sources. Runtime
+# rows leave the profiler off so flow_vs_native is not the wrapper tax.
 #
 # Run it as `./flow tool bench_harness`, which passes the repository root
 # in FLOW_REPO_ROOT.
@@ -21,6 +23,8 @@
 #
 #   --percentile P X...          linear-interpolated percentile of X
 #   --eval-regression OLD NEW    regression status of two workload objects
+#   --eval-tax FILE              flow_vs_native status of each row (ok/tax/no_native)
+#   --check-runtime-natives      exit 1 if a runtime workload has no native .c twin
 #   --system-info                the "system" object as JSON
 #   --now-us                     wall clock in microseconds (for the standardized bench)
 #
@@ -31,7 +35,7 @@
 # regression.
 
 import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_slice, ft_from, ft_join, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
-import .json { json_parse, json_error, json_get, json_str, json_kind, json_first, json_next, json_quote, json_kind_object, json_kind_number, json_kind_string, json_kind_array, Json }
+import .json { json_parse, json_error, json_get, json_str, json_kind, json_first, json_next, json_quote, json_kind_object, json_kind_number, json_kind_string, json_kind_array, json_kind_null, Json }
 import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_mkdir_p, pr_is_dir, pr_resolve }
 import .bench { bn_fixed, bn_py_repr, bn_median, bn_min, bn_run, bn_code, bn_out, bn_wall, bn_parse_float, bn_strip, BenchRun }
 
@@ -59,7 +63,7 @@ function root() -> string {
 }
 
 function usage() -> string {
-    return "usage: flow tool bench_harness [-h] [--smoke] [--baseline BASELINE] [--out OUT] [--cleanup]"
+    return "usage: flow tool bench_harness [-h] [--smoke] [--baseline BASELINE] [--out OUT] [--cleanup]\n       flow tool bench_harness --check-runtime-natives\n       flow tool bench_harness --eval-tax FILE"
 }
 
 # ---------------------------------------------------------------------------
@@ -485,11 +489,18 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
     let mut k: i32 = 0
     while k < repeats {
         let _rm0: i32 = pr_run("rm -f " + pr_quote(mem_out))
-        let _e1: i32 = setenv("FLOW_MEM_PROFILE", "1", 1)
-        let _e2: i32 = setenv("FLOW_MEM_PROFILE_OUT", mem_out, 1)
+        if memory {
+            let _e1: i32 = setenv("FLOW_MEM_PROFILE", "1", 1)
+            let _e2: i32 = setenv("FLOW_MEM_PROFILE_OUT", mem_out, 1)
+        } else {
+            let _e3: i32 = setenv("FLOW_MEM_PROFILE", "", 1)
+            let _e4: i32 = setenv("FLOW_MEM_PROFILE_OUT", "", 1)
+        }
         let r: ptr<BenchRun> = run_in(cwd, full)
-        let _e3: i32 = setenv("FLOW_MEM_PROFILE", "", 1)
-        let _e4: i32 = setenv("FLOW_MEM_PROFILE_OUT", "", 1)
+        if memory {
+            let _e5: i32 = setenv("FLOW_MEM_PROFILE", "", 1)
+            let _e6: i32 = setenv("FLOW_MEM_PROFILE_OUT", "", 1)
+        }
         if bn_code(r) != 0 {
             m[0].failed = true
         }
@@ -578,9 +589,36 @@ function bool_json(b: bool) -> string {
     return "false"
 }
 
-# One workload: warm up when asked, time both commands, and return its JSON
-# object at list indentation.
-function run_benchmark(sys: ptr<SysInfo>, workload: string, flow_cmd: ptr<StrList>, py_cmd: ptr<StrList>, repeats: i32, warm: bool, memory: bool, flavour: i32, cwd: string) -> string {
+# One workload: warm up when asked, time each available command, and return
+# its JSON object at list indentation.
+function ratio_text(numer: f64, denom: f64) -> string {
+    if numer <= 0.0 or denom <= 0.0 {
+        return "null"
+    }
+    return bn_py_repr(numer / denom)
+}
+
+function attribution_json(flow: ptr<Metrics>, python: ptr<Metrics>, native: ptr<Metrics>, ind: string) -> string {
+    let mut fm: f64 = 0.0
+    let mut pm: f64 = 0.0
+    let mut nm: f64 = 0.0
+    if flow != null {
+        fm = bn_median(flow[0].times, flow[0].n)
+    }
+    if python != null {
+        pm = bn_median(python[0].times, python[0].n)
+    }
+    if native != null {
+        nm = bn_median(native[0].times, native[0].n)
+    }
+    return "{\n"
+        + ind + "  \"flow_vs_python\": " + ratio_text(fm, pm) + ",\n"
+        + ind + "  \"flow_vs_native\": " + ratio_text(fm, nm) + ",\n"
+        + ind + "  \"python_vs_native\": " + ratio_text(pm, nm) + "\n"
+        + ind + "}"
+}
+
+function run_benchmark(sys: ptr<SysInfo>, workload: string, flow_cmd: ptr<StrList>, py_cmd: ptr<StrList>, native_cmd: ptr<StrList>, repeats: i32, warm: bool, memory: bool, flavour: i32, cwd: string) -> string {
     if warm {
         if flow_cmd != null {
             let _w1: ptr<BenchRun> = run_in(cwd, flow_cmd)
@@ -588,9 +626,13 @@ function run_benchmark(sys: ptr<SysInfo>, workload: string, flow_cmd: ptr<StrLis
         if py_cmd != null {
             let _w2: ptr<BenchRun> = run_in(cwd, py_cmd)
         }
+        if native_cmd != null {
+            let _w3: ptr<BenchRun> = run_in(cwd, native_cmd)
+        }
     }
     let mut fm: ptr<Metrics> = null
     let mut pm: ptr<Metrics> = null
+    let mut nm: ptr<Metrics> = null
     let mut parity: string = "verified"
     if flow_cmd != null {
         fm = measure(flow_cmd, repeats, memory, flavour, cwd)
@@ -604,12 +646,19 @@ function run_benchmark(sys: ptr<SysInfo>, workload: string, flow_cmd: ptr<StrLis
             parity = "unresolved"
         }
     }
+    if native_cmd != null {
+        nm = measure(native_cmd, repeats, memory, flavour, cwd)
+        if nm[0].failed {
+            parity = "unresolved"
+        }
+    }
     let ind: string = "      "
     let mut o: string = "    {\n"
     o = o + ind + "\"workload_id\": " + json_quote(workload) + ",\n"
     o = o + ind + "\"semantic_parity_status\": " + json_quote(parity) + ",\n"
     o = o + ind + "\"flow_command\": " + join_plain(flow_cmd) + ",\n"
     o = o + ind + "\"python_command\": " + join_plain(py_cmd) + ",\n"
+    o = o + ind + "\"native_command\": " + join_plain(native_cmd) + ",\n"
     o = o + ind + "\"compiler_version\": " + json_quote(sys[0].flow_version) + ",\n"
     o = o + ind + "\"interpreter_version\": " + json_quote(sys[0].python_version) + ",\n"
     o = o + ind + "\"backend\": \"c\",\n"
@@ -620,7 +669,9 @@ function run_benchmark(sys: ptr<SysInfo>, workload: string, flow_cmd: ptr<StrLis
     o = o + ind + "\"warm_mode\": " + bool_json(warm) + ",\n"
     o = o + ind + "\"repeats\": " + bn_fixed(repeats as f64, 0) + ",\n"
     o = o + ind + "\"flow_metrics\": " + metrics_json(fm, memory, ind) + ",\n"
-    o = o + ind + "\"python_metrics\": " + metrics_json(pm, memory, ind) + "\n"
+    o = o + ind + "\"python_metrics\": " + metrics_json(pm, memory, ind) + ",\n"
+    o = o + ind + "\"native_metrics\": " + metrics_json(nm, memory, ind) + ",\n"
+    o = o + ind + "\"attribution\": " + attribution_json(fm, pm, nm, ind) + "\n"
     return o + "    }"
 }
 
@@ -669,6 +720,19 @@ function compile_flow(flow_path: string, bin_path: string) -> bool {
     return true
 }
 
+# Native baselines compile with the same backend flags as generated Flow C.
+function compile_native(c_path: string, bin_path: string) -> bool {
+    let log_o: string = bin_path + ".out"
+    let log_e: string = bin_path + ".err"
+    let redirect: string = " >" + pr_quote(log_o) + " 2>" + pr_quote(log_e)
+    if pr_run("clang -O3 -march=native -lm " + pr_quote(c_path) + " -o " + pr_quote(bin_path) + redirect) != 0 {
+        ft_outln("Clang compilation failed for " + c_path + ":\n" + ft_read_file(log_o) + "\n" + ft_read_file(log_e))
+        return false
+    }
+    let _rm: i32 = pr_run("rm -f " + pr_quote(log_o) + " " + pr_quote(log_e))
+    return true
+}
+
 function suite_name(i: i32) -> string {
     if i == 0 {
         return "cold"
@@ -688,6 +752,7 @@ function discover(sys: ptr<SysInfo>, smoke: bool, have_py: bool, flavour: i32, o
         return
     }
     let twins: string = ft_join(root(), "benchmarks/baselines/python/cross_harness")
+    let natives: string = ft_join(root(), "benchmarks/baselines/native/cross_harness")
     let build: string = ft_join(root(), "build/benchmarks")
     let _m: bool = pr_mkdir_p(build)
     let mut repeats: i32 = 10
@@ -709,6 +774,7 @@ function discover(sys: ptr<SysInfo>, smoke: bool, have_py: bool, flavour: i32, o
                 let warm: bool = ft_eq(suite, "cold") == false
                 let mut flow_cmd: ptr<StrList> = null
                 let mut py_cmd: ptr<StrList> = null
+                let mut native_cmd: ptr<StrList> = null
                 let mut skip: bool = false
                 let flow_file: string = first_with(d, ".flow")
                 if flow_file as ptr<u8> != null {
@@ -734,8 +800,18 @@ function discover(sys: ptr<SysInfo>, smoke: bool, have_py: bool, flavour: i32, o
                     ft_list_push(py_cmd, "python3")
                     ft_list_push(py_cmd, py_file)
                 }
-                if skip == false and (flow_cmd != null or py_cmd != null) {
-                    ft_list_push(out, run_benchmark(sys, workload, flow_cmd, py_cmd, repeats, warm, memory, flavour, d))
+                let native_file: string = first_with(natives + "/" + suite + "/" + name, ".c")
+                if native_file as ptr<u8> != null {
+                    let native_bin: string = build + "/" + workload + "_native"
+                    if compile_native(native_file, native_bin) {
+                        native_cmd = ft_list_new()
+                        ft_list_push(native_cmd, native_bin)
+                    } else {
+                        ft_outln("Skipping " + workload + " native baseline due to compilation error")
+                    }
+                }
+                if skip == false and (flow_cmd != null or py_cmd != null or native_cmd != null) {
+                    ft_list_push(out, run_benchmark(sys, workload, flow_cmd, py_cmd, native_cmd, repeats, warm, memory, flavour, d))
                 }
             }
             i = i + 1
@@ -823,6 +899,66 @@ function test_regression(old_path: string, new_path: string) -> i32 {
     return 0
 }
 
+# Every runtime/*.flow workload must have a matching native .c twin (#745).
+function check_runtime_natives() -> i32 {
+    let harness: string = ft_join(root(), "benchmarks/cross_harness/runtime")
+    let natives: string = ft_join(root(), "benchmarks/baselines/native/cross_harness/runtime")
+    let names: ptr<StrList> = list_dir(harness, "")
+    let mut missing: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(names) {
+        let name: string = ft_list_get(names, i)
+        let d: string = harness + "/" + name
+        if pr_is_dir(d) {
+            if first_with(d, ".flow") as ptr<u8> != null {
+                if first_with(natives + "/" + name, ".c") as ptr<u8> == null {
+                    ft_errln("missing native twin: runtime/" + name)
+                    missing = missing + 1
+                } else {
+                    ft_outln("runtime_" + name + ": native")
+                }
+            }
+        }
+        i = i + 1
+    }
+    if missing > 0 {
+        return 1
+    }
+    ft_outln("runtime natives: complete")
+    return 0
+}
+
+# Classify each row's flow_vs_native ratio. >1.05 is a Flow tax.
+function eval_tax(path: string) -> i32 {
+    let j: ptr<Json> = load_json(path)
+    if j == null {
+        return 2
+    }
+    let list: i32 = json_get(j, 0, "benchmarks")
+    if list < 0 or json_kind(j, list) != json_kind_array() {
+        ft_errln("run_benchmarks: " + path + " has no benchmarks array")
+        return 2
+    }
+    let mut c: i32 = json_first(j, list)
+    while c >= 0 {
+        let workload: string = member_str(j, c, "workload_id")
+        let attr: i32 = json_get(j, c, "attribution")
+        let ratio: i32 = json_get(j, attr, "flow_vs_native")
+        if attr < 0 or ratio < 0 or json_kind(j, ratio) == json_kind_null() {
+            ft_outln(workload + ": no_native")
+        } else {
+            let v: f64 = bn_parse_float(json_str(j, ratio))
+            if v > 1.05 {
+                ft_outln(workload + ": tax")
+            } else {
+                ft_outln(workload + ": ok")
+            }
+        }
+        c = json_next(j, c)
+    }
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
@@ -837,6 +973,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             return test_percentile(argc, argv, i + 1)
         } elif ft_eq(a, "--eval-regression") and i + 2 < argc {
             return test_regression(argv[i + 1] as string, argv[i + 2] as string)
+        } elif ft_eq(a, "--eval-tax") and i + 1 < argc {
+            return eval_tax(argv[i + 1] as string)
+        } elif ft_eq(a, "--check-runtime-natives") {
+            return check_runtime_natives()
         } elif ft_eq(a, "--now-us") {
             ft_outln(now_us())
             return 0
@@ -894,7 +1034,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         let pc: ptr<StrList> = ft_list_new()
         ft_list_push(pc, "echo")
         ft_list_push(pc, "python_mock")
-        ft_list_push(items, run_benchmark(sys, "mock_workload", fc, pc, repeats, true, false, flavour, "."))
+        ft_list_push(items, run_benchmark(sys, "mock_workload", fc, pc, null, repeats, true, false, flavour, "."))
     }
 
     let mut doc: string = "{\n  \"timestamp\": " + json_quote(iso_now()) + ",\n"

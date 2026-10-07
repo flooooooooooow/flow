@@ -201,6 +201,22 @@ struct HashMap_string_i32 {
 | `hashmap_string_i32_new` | `(i32) -> HashMap_string_i32` | Create with capacity |
 | `hashmap_string_i32_len` | `(HashMap_string_i32) -> i32` | Get size |
 | `hashmap_string_i32_is_empty` | `(HashMap_string_i32) -> bool` | Check if empty |
+| `hash_string` | `(string) -> i32` | djb2 over the C-string bytes |
+
+### HashMap_i64_i64
+
+Open-addressed `i64 -> i64` map with linear probing. Insert doubles the table
+before load factor 1/2 so lookup stays expected O(1).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `hashmap_i64_i64_new` | `(i32) -> HashMap_i64_i64` | Create with capacity (minimum 8) |
+| `hashmap_i64_i64_len` | `(HashMap_i64_i64) -> i32` | Occupied entries |
+| `hashmap_i64_i64_contains` | `(HashMap_i64_i64, i64) -> bool` | Probe for a key |
+| `hashmap_i64_i64_get` | `(HashMap_i64_i64, i64, i64) -> i64` | Lookup, or the default |
+| `hashmap_i64_i64_insert` | `(HashMap_i64_i64, i64, i64) -> HashMap_i64_i64` | Insert or overwrite; may grow |
+| `hashmap_i64_i64_free` | `(HashMap_i64_i64) -> void` | Release the three buffers |
+| `hash_i64` | `(i64) -> i32` | fmix-style 32-bit mix |
 
 ### Set_i32
 

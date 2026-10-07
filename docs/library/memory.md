@@ -94,7 +94,7 @@ When enabled, the program writes a report at exit to stderr, or to the file name
 - compiler-temporary bytes (string concat / format helpers)
 - copy volume from routed `memcpy` and string joins
 
-`./flow tool bench_harness` sets both variables for every measured subject, so the #728 schema records `allocations`, `heap_bytes`, `peak_live_heap`, `temp_bytes`, `copies` and `median_rss_kb` without rewriting workload sources.
+`./flow tool bench_harness` sets both variables on the memory suite, so the #728 schema records `allocations`, `heap_bytes`, `peak_live_heap`, `temp_bytes`, `copies` and `median_rss_kb` without rewriting workload sources. Runtime rows leave the profiler off so `flow_vs_native` is not the wrapper tax.
 
 Stack/arena promotion bytes and per-source copy attribution are reported as deferred until the lifetime work in #669.
 
