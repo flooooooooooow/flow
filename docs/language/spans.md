@@ -97,12 +97,13 @@ checks stay in:
 
 ```flow
 function sum_with_rebind(xs: &[i32], ys: &[i32]) -> i32 {
+    let mut view: &[i32] = xs
     let mut sum: i32 = 0
-    for i in 0 to xs.len {
+    for i in 0 to view.len {
         if i == 1 {
-            xs = ys
+            view = ys
         }
-        sum = sum + xs[i]  # checked: xs was reassigned in the loop
+        sum = sum + view[i]  # checked: view was reassigned in the loop
     }
     return sum
 }
