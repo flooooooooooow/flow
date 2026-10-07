@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: attribution guard for this public repository.
 name: Attribution Guard
 
 on:
@@ -41,49 +42,3 @@ jobs:
             echo "Use abhishek.shivakumar@gmail.com or 11516291+godofecht@users.noreply.github.com."
             exit 1
           fi
-
-  repair-history:
-    if: github.event_name == 'push'
-    needs: attribution-guard
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Remove bogus co-author attribution from main
-        shell: bash
-        env:
-          BAD_SHA: e17dc872a6a6591108bc438b2221715442793913
-          FORBIDDEN_EMAIL: abhishek@users.noreply.github.com
-        run: |
-          set -euo pipefail
-
-          git checkout -B main "$GITHUB_SHA"
-
-          count="$(git log main --format='%ae%n%ce%n%B' | grep -F -c "$FORBIDDEN_EMAIL" || true)"
-          if [[ "$count" == "0" ]]; then
-            echo "No bad attribution remains; nothing to repair."
-            exit 0
-          fi
-          if [[ "$count" != "1" ]]; then
-            echo "::error::Expected exactly one bad attribution in main history, found $count."
-            exit 1
-          fi
-
-          git merge-base --is-ancestor "$BAD_SHA" main
-          base_sha="$(git rev-parse "$BAD_SHA^")"
-
-          export FILTER_BRANCH_SQUELCH_WARNING=1
-          git filter-branch --force \
-            --msg-filter "sed '/^Co-authored-by: Abhishek Shivakumar <abhishek@users\\.noreply\\.github\\.com>$/d'" \
-            -- "$base_sha..main"
-
-          if git log main --format='%ae%n%ce%n%B' | grep -Fq "$FORBIDDEN_EMAIL"; then
-            echo "::error::Bad attribution still exists after rewrite."
-            exit 1
-          fi
-
-          git push --force-with-lease=refs/heads/main:"$GITHUB_SHA" origin main:main

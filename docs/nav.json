@@ -659,6 +659,10 @@
           "path": "language/c-simd-loops.md"
         },
         {
+          "label": "MLIR Value Semantics",
+          "path": "language/mlir-value-semantics.md"
+        },
+        {
           "label": "Export ABI",
           "path": "language/export-abi.md"
         },

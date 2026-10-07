@@ -93,6 +93,220 @@ function check_scalar_broadcasts_bufferize() -> i32 {
     return T_PASS
 }
 
+function emit_tensor_hot_loop() -> i32 {
+    let emit: ptr<ProcStrs> = sl_of2("./flow", "flow-to-mlir")
+    sl_push(emit, "--lenient")
+    sl_push2(emit, "compiler/fixtures/mlir_opt/tensor_hot_loop.flow", t_tmp() + "/tensor_hot_loop.mlir")
+    if t_run_argv(emit) != 0 {
+        outln("flow mlir failed:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    if not exists(t_tmp() + "/tensor_hot_loop.mlir") {
+        outln("flow mlir did not write the hot-loop fixture")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_tensor_hot_loop_ssa() -> i32 {
+    if emit_tensor_hot_loop() != T_PASS {
+        return T_FAIL
+    }
+    let emitted: string = read_text(t_tmp() + "/tensor_hot_loop.mlir")
+    if not a_contains(emitted, "scf.for") { return T_FAIL }
+    if not a_contains(emitted, "iter_args(") { return T_FAIL }
+    if not a_contains(emitted, "-> (tensor<?xf32>)") { return T_FAIL }
+    if not a_contains(emitted, "tensor.empty") { return T_FAIL }
+    if not a_contains(emitted, "linalg.generic") { return T_FAIL }
+    if not a_contains(emitted, "scf.yield") { return T_FAIL }
+    if count_of(emitted, "func.func @accumulate") != 1 { return T_FAIL }
+    if count_of(emitted, "func.func @scale_loop") != 1 { return T_FAIL }
+    if s_contains(emitted, "llvm.alloca") { return T_FAIL }
+    if s_contains(emitted, "outs(%arg0") { return T_FAIL }
+    return T_PASS
+}
+
+function run_mlir_opt_pipeline(input: string, output: string, pipeline: string) -> i32 {
+    let optimize: ptr<ProcStrs> = sl_of1("mlir-opt")
+    sl_push(optimize, "--pass-pipeline=" + pipeline)
+    sl_push2(optimize, input, "-o")
+    sl_push(optimize, output)
+    if t_run_argv(optimize) != 0 {
+        outln("mlir-opt failed:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function text_after(hay: string, needle: string) -> string {
+    let at: i32 = s_find(hay, needle, 0)
+    if at < 0 {
+        return ""
+    }
+    return s_slice(hay, at, s_len(hay))
+}
+
+function text_before_for(hay: string) -> string {
+    let at: i32 = s_find(hay, "scf.for", 0)
+    if at < 0 {
+        return hay
+    }
+    return s_slice(hay, 0, at)
+}
+
+function check_tensor_hot_loop_bufferizes() -> i32 {
+    let need: i32 = t_need("mlir-opt")
+    if need != T_PASS {
+        return need
+    }
+    if emit_tensor_hot_loop() != T_PASS {
+        return T_FAIL
+    }
+    let input: string = t_tmp() + "/tensor_hot_loop.mlir"
+    let output: string = t_tmp() + "/tensor_hot_loop.bufferized.mlir"
+    let optimize: ptr<ProcStrs> = sl_of3("./flow", "mlir-optimize", input)
+    sl_push(optimize, output)
+    sl_push2(optimize, "--opt-level", "O1")
+    if t_run_argv(optimize) != 0 {
+        outln("flow mlir-optimize failed:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if not a_contains(text, "memref<") { return T_FAIL }
+    if s_contains(text, "tensor<") { return T_FAIL }
+    if not a_contains(text, "scf.for") { return T_FAIL }
+    let after_for: string = text_after(text, "scf.for")
+    if s_contains(after_for, "memref.alloc") {
+        outln("hot loop still allocates after One-Shot Bufferization")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_tensor_boundary_dps() -> i32 {
+    let need: i32 = t_need("mlir-opt")
+    if need != T_PASS {
+        return need
+    }
+    let emit: ptr<ProcStrs> = sl_of2("./flow", "flow-to-mlir")
+    sl_push(emit, "--lenient")
+    sl_push2(emit, "compiler/fixtures/mlir_opt/tensor_boundary.flow", t_tmp() + "/tensor_boundary.mlir")
+    if t_run_argv(emit) != 0 {
+        return T_FAIL
+    }
+    let output: string = t_tmp() + "/tensor_boundary.dps.mlir"
+    let optimize: ptr<ProcStrs> = sl_of3("./flow", "mlir-optimize", t_tmp() + "/tensor_boundary.mlir")
+    sl_push(optimize, output)
+    sl_push2(optimize, "--opt-level", "O1")
+    if t_run_argv(optimize) != 0 {
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if s_contains(text, "tensor<") { return T_FAIL }
+    if not a_contains(text, "memref<") { return T_FAIL }
+    if not a_contains(text, "func.func @add_once") { return T_FAIL }
+    if s_contains(text, "-> tensor<") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_alias_free_load_hoist() -> i32 {
+    let need: i32 = t_need("mlir-opt")
+    if need != T_PASS {
+        return need
+    }
+    if emit_tensor_hot_loop() != T_PASS {
+        return T_FAIL
+    }
+    let lowered: string = t_tmp() + "/tensor_hot_loop.hoisted.mlir"
+    let pipe: string = "builtin.module(one-shot-bufferize{bufferize-function-boundaries=1},func.func(canonicalize,cse,convert-linalg-to-loops,loop-invariant-code-motion,canonicalize))"
+    if run_mlir_opt_pipeline(t_tmp() + "/tensor_hot_loop.mlir", lowered, pipe) != T_PASS {
+        return T_FAIL
+    }
+    let lowered_text: string = read_text(lowered)
+    if a_contains(lowered_text, "tensor<") { return T_FAIL }
+    if a_contains(text_after(lowered_text, "scf.for"), "memref.alloc") {
+        outln("allocation remained inside the bufferized loop")
+        return T_FAIL
+    }
+    # The bufferized DPS shape: dest and a 0-d scale cannot alias, so LICM
+    # must hoist the invariant scale load out of the loop.
+    let snippet: string = t_tmp() + "/alias_free_hoist.mlir"
+    let _w: bool = write_text(snippet, "module {\nfunc.func @hoist(%dest: memref<16xf32>, %scale: memref<f32>) {\n  %c0 = arith.constant 0 : index\n  %c1 = arith.constant 1 : index\n  %c16 = arith.constant 16 : index\n  scf.for %i = %c0 to %c16 step %c1 {\n    %s = memref.load %scale[] : memref<f32>\n    %v = memref.load %dest[%i] : memref<16xf32>\n    %r = arith.addf %v, %s : f32\n    memref.store %r, %dest[%i] : memref<16xf32>\n  }\n  return\n}\n}\n")
+    let output: string = t_tmp() + "/alias_free_hoist.out.mlir"
+    if run_mlir_opt_pipeline(snippet, output, "builtin.module(func.func(loop-invariant-code-motion))") != T_PASS {
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if not a_contains(text, "scf.for") { return T_FAIL }
+    if a_contains(text_after(text, "scf.for"), "memref.load %") and a_contains(text_after(text, "scf.for"), "memref<f32>") {
+        outln("invariant scale load remained inside the loop")
+        outln(text)
+        return T_FAIL
+    }
+    if not a_contains(text_before_for(text), "memref.load") {
+        outln("expected the invariant load to be hoisted before scf.for")
+        outln(text)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_alias_free_vectorize() -> i32 {
+    let need: i32 = t_need("mlir-opt")
+    if need != T_PASS {
+        return need
+    }
+    if emit_tensor_hot_loop() != T_PASS {
+        return T_FAIL
+    }
+    let bufferized: string = t_tmp() + "/tensor_hot_loop.vector_prep.mlir"
+    let prep: string = "builtin.module(one-shot-bufferize{bufferize-function-boundaries=1},func.func(canonicalize,cse))"
+    if run_mlir_opt_pipeline(t_tmp() + "/tensor_hot_loop.mlir", bufferized, prep) != T_PASS {
+        return T_FAIL
+    }
+    let prep_text: string = read_text(bufferized)
+    if a_contains(prep_text, "tensor<") { return T_FAIL }
+    if not a_contains(prep_text, "memref<") { return T_FAIL }
+    # Disjoint dest/source memrefs are the alias-free form One-Shot
+    # Bufferization produces. Affine super-vectorize can then emit vector ops.
+    let snippet: string = t_tmp() + "/alias_free_vec.mlir"
+    let _w: bool = write_text(snippet, "module {\nfunc.func @vec(%a: memref<16xf32>, %b: memref<16xf32>, %out: memref<16xf32>) {\n  affine.for %i = 0 to 16 {\n    %x = affine.load %a[%i] : memref<16xf32>\n    %y = affine.load %b[%i] : memref<16xf32>\n    %r = arith.addf %x, %y : f32\n    affine.store %r, %out[%i] : memref<16xf32>\n  }\n  return\n}\n}\n")
+    let output: string = t_tmp() + "/alias_free_vec.out.mlir"
+    if run_mlir_opt_pipeline(snippet, output, "builtin.module(func.func(affine-super-vectorize))") != T_PASS {
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if a_contains(text, "vector.") or a_contains(text, "vector<") {
+        return T_PASS
+    }
+    outln("expected vector ops after alias-free affine vectorization:")
+    outln(text)
+    return T_FAIL
+}
+
+function check_memref_noncommutative_operand_order() -> i32 {
+    let emit: ptr<ProcStrs> = sl_of2("./flow", "flow-to-mlir")
+    sl_push(emit, "--lenient")
+    let output: string = t_tmp() + "/memref-noncommutative.mlir"
+    sl_push2(emit, "compiler/fixtures/mlir_opt/memref_noncommutative.flow", output)
+    if t_run_argv(emit) != 0 {
+        outln("flow mlir failed for memref operand-order regression:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if not a_contains(text, "arith.subf %out, %in : f32") { return T_FAIL }
+    if not a_contains(text, "arith.divf %out, %in : f32") { return T_FAIL }
+    if a_contains(text, "arith.subf %in, %out : f32") { return T_FAIL }
+    if a_contains(text, "arith.divf %in, %out : f32") { return T_FAIL }
+    return T_PASS
+}
+
 function check_tensor_operator_chain_bufferizes() -> i32 {
     let need: i32 = t_need("mlir-opt")
     if need != T_PASS {
@@ -138,6 +352,18 @@ function main() -> i32 {
     t_end("scalar_broadcasts_lower_to_memrefs", check_scalar_broadcasts_bufferize())
     t_start()
     t_end("tensor_operator_chain_lower_to_memrefs", check_tensor_operator_chain_bufferizes())
+    t_start()
+    t_end("memref_noncommutative_operand_order", check_memref_noncommutative_operand_order())
+    t_start()
+    t_end("tensor_hot_loop_ssa", check_tensor_hot_loop_ssa())
+    t_start()
+    t_end("tensor_hot_loop_lower_to_memrefs", check_tensor_hot_loop_bufferizes())
+    t_start()
+    t_end("tensor_boundary_destination_passing", check_tensor_boundary_dps())
+    t_start()
+    t_end("alias_free_load_hoist", check_alias_free_load_hoist())
+    t_start()
+    t_end("alias_free_vectorize", check_alias_free_vectorize())
     t_done()
     return 0
 }

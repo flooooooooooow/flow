@@ -38,6 +38,10 @@ binary is a complete flowc: run it bare and it executes the front-end
 self-tests (`flowc: PASS`); give it `FLOWC_IN`/`FLOWC_OUT` and it emits C. It
 then recompiles `compiler/src`, and so does its child:
 `gen1.c == gen2.c == gen3.c`, and `gen2.o == gen3.o`.
+gen0 is always the checked-in bootstrap C, built to
+`compiler/build/flowc_bootstrap` and rebuilt when that binary is older, so
+`gen1.c == gen2.c` also proves the bootstrap C was regenerated.
+`FLOWC_BOOTSTRAP=<path>` picks another gen0.
 
 ## Package it
 
