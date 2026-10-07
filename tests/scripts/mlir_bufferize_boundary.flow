@@ -289,6 +289,24 @@ function check_alias_free_vectorize() -> i32 {
     return T_FAIL
 }
 
+function check_memref_noncommutative_operand_order() -> i32 {
+    let emit: ptr<ProcStrs> = sl_of2("./flow", "flow-to-mlir")
+    sl_push(emit, "--lenient")
+    let output: string = t_tmp() + "/memref-noncommutative.mlir"
+    sl_push2(emit, "compiler/fixtures/mlir_opt/memref_noncommutative.flow", output)
+    if t_run_argv(emit) != 0 {
+        outln("flow mlir failed for memref operand-order regression:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if not a_contains(text, "arith.subf %out, %in : f32") { return T_FAIL }
+    if not a_contains(text, "arith.divf %out, %in : f32") { return T_FAIL }
+    if a_contains(text, "arith.subf %in, %out : f32") { return T_FAIL }
+    if a_contains(text, "arith.divf %in, %out : f32") { return T_FAIL }
+    return T_PASS
+}
+
 function check_tensor_operator_chain_bufferizes() -> i32 {
     let need: i32 = t_need("mlir-opt")
     if need != T_PASS {
@@ -334,6 +352,8 @@ function main() -> i32 {
     t_end("scalar_broadcasts_lower_to_memrefs", check_scalar_broadcasts_bufferize())
     t_start()
     t_end("tensor_operator_chain_lower_to_memrefs", check_tensor_operator_chain_bufferizes())
+    t_start()
+    t_end("memref_noncommutative_operand_order", check_memref_noncommutative_operand_order())
     t_start()
     t_end("tensor_hot_loop_ssa", check_tensor_hot_loop_ssa())
     t_start()
