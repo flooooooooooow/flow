@@ -20676,7 +20676,10 @@ function mlg_put_mem_profile(m: ptr<Mlg>) {
     mlg_s(m, "      llvm.store %on, %op : i32, !llvm.ptr\n")
     mlg_s(m, "      %onb = arith.cmpi ne, %on, %z32 : i32\n")
     mlg_s(m, "      scf.if %onb {\n")
-    mlg_s(m, "        %rp = llvm.mlir.addressof @flow_mem_report : !llvm.ptr\n")
+    # func.constant, not llvm.mlir.addressof: @flow_mem_report is a func.func
+    # until func-to-llvm, and addressof must name an llvm.func or global.
+    mlg_s(m, "        %rf = func.constant @flow_mem_report : () -> ()\n")
+    mlg_s(m, "        %rp = builtin.unrealized_conversion_cast %rf : () -> () to !llvm.ptr\n")
     mlg_s(m, "        %ar = func.call @atexit(%rp) : (!llvm.ptr) -> i32\n")
     mlg_s(m, "        scf.yield\n      }\n      scf.yield\n    }\n    func.return\n  }\n")
     mlg_s(m, "  func.func private @flow_mem_note_alloc(%n: i64) {\n")
