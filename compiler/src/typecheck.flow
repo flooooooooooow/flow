@@ -316,7 +316,11 @@ function flowc_tc_lookup_val_type(ctx: TcCtx, start: i32, end: i32) -> i32 {
 # Bind a value; error if the name is already bound in this block.
 function flowc_tc_bind_value(ctx: ptr<TcCtx>, start: i32, end: i32, ty: i32) {
     if flowc_tc_lookup_local(ctx[0], start, end) == 1 {
-        flowc_tc_err(ctx)
+        flowc_tc_eff_begin(ctx, start)
+        flowc_eff_diag_s("variable '")
+        flowc_eff_diag_span(ctx[0].src, start, end)
+        flowc_eff_diag_s("' is already declared in this scope")
+        flowc_eff_diag_end()
     }
     flowc_tc_bind(ctx, start, end, 0, ty)
 }
