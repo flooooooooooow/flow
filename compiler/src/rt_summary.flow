@@ -285,6 +285,12 @@ function rt_collect_calls(arena: AstArena, node: i32, cs: ptr<i32>, ce: ptr<i32>
         return ncalls
     }
     let mut n: i32 = ncalls
+    # A type holds no calls, and its fields are not all node links: `[T; N]`
+    # keeps the tag AST_TYPE_FIXED_ARRAY in `c`, which is also a valid node
+    # index. Descending there walked back into earlier nodes forever (#1423).
+    if arena.nodes[node].kind == AST_TYPE {
+        return rt_collect_calls(arena, arena.nodes[node].next, cs, ce, n)
+    }
     if arena.nodes[node].kind == AST_CALL {
         if n < RT_MAX_CALLS {
             cs[n] = arena.nodes[node].name_start
