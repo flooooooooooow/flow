@@ -1,0 +1,86 @@
+import "stdlib/orchestrate.flow"
+import "stdlib/result.flow"
+
+function add_one(x: i32) -> i32 { return x + 1 }
+function times_two(x: i32) -> i32 { return x * 2 }
+function add_five(x: i32) -> i32 { return x + 5 }
+
+function add_one_f32(x: f32) -> f32 { return x + 1.0 }
+function times_two_f32(x: f32) -> f32 { return x * 2.0 }
+function add_five_f32(x: f32) -> f32 { return x + 5.0 }
+
+function div_by_two(x: i32) -> Result_i32_string {
+    if x % 2 != 0 {
+        return err_i32("not even")
+    }
+    return ok_i32(x / 2)
+}
+
+function must_be_positive(x: i32) -> Result_i32_string {
+    if x <= 0 {
+        return err_i32("not positive")
+    }
+    return ok_i32(x)
+}
+
+function test_failure_propagation() -> i32 {
+    # Success path
+    let s1 = seq_result_i32(must_be_positive, div_by_two, 10)
+    if is_err_i32(s1) { return 10 }
+    if unwrap_result_i32(s1) != 5 { return 11 }
+
+    # First function fails
+    let s2 = seq_result_i32(must_be_positive, div_by_two, -10)
+    if is_ok_i32(s2) { return 12 }
+
+    # Second function fails
+    let s3 = seq_result_i32(must_be_positive, div_by_two, 5)
+    if is_ok_i32(s3) { return 13 }
+
+    # Fanout
+    let f_res = fanout2_result_i32(must_be_positive, div_by_two, 5)
+    if is_err_i32(f_res.v0) { return 14 }
+    if is_ok_i32(f_res.v1) { return 15 }
+
+    # Join: the second branch failed, so the join reports its error.
+    let j_res: Joined2_i32 = join2_result_i32(f_res)
+    if j_res.ok { return 16 }
+    if j_res.error != "not even" { return 17 }
+
+    # Join: both fail, the first branch's error wins (branch order).
+    let both_bad: Fanout2_Result_i32 = fanout2_result_i32(must_be_positive, div_by_two, -3)
+    let j_bad: Joined2_i32 = join2_result_i32(both_bad)
+    if j_bad.ok or j_bad.error != "not positive" { return 18 }
+
+    # Join: both succeed and both values are kept.
+    let both_ok: Fanout2_Result_i32 = fanout2_result_i32(must_be_positive, div_by_two, 8)
+    let j_ok: Joined2_i32 = join2_result_i32(both_ok)
+    if not j_ok.ok or j_ok.v0 != 8 or j_ok.v1 != 4 { return 19 }
+
+    # First-ok join: the fallback branch supplies the value.
+    let first: Result_i32_string = join2_first_ok_i32(fanout2_result_i32(div_by_two, must_be_positive, 5))
+    if is_err_i32(first) or unwrap_result_i32(first) != 5 { return 20 }
+    let none: Result_i32_string = join2_first_ok_i32(both_bad)
+    if is_ok_i32(none) { return 21 }
+
+    return 0
+}
+
+function main() -> i32 {
+    let pipeline_res = seq_i32(add_one, times_two, 10)
+    if pipeline_res != 22 { return 1 }
+
+    let f2: Fanout2_i32 = fanout2_i32(add_one, times_two, 10)
+    if f2.v0 != 11 { return 2 }
+    if f2.v1 != 20 { return 3 }
+
+    let f3: Fanout3_i32 = fanout3_i32(add_one, times_two, add_five, 10)
+    if f3.v0 != 11 { return 4 }
+    if f3.v1 != 20 { return 5 }
+    if f3.v2 != 15 { return 6 }
+
+    let p_f32 = seq_f32(add_one_f32, times_two_f32, 10.0)
+    if p_f32 < 21.9 or p_f32 > 22.1 { return 7 }
+
+    return test_failure_propagation()
+}

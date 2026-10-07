@@ -214,6 +214,7 @@
     "stdlib:nn_xor_loss_params_grad": "library/stdlib-api.md",
     "stdlib:notation": "library/stdlib-api.md",
     "stdlib:option": "library/stdlib-reference.md",
+    "stdlib:orchestrate": "library/orchestrate.md",
     "stdlib:os": "library/os.md",
     "stdlib:oscillators": "library/stdlib-api.md",
     "stdlib:pde": "library/stdlib-api.md",

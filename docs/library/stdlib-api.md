@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**115** modules scanned.
+**116** modules scanned.
 
 ## Modules
 
@@ -2006,6 +2006,35 @@ Option Type Represents an optional value: either Some(value) or None
 
 *No `export` items found (internal / extern-only module).*
 
+### `orchestrate.flow`
+
+std.orchestrate: composition combinators for the Structural Orchestration Algebra (#723), as a library with no new syntax.
+
+**Structs:** `Fanout2_i32`, `Fanout3_i32`, `Fanout2_f32`, `Fanout3_f32`, `Fanout2_Result_i32`, `Joined2_i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `seq_i32` | `(f: (i32) -> i32, g: (i32) -> i32, a: i32) -> i32` | - |
+| `seq_f32` | `(f: (f32) -> f32, g: (f32) -> f32, a: f32) -> f32` | - |
+| `fanout2_i32` | `(f: (i32) -> i32, g: (i32) -> i32, a: i32) -> Fanout2_i32` | - |
+| `fanout3_i32` | `(f: (i32) -> i32, g: (i32) -> i32, h: (i32) -> i32, a: i32) -> Fanout3_i32` | - |
+| `fanout2_f32` | `(f: (f32) -> f32, g: (f32) -> f32, a: f32) -> Fanout2_f32` | - |
+| `fanout3_f32` | `(f: (f32) -> f32, g: (f32) -> f32, h: (f32) -> f32, a: f32) -> Fanout3_f32` | - |
+| `seq_result_i32` | `(
+    f: (i32) -> Result_i32_string,
+    g: (i32) -> Result_i32_string,
+    a: i32
+) -> Result_i32_string` | f, then g on f's value. An error from f is returned without calling g. |
+| `fanout2_result_i32` | `(
+    f: (i32) -> Result_i32_string,
+    g: (i32) -> Result_i32_string,
+    a: i32
+) -> Fanout2_Result_i32` | Runs both branches and keeps both results; the caller picks a join. |
+| `join2_result_i32` | `(f2: Fanout2_Result_i32) -> Joined2_i32` | Join that requires every branch: ok with both values when both succeed, otherwise the error of the first failed branch in order. |
+| `join2_first_ok_i32` | `(f2: Fanout2_Result_i32) -> Result_i32_string` | Join that accepts the first successful branch in order, for an optional branch with a fallback. The error of the last branch when neither succeeds. |
+
 ### `os.flow`
 
 errno, signals and the C constants that go with them (issue #1075).  import std.os { os_errno, os_signal_watch, os_signal_take, SIGINT, EINTR }
@@ -2657,7 +2686,7 @@ FLOW String Utilities  Linear scans stay on the caller's buffer: parse, format a
 | `str_is_ascii_digit` | `(c: u8) -> bool` | - |
 | `str_line_end` | `(s: string, start: i32) -> i32` | Exclusive end of the line starting at `start` (index of '\n', or length). Does not allocate. `start` past the end yields the length. |
 | `str_line_next` | `(s: string, end: i32) -> i32` | Start of the next line after a line that ended at `end`, or -1 if done. A newline at `end` advances one byte; otherwise the scan is finished. |
-| `str_parse_i64_at` | `(s: string, start: i32) -> ParseI64` | Parse one signed decimal token starting at `start`. Leading ASCII whitespace is skipped, matching Python int(). The token is an optional sign and one or more digits. Overflow of i64 is an error (ok = false), not wraparound. Trailing junk is left in `end` for the caller to inspect. |
+| `str_parse_i64_at` | `(s: string, start: i32) -> ParseI64` | Parse one signed decimal token starting at `start`. Leading ASCII whitespace is skipped, matching Python int(). The token is an optional sign and one or more digits. Overflow of i64 is an error (ok = false); the value never wraps. Trailing junk is left in `end` for the caller to |
 | `str_parse_i64` | `(s: string) -> ParseI64` | Parse `s` as a whole, like Python int() on ASCII: leading and trailing whitespace allowed, anything else is an error. |
 | `str_parse_i32` | `(s: string) -> ParseI64` | - |
 | `str_format_i64` | `(buf: ptr<u8>, cap: i32, v: i64) -> i32` | Write decimal `v` into `buf[0 .. cap)` as a NUL-terminated string. Returns the number of characters written (excluding NUL), or -1 if `cap` is too small. No heap allocation. |

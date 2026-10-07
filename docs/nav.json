@@ -739,6 +739,10 @@
         {
           "label": "Tiny Pointers: Variable Values",
           "path": "library/tiny-pointers-variable-values.md"
+        },
+        {
+          "label": "Orchestrate",
+          "path": "library/orchestrate.md"
         }
       ]
     },
