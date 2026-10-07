@@ -58,9 +58,11 @@ import .sem_types {
 }
 import .rt_summary {
     FLOWC_RT_UNKNOWN,
-    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
+    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_APPLICATION,
+    FLOWC_RT_DOM_PERSISTENT, FLOWC_RT_DOM_NONE,
     flowc_rt_forbidden, flowc_rt_name_bits
 }
+import .type_id { flowc_type_transport_blocker }
 import .region {
     flowc_region_check_on, flowc_region_call_unproven, flowc_region_call_why,
     flowc_region_fn_of_node, RI_WHY_SAME, RI_WHY_UNKNOWN
@@ -75,12 +77,12 @@ import .sem_model {
     sem_sym_type, sem_sym_kind, sem_decl_add, sem_fi_new, sem_fi_add_param, sem_fi_param_name, sem_fi_param_type,
     sem_fi_nparams, sem_fi_attr, sem_fi_nattrs, sem_fi_has_attr, sem_fi_effect, sem_fi_neffects, sem_fi_ntparams,
     sem_fi_tparam, sem_fi_tbound, sem_se_new, sem_se_add_field, sem_se_nfields, sem_se_field_name, sem_se_field_type,
-    sem_struct_entry, sem_pt_of_ast, sem_parse_named_scalar, sem_substitute_pt, sem_ensure_generic_struct_instance,
+    sem_se_field_domain, sem_se_set_field_domain, sem_struct_entry, sem_pt_of_ast, sem_parse_named_scalar, sem_substitute_pt, sem_ensure_generic_struct_instance,
     sem_parse_type, sem_parse_type_name, sem_unit_dims_of_name, sem_set_unit_dims, sem_dims_of, sem_is_radian,
     sem_unit_result_type, sem_is_numeric, sem_is_integer, sem_is_float, sem_is_span, sem_tkind, sem_tstr, sem_is_dual,
     sem_is_tensor, sem_integer_bit_width, sem_numeric_common_type, sem_is_type_param, sem_borrow_compatible,
     sem_can_coerce, sem_is_compatible, sem_can_cast, sem_undeclared_type_name, sem_scan_attributes,
-    sem_parse_attribute, sem_domain_name, sem_lifetime_domain, sem_attribute_errors
+    sem_parse_attribute, sem_domain_name, sem_lifetime_domain, sem_attribute_errors, sem_field_attribute_errors
 }
 
 extern {
@@ -606,9 +608,24 @@ function sem_register_unit(c: ptr<Sem>, d: i32) -> ptr<SemIntVec> {
 
 function sem_struct_fields_from_ast(c: ptr<Sem>, se: i32, node: i32) {
     sem_iv_set(c.se_fstart, se, sem_sv_len(c.sf_names))
+    let sname: string = sem_sv_get(c.se_name, se)
+    let mut prev: i32 = sem_nstart(c, node)
     let mut f: i32 = sem_na(c, node)
     while f != AST_NONE {
-        sem_se_add_field(c, se, sem_nname(c, f), sem_pt_of_ast(c, sem_na(c, f)))
+        let mut hi: i32 = c.ar.nodes[f].name_start
+        if hi < prev {
+            hi = prev
+        }
+        let astart: i32 = sem_sv_len(c.attr_pool)
+        let an: i32 = sem_scan_attributes(c, prev, hi)
+        let fname: string = sem_nname(c, f)
+        sem_field_attribute_errors(c, sname, fname, astart, an)
+        sem_se_add_field(c, se, fname, sem_pt_of_ast(c, sem_na(c, f)))
+        let domain: i32 = sem_lifetime_domain(c, astart, an)
+        if domain >= 0 {
+            sem_se_set_field_domain(c, se, sem_se_nfields(c, se) - 1, domain)
+        }
+        prev = sem_nend(c, f)
         f = sem_nnext(c, f)
     }
 }
@@ -845,7 +862,7 @@ function sem_collect_lifetime_domains(c: ptr<Sem>) {
         } elif k == DK_STATIC {
             let mut d3: i32 = sem_lifetime_domain(c, sem_iv_get(c.d_astart, i), sem_iv_get(c.d_alen, i))
             if d3 < 0 {
-                d3 = 3
+                d3 = FLOWC_RT_DOM_APPLICATION
             }
             sem_sm_put(c.static_domains, sem_decl_name(c, i), d3)
         }
@@ -856,7 +873,7 @@ function sem_collect_lifetime_domains(c: ptr<Sem>) {
 function sem_static_domain(c: ptr<Sem>, name: string) -> i32 {
     let d: i32 = sem_sm_get(c.static_domains, name)
     if d < 0 {
-        return 3
+        return FLOWC_RT_DOM_APPLICATION
     }
     return d
 }
@@ -1160,6 +1177,106 @@ function sem_is_reference_type(c: ptr<Sem>, ty: i32) -> bool {
     return ty >= 0 and (k == TK_POINTER or k == TK_SPAN or k == TK_ARRAY)
 }
 
+# A local reference stored inside a struct or array literal, at any nesting
+# depth. Direct reference shapes still go through sem_domain_borrow_root.
+function sem_composite_domain_root(c: ptr<Sem>, e: i32) -> string {
+    if e < 0 {
+        return null as string
+    }
+    let origin: string = sem_domain_borrow_root(c, e)
+    if origin as ptr<u8> != null {
+        return origin
+    }
+    let k: i32 = sem_nk(c, e)
+    if k == AST_STRUCT_LIT {
+        let mut f: i32 = sem_na(c, e)
+        while f != AST_NONE {
+            let nested: string = sem_composite_domain_root(c, sem_na(c, f))
+            if nested as ptr<u8> != null {
+                return nested
+            }
+            f = sem_nnext(c, f)
+        }
+        return null as string
+    }
+    if k == AST_ARRAY_LIT {
+        let mut elem: i32 = sem_na(c, e)
+        if sem_nb(c, e) != AST_NONE {
+            return sem_composite_domain_root(c, elem)
+        }
+        while elem != AST_NONE {
+            let nested2: string = sem_composite_domain_root(c, elem)
+            if nested2 as ptr<u8> != null {
+                return nested2
+            }
+            elem = sem_nnext(c, elem)
+        }
+    }
+    return null as string
+}
+
+# The FieldAccess a store writes, walking through indexes (`h.items[0]`).
+function sem_lhs_field_access(c: ptr<Sem>, lhs: i32) -> i32 {
+    let mut e: i32 = lhs
+    while e >= 0 and sem_nk(c, e) == AST_INDEX {
+        e = sem_na(c, e)
+    }
+    if e >= 0 and sem_nk(c, e) == AST_FIELD_ACCESS {
+        return e
+    }
+    return AST_NONE
+}
+
+function sem_struct_name_of_type(c: ptr<Sem>, ty: i32) -> string {
+    if ty < 0 {
+        return null as string
+    }
+    if sem_tkind(c, ty) == TK_STRUCT {
+        return sem_tname(c, ty)
+    }
+    if sem_tkind(c, ty) == TK_POINTER and sem_telem(c, ty) >= 0 {
+        if sem_tkind(c, sem_telem(c, ty)) == TK_STRUCT {
+            return sem_tname(c, sem_telem(c, ty))
+        }
+    }
+    return null as string
+}
+
+# Declared `@lifetime(D)` of the field a `base.field` / `base.field[i]` store
+# writes, or -1. Only annotated fields are consulted.
+function sem_lhs_field_domain(c: ptr<Sem>, lhs: i32) -> i32 {
+    let fa: i32 = sem_lhs_field_access(c, lhs)
+    if fa == AST_NONE {
+        return 0 - 1
+    }
+    let ot: i32 = sem_infer_type_quiet(c, sem_na(c, fa))
+    let sname: string = sem_struct_name_of_type(c, ot)
+    if sname as ptr<u8> == null {
+        return 0 - 1
+    }
+    let se: i32 = sem_struct_entry(c, sname)
+    if se < 0 {
+        return 0 - 1
+    }
+    let field: string = sem_nname(c, fa)
+    let mut i: i32 = 0
+    while i < sem_se_nfields(c, se) {
+        if sem_s_eq(sem_se_field_name(c, se, i), field) {
+            return sem_se_field_domain(c, se, i)
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function sem_lhs_field_name(c: ptr<Sem>, lhs: i32) -> string {
+    let fa: i32 = sem_lhs_field_access(c, lhs)
+    if fa == AST_NONE {
+        return null as string
+    }
+    return sem_nname(c, fa)
+}
+
 # _get_root_parameter_index
 function sem_root_parameter_index(c: ptr<Sem>, e: i32) -> i32 {
     if e < 0 {
@@ -1207,9 +1324,6 @@ function sem_domain_escape_to_static(c: ptr<Sem>, stmt: i32, value: i32, target:
     if sem_sm_has(c.static_names, target) == false {
         return false
     }
-    if sem_is_reference_type(c, target_type) == false {
-        return false
-    }
     let td: i32 = sem_static_domain(c, target)
 
     # #690: memory bumped from a module-static arena carries that arena's
@@ -1231,12 +1345,48 @@ function sem_domain_escape_to_static(c: ptr<Sem>, stmt: i32, value: i32, target:
     if td <= c.current_domain {
         return false
     }
-    let origin: string = sem_domain_borrow_root(c, value)
+    let origin: string = sem_composite_domain_root(c, value)
     if origin as ptr<u8> == null {
         return false
     }
     sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
     sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" + sem_domain_name(c.current_domain) + "` domain but is stored in `" + target + "`, which lives in the `" + sem_domain_name(td) + "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)" + sem_location_suffix(c, stmt))
+    return true
+}
+
+# LD5: a shorter-lived reference may not be stored in a field whose
+# declared `@lifetime(D)` outlives the writing frame (issue #684).
+function sem_domain_escape_to_field(c: ptr<Sem>, stmt: i32, value: i32, lhs: i32, target_type: i32) -> bool {
+    if c.current_domain < 0 {
+        return false
+    }
+    let field_domain: i32 = sem_lhs_field_domain(c, lhs)
+    if field_domain < 0 or field_domain <= c.current_domain {
+        return false
+    }
+    let origin: string = sem_composite_domain_root(c, value)
+    if origin as ptr<u8> == null {
+        return false
+    }
+    let field_name: string = sem_lhs_field_name(c, lhs)
+    if field_name as ptr<u8> == null {
+        return false
+    }
+    sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+    sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" + sem_domain_name(c.current_domain) + "` domain but is stored in field `" + field_name + "`, which is declared to live in the `" + sem_domain_name(field_domain) + "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)" + sem_location_suffix(c, stmt))
+    return true
+}
+
+function sem_domain_escape_to_named_field(c: ptr<Sem>, stmt: i32, value: i32, field_name: string, field_domain: i32) -> bool {
+    if c.current_domain < 0 or field_domain < 0 or field_domain <= c.current_domain {
+        return false
+    }
+    let origin: string = sem_composite_domain_root(c, value)
+    if origin as ptr<u8> == null {
+        return false
+    }
+    sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+    sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" + sem_domain_name(c.current_domain) + "` domain but is stored in field `" + field_name + "`, which is declared to live in the `" + sem_domain_name(field_domain) + "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)" + sem_location_suffix(c, stmt))
     return true
 }
 
@@ -1251,11 +1401,11 @@ function sem_domain_escape_by_return(c: ptr<Sem>, stmt: i32, value: i32) -> bool
     if c.current_domain < 0 or value < 0 {
         return false
     }
-    if sem_is_reference_type(c, c.current_return_type) == false {
+    let origin: string = sem_composite_domain_root(c, value)
+    if origin as ptr<u8> == null {
         return false
     }
-    let origin: string = sem_domain_borrow_root(c, value)
-    if origin as ptr<u8> == null {
+    if sem_is_reference_type(c, c.current_return_type) == false and sem_tkind(c, c.current_return_type) != TK_STRUCT {
         return false
     }
     sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
@@ -2635,6 +2785,33 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_transport_safe") and sem_lookup(c, "type_transport_safe") < 0 {
         return sem_tmk(c, TK_BOOL)
     }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_schema_revision") and sem_lookup(c, "type_schema_revision") < 0 {
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_member_count") and sem_lookup(c, "type_member_count") < 0 {
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_member_table") and sem_lookup(c, "type_member_table") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_layout_native64") and sem_lookup(c, "type_layout_native64") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_layout_wasm32") and sem_lookup(c, "type_layout_wasm32") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_sizeof_native64") and sem_lookup(c, "type_sizeof_native64") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_sizeof_wasm32") and sem_lookup(c, "type_sizeof_wasm32") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_alignof_native64") and sem_lookup(c, "type_alignof_native64") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_alignof_wasm32") and sem_lookup(c, "type_alignof_wasm32") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
     let nm: string = sem_call_name(c, e)
     let sym: i32 = sem_lookup(c, nm)
     if sym >= 0 and sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION {
@@ -2721,9 +2898,13 @@ function sem_check_record_update(c: ptr<Sem>, e: i32) -> i32 {
         } else {
             expected = sem_parse_type(c, sem_se_field_type(c, se, last))
         }
-        let actual: i32 = sem_check_expression(c, sem_na(c, f))
+        let fval: i32 = sem_na(c, f)
+        let actual: i32 = sem_check_expression(c, fval)
         if sem_can_coerce(c, actual, expected) == false {
             sem_err(c, "record update: field '" + fname + "' expects " + sem_tstr(c, expected) + ", got " + sem_tstr(c, actual))
+        }
+        if last >= 0 {
+            sem_domain_escape_to_named_field(c, f, fval, fname, sem_se_field_domain(c, se, last))
         }
         f = sem_nnext(c, f)
     }
@@ -2743,7 +2924,8 @@ function sem_check_struct_fields(c: ptr<Sem>, name: string, first: i32) -> i32 {
     let mut f: i32 = first
     while f != AST_NONE {
         let fname: string = sem_nname(c, f)
-        let ft: i32 = sem_check_expression(c, sem_na(c, f))
+        let fval: i32 = sem_na(c, f)
+        let ft: i32 = sem_check_expression(c, fval)
         let mut k: i32 = 0
         let mut found: i32 = 0 - 1
         while k < pnames.len {
@@ -2757,6 +2939,13 @@ function sem_check_struct_fields(c: ptr<Sem>, name: string, first: i32) -> i32 {
         } else {
             sem_sv_push(pnames, fname)
             sem_iv_push(ptypes, ft)
+        }
+        let mut fi: i32 = 0
+        while fi < sem_se_nfields(c, se) {
+            if sem_s_eq(sem_se_field_name(c, se, fi), fname) {
+                sem_domain_escape_to_named_field(c, f, fval, fname, sem_se_field_domain(c, se, fi))
+            }
+            fi = fi + 1
         }
         f = sem_nnext(c, f)
     }
@@ -3625,13 +3814,17 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
         let tt: i32 = sem_infer_type_quiet(c, lhs)
         if tt >= 0 {
             let base: string = sem_borrow_root_name(c, lhs)
+            let mut reported: bool = false
             if base as ptr<u8> != null and sem_sm_has(c.static_names, base) {
-                let reported: bool = sem_domain_escape_to_static(c, s, value, base, tt)
-                if reported == false and sem_is_reference_type(c, tt) {
-                    let origin: string = sem_local_borrow_origin(c, value)
-                    if origin as ptr<u8> != null and sem_sv_has(c.local_storage, origin) {
-                        sem_err(c, "span outlives borrowed storage `" + origin + "`" + sem_location_suffix(c, s))
-                    }
+                reported = sem_domain_escape_to_static(c, s, value, base, tt)
+            }
+            if reported == false {
+                reported = sem_domain_escape_to_field(c, s, value, lhs, tt)
+            }
+            if reported == false and sem_is_reference_type(c, tt) and base as ptr<u8> != null and sem_sm_has(c.static_names, base) {
+                let origin: string = sem_local_borrow_origin(c, value)
+                if origin as ptr<u8> != null and sem_sv_has(c.local_storage, origin) {
+                    sem_err(c, "span outlives borrowed storage `" + origin + "`" + sem_location_suffix(c, s))
                 }
             }
         }
@@ -3652,7 +3845,10 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
     }
     let et2: i32 = sem_check_expression(c, value)
     let st: i32 = sem_sym_type(c, sym)
-    let reported2: bool = sem_domain_escape_to_static(c, s, value, target, st)
+    let mut reported2: bool = sem_domain_escape_to_static(c, s, value, target, st)
+    if reported2 == false {
+        reported2 = sem_domain_escape_to_field(c, s, value, lhs, st)
+    }
     if reported2 == false and sem_is_reference_type(c, st) and sem_sm_has(c.static_names, target) {
         let origin2: string = sem_local_borrow_origin(c, value)
         if origin2 as ptr<u8> != null and sem_sv_has(c.local_storage, origin2) {
@@ -4588,6 +4784,26 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
                 sem_err(c, "Attribute '@" + aname + "' is not allowed on module static '" + name + "'; only '@lifetime(...)' is")
             }
             i = i + 1
+        }
+    }
+    # #1421: persistent outlives the process, so what it holds must be
+    # TransportSafe (no pointer, span, string or other reference into
+    # process memory). Checking the declared type covers every store.
+    if sem_static_domain(c, name) == FLOWC_RT_DOM_PERSISTENT {
+        let decl_ty: i32 = sem_na(c, node)
+        let blocker: i32 = flowc_type_transport_blocker(c.ar, c.src, decl_ty)
+        if blocker >= 0 {
+            let mut what: string = "its type"
+            let mut ty_node: i32 = blocker
+            if blocker != decl_ty {
+                what = "its element type"
+            }
+            if sem_nk(c, blocker) == AST_FIELD {
+                what = "field '" + sem_nname(c, blocker) + "'"
+                ty_node = sem_na(c, blocker)
+            }
+            let ty_text: string = sem_s_strip(sem_s_span(c.src, c.ar.nodes[ty_node].start, c.ar.nodes[ty_node].end))
+            sem_err(c, "persistent static '" + name + "' must hold a TransportSafe value, but " + what + " is `" + ty_text + "`, which refers to process memory and does not survive a restart")
         }
     }
     let pt: i32 = sem_pt_of_ast(c, sem_na(c, node))

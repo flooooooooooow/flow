@@ -1,0 +1,13 @@
+# `@lifetime` on a struct field is a check only. It emits no C of its own.
+struct Holder {
+    @lifetime(application)
+    view: ptr<i32>
+}
+
+function main() -> i32 {
+    let mut h: Holder = Holder { view: null }
+    if h.view == null {
+        return 0
+    }
+    return 1
+}

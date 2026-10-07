@@ -11,9 +11,11 @@ Detailed documentation for the Flow programming language.
 | [Syntax](syntax.md) | Lexical structure, operators, grammar |
 | [Types](types.md) | Type system and primitive types |
 | [Spans](spans.md) | Borrowed `{pointer, length}` views over contiguous storage |
+| [Lifetime domains](lifetime-domains.md) | `@lifetime(callback\|frame\|request\|session\|application\|persistent)`, LD1–LD5 |
+| [Request and persistent domains](lifetime-request-persistent.md) | Axiom §7 names: per-request heap, durable store |
+| [Domain fields](domain-fields.md) | Domain propagation through struct fields and collections |
 | [FFI buffer ABI](ffi-buffer.md) | Zero-copy pointer/span/array handoff; borrowed vs owned |
 | [FFI boundary audit](ffi-boundary-audit.md) | C / Python / native crossings; #728 rows; break-even |
-| [Lifetime domains](lifetime-domains.md) | `callback` / `frame` / `session` / `application` |
 | [Region inference](region-inference.md) | Local non-aliasing proofs, `memcpy` for proven-disjoint copies |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |

@@ -195,6 +195,9 @@ function is_semantic_attr(name: string) -> i32 {
     if streq(name, "libm") == 1 {
         return 1
     }
+    if streq(name, "schema_revision") == 1 {
+        return 1
+    }
     return 0
 }
 
@@ -229,12 +232,17 @@ export function flowc_attr_takes_args(name: string) -> i32 {
     if streq(name, "python") == 1 {
         return 1
     }
+    if streq(name, "schema_revision") == 1 {
+        return 1
+    }
     return 0
 }
 
 # ── Lifetime domains ──────────────────────────────────────────────
 
-# callback=0, frame=1, session=2, application=3
+# Axiom §7 lattice, shortest to longest:
+#   callback=0 < frame=1 < request=2 < session=3 < application=4 < persistent=5
+# Unannotated declarations use rank 6 (none) in the compact summary table.
 export function flowc_domain_rank(domain: string) -> i32 {
     if streq(domain, "callback") == 1 {
         return 0
@@ -242,26 +250,49 @@ export function flowc_domain_rank(domain: string) -> i32 {
     if streq(domain, "frame") == 1 {
         return 1
     }
-    if streq(domain, "session") == 1 {
+    if streq(domain, "request") == 1 {
         return 2
     }
-    if streq(domain, "application") == 1 {
+    if streq(domain, "session") == 1 {
         return 3
+    }
+    if streq(domain, "application") == 1 {
+        return 4
+    }
+    if streq(domain, "persistent") == 1 {
+        return 5
     }
     return -1
 }
 
+export function flowc_domain_name(rank: i32) -> string {
+    if rank == 0 {
+        return "callback"
+    }
+    if rank == 1 {
+        return "frame"
+    }
+    if rank == 2 {
+        return "request"
+    }
+    if rank == 3 {
+        return "session"
+    }
+    if rank == 4 {
+        return "application"
+    }
+    if rank == 5 {
+        return "persistent"
+    }
+    return ""
+}
+
+export function flowc_known_domains() -> string {
+    return "callback, frame, request, session, application, persistent"
+}
+
 function is_lifetime_domain(s: string) -> i32 {
-    if streq(s, "callback") == 1 {
-        return 1
-    }
-    if streq(s, "frame") == 1 {
-        return 1
-    }
-    if streq(s, "session") == 1 {
-        return 1
-    }
-    if streq(s, "application") == 1 {
+    if flowc_domain_rank(s) >= 0 {
         return 1
     }
     return 0

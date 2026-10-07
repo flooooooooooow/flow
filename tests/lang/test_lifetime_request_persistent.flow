@@ -1,0 +1,110 @@
+# Flow-native language test: Axiom §7 `request` and `persistent` domains
+# (docs/language/lifetime-domains.md, epic #679).
+#
+# Every function here is domain-annotated and every one of them is a case
+# the checker must ACCEPT. Rejected programs live in
+# compiler/fixtures/typecheck_rules/domain_request_*.flow and
+# domain_persistent_*.flow.
+#
+# Covers: request may allocate (unlike callback/frame); session may call
+# request; request may call callback; unannotated main may call persistent
+# and application; persistent statics may be written from a persistent
+# function; request locals may be stored in a request-domain static.
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+@lifetime(persistent)
+let mut hits: i32 = 0
+
+@lifetime(application)
+let mut ready: i32 = 0
+
+@lifetime(request)
+let mut last_id: i32 = 0
+
+@lifetime(callback)
+function peek(n: i32) -> i32 {
+    return n
+}
+
+@lifetime(request)
+function handle(id: i32) -> i32 {
+    let raw: ptr<void> = malloc(16)
+    if raw == null {
+        return 0 - 1
+    }
+    free(raw)
+    last_id = id
+    return peek(id) + 1
+}
+
+@lifetime(session)
+function serve(id: i32) -> i32 {
+    return handle(id)
+}
+
+@lifetime(application)
+function boot() -> i32 {
+    ready = 1
+    return ready
+}
+
+@lifetime(persistent)
+function remember(n: i32) -> i32 {
+    hits = hits + n
+    return hits
+}
+
+# TransportSafe values (fixed-width scalars, fixed arrays of them) may
+# live in `persistent` (#1421), and read back with their own type.
+@lifetime(persistent)
+let mut tally_count: i64 = 0
+
+@lifetime(persistent)
+let mut tally_last: [i32; 2] = [0, 0]
+
+@lifetime(persistent)
+function record(n: i32) -> i64 {
+    tally_count = tally_count + 1
+    tally_last[1] = tally_last[0]
+    tally_last[0] = n
+    return tally_count
+}
+
+function main() -> i32 {
+    if boot() != 1 {
+        return 1
+    }
+    if ready != 1 {
+        return 2
+    }
+    if serve(3) != 4 {
+        return 3
+    }
+    if last_id != 3 {
+        return 4
+    }
+    if remember(2) != 2 {
+        return 5
+    }
+    if remember(3) != 5 {
+        return 6
+    }
+    if hits != 5 {
+        return 7
+    }
+    if record(4) != 1 or record(9) != 2 {
+        return 8
+    }
+    let first: i32 = tally_last[0]
+    let second: i32 = tally_last[1]
+    if tally_count != 2 or first != 9 or second != 4 {
+        return 9
+    }
+    return 0
+}

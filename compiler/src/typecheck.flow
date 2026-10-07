@@ -29,6 +29,7 @@ import .effects {
 import .rt_summary {
     FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
     flowc_rt_forbidden, flowc_rt_fn_domain, flowc_rt_fn_has_attr,
+    flowc_rt_domain_name,
     flowc_rt_summary_bits, flowc_rt_summary_collect, flowc_rt_summary_domain,
     flowc_rt_summary_find, flowc_rt_summary_prov, flowc_rt_summary_prov_len,
     flowc_rt_bit_name
@@ -477,6 +478,33 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "type_transport_safe") == 1 {
         return 1
     }
+    if flowc_tc_span_is(ctx.src, start, end, "type_schema_revision") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_member_count") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_member_table") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_layout_native64") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_layout_wasm32") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_sizeof_native64") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_sizeof_wasm32") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_alignof_native64") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_alignof_wasm32") == 1 {
+        return 1
+    }
     # Complex constructors and <complex.h> functions (#942).
     if flowc_tc_is_complex_builtin(ctx.src, start, end) == 1 {
         return 1
@@ -888,21 +916,11 @@ function flowc_tc_rt_consult_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
                 flowc_eff_diag_s("lifetime domain violation: '")
                 flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
                 flowc_eff_diag_s("' is in the `")
-                if need == FLOWC_RT_DOM_CALLBACK {
-                    flowc_eff_diag_s("callback")
-                } else {
-                    flowc_eff_diag_s("frame")
-                }
+                flowc_eff_diag_s(flowc_rt_domain_name(need))
                 flowc_eff_diag_s("` domain but calls '")
                 flowc_eff_diag_span(src, ns, ne)
                 flowc_eff_diag_s("', which is in the `")
-                if cal_dom == FLOWC_RT_DOM_FRAME {
-                    flowc_eff_diag_s("frame")
-                } elif cal_dom == FLOWC_RT_DOM_SESSION {
-                    flowc_eff_diag_s("session")
-                } else {
-                    flowc_eff_diag_s("application")
-                }
+                flowc_eff_diag_s(flowc_rt_domain_name(cal_dom))
                 flowc_eff_diag_s("` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)")
                 flowc_eff_diag_end()
             }
@@ -3514,7 +3532,22 @@ function ut_builtin_ret(src: ptr<u8>, s: i32, e: i32) -> UTy {
     if flowc_tc_span_is(src, s, e, "type_transport_safe") == 1 {
         return ut_prim(UP_BOOL)
     }
-    if flowc_tc_span_in_words(src, s, e, "sizeof alignof len time clock") == 1 {
+    if flowc_tc_span_is(src, s, e, "type_schema_revision") == 1 {
+        return ut_prim(UP_I32)
+    }
+    if flowc_tc_span_is(src, s, e, "type_member_count") == 1 {
+        return ut_prim(UP_I32)
+    }
+    if flowc_tc_span_is(src, s, e, "type_member_table") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_is(src, s, e, "type_layout_native64") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_is(src, s, e, "type_layout_wasm32") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_in_words(src, s, e, "sizeof alignof type_sizeof_native64 type_sizeof_wasm32 type_alignof_native64 type_alignof_wasm32 len time clock") == 1 {
         return ut_prim(UP_I64)
     }
     if flowc_tc_span_in_words(src, s, e, "get_current_time creal cimag cabs carg") == 1 {

@@ -1,0 +1,14 @@
+# expect: lifetime domain violation: 'boot' is in the `application` domain but calls 'remember', which is in the `persistent` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)
+@lifetime(persistent)
+function remember() -> i32 {
+    return 1
+}
+
+@lifetime(application)
+function boot() -> i32 {
+    return remember()
+}
+
+function main() -> i32 {
+    return boot()
+}

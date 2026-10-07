@@ -1,0 +1,16 @@
+# expect: ok
+struct Holder {
+    @lifetime(frame)
+    view: ptr<i32>
+}
+
+@lifetime(session)
+function build() -> void {
+    let mut h: Holder = Holder { view: null }
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    h.view = &scratch
+}
+
+function main() -> i32 {
+    return 0
+}

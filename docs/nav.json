@@ -518,6 +518,10 @@
           "path": "language/types.md"
         },
         {
+          "label": "Type identity",
+          "path": "language/type-identity.md"
+        },
+        {
           "label": "Variables",
           "path": "language/variables.md"
         },
@@ -559,6 +563,14 @@
         {
           "label": "Lifetime Domains",
           "path": "language/lifetime-domains.md"
+        },
+        {
+          "label": "Request and Persistent Domains",
+          "path": "language/lifetime-request-persistent.md"
+        },
+        {
+          "label": "Domain Fields and Collections",
+          "path": "language/domain-fields.md"
         },
         {
           "label": "Region Inference",

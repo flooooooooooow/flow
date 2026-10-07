@@ -2115,6 +2115,7 @@ function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32 {
 function flowc_parse_block(p: ptr<Parser>) -> i32
 function flowc_parser_skip_brace_block(p: ptr<Parser>)
 function flowc_parser_skip_paren_block(p: ptr<Parser>)
+function flowc_parse_skip_attrs(p: ptr<Parser>)
 function flowc_parse_assume(p: ptr<Parser>) -> i32
 function flowc_parse_therefore(p: ptr<Parser>) -> i32
 function flowc_parse_theorem(p: ptr<Parser>, is_export: i32) -> i32
@@ -3107,6 +3108,13 @@ function flowc_parse_struct(p: ptr<Parser>) -> i32 {
     }
     let mut fields: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        # Optional `@lifetime(D)` (or other `@name` / `@name(args)`) on a
+        # field. The type checker records the domain; the attribute is
+        # erased before codegen (#684).
+        flowc_parse_skip_attrs(p)
+        if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
+            break
+        }
         # Field name can be an identifier or a keyword used as a name (e.g. `unit`).
         if flowc_parser_check(p[0], TOK_IDENT) == 0 and flowc_parser_check(p[0], TOK_KEYWORD) == 0 {
             flowc_parser_fail(p)
@@ -3660,6 +3668,21 @@ function flowc_parser_skip_brace_block(p: ptr<Parser>) {
         }
         if flowc_parser_check(p[0], TOK_RBRACE) == 1 {
             flowc_parser_advance(p)
+        }
+    }
+}
+
+# Consume a run of `@name` / `@name(args)` attributes. Used on struct
+# fields so `@lifetime(D)` can sit on a field without a new grammar
+# production; statement attributes already skip the same way.
+function flowc_parse_skip_attrs(p: ptr<Parser>) {
+    while flowc_parser_check(p[0], TOK_AT) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 1 or flowc_parser_check(p[0], TOK_KEYWORD) == 1 {
+            flowc_parser_advance(p)
+        }
+        if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
+            flowc_parser_skip_paren_block(p)
         }
     }
 }
@@ -5203,48 +5226,59 @@ function flowc_parse_flow_decl(p: ptr<Parser>) -> i32 {
 }
 
 # Attach the AST_ATTR nodes in arena[lo..hi) to `item` when it is a
-# function (`export function` too). Returns 0 when an @only / @guard
-# attribute leaves the function out of this build (#1029), else 1.
-# Port of `_function_allowed` in the Python transpiler.
+# function (`export function` too) or a type (`struct` / `enum` /
+# `type` alias, including `export` forms). Returns 0 when an @only /
+# @guard attribute leaves a function out of this build (#1029), else 1.
+# Type attributes such as @schema_revision(N) (#775) bind to the type
+# node so schema_id can read the revision.
 function flowc_parse_attach_attrs(p: ptr<Parser>, lo: i32, hi: i32, item: i32) -> i32 {
     if lo >= hi {
         return 1
     }
     let mut fn: i32 = AST_NONE
+    let mut target: i32 = AST_NONE
     let mut bits: i32 = 0
     if p[0].arena.nodes[item].kind == AST_FN {
         fn = item
+        target = item
+    } elif p[0].arena.nodes[item].kind == AST_STRUCT or p[0].arena.nodes[item].kind == AST_ENUM or p[0].arena.nodes[item].kind == AST_TYPE_ALIAS {
+        target = item
     } elif p[0].arena.nodes[item].kind == AST_EXPORT {
         let inner: i32 = p[0].arena.nodes[item].a
         if inner != AST_NONE and p[0].arena.nodes[inner].kind == AST_FN {
             fn = inner
+            target = inner
             bits = AST_ATTR_EXPORTED
+        } elif inner != AST_NONE and (p[0].arena.nodes[inner].kind == AST_STRUCT or p[0].arena.nodes[inner].kind == AST_ENUM or p[0].arena.nodes[inner].kind == AST_TYPE_ALIAS) {
+            target = inner
         }
     }
-    if fn == AST_NONE {
+    if target == AST_NONE {
         return 1
     }
     let src: ptr<u8> = p[0].lex.input
     let mut guard: i32 = 0
     let mut i: i32 = lo
-    while i < hi {
-        if p[0].arena.nodes[i].kind == AST_ATTR {
-            let name: string = flowc_attr_args_from_span(src, p[0].arena.nodes[i].name_start, p[0].arena.nodes[i].name_end)
-            let mut args: string = ""
-            if (p[0].arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
-                args = flowc_attr_args_from_span(src, p[0].arena.nodes[i].start, p[0].arena.nodes[i].end)
+    if fn != AST_NONE {
+        while i < hi {
+            if p[0].arena.nodes[i].kind == AST_ATTR {
+                let name: string = flowc_attr_args_from_span(src, p[0].arena.nodes[i].name_start, p[0].arena.nodes[i].name_end)
+                let mut args: string = ""
+                if (p[0].arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
+                    args = flowc_attr_args_from_span(src, p[0].arena.nodes[i].start, p[0].arena.nodes[i].end)
+                }
+                guard = flowc_attr_guard_step(guard, name, args)
             }
-            guard = flowc_attr_guard_step(guard, name, args)
+            i = i + 1
         }
-        i = i + 1
-    }
-    if guard == 1 {
-        return 0
+        if guard == 1 {
+            return 0
+        }
     }
     i = lo
     while i < hi {
         if p[0].arena.nodes[i].kind == AST_ATTR {
-            p[0].arena.nodes[i].b = fn
+            p[0].arena.nodes[i].b = target
             p[0].arena.nodes[i].ival = p[0].arena.nodes[i].ival | bits
         }
         i = i + 1
@@ -5259,7 +5293,7 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
         let mut item: i32 = AST_NONE
         # Attributes: @name, @name(args). @cInclude, @cEmbed and @cImport
         # become their own items. Every other one becomes an AST_ATTR node
-        # that attaches to the function below (flowc_parse_attach_attrs).
+        # that attaches to the function or type below (flowc_parse_attach_attrs).
         let attr_lo: i32 = p[0].arena.len
         while flowc_parser_check(p[0], TOK_AT) == 1 {
             flowc_parser_advance(p)

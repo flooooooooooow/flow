@@ -1,0 +1,16 @@
+# expect: lifetime domain escape: `scratch` lives in the `frame` domain but is stored in field `view`, which is declared to live in the `session` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 11, column 5
+struct Holder {
+    @lifetime(session)
+    view: ptr<i32>
+}
+
+@lifetime(frame)
+function build() -> void {
+    let mut h: Holder = Holder { view: null }
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    h.view = &scratch
+}
+
+function main() -> i32 {
+    return 0
+}

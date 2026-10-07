@@ -244,10 +244,16 @@ folded into the identity.
 | Builtin | Result | Meaning |
 |---------|--------|---------|
 | `type_family_id<T>()` | `u64` | Nominal family (public name / constructor). Stable across schema revisions of the same named type. |
-| `type_schema_id<T>()` | `u64` | FNV-1a 64 of the v1 canonical public schema: field names and order, semantic field types, extents, enum variants, generic args. No C/MLIR/Wasm layout. |
+| `type_schema_id<T>()` | `u64` | FNV-1a 64 of the v1 canonical public schema: field names and order, semantic field types, extents, enum variants, generic args, and `@schema_revision(N)` when set. No C/MLIR/Wasm layout. |
+| `type_schema_revision<T>()` | `i32` | `@schema_revision(N)` on the type, or `0`. |
+| `type_member_count<T>()` | `i32` | Public field count. |
+| `type_member_table<T>()` | `u64` | Digest of the ordered member description table (field names and field schemas). |
 | `type_transport_safe<T>()` | `bool` | Conservative `TransportSafe(T)`: fixed-width scalars, fixed arrays, and structs composed from them. Pointers, spans, strings, and extern/fn types are rejected. |
-| `sizeof<T>()` | `i64` | Target ABI size in bytes. |
-| `alignof<T>()` | `i64` | Target ABI alignment in bytes. |
+| `sizeof<T>()` | `i64` | Host ABI size in bytes. |
+| `alignof<T>()` | `i64` | Host ABI alignment in bytes. |
+| `type_sizeof_native64<T>()` / `type_sizeof_wasm32<T>()` | `i64` | Size for 8-byte and 4-byte pointer ABIs. |
+| `type_alignof_native64<T>()` / `type_alignof_wasm32<T>()` | `i64` | Alignment for those ABIs. |
+| `type_layout_native64<T>()` / `type_layout_wasm32<T>()` | `u64` | Layout certificate (size, alignment, field offsets). Equal when the ABIs agree. |
 
 ```flow
 struct EndpointSample {
@@ -287,10 +293,15 @@ Compatibility lattice:
 Scheme v1 prefixes the canonical string with `v1;` so a later digest can
 change without silently reusing old keys.
 
+`@schema_revision(N)` on a `struct`, `enum`, or `type` alias is included in
+`type_schema_id<T>()` when `N != 0` and does not change `type_family_id<T>()`.
+The full contract, including member tables and native64/wasm32 layout
+certificates, is in [type-identity.md](type-identity.md).
+
 ## Type safety
 
 The compiler checks struct fields, function parameter and return types, array element types, pointer targets, units, distinct types, effects, and lifetime-domain constraints. Deliberately invalid examples belong in `flow expect-error` fences so CI verifies that the compiler continues to reject them.
 
 ## See also
 
-[Functions](functions.md), [Spans](spans.md), [Lifetime domains](lifetime-domains.md), [Syntax](syntax.md), and the [language specification](../LANGUAGE_SPEC.md).
+[Type identity](type-identity.md), [Functions](functions.md), [Spans](spans.md), [Lifetime domains](lifetime-domains.md), [Domain fields](domain-fields.md), [Syntax](syntax.md), and the [language specification](../LANGUAGE_SPEC.md).

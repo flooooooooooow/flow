@@ -71,8 +71,9 @@ export const AST_EFFECT_OP: i32 = 50
 #   b = effect name chain, c = handler name chain (AST_IDENT).
 export const AST_CAP_METHOD: i32 = 70
 # AST_ATTR: one `@name` or `@name(args)` in front of a top-level function
-#   (#1028). name_* = attribute name, start/end = the text between the
-#   parentheses, b = the AST_FN it belongs to (not linked from it; AST_NONE
+#   (#1028) or type (#775 @schema_revision). name_* = attribute name,
+#   start/end = the text between the parentheses, b = the AST_FN / AST_STRUCT
+#   / AST_ENUM / AST_TYPE_ALIAS it belongs to (not linked from it; AST_NONE
 #   when the attribute sits on anything else). ival = AST_ATTR_* bits.
 #   Never chained into the program. Readers scan the arena for it, as they
 #   do for AST_EFFECT_ROW.
@@ -190,6 +191,9 @@ export const AST_IDENT_FORK_SRC: i32 = 2
 # declaration binding for AST_CALL, or AST_NONE when unresolved.
 # AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array size
 # (0 if none), c = AST_TYPE_SPAN_MUTABLE for span<mut T>, else AST_NONE.
+# AST_FIELD: name_* = field name, a = type. A preceding `@lifetime(D)` is
+#   not stored on the node; the type checker reads it from the source
+#   between the previous field and this name (#684).
 # AST_FIELD_ACCESS: a = base expr, name_* = field; AST_INDEX: a = base, b = index.
 # AST_STRUCT_LIT: name_* = type, a = AST_FIELD chain (a child = field expr).
 # AST_CONST: name_* = name, a = type (AST_TYPE), b = init expr, ival = 1 if export else 0.

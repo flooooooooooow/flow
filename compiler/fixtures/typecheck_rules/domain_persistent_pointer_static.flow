@@ -1,0 +1,13 @@
+# expect: persistent static 'held' must hold a TransportSafe value, but its type is `ptr<i32>`, which refers to process memory and does not survive a restart
+@lifetime(persistent)
+let mut held: ptr<i32> = null
+
+@lifetime(application)
+function boot() {
+    let mut scratch: array<i32, 4> = [0; 4]
+    held = scratch
+}
+
+function main() -> i32 {
+    return 0
+}
