@@ -130,6 +130,13 @@ function main() -> i32 {
     check("tax over 5%", "runtime_calls: tax", lines_starting(bin_out("--eval-tax " + WORK + "/tax.json"), "runtime_calls:"))
     check("tax missing native", "runtime_strings: no_native", lines_starting(bin_out("--eval-tax " + WORK + "/tax.json"), "runtime_strings:"))
 
+    # --- startup versus compile-and-run timing scope (#746) -----------------
+    check("cold includes compile", "compile_and_execute", bin_out("--timing-scope cold_hello"))
+    check("compiler includes compile", "compile_and_execute", bin_out("--timing-scope compiler_codegen"))
+    check("precompiled startup", "precompiled_exec_to_exit", bin_out("--timing-scope startup_hello"))
+    check("precompiled runtime", "precompiled_workload", bin_out("--timing-scope runtime_calls"))
+    check("precompiled memory", "precompiled_workload", bin_out("--timing-scope memory_allocation_copy"))
+
     # --- get_system_info ----------------------------------------------------
     let info: string = bin_out("--system-info")
     let keys: ptr<ProcStrs> = s_words("os cpu arch flow_version git_sha python_version threads")
@@ -152,6 +159,7 @@ function main() -> i32 {
     sl_push2(want_keys, "\"semantic_parity_status\": \"verified\"", "\"flow_command\": \"echo flow_mock\"")
     sl_push2(want_keys, "\"python_command\": \"echo python_mock\"", "\"warm_mode\": true")
     sl_push2(want_keys, "\"repeats\": 3", "\"flow_metrics\": {")
+    sl_push(want_keys, "\"timing_scope\": \"precompiled_workload\"")
     sl_push2(want_keys, "\"python_metrics\": {", "\"native_command\": null")
     sl_push2(want_keys, "\"native_metrics\": {", "\"attribution\": {")
     sl_push2(want_keys, "\"median\": ", "\"p95\": ")

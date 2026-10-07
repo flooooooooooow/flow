@@ -126,3 +126,25 @@ mojo run benchmark.mojo
    - Print results with clear formatting
    - Include verification where applicable
 3. Add entry to this README
+
+## Startup versus compile and run (#746)
+
+`./flow tool bench_harness` writes a `timing_scope` field on every row of
+its JSON output.
+
+| Rows | Flow command | `timing_scope` |
+|---|---|---|
+| `cold_*`, `compiler_*` | `flow run --json file.flow` | `compile_and_execute` |
+| `startup_hello`, `startup_tiny_arithmetic`, `startup_file_transform` | executable built before timing | `precompiled_exec_to_exit` |
+| `runtime_*`, `memory_*` | executable built before timing | `precompiled_workload` |
+
+The startup rows reuse the `cold` sources, Python twins and native twins,
+with no warm-up. They measure wall time from process launch to exit, so
+they include spawn cost and the program's own work. They are not an
+`execve`-to-`main` measurement. Compare rows only when the CPU, the OS and
+the `timing_scope` match.
+
+```bash
+./flow tool bench_harness --smoke --out startup-smoke.json
+./flow tool tests/bench_harness/run.flow
+```
