@@ -39,7 +39,7 @@ function help_text() -> string {
     h = h + "  --dry-run             implied; kept so CI can pass it explicitly\n"
     h = h + "  --out DIR             artifact and record directory (default: build/qualify)\n"
     h = h + "  --rev REV             git revision to archive (default: HEAD)\n"
-    h = h + "  --version VER         candidate version (default: first line of VERSION)\n"
+    h = h + "  --version VER         expected version; must match VERSION at --rev\n"
     h = h + "  --formula PATH        Homebrew formula to validate\n"
     h = h + "  --mode local|full     local writes artifacts and runs cheap gates;\n"
     h = h + "                        full also runs the documented extra gates\n"

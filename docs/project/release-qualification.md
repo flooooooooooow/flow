@@ -54,6 +54,11 @@ records `published: false`.
 6. Writes `qualification.txt` and `qualification.json` with
    `published: false` and `tagged: false`.
 
+`VERSION` is read from the commit that `--rev` names, so the archive and its
+label come from the same commit. `--version` is only a check: it must equal
+that `VERSION`. Without `--artifacts-only`, the gates run on the checkout, so
+`--rev` must resolve to `HEAD`.
+
 `--artifacts-only` skips the version/changelog tool gates and still writes the
 archives and record. `--mode full` also runs the expensive gates used by
 `.github/workflows/release.yml` (stability completeness, strict documentation
