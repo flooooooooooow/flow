@@ -13,7 +13,8 @@
 | `cold_json_key_scan` | byte loop | `str.find` loop | Finds `"count":` 10,000 times and reads the digits after it, with no JSON validation |
 
 Before #747 the workload named `cold_json_parse` was the key scan. Its two
-programs are kept byte for byte as `cold_json_key_scan`, so older numbers
+programs are kept as `cold_json_key_scan`, unchanged apart from a header
+comment, so older numbers
 still have a home. Parser timings from this change do not compare with
 scanner timings from before it.
 
