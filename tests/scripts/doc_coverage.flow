@@ -114,7 +114,7 @@ function check_attributes_come_from_the_attribute_module() -> i32 {
         }
         i = i + 1
     }
-    if not a_eq(s_itoa(sl_len(attrs)), "22", "attribute count") {
+    if not a_eq(s_itoa(sl_len(attrs)), "23", "attribute count") {
         return T_FAIL
     }
     return T_PASS
