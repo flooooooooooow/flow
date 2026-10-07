@@ -305,6 +305,17 @@ function check_version_matches_archived_commit() -> i32 {
     return T_PASS
 }
 
+function check_gates_refuse_other_rev() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS { return n }
+    # Gates run on the checkout; their result must not be recorded for
+    # another commit.
+    let args: ptr<ProcStrs> = sl_of3("--rev", "HEAD~1", "--print-tag-command")
+    if t_run_argv(qual_cmd(args)) != 1 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "checkout --rev before running gates") { return T_FAIL }
+    return T_PASS
+}
+
 function check_print_tag_command() -> i32 {
     let n: i32 = need_qual()
     if n != T_PASS {
@@ -388,6 +399,8 @@ function main() -> i32 {
     t_end("print_tag_command", check_print_tag_command())
     t_start()
     t_end("commit_version_guard", check_version_matches_archived_commit())
+    t_start()
+    t_end("gates_refuse_other_rev", check_gates_refuse_other_rev())
 
     t_start()
     t_end("releasing_docs", check_releasing_docs_point_at_the_tool())
