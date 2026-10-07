@@ -110,6 +110,50 @@ function write_out(path: string, text: string) -> void {
     ft_outln("  wrote " + rel(path))
 }
 
+# Sibling modules that webgpu-host.js re-exports with
+# `export { ... } from "./NAME";`. A page that ships the host without them
+# fails its module import, so they are copied next to it.
+function host_modules(host: string) -> ptr<StrList> {
+    let names: ptr<StrList> = ft_list_new()
+    let key: string = "} from \"./"
+    let mut at: i32 = ft_find(host, key, 0)
+    while at >= 0 {
+        let start: i32 = at + ft_len(key)
+        let end: i32 = ft_find(host, "\"", start)
+        if end < 0 {
+            return names
+        }
+        ft_list_push(names, ft_slice(host, start, end))
+        at = ft_find(host, key, end)
+    }
+    return names
+}
+
+# Write webgpu-host.js and the modules it re-exports into out_dir.
+# `verbose` prints a "wrote" line per file, as write_out does.
+function write_host(out_dir: string, verbose: bool) -> void {
+    let host: string = read_asset("webgpu-host.js")
+    let names: ptr<StrList> = host_modules(host)
+    let paths: ptr<StrList> = ft_list_new()
+    ft_list_push(paths, "webgpu-host.js")
+    let mut i: i32 = 0
+    while i < ft_list_len(names) {
+        ft_list_push(paths, ft_list_get(names, i))
+        i = i + 1
+    }
+    i = 0
+    while i < ft_list_len(paths) {
+        let name: string = ft_list_get(paths, i)
+        let text: string = read_asset(name)
+        if verbose {
+            write_out(out_dir + "/" + name, text)
+        } elif ft_write_file(out_dir + "/" + name, text) == false {
+            die("cannot write " + out_dir + "/" + name)
+        }
+        i = i + 1
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Text
 # ---------------------------------------------------------------------------
@@ -822,7 +866,7 @@ function cmd_gpu(o: ptr<Opts>) -> i32 {
         emcc_run(argv)
     }
 
-    write_out(out_dir + "/webgpu-host.js", read_asset("webgpu-host.js"))
+    write_host(out_dir, true)
     write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
     write_out(out_dir + "/index.html", gpu_page(program, manifest, o[0].count, out_dir))
     ft_outln(SERVE)
@@ -1001,7 +1045,7 @@ function cmd_shader(o: ptr<Opts>) -> i32 {
     if ft_eq(generated, shader_path) == false {
         let _c: bool = ft_write_file(shader_path, read_or_die(generated))
     }
-    let _h: bool = ft_write_file(out_dir + "/webgpu-host.js", read_asset("webgpu-host.js"))
+    write_host(out_dir, false)
     let tv: string = py_float_repr(t)
     let keys: ptr<StrList> = ft_list_new()
     let vals: ptr<StrList> = ft_list_new()

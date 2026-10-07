@@ -1,3 +1,6 @@
+// Persistent multi-kernel graph execution (the same generated Flow WGSL).
+export { runFlowKernelChain } from "./gpu-kernel-chain.mjs";
+
 // Generic WebGPU host for Flow GPU kernels and fullscreen FSL shaders.
 //
 // Compute kernels use the reflection emitted by tools/gpu/main.flow.

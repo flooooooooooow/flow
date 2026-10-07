@@ -807,6 +807,10 @@
           "path": "gpu/vgpu-conformance.md"
         },
         {
+          "label": "WebGPU persistent compute",
+          "path": "gpu/persistent-compute.md"
+        },
+        {
           "label": "Running Flow",
           "path": "language/flow-run.md"
         },
