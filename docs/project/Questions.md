@@ -433,9 +433,10 @@ the domain order. PR #1369 (issue #679) adds them.
 **Answer:** Accepted. The lattice is
 `callback < frame < request < session < application < persistent`.
 `request` may allocate and is not `@rt_safe`. `persistent` is the
-outermost domain and outlives the process. Open follow-up: whether values
-stored in `persistent` must be TransportSafe (serialisable, with no
-references into process memory) is tracked in #1421.
+outermost domain and outlives the process. Follow-up #1421, decided by
+the project owner on 2026-10-07: yes, a value stored in `persistent` must
+be TransportSafe (the trait from #1340), and the checker names the field
+or element that carries the reference.
 
 **Resolved:** 2026-10-07, decided by the project owner.
 

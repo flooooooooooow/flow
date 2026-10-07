@@ -570,6 +570,62 @@ export function flowc_type_transport_safe(arena: AstArena, src: ptr<u8>, ty: i32
     return tid_transport_at(arena, src, ty, 0)
 }
 
+# Why type node `ty` is not TransportSafe: the innermost struct field
+# (an AST_FIELD node) or type node that carries the reference, or -1 when
+# the type is TransportSafe. Follows tid_transport_at (#1421).
+function tid_transport_blocker(arena: AstArena, src: ptr<u8>, ty: i32, depth: i32) -> i32 {
+    if tid_transport_at(arena, src, ty, depth) == 1 {
+        return 0 - 1
+    }
+    if depth >= TID_MAX_DEPTH or ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return ty
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return ty
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    if tid_is_array(arena, src, ty) == 1 and arena.nodes[ty].ival > 0 {
+        let inner_b: i32 = tid_transport_blocker(arena, src, arena.nodes[ty].a, depth + 1)
+        if inner_b >= 0 {
+            return inner_b
+        }
+        return ty
+    }
+    if arena.nodes[ty].a != AST_NONE {
+        return ty
+    }
+    let st: i32 = tid_find_kind(arena, src, ns, ne, AST_STRUCT)
+    if st != AST_NONE {
+        let mut field: i32 = arena.nodes[st].a
+        while field != AST_NONE {
+            if arena.nodes[field].kind == AST_FIELD {
+                let fb: i32 = tid_transport_blocker(arena, src, arena.nodes[field].a, depth + 1)
+                if fb >= 0 {
+                    if fb < arena.len and arena.nodes[fb].kind == AST_FIELD {
+                        return fb
+                    }
+                    return field
+                }
+            }
+            field = arena.nodes[field].next
+        }
+        return ty
+    }
+    let al: i32 = tid_find_kind(arena, src, ns, ne, AST_TYPE_ALIAS)
+    if al != AST_NONE and arena.nodes[al].a != AST_NONE {
+        let ab: i32 = tid_transport_blocker(arena, src, arena.nodes[al].a, depth + 1)
+        if ab >= 0 {
+            return ab
+        }
+    }
+    return ty
+}
+
+export function flowc_type_transport_blocker(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    return tid_transport_blocker(arena, src, ty, 0)
+}
+
 export function flowc_type_id_fnv_lit(lit: string) -> u64 {
     return tid_h_lit(tid_h_init(), lit)
 }

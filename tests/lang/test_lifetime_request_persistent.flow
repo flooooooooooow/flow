@@ -60,6 +60,22 @@ function remember(n: i32) -> i32 {
     return hits
 }
 
+# TransportSafe values (fixed-width scalars, fixed arrays of them) may
+# live in `persistent` (#1421), and read back with their own type.
+@lifetime(persistent)
+let mut tally_count: i64 = 0
+
+@lifetime(persistent)
+let mut tally_last: [i32; 2] = [0, 0]
+
+@lifetime(persistent)
+function record(n: i32) -> i64 {
+    tally_count = tally_count + 1
+    tally_last[1] = tally_last[0]
+    tally_last[0] = n
+    return tally_count
+}
+
 function main() -> i32 {
     if boot() != 1 {
         return 1
@@ -81,6 +97,14 @@ function main() -> i32 {
     }
     if hits != 5 {
         return 7
+    }
+    if record(4) != 1 or record(9) != 2 {
+        return 8
+    }
+    let first: i32 = tally_last[0]
+    let second: i32 = tally_last[1]
+    if tally_count != 2 or first != 9 or second != 4 {
+        return 9
     }
     return 0
 }

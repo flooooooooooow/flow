@@ -43,8 +43,8 @@ Read `<` as "lives no longer than". A `callback` value is dead by the time the
 next block starts. An `application` value is alive until the process exits.
 `request` sits between a frame and a session: one inbound HTTP, RPC, or event
 is longer than a render frame and shorter than the connection that produced
-it. `persistent` is longer than this process run, so a persistent static may
-not hold an application-domain pointer.
+it. `persistent` is longer than this process run, so a persistent static must
+be TransportSafe and holds no pointer at all (#1421).
 
 The single rule the whole design rests on:
 
