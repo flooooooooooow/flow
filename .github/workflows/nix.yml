@@ -1,0 +1,59 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
+# Builds the Nix package (#904) on Linux and macOS and runs a program with
+# the installed `flow`. Not a required check.
+name: Nix package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'packaging/nix/**'
+      - 'flow'
+      - 'flow-lsp'
+      - 'tools/flow_cli/**'
+      - '.github/workflows/nix.yml'
+  pull_request:
+    paths:
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'packaging/nix/**'
+      - 'flow'
+      - 'flow-lsp'
+      - 'tools/flow_cli/**'
+      - '.github/workflows/nix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nix-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Flake metadata
+        run: nix flake metadata
+      - name: Build the root flake (runs the install check)
+        run: nix build -L .#flow
+      - name: Run a program with the installed flow
+        run: |
+          ./result/bin/flow version
+          mkdir -p "$RUNNER_TEMP/nixrun"
+          printf 'function main() -> i32 {\n    println("hello from nix")\n    return 0\n}\n' > "$RUNNER_TEMP/nixrun/hello.flow"
+          cd "$RUNNER_TEMP/nixrun"
+          "$GITHUB_WORKSPACE/result/bin/flow" run hello.flow | tee run.log
+          grep -q "hello from nix" run.log
+          "$GITHUB_WORKSPACE/result/bin/flow" compile hello.flow
+          test -x "${XDG_CACHE_HOME:-$HOME/.cache}/flow/build/hello"
+      - name: Build the packaging/nix flake
+        run: nix build -L ./packaging/nix#flow -o result-packaging
+      - name: Nix flake check
+        run: nix flake check -L

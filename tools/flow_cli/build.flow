@@ -140,8 +140,11 @@ export function run_program(args: ptr<ProcStrs>) -> i32 {
     }
     check(flow_sync_program(program))
     let basename: string = path_stem(program, ".flow")
-    mkdir_p_or_exit(root() + "/build")
-    let run_root: string = mktemp_dir(root() + "/build/run.XXXXXX")
+    let run_base: string = cache_dir("")
+    let mut run_root: string = ""
+    if s_len(run_base) > 0 {
+        run_root = mktemp_dir(run_base + "/run.XXXXXX")
+    }
     if s_len(run_root) == 0 {
         error("Could not create an isolated build directory for this run.")
         return 1

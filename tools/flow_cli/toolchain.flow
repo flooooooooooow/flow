@@ -37,6 +37,28 @@ export function build_root() -> string {
     return TC_BUILD_ROOT
 }
 
+# A writable directory for cached artifacts (tool binaries, the runtime
+# archive, probes, per-run build directories): root/build/SUB when the
+# install can be written, else $XDG_CACHE_HOME/flow/SUB, which is what a
+# read-only install such as a Nix store path gets. SUB may be "". The
+# directory exists on return; "" when neither could be created.
+export function cache_dir(sub: string) -> string {
+    let mut tail: string = ""
+    if s_len(sub) > 0 {
+        tail = "/" + sub
+    }
+    let local: string = TC_ROOT + "/build" + tail
+    if mkdir_p(local) and is_writable(local) {
+        return local
+    }
+    let user: string = env_or("XDG_CACHE_HOME", env("HOME") + "/.cache") + "/flow" + tail
+    if mkdir_p(user) and is_writable(user) {
+        return user
+    }
+    errln("mkdir: " + user + ": cannot create directory")
+    return ""
+}
+
 export function set_build_root(p: string) {
     TC_BUILD_ROOT = p
     env_set("FLOW_BUILD_ROOT", p)
@@ -176,11 +198,14 @@ export function flow_resolve_flowc() -> string {
 
 # Build a Flow tool with the Stage-A driver; the binary's path or "".
 #   entry, deps: paths relative to TC_ROOT
-# build/tools/NAME/NAME, rebuilt when the entry, a listed source or the
-# driver is newer; written under a temporary name first.
+# build/tools/NAME/NAME (see cache_dir), rebuilt when the entry, a listed
+# source or the driver is newer; written under a temporary name first.
 export function flow_build_flow_tool(name: string, entry: string, deps: ptr<ProcStrs>) -> string {
     let src: string = TC_ROOT + "/" + entry
-    let dir: string = TC_ROOT + "/build/tools/" + name
+    let dir: string = cache_dir("tools/" + name)
+    if s_len(dir) == 0 {
+        return ""
+    }
     let bin: string = dir + "/" + name
     let fb: string = env("FLOWC_BIN")
     let mut driver: string = ""
@@ -420,13 +445,9 @@ export function flow_native_tool(name: string) -> string {
     if not is_file(TC_ROOT + "/" + src) {
         return ""
     }
-    let mut cache: string = TC_ROOT + "/build/tools"
-    if not mkdir_p(cache) or not is_writable(cache) {
-        cache = env_or("XDG_CACHE_HOME", env("HOME") + "/.cache") + "/flow/tools"
-        if not mkdir_p(cache) {
-            errln("mkdir: " + cache + ": cannot create directory")
-            return ""
-        }
+    let cache: string = cache_dir("tools")
+    if s_len(cache) == 0 {
+        return ""
     }
     let bin: string = cache + "/flow-" + name
     if is_exec(bin) {
@@ -671,9 +692,9 @@ export function concurrency_flags() {
                 }
             }
         }
-        let probe_c: string = TC_ROOT + "/build/.ossl_probe.c"
-        let probe_bin: string = TC_ROOT + "/build/.ossl_probe"
-        let _m: bool = mkdir_p(TC_ROOT + "/build")
+        let probe_dir: string = cache_dir("")
+        let probe_c: string = probe_dir + "/.ossl_probe.c"
+        let probe_bin: string = probe_dir + "/.ossl_probe"
         let _w: bool = write_text(probe_c, "#include <openssl/ssl.h>\nint main(void){SSL_CTX_new(TLS_method());return 0;}\n")
         let mut done: bool = false
         if s_len(prefix) > 0 {
@@ -718,9 +739,9 @@ export function concurrency_flags() {
     if not OPENMP_PROBED {
         OPENMP_PROBED = true
         OPENMP_FLAGS = sl_new()
-        let probe_c2: string = TC_ROOT + "/build/.omp_probe.c"
-        let probe_bin2: string = TC_ROOT + "/build/.omp_probe"
-        let _m2: bool = mkdir_p(TC_ROOT + "/build")
+        let probe_dir2: string = cache_dir("")
+        let probe_c2: string = probe_dir2 + "/.omp_probe.c"
+        let probe_bin2: string = probe_dir2 + "/.omp_probe"
         let _w2: bool = write_text(probe_c2, "int main(void){return 0;}\n")
         let b1: ptr<ProcStrs> = sl_of3("clang", "-fopenmp", probe_c2)
         sl_push2(b1, "-o", probe_bin2)
@@ -860,7 +881,10 @@ export function flowc_runtime_archive(driver: string, cc_bin: string) -> bool {
     }
     fnv_file(fnv, driver)
     let key: string = u32_str(fnv.h >> 32) + "-" + u32_str(fnv.h)
-    let rootdir: string = TC_ROOT + "/build/flowc_runtime"
+    let rootdir: string = cache_dir("flowc_runtime")
+    if s_len(rootdir) == 0 {
+        return false
+    }
     let dir: string = rootdir + "/" + key
     TC_RT_ARCHIVE = dir + "/libflowrt.a"
     if is_file(TC_RT_ARCHIVE) {
