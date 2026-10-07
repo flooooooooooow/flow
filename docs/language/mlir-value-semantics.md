@@ -2,8 +2,10 @@
 
 Flow emits array and tensor computations as immutable SSA values in the
 MLIR `tensor` dialect. One-Shot Bufferization then chooses storage after
-global alias analysis, so later passes see disjoint `memref` buffers
-instead of may-alias pointers.
+global alias analysis. It may reuse storage in place when legal; **a memref
+result is not automatically a proof of disjointness**. Later optimizations
+may assume non-aliasing only where the bufferization result, region/noalias
+analysis, or an explicit structural argument actually proves it.
 
 This is the contract behind [#664](https://github.com/flooooooooooow/flow/issues/664).
 Pass flags that run the pipeline live in [MLIR optimization flags](mlir-opt-flags.md).
@@ -40,12 +42,16 @@ emitted IR. `one-shot-bufferize{bufferize-function-boundaries=1}` (O1 and
 above) rewrites those boundaries to memrefs. After that pass the module
 has no `tensor<` types.
 
-## Alias-free follow-on opts
+## Alias-aware follow-on opts
 
-Because the bufferized memrefs do not alias, LICM can hoist invariant
-`memref.dim` / `memref.load` queries out of the loop, and affine
-vectorization can rewrite the elementwise body without a runtime alias
-check. The regressions in `tests/scripts/mlir_bufferize_boundary.flow`
-cover the destination form, function-boundary bufferization, hot-loop
-SSA, allocation-free loops, load hoisting, and vectorization. The
-optimizer-level checks skip when `mlir-opt` is not installed.
+When a particular destination/source pair is proven non-aliasing, LICM can
+hoist invariant `memref.dim` / `memref.load` queries and affine
+vectorization can use the stronger dependence result. Merely having passed
+through One-Shot Bufferization does not grant that proof: in-place
+bufferization deliberately creates aliases when it is semantically legal.
+
+The regressions in `tests/scripts/mlir_bufferize_boundary.flow` cover the
+destination form, function-boundary bufferization, hot-loop SSA,
+allocation-free loops, explicit alias-free load-hoist/vectorization
+examples, and non-commutative memref operand ordering. The optimizer-level
+checks skip when `mlir-opt` is not installed.
