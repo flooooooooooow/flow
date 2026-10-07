@@ -1,0 +1,11 @@
+# Proven-disjoint dest/src: restrict on both pointer params.
++ float* restrict dst
++ float* restrict src
+# The same loop shape also gets portable SIMD / vectorize hints (#733).
++ #pragma omp simd
++ #pragma clang loop vectorize(enable) interleave(enable)
++ #pragma GCC ivdep
+# Aliasing dest/src must stay unqualified.
+- scale_alias(float* restrict
++ void scale_alias(float* dst, float* src, int32_t n);
+exit 0

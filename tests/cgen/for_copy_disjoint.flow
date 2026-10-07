@@ -1,0 +1,13 @@
+# Distinct fixed local arrays have provably disjoint storage and remain
+# eligible for a single optimized memcpy rather than four scalar stores.
+function main() -> i32 {
+    let a: [i32; 4] = [1, 2, 3, 4]
+    let mut b: [i32; 4] = [0, 0, 0, 0]
+    for i in 0 to 4 {
+        b[i] = a[i]
+    }
+    if b[0] != 1 or b[1] != 2 or b[2] != 3 or b[3] != 4 {
+        return 1
+    }
+    return 0
+}

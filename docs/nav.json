@@ -549,6 +549,10 @@
           "path": "language/spans.md"
         },
         {
+          "label": "Noalias and restrict",
+          "path": "language/noalias.md"
+        },
+        {
           "label": "Ranges and Range Algebra",
           "path": "language/ranges.md"
         },
@@ -559,6 +563,10 @@
         {
           "label": "Effects Showcase",
           "path": "effects-showcase.md"
+        },
+        {
+          "label": "Effect Continuations",
+          "path": "language/effects-continuations.md"
         },
         {
           "label": "Async via Effects",

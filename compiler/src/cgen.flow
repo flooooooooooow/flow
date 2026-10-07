@@ -43,8 +43,13 @@ import .type_id {
 }
 import .noalias {
     flowc_noalias_param_restrict,
+    flowc_noalias_param_restrict_clone,
     flowc_noalias_local_restrict,
-    flowc_noalias_ty_is_ptr
+    flowc_noalias_ty_is_ptr,
+    flowc_noalias_fn_needs_clone,
+    flowc_noalias_call_use_clone,
+    flowc_noalias_span_data_restrict,
+    flowc_noalias_ident_span_data_restrict
 }
 import .region {
     flowc_region_disjoint,
@@ -193,11 +198,14 @@ export struct CgenBuf {
     len_hoist_id: i32,
     # The AST_PROGRAM of the module being emitted, so a name can resolve to a
     # module static (a top-level `let`). AST_NONE in scratch buffers.
-    root: i32
+    root: i32,
+    # 1 while emitting `__flowc_na_<name>`, the proven-call clone of an
+    # internal function with mixed aliasable and disjoint call sites (#731).
+    na_clone: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, root: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, root: AST_NONE, na_clone: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -7264,11 +7272,17 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
         }
-        # Span indexing: if base is a span variable, emit base.data[index]
+        # Span indexing: proven-disjoint spans use the restrict `.data` temp.
         if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
             if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                flowc_cgen_puts(w, ".data[")
+                if flowc_noalias_ident_span_data_restrict(arena, src, w[0].cur_fn, arena.nodes[id].a, w[0].na_clone) == 1 {
+                    flowc_cgen_puts(w, "__flowc_na_d_")
+                    flowc_cgen_put_ident(w, src, arena.nodes[arena.nodes[id].a].name_start, arena.nodes[arena.nodes[id].a].name_end)
+                    flowc_cgen_putc(w, 91)
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                    flowc_cgen_puts(w, ".data[")
+                }
                 w[0].lval = 0
                 flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
                 w[0].lval = idx_lv
@@ -7825,7 +7839,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     if user_libc == 1 {
                         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
                     } elif flowc_cgen_emit_mem_name(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 {
-                        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                        flowc_cgen_put_callee_name(w, arena, src, id)
                     }
                 }
             } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
@@ -9198,10 +9212,12 @@ function flowc_cgen_step_is_unit(arena: AstArena, step: i32) -> i32 {
     return 0
 }
 
-# Contiguous `dst[i] = src[i]` over `i in lo to hi` with unit stride: emit
-# `memmove` instead of a scalar loop. The C compiler already maps that to a
-# vector or libc copy. Skip when runtime checks would have guarded a sized
-# array or span, or when the bases may be spans (those index through `.data`).
+# Contiguous `dst[i] = src[i]` over `i in lo to hi` with unit stride
+# becomes memcpy ONLY if provenance proves the two regions disjoint.
+# Do not replace an overlapping forward loop with memmove: when
+# `dst = src + 1`, sequential writes feed later reads (a recurrence),
+# whereas memmove snapshots the old values and changes program semantics.
+# Skip checks/slices as before; unknown aliasing keeps the original loop.
 function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_step_is_unit(arena, arena.nodes[id].ival) == 0 {
         return 0
@@ -9254,21 +9270,18 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
         }
     }
     let disjoint: i32 = flowc_region_disjoint(arena, src, w[0].cur_fn, dst, srcb)
-    if disjoint == 1 {
-        flowc_cgen_puts(w, "  /* region: disjoint */\n")
-    } else {
-        flowc_cgen_puts(w, "  /* region: unproven */\n")
+    # When aliasing is possible, even memmove is not equivalent to an
+    # ordered elementwise assignment. Fall back to the exact scalar loop.
+    if disjoint != 1 {
+        return 0
     }
+    flowc_cgen_puts(w, "  /* region: disjoint */\n")
     flowc_cgen_puts(w, "  if ((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ") > (")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
     flowc_cgen_puts(w, ")) {\n    ")
-    if disjoint == 1 {
-        flowc_cgen_puts(w, "memcpy")
-    } else {
-        flowc_cgen_puts(w, "memmove")
-    }
+    flowc_cgen_puts(w, "memcpy")
     flowc_cgen_puts(w, "((void*)(&(")
     flowc_cgen_emit_expr(w, arena, src, dst)
     flowc_cgen_puts(w, ")[")
@@ -9820,6 +9833,9 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
         }
         flowc_cgen_puts(w, ";\n")
+        if flowc_noalias_span_data_restrict(arena, src, w[0].cur_fn, id, w[0].na_clone) == 1 {
+            flowc_cgen_emit_span_data_temp(w, arena, src, id)
+        }
         return
     }
     if kind == AST_RETURN {
@@ -10502,7 +10518,13 @@ function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
     }
     flowc_cgen_emit_type(w, arena, src, ty)
     if flowc_noalias_ty_is_ptr(arena, src, ty) == 1 {
-        if flowc_noalias_param_restrict(arena, src, w[0].cur_fn, id) == 1 {
+        let mut na_r: i32 = 0
+        if w[0].na_clone == 1 {
+            na_r = flowc_noalias_param_restrict_clone(arena, src, w[0].cur_fn, id)
+        } else {
+            na_r = flowc_noalias_param_restrict(arena, src, w[0].cur_fn, id)
+        }
+        if na_r == 1 {
             flowc_cgen_puts(w, " restrict")
         }
     }
@@ -10865,6 +10887,65 @@ function flowc_cgen_fn_is_variadic(arena: AstArena, src: ptr<u8>, id: i32) -> i3
     return 0
 }
 
+function flowc_cgen_put_na_fn_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if w[0].na_clone == 1 {
+        flowc_cgen_puts(w, "__flowc_na_")
+    }
+    if w[0].mono_ntp > 0 {
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        let mut mi: i32 = 0
+        while mi < w[0].mono_ntp {
+            flowc_cgen_putc(w, 95)
+            flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[mi]].name_start, arena.nodes[w[0].mono_tp_concrete[mi]].name_end)
+            mi = mi + 1
+        }
+        return
+    }
+    if flowc_cgen_fn_is_overloaded(arena, src, id) == 1 {
+        flowc_cgen_put_mangled_fn(w, arena, src, id)
+        return
+    }
+    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+}
+
+function flowc_cgen_put_callee_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) {
+    if flowc_noalias_call_use_clone(arena, src, call) == 1 {
+        flowc_cgen_puts(w, "__flowc_na_")
+    }
+    flowc_cgen_put_ident(w, src, arena.nodes[call].name_start, arena.nodes[call].name_end)
+}
+
+function flowc_cgen_emit_span_data_temp(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, bind: i32) {
+    let ty: i32 = arena.nodes[bind].a
+    let mut elem: i32 = AST_NONE
+    if ty != AST_NONE {
+        elem = arena.nodes[ty].a
+    }
+    if elem != AST_NONE {
+        flowc_cgen_emit_type(w, arena, src, elem)
+    } else {
+        flowc_cgen_puts(w, "int32_t")
+    }
+    flowc_cgen_puts(w, "* restrict __flowc_na_d_")
+    flowc_cgen_put_ident(w, src, arena.nodes[bind].name_start, arena.nodes[bind].name_end)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_put_ident(w, src, arena.nodes[bind].name_start, arena.nodes[bind].name_end)
+    flowc_cgen_puts(w, ".data;\n")
+}
+
+function flowc_cgen_emit_span_data_temps(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fn: i32) {
+    if fn == AST_NONE {
+        return
+    }
+    let mut p: i32 = arena.nodes[fn].a
+    while p != AST_NONE {
+        if flowc_noalias_span_data_restrict(arena, src, fn, p, w[0].na_clone) == 1 {
+            flowc_cgen_emit_span_data_temp(w, arena, src, p)
+        }
+        p = arena.nodes[p].next
+    }
+}
+
 function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     # Stage-A CLI: main(argc, argv) → int main(int …, char **…) regardless of Flow types.
     let cli_main: i32 = flowc_cgen_is_cli_main(arena, src, id)
@@ -10909,20 +10990,7 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     flowc_cgen_emit_attr_prefix(w, arena, src, id)
     flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
-    # Monomorphization: emit mangled name when mono context is active.
-    if w[0].mono_ntp > 0 and cli_main == 0 {
-        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        let mut mi: i32 = 0
-        while mi < w[0].mono_ntp {
-            flowc_cgen_putc(w, 95)
-            flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[mi]].name_start, arena.nodes[w[0].mono_tp_concrete[mi]].name_end)
-            mi = mi + 1
-        }
-    } elif flowc_cgen_fn_is_overloaded(arena, src, id) == 1 and cli_main == 0 {
-        flowc_cgen_put_mangled_fn(w, arena, src, id)
-    } else {
-        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    }
+    flowc_cgen_put_na_fn_name(w, arena, src, id)
     flowc_cgen_putc(w, 40)
     let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
@@ -10947,13 +11015,17 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     if w[0].mono_ntp == 0 and flowc_cgen_has_self_tail_call(arena, src, id) == 1 {
         w[0].tail_fn = id
         flowc_cgen_puts(w, "{\n  __flowc_tail: ;\n")
+        flowc_cgen_emit_span_data_temps(w, arena, src, id)
         flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[arena.nodes[id].c].a)
         flowc_cgen_puts(w, "}\n")
         w[0].tail_fn = AST_NONE
         flowc_cgen_putc(w, 10)
         return
     }
-    flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+    flowc_cgen_puts(w, "{\n")
+    flowc_cgen_emit_span_data_temps(w, arena, src, id)
+    flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[arena.nodes[id].c].a)
+    flowc_cgen_puts(w, "}\n")
     flowc_cgen_putc(w, 10)
 }
 
@@ -11029,20 +11101,7 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     flowc_cgen_emit_attr_prefix(w, arena, src, id)
     flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
     flowc_cgen_putc(w, 32)
-    # Monomorphization: emit mangled name when mono context is active.
-    if w[0].mono_ntp > 0 and cli_main == 0 {
-        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        let mut mi: i32 = 0
-        while mi < w[0].mono_ntp {
-            flowc_cgen_putc(w, 95)
-            flowc_cgen_put_span(w, src, arena.nodes[w[0].mono_tp_concrete[mi]].name_start, arena.nodes[w[0].mono_tp_concrete[mi]].name_end)
-            mi = mi + 1
-        }
-    } elif flowc_cgen_fn_is_overloaded(arena, src, id) == 1 and cli_main == 0 {
-        flowc_cgen_put_mangled_fn(w, arena, src, id)
-    } else {
-        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    }
+    flowc_cgen_put_na_fn_name(w, arena, src, id)
     flowc_cgen_putc(w, 40)
     let saved_fn: i32 = w[0].cur_fn
     w[0].cur_fn = id
@@ -11545,6 +11604,9 @@ function flowc_cgen_is_cembed_fn(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32
 #   handle E with C -> save the slot, install &_C_E_vtable, run the body,
 #                      restore the slot
 #   E.op(args)      -> E_op(args)
+# Handlers are tail-resumptive (#564): a capability method is an ordinary
+# call that returns to the operation site. Abort, retry and multi-shot
+# continuation capture are reserved; see docs/language/effects-continuations.md.
 # Unhandled operations abort by default. FLOWC_PERMISSIVE_EFFECTS=1 at compile
 # time and FLOW_PERMISSIVE_EFFECTS=1 at run time restore zero/no-op fallback.
 
@@ -13315,6 +13377,11 @@ while item != AST_NONE {
             if arena.nodes[fn].ival == 0 and arena.nodes[fn].c != AST_NONE {
                 if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
                     flowc_cgen_emit_fn_proto(&w, arena, src, fn)
+                    if flowc_noalias_fn_needs_clone(arena, src, fn) == 1 {
+                        w.na_clone = 1
+                        flowc_cgen_emit_fn_proto(&w, arena, src, fn)
+                        w.na_clone = 0
+                    }
                 } elif flowc_cgen_user_libc_kind(arena, src, fn) != AST_NONE {
                     flowc_cgen_user_libc_define(&w, src, fn, arena, 1)
                     flowc_cgen_emit_fn_proto(&w, arena, src, fn)
@@ -13350,6 +13417,11 @@ while item != AST_NONE {
             if arena.nodes[fn].ival == 0 {
                 if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
                     flowc_cgen_emit_fn(&w, arena, src, fn)
+                    if flowc_noalias_fn_needs_clone(arena, src, fn) == 1 {
+                        w.na_clone = 1
+                        flowc_cgen_emit_fn(&w, arena, src, fn)
+                        w.na_clone = 0
+                    }
                 } elif flowc_cgen_user_libc_kind(arena, src, fn) != AST_NONE {
                     flowc_cgen_user_libc_define(&w, src, fn, arena, 1)
                     flowc_cgen_emit_fn(&w, arena, src, fn)
