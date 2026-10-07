@@ -1,0 +1,5 @@
+# The loop keeps the clang request and gets no OpenMP reduction or ivdep.
++ #pragma clang loop vectorize(enable) interleave(enable)
+- reduction(+:
+- #pragma GCC ivdep
+exit 0

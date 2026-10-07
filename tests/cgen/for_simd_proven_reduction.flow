@@ -1,0 +1,13 @@
+# A single, independent scalar reduction retains OMP SIMD when enabled.
+function sum(xs: ptr<i32>, n: i32) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to n {
+        total = total + xs[i]
+    }
+    return total
+}
+
+function main() -> i32 {
+    let vals: [i32; 4] = [1, 2, 3, 4]
+    return sum(&vals[0], 4) - 10
+}
