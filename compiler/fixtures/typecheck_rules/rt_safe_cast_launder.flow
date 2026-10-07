@@ -1,0 +1,18 @@
+# An explicit type cast must not manufacture proof of RT safety.
+extern { function malloc(size: i64) -> ptr<u8> }
+
+function unsafe_fn(x: i32) -> i32 {
+    let p: ptr<u8> = malloc(8)
+    if p == null { return x }
+    return x + 1
+}
+
+@rt_safe
+function process(x: i32) -> i32 {
+    let f: (i32) -> i32 with rt_safe = unsafe_fn as (i32) -> i32 with rt_safe
+    return f(x)
+}
+
+function main() -> i32 {
+    return 0
+}
