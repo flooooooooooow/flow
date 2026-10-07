@@ -8827,6 +8827,9 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
         if flowc_cgen_try_emit_contiguous_copy(w, arena, src, id) == 1 {
             return
         }
+        if flowc_cgen_try_emit_vector_kernel(w, arena, src, id) == 1 {
+            return
+        }
     }
     let saved_loop_start: i32 = w[0].bounds_loop_start
     let saved_loop_end: i32 = w[0].bounds_loop_end
@@ -9024,6 +9027,16 @@ function flowc_cgen_loop_body_is_simple(arena: AstArena, src: ptr<u8>, body: i32
     let mut st: i32 = arena.nodes[body].a
     while st != AST_NONE {
         let k: i32 = arena.nodes[st].kind
+        if k == AST_IF {
+            if flowc_cgen_if_is_select(arena, src, st) == 0 {
+                return 0
+            }
+            if flowc_cgen_select_exprs_ok(arena, src, st) == 0 {
+                return 0
+            }
+            st = arena.nodes[st].next
+            continue
+        }
         if k != AST_LET and k != AST_ASSIGN and k != AST_EXPR_STMT {
             return 0
         }
@@ -9123,6 +9136,13 @@ function flowc_cgen_loop_omp_safe(arena: AstArena, src: ptr<u8>, body: i32) -> i
     while st != AST_NONE {
         let k: i32 = arena.nodes[st].kind
         if k == AST_LET {
+            st = arena.nodes[st].next
+            continue
+        }
+        if k == AST_IF {
+            if flowc_cgen_if_is_select(arena, src, st) == 0 {
+                return 0
+            }
             st = arena.nodes[st].next
             continue
         }
@@ -9264,7 +9284,9 @@ function flowc_cgen_step_is_unit(arena: AstArena, step: i32) -> i32 {
 # Do not replace an overlapping forward loop with memmove: when
 # `dst = src + 1`, sequential writes feed later reads (a recurrence),
 # whereas memmove snapshots the old values and changes program semantics.
-# Skip checks/slices as before; unknown aliasing keeps the original loop.
+# Unknown aliasing keeps the original loop (#1417). Spans copy through
+# `.data`; with FLOWC_CHECKS one range check per span replaces the
+# per-index tests (#739). Checked sized arrays keep the loop.
 function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_step_is_unit(arena, arena.nodes[id].ival) == 0 {
         return 0
@@ -9299,20 +9321,11 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
     if flowc_cgen_ident_same(arena, src, dst, srcb) == 1 {
         return 0
     }
-    if flowc_cgen_is_span_var(arena, src, dst) == 1 or flowc_cgen_is_span_var(arena, src, srcb) == 1 {
-        return 0
-    }
     if w[0].checks == 1 {
         if flowc_cgen_checked_array_size(w, arena, src, dst) > 0 {
             return 0
         }
         if flowc_cgen_checked_array_size(w, arena, src, srcb) > 0 {
-            return 0
-        }
-        if flowc_cgen_checked_is_span(w, arena, src, dst) == 1 {
-            return 0
-        }
-        if flowc_cgen_checked_is_span(w, arena, src, srcb) == 1 {
             return 0
         }
     }
@@ -9322,28 +9335,929 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
     if disjoint != 1 {
         return 0
     }
+    let dst_span: i32 = flowc_cgen_is_span_var(arena, src, dst)
+    let src_span: i32 = flowc_cgen_is_span_var(arena, src, srcb)
     flowc_cgen_puts(w, "  /* region: disjoint */\n")
     flowc_cgen_puts(w, "  if ((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ") > (")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-    flowc_cgen_puts(w, ")) {\n    ")
-    flowc_cgen_puts(w, "memcpy")
-    flowc_cgen_puts(w, "((void*)(&(")
-    flowc_cgen_emit_expr(w, arena, src, dst)
-    flowc_cgen_puts(w, ")[")
-    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-    flowc_cgen_puts(w, "]), (void*)(&(")
-    flowc_cgen_emit_expr(w, arena, src, srcb)
-    flowc_cgen_puts(w, ")[")
-    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-    flowc_cgen_puts(w, "]), (size_t)((")
+    flowc_cgen_puts(w, ")) {\n")
+    if w[0].checks == 1 {
+        if dst_span == 1 {
+            flowc_cgen_puts(w, "    if ((int64_t)(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") < 0 || (int64_t)(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ") > (")
+            flowc_cgen_emit_expr(w, arena, src, dst)
+            flowc_cgen_puts(w, ").len) { fprintf(stderr, \"span copy out of bounds\\n\"); flow_fault_handler(\"span copy out of bounds\"); }\n")
+        }
+        if src_span == 1 {
+            flowc_cgen_puts(w, "    if ((int64_t)(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_puts(w, ") < 0 || (int64_t)(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, ") > (")
+            flowc_cgen_emit_expr(w, arena, src, srcb)
+            flowc_cgen_puts(w, ").len) { fprintf(stderr, \"span copy out of bounds\\n\"); flow_fault_handler(\"span copy out of bounds\"); }\n")
+        }
+    }
+    flowc_cgen_puts(w, "    memcpy((void*)")
+    flowc_cgen_emit_elem_ptr(w, arena, src, dst, arena.nodes[id].a)
+    flowc_cgen_puts(w, ", (void*)")
+    flowc_cgen_emit_elem_ptr(w, arena, src, srcb, arena.nodes[id].a)
+    flowc_cgen_puts(w, ", (size_t)((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
     flowc_cgen_puts(w, ") - (")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-    flowc_cgen_puts(w, ")) * sizeof((")
-    flowc_cgen_emit_expr(w, arena, src, dst)
-    flowc_cgen_puts(w, ")[0]));\n  }\n")
+    flowc_cgen_puts(w, ")) * sizeof(*")
+    flowc_cgen_emit_elem_ptr(w, arena, src, dst, arena.nodes[id].a)
+    flowc_cgen_puts(w, "));\n  }\n")
+    return 1
+}
+
+# Pointer to `base[idx]`. Spans go through `.data`.
+function flowc_cgen_emit_elem_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32, idx: i32) {
+    if flowc_cgen_is_span_var(arena, src, base) == 1 {
+        flowc_cgen_puts(w, "((")
+        flowc_cgen_emit_expr(w, arena, src, base)
+        flowc_cgen_puts(w, ").data + (")
+        flowc_cgen_emit_expr(w, arena, src, idx)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    flowc_cgen_puts(w, "(&((")
+    flowc_cgen_emit_expr(w, arena, src, base)
+    flowc_cgen_puts(w, ")[")
+    flowc_cgen_emit_expr(w, arena, src, idx)
+    flowc_cgen_puts(w, "]))")
+}
+
+# Pointer to `base[loop_var]` where the index is a for-loop's own name.
+function flowc_cgen_emit_elem_ptr_for(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32, loop_id: i32) {
+    if flowc_cgen_is_span_var(arena, src, base) == 1 {
+        flowc_cgen_puts(w, "((")
+        flowc_cgen_emit_expr(w, arena, src, base)
+        flowc_cgen_puts(w, ").data + (")
+        flowc_cgen_put_span(w, src, arena.nodes[loop_id].name_start, arena.nodes[loop_id].name_end)
+        flowc_cgen_puts(w, "))")
+        return
+    }
+    flowc_cgen_puts(w, "(&((")
+    flowc_cgen_emit_expr(w, arena, src, base)
+    flowc_cgen_puts(w, ")[")
+    flowc_cgen_put_span(w, src, arena.nodes[loop_id].name_start, arena.nodes[loop_id].name_end)
+    flowc_cgen_puts(w, "]))")
+}
+
+# --- branchy clip / min-max as selects (#739) -----------------------------
+
+function flowc_cgen_block_only_stmt(arena: AstArena, body: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return AST_NONE
+    }
+    let st: i32 = arena.nodes[body].a
+    if st == AST_NONE or arena.nodes[st].next != AST_NONE {
+        return AST_NONE
+    }
+    return st
+}
+
+function flowc_cgen_block_index_store(arena: AstArena, body: i32) -> i32 {
+    let st: i32 = flowc_cgen_block_only_stmt(arena, body)
+    if st == AST_NONE {
+        return AST_NONE
+    }
+    if flowc_cgen_assign_is_index_store(arena, st) == 1 {
+        return st
+    }
+    return AST_NONE
+}
+
+function flowc_cgen_block_only_if(arena: AstArena, body: i32) -> i32 {
+    let st: i32 = flowc_cgen_block_only_stmt(arena, body)
+    if st == AST_NONE or arena.nodes[st].kind != AST_IF {
+        return AST_NONE
+    }
+    return st
+}
+
+# Destination INDEX of a clip/min/max/select if, else AST_NONE. Then and
+# else (when present) must store the same `base[idx]`; a missing else is a
+# masked store of that index. Scalar reductions with a predicate are not
+# selects, so they keep the unhinted branchy form.
+function flowc_cgen_if_select_dest(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE or arena.nodes[id].kind != AST_IF {
+        return AST_NONE
+    }
+    let then_st: i32 = flowc_cgen_block_index_store(arena, arena.nodes[id].b)
+    if then_st == AST_NONE {
+        return AST_NONE
+    }
+    let dest: i32 = arena.nodes[then_st].a
+    let els: i32 = arena.nodes[id].c
+    if els == AST_NONE {
+        return dest
+    }
+    let else_st: i32 = flowc_cgen_block_index_store(arena, els)
+    if else_st != AST_NONE {
+        let ed: i32 = arena.nodes[else_st].a
+        if flowc_cgen_ident_same(arena, src, arena.nodes[dest].a, arena.nodes[ed].a) == 1 {
+            if flowc_cgen_ident_same(arena, src, arena.nodes[dest].b, arena.nodes[ed].b) == 1 {
+                return dest
+            }
+        }
+        return AST_NONE
+    }
+    let mut inner: i32 = AST_NONE
+    if arena.nodes[els].kind == AST_IF {
+        inner = els
+    } else {
+        inner = flowc_cgen_block_only_if(arena, els)
+    }
+    if inner == AST_NONE {
+        return AST_NONE
+    }
+    let inner_dest: i32 = flowc_cgen_if_select_dest(arena, src, inner)
+    if inner_dest == AST_NONE {
+        return AST_NONE
+    }
+    if flowc_cgen_ident_same(arena, src, arena.nodes[dest].a, arena.nodes[inner_dest].a) == 1 {
+        if flowc_cgen_ident_same(arena, src, arena.nodes[dest].b, arena.nodes[inner_dest].b) == 1 {
+            return dest
+        }
+    }
+    return AST_NONE
+}
+
+function flowc_cgen_if_is_select(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if flowc_cgen_if_select_dest(arena, src, id) != AST_NONE {
+        return flowc_cgen_select_exprs_ok(arena, src, id)
+    }
+    return 0
+}
+
+function flowc_cgen_select_exprs_ok(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE or arena.nodes[id].kind != AST_IF {
+        return 0
+    }
+    if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[id].a, 0) == 0 {
+        return 0
+    }
+    let then_st: i32 = flowc_cgen_block_index_store(arena, arena.nodes[id].b)
+    if then_st == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[then_st].b, 0) == 0 {
+        return 0
+    }
+    let els: i32 = arena.nodes[id].c
+    # No else: `a[i] = c ? v : a[i]` would read a[i] when c is false, and c
+    # is often the bounds guard for that very index (salvaged from #1396).
+    if els == AST_NONE {
+        return 0
+    }
+    let else_st: i32 = flowc_cgen_block_index_store(arena, els)
+    if else_st != AST_NONE {
+        return flowc_cgen_vec_expr_ok(arena, src, arena.nodes[else_st].b, 0)
+    }
+    let mut inner: i32 = AST_NONE
+    if arena.nodes[els].kind == AST_IF {
+        inner = els
+    } else {
+        inner = flowc_cgen_block_only_if(arena, els)
+    }
+    if inner == AST_NONE {
+        return 0
+    }
+    return flowc_cgen_select_exprs_ok(arena, src, inner)
+}
+
+function flowc_cgen_emit_select_rhs(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let then_st: i32 = flowc_cgen_block_index_store(arena, arena.nodes[id].b)
+    flowc_cgen_puts(w, "((")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, ") ? (")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[then_st].b)
+    flowc_cgen_puts(w, ") : (")
+    let els: i32 = arena.nodes[id].c
+    if els == AST_NONE {
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[then_st].a)
+    } else {
+        let else_st: i32 = flowc_cgen_block_index_store(arena, els)
+        if else_st != AST_NONE {
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[else_st].b)
+        } else {
+            let mut inner: i32 = AST_NONE
+            if arena.nodes[els].kind == AST_IF {
+                inner = els
+            } else {
+                inner = flowc_cgen_block_only_if(arena, els)
+            }
+            flowc_cgen_emit_select_rhs(w, arena, src, inner)
+        }
+    }
+    flowc_cgen_puts(w, "))")
+}
+
+function flowc_cgen_emit_select_if(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let dest: i32 = flowc_cgen_if_select_dest(arena, src, id)
+    flowc_cgen_puts(w, "  ")
+    w[0].lval = 1
+    flowc_cgen_emit_expr(w, arena, src, dest)
+    w[0].lval = 0
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_select_rhs(w, arena, src, id)
+    flowc_cgen_puts(w, ";\n")
+}
+
+# --- while-to-for rotation (#739) ----------------------------------------
+
+function flowc_cgen_tree_has_kind(arena: AstArena, id: i32, kind: i32, depth: i32) -> i32 {
+    if id == AST_NONE or depth > 64 {
+        return 0
+    }
+    let mut cur: i32 = id
+    while cur != AST_NONE {
+        if arena.nodes[cur].kind == kind {
+            return 1
+        }
+        if flowc_cgen_tree_has_kind(arena, arena.nodes[cur].a, kind, depth + 1) == 1 {
+            return 1
+        }
+        if flowc_cgen_tree_has_kind(arena, arena.nodes[cur].b, kind, depth + 1) == 1 {
+            return 1
+        }
+        if flowc_cgen_tree_has_kind(arena, arena.nodes[cur].c, kind, depth + 1) == 1 {
+            return 1
+        }
+        cur = arena.nodes[cur].next
+    }
+    return 0
+}
+
+function flowc_cgen_ident_written_except(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32, skip: i32, depth: i32) -> i32 {
+    if id == AST_NONE or depth > 64 {
+        return 0
+    }
+    let mut cur: i32 = id
+    while cur != AST_NONE {
+        if cur != skip {
+            let k: i32 = arena.nodes[cur].kind
+            if k == AST_ASSIGN {
+                let lhs: i32 = arena.nodes[cur].a
+                if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT {
+                    if flowc_cgen_span_eq(src, arena.nodes[lhs].name_start, arena.nodes[lhs].name_end, ns, ne) == 1 {
+                        return 1
+                    }
+                }
+            }
+            if k == AST_LET or k == AST_FOR {
+                if flowc_cgen_span_eq(src, arena.nodes[cur].name_start, arena.nodes[cur].name_end, ns, ne) == 1 {
+                    return 1
+                }
+            }
+            if flowc_cgen_ident_written_except(arena, src, arena.nodes[cur].a, ns, ne, skip, depth + 1) == 1 {
+                return 1
+            }
+            if flowc_cgen_ident_written_except(arena, src, arena.nodes[cur].b, ns, ne, skip, depth + 1) == 1 {
+                return 1
+            }
+            if flowc_cgen_ident_written_except(arena, src, arena.nodes[cur].c, ns, ne, skip, depth + 1) == 1 {
+                return 1
+            }
+        }
+        cur = arena.nodes[cur].next
+    }
+    return 0
+}
+
+# 1 when `st` is `ident = ident + N` for a positive integer N. Writes N to
+# step_out[0].
+function flowc_cgen_assign_is_add_const(arena: AstArena, src: ptr<u8>, st: i32, ident: i32, step_out: ptr<i32>) -> i32 {
+    if st == AST_NONE or arena.nodes[st].kind != AST_ASSIGN {
+        return 0
+    }
+    let lhs: i32 = arena.nodes[st].a
+    let rhs: i32 = arena.nodes[st].b
+    if lhs == AST_NONE or rhs == AST_NONE {
+        return 0
+    }
+    if arena.nodes[lhs].kind != AST_IDENT or arena.nodes[rhs].kind != AST_BINOP {
+        return 0
+    }
+    if arena.nodes[rhs].ival != TOK_PLUS {
+        return 0
+    }
+    if flowc_cgen_ident_same(arena, src, lhs, ident) == 0 {
+        return 0
+    }
+    let left: i32 = arena.nodes[rhs].a
+    let right: i32 = arena.nodes[rhs].b
+    let mut n: i64 = 0
+    if flowc_cgen_ident_same(arena, src, left, ident) == 1 {
+        if flowc_cgen_int_literal(arena, src, right, &n) == 1 and n > 0 and n <= 2147483647 {
+            step_out[0] = n as i32
+            return 1
+        }
+    }
+    if flowc_cgen_ident_same(arena, src, right, ident) == 1 {
+        if flowc_cgen_int_literal(arena, src, left, &n) == 1 and n > 0 and n <= 2147483647 {
+            step_out[0] = n as i32
+            return 1
+        }
+    }
+    return 0
+}
+
+function flowc_cgen_block_last_stmt(arena: AstArena, body: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return AST_NONE
+    }
+    let mut st: i32 = arena.nodes[body].a
+    let mut last: i32 = AST_NONE
+    while st != AST_NONE {
+        last = st
+        st = arena.nodes[st].next
+    }
+    return last
+}
+
+function flowc_cgen_body_is_simple_skip(arena: AstArena, src: ptr<u8>, body: i32, skip: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        if st != skip {
+            let k: i32 = arena.nodes[st].kind
+            if k == AST_IF {
+                if flowc_cgen_if_is_select(arena, src, st) == 0 {
+                    return 0
+                }
+                if flowc_cgen_select_exprs_ok(arena, src, st) == 0 {
+                    return 0
+                }
+            } elif k != AST_LET and k != AST_ASSIGN and k != AST_EXPR_STMT {
+                return 0
+            } else {
+                if k == AST_EXPR_STMT {
+                    let e: i32 = arena.nodes[st].a
+                    if e == AST_NONE or arena.nodes[e].kind == AST_CALL {
+                        return 0
+                    }
+                }
+                if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[st].a, 0) == 0 {
+                    return 0
+                }
+                if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[st].b, 0) == 0 {
+                    return 0
+                }
+                if flowc_cgen_vec_expr_ok(arena, src, arena.nodes[st].c, 0) == 0 {
+                    return 0
+                }
+            }
+        }
+        st = arena.nodes[st].next
+    }
+    return 1
+}
+
+function flowc_cgen_body_omp_safe_skip(arena: AstArena, src: ptr<u8>, body: i32, skip: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        if st != skip {
+            let k: i32 = arena.nodes[st].kind
+            if k == AST_LET {
+                st = arena.nodes[st].next
+                continue
+            }
+            if k == AST_IF {
+                if flowc_cgen_if_is_select(arena, src, st) == 0 {
+                    return 0
+                }
+                st = arena.nodes[st].next
+                continue
+            }
+            if k != AST_ASSIGN {
+                return 0
+            }
+            if flowc_cgen_reduction_op(arena, src, st) == 0 and flowc_cgen_assign_is_index_store(arena, st) == 0 {
+                return 0
+            }
+        }
+        st = arena.nodes[st].next
+    }
+    return 1
+}
+
+# Hints for a while rotated to `for (; i < n; ...)`. No OpenMP simd: its
+# loop must be in canonical form with an init clause (clang -fopenmp rejects
+# `for (;` outright), and it privatizes `i`, which a while loop often reads
+# after the loop.
+function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32) {
+    flowc_cgen_puts(w, "#if defined(__clang__)\n")
+    flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
+    if flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1 {
+        flowc_cgen_puts(w, "#elif defined(__GNUC__)\n")
+        flowc_cgen_puts(w, "#pragma GCC ivdep\n")
+    }
+    flowc_cgen_puts(w, "#endif\n")
+}
+
+function flowc_cgen_emit_block_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32) {
+    flowc_cgen_puts(w, "{\n")
+    let mut st: i32 = AST_NONE
+    if body != AST_NONE and arena.nodes[body].kind == AST_BLOCK {
+        st = arena.nodes[body].a
+    }
+    while st != AST_NONE {
+        if st != skip {
+            flowc_cgen_emit_stmt(w, arena, src, st)
+        }
+        st = arena.nodes[st].next
+    }
+    flowc_cgen_puts(w, "}\n")
+}
+
+# Counted `while i < n { ...; i = i + k }` becomes a C for so the same
+# SIMD hints / memmove path as `for i in 0 to n` apply. `continue` is
+# declined: in a while it would skip the increment.
+function flowc_cgen_try_emit_while_as_for(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if arena.nodes[id].ival > 0 {
+        return 0
+    }
+    let cond: i32 = arena.nodes[id].a
+    let body: i32 = arena.nodes[id].b
+    if cond == AST_NONE or body == AST_NONE {
+        return 0
+    }
+    if arena.nodes[cond].kind != AST_BINOP or arena.nodes[cond].ival != TOK_LT {
+        return 0
+    }
+    let iv: i32 = arena.nodes[cond].a
+    let bound: i32 = arena.nodes[cond].b
+    if iv == AST_NONE or arena.nodes[iv].kind != AST_IDENT {
+        return 0
+    }
+    let last: i32 = flowc_cgen_block_last_stmt(arena, body)
+    let mut step: i32 = 0
+    if flowc_cgen_assign_is_add_const(arena, src, last, iv, &step) == 0 {
+        return 0
+    }
+    if flowc_cgen_tree_has_kind(arena, arena.nodes[body].a, AST_CONTINUE, 0) == 1 {
+        return 0
+    }
+    if flowc_cgen_tree_has_kind(arena, arena.nodes[body].a, AST_DEFER, 0) == 1 {
+        return 0
+    }
+    if flowc_cgen_ident_written_except(arena, src, arena.nodes[body].a, arena.nodes[iv].name_start, arena.nodes[iv].name_end, last, 0) == 1 {
+        return 0
+    }
+    if flowc_cgen_body_is_simple_skip(arena, src, body, last) == 1 {
+        flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last)
+    }
+    let saved_wbase: i32 = w[0].loop_defer_base
+    w[0].loop_defer_base = w[0].defer_len
+    flowc_cgen_puts(w, "  for (; ")
+    flowc_cgen_emit_expr(w, arena, src, iv)
+    flowc_cgen_puts(w, " < (")
+    flowc_cgen_emit_expr(w, arena, src, bound)
+    flowc_cgen_puts(w, "); ")
+    flowc_cgen_emit_expr(w, arena, src, iv)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_expr(w, arena, src, iv)
+    flowc_cgen_puts(w, " + ")
+    flowc_cgen_put_i32(w, step)
+    flowc_cgen_puts(w, ") ")
+    flowc_cgen_emit_block_skip(w, arena, src, body, last)
+    w[0].loop_defer_base = saved_wbase
+    return 1
+}
+
+# --- target-guarded vector_size kernels (#739) ---------------------------
+
+function flowc_cgen_elem_is_name(arena: AstArena, src: ptr<u8>, base: i32, name: string) -> i32 {
+    let ty: i32 = flowc_cgen_var_elem_type(arena, src, base)
+    if ty == AST_NONE {
+        return 0
+    }
+    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, name)
+}
+
+function flowc_cgen_expr_mentions_ident(arena: AstArena, src: ptr<u8>, e: i32, ns: i32, ne: i32, depth: i32) -> i32 {
+    if e == AST_NONE or depth > 64 {
+        return 0
+    }
+    if arena.nodes[e].kind == AST_IDENT {
+        if flowc_cgen_span_eq(src, arena.nodes[e].name_start, arena.nodes[e].name_end, ns, ne) == 1 {
+            return 1
+        }
+    }
+    if flowc_cgen_expr_mentions_ident(arena, src, arena.nodes[e].a, ns, ne, depth + 1) == 1 {
+        return 1
+    }
+    if flowc_cgen_expr_mentions_ident(arena, src, arena.nodes[e].b, ns, ne, depth + 1) == 1 {
+        return 1
+    }
+    if flowc_cgen_expr_mentions_ident(arena, src, arena.nodes[e].c, ns, ne, depth + 1) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cgen_is_invariant(arena: AstArena, src: ptr<u8>, e: i32, loop_id: i32) -> i32 {
+    if e == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_expr_mentions_ident(arena, src, e, arena.nodes[loop_id].name_start, arena.nodes[loop_id].name_end, 0) == 1 {
+        return 0
+    }
+    return 1
+}
+
+function flowc_cgen_loop_load(arena: AstArena, src: ptr<u8>, e: i32, loop_id: i32, base_out: ptr<i32>) -> i32 {
+    if flowc_cgen_index_is_loop_var(arena, src, e, loop_id) == 0 {
+        return 0
+    }
+    base_out[0] = arena.nodes[e].a
+    return 1
+}
+
+# 1 when `e` is `k * base[i]` or `base[i] * k` with k invariant.
+function flowc_cgen_scaled_load(arena: AstArena, src: ptr<u8>, e: i32, loop_id: i32, base_out: ptr<i32>, k_out: ptr<i32>) -> i32 {
+    if e == AST_NONE or arena.nodes[e].kind != AST_BINOP or arena.nodes[e].ival != TOK_STAR {
+        return 0
+    }
+    let left: i32 = arena.nodes[e].a
+    let right: i32 = arena.nodes[e].b
+    if flowc_cgen_loop_load(arena, src, left, loop_id, base_out) == 1 {
+        if flowc_cgen_is_invariant(arena, src, right, loop_id) == 1 {
+            k_out[0] = right
+            return 1
+        }
+    }
+    if flowc_cgen_loop_load(arena, src, right, loop_id, base_out) == 1 {
+        if flowc_cgen_is_invariant(arena, src, left, loop_id) == 1 {
+            k_out[0] = left
+            return 1
+        }
+    }
+    return 0
+}
+
+# Emit a 128-bit GCC/clang vector_size strip-mined loop plus a scalar tail
+# when FLOWC_HAS_V128, else the pragma-hinted scalar loop. kind:
+# 1 fill dst[i]=k, 2 scale dst[i]=src[i]*k, 3 axpy dst[i]=dst[i]+k*src[i],
+# 4 add dst[i]=a[i]+b[i], 5 sum acc=acc+src[i], 6 dot acc=acc+a[i]*b[i].
+function flowc_cgen_emit_vector_loop(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, kind: i32, dst: i32, src0: i32, src1: i32, k: i32, acc: i32, is_f64: i32) {
+    let mut vf: i32 = 4
+    if is_f64 == 1 {
+        vf = 2
+    }
+    flowc_cgen_puts(w, "#if FLOWC_HAS_V128\n")
+    flowc_cgen_puts(w, "  {\n    int32_t ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, ";\n    int32_t __flowc_hi_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_puts(w, ";\n    if (__flowc_hi_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " > ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, ") {\n      int32_t __flowc_nv_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " + (int32_t)((unsigned)(__flowc_hi_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " - ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, ") & ~")
+    flowc_cgen_put_i32(w, vf - 1)
+    flowc_cgen_puts(w, "u);\n")
+    if kind == 5 or kind == 6 {
+        if is_f64 == 1 {
+            flowc_cgen_puts(w, "      flowc_v2f64 __flowc_vacc = {0.0, 0.0};\n")
+        } else {
+            flowc_cgen_puts(w, "      flowc_v4f32 __flowc_vacc = {0.0f, 0.0f, 0.0f, 0.0f};\n")
+        }
+    }
+    if kind == 1 or kind == 2 or kind == 3 {
+        if is_f64 == 1 {
+            flowc_cgen_puts(w, "      flowc_v2f64 __flowc_vk = { (double)(")
+        } else {
+            flowc_cgen_puts(w, "      flowc_v4f32 __flowc_vk = { (float)(")
+        }
+        flowc_cgen_emit_expr(w, arena, src, k)
+        if is_f64 == 1 {
+            flowc_cgen_puts(w, "), (double)(")
+            flowc_cgen_emit_expr(w, arena, src, k)
+            flowc_cgen_puts(w, ") };\n")
+        } else {
+            flowc_cgen_puts(w, "), (float)(")
+            flowc_cgen_emit_expr(w, arena, src, k)
+            flowc_cgen_puts(w, "), (float)(")
+            flowc_cgen_emit_expr(w, arena, src, k)
+            flowc_cgen_puts(w, "), (float)(")
+            flowc_cgen_emit_expr(w, arena, src, k)
+            flowc_cgen_puts(w, ") };\n")
+        }
+    }
+    flowc_cgen_puts(w, "      for (; ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " < __flowc_nv_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, "; ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " += ")
+    flowc_cgen_put_i32(w, vf)
+    flowc_cgen_puts(w, ") {\n")
+    if is_f64 == 1 {
+        flowc_cgen_puts(w, "        flowc_v2f64 __flowc_vx, __flowc_vy;\n")
+    } else {
+        flowc_cgen_puts(w, "        flowc_v4f32 __flowc_vx, __flowc_vy;\n")
+    }
+    if kind == 1 {
+        flowc_cgen_puts(w, "        memcpy(")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, dst, id)
+        flowc_cgen_puts(w, ", &__flowc_vk, sizeof(__flowc_vk));\n")
+    } elif kind == 2 {
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vx, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src0, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vx));\n")
+        flowc_cgen_puts(w, "        __flowc_vy = __flowc_vx * __flowc_vk;\n")
+        flowc_cgen_puts(w, "        memcpy(")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, dst, id)
+        flowc_cgen_puts(w, ", &__flowc_vy, sizeof(__flowc_vy));\n")
+    } elif kind == 3 {
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vx, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src0, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vx));\n")
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vy, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, dst, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vy));\n")
+        flowc_cgen_puts(w, "        __flowc_vy = __flowc_vy + __flowc_vk * __flowc_vx;\n")
+        flowc_cgen_puts(w, "        memcpy(")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, dst, id)
+        flowc_cgen_puts(w, ", &__flowc_vy, sizeof(__flowc_vy));\n")
+    } elif kind == 4 {
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vx, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src0, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vx));\n")
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vy, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src1, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vy));\n")
+        flowc_cgen_puts(w, "        __flowc_vy = __flowc_vx + __flowc_vy;\n")
+        flowc_cgen_puts(w, "        memcpy(")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, dst, id)
+        flowc_cgen_puts(w, ", &__flowc_vy, sizeof(__flowc_vy));\n")
+    } elif kind == 5 {
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vx, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src0, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vx));\n")
+        flowc_cgen_puts(w, "        __flowc_vacc = __flowc_vacc + __flowc_vx;\n")
+    } elif kind == 6 {
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vx, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src0, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vx));\n")
+        flowc_cgen_puts(w, "        memcpy(&__flowc_vy, ")
+        flowc_cgen_emit_elem_ptr_for(w, arena, src, src1, id)
+        flowc_cgen_puts(w, ", sizeof(__flowc_vy));\n")
+        flowc_cgen_puts(w, "        __flowc_vacc = __flowc_vacc + __flowc_vx * __flowc_vy;\n")
+    }
+    flowc_cgen_puts(w, "      }\n")
+    if kind == 5 or kind == 6 {
+        if is_f64 == 1 {
+            flowc_cgen_puts(w, "      { double __flowc_vt[2]; memcpy(__flowc_vt, &__flowc_vacc, sizeof(__flowc_vacc)); ")
+        } else {
+            flowc_cgen_puts(w, "      { float __flowc_vt[4]; memcpy(__flowc_vt, &__flowc_vacc, sizeof(__flowc_vacc)); ")
+        }
+        flowc_cgen_emit_expr(w, arena, src, acc)
+        if is_f64 == 1 {
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, acc)
+            flowc_cgen_puts(w, " + __flowc_vt[0] + __flowc_vt[1]; }\n")
+        } else {
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, acc)
+            flowc_cgen_puts(w, " + __flowc_vt[0] + __flowc_vt[1] + __flowc_vt[2] + __flowc_vt[3]; }\n")
+        }
+    }
+    flowc_cgen_puts(w, "      for (; ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " < __flowc_hi_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, "; ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " + 1) ")
+    flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+    flowc_cgen_puts(w, "    }\n  }\n")
+    flowc_cgen_puts(w, "#else\n")
+    if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
+        flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+    }
+    flowc_cgen_puts(w, "  for (int32_t ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, "; ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " < (")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_puts(w, "); ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_puts(w, " + 1) ")
+    flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+    flowc_cgen_puts(w, "#endif\n")
+}
+
+# Recognized f32/f64 kernels: fill, scale, axpy, add, sum, dot.
+function flowc_cgen_try_emit_vector_kernel(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if flowc_cgen_step_is_unit(arena, arena.nodes[id].ival) == 0 {
+        return 0
+    }
+    let body: i32 = arena.nodes[id].c
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let st: i32 = arena.nodes[body].a
+    if st == AST_NONE or arena.nodes[st].next != AST_NONE {
+        return 0
+    }
+    if arena.nodes[st].kind != AST_ASSIGN {
+        return 0
+    }
+    let lhs: i32 = arena.nodes[st].a
+    let rhs: i32 = arena.nodes[st].b
+    if lhs == AST_NONE or rhs == AST_NONE {
+        return 0
+    }
+    let mut dst: i32 = AST_NONE
+    let mut src0: i32 = AST_NONE
+    let mut src1: i32 = AST_NONE
+    let mut kv: i32 = AST_NONE
+    let mut acc: i32 = AST_NONE
+    let mut kind: i32 = 0
+    if flowc_cgen_loop_load(arena, src, lhs, id, &dst) == 1 {
+        if flowc_cgen_is_invariant(arena, src, rhs, id) == 1 {
+            kind = 1
+            kv = rhs
+        } elif arena.nodes[rhs].kind == AST_BINOP and arena.nodes[rhs].ival == TOK_STAR {
+            if flowc_cgen_scaled_load(arena, src, rhs, id, &src0, &kv) == 1 {
+                kind = 2
+            }
+        } elif arena.nodes[rhs].kind == AST_BINOP and arena.nodes[rhs].ival == TOK_PLUS {
+            let left: i32 = arena.nodes[rhs].a
+            let right: i32 = arena.nodes[rhs].b
+            let mut lb: i32 = AST_NONE
+            let mut rb: i32 = AST_NONE
+            if flowc_cgen_loop_load(arena, src, left, id, &lb) == 1 and flowc_cgen_ident_same(arena, src, lb, dst) == 1 {
+                if flowc_cgen_scaled_load(arena, src, right, id, &src0, &kv) == 1 {
+                    kind = 3
+                } elif flowc_cgen_loop_load(arena, src, right, id, &src0) == 1 {
+                    kind = 4
+                    src1 = src0
+                    src0 = lb
+                }
+            } elif flowc_cgen_loop_load(arena, src, right, id, &rb) == 1 and flowc_cgen_ident_same(arena, src, rb, dst) == 1 {
+                if flowc_cgen_scaled_load(arena, src, left, id, &src0, &kv) == 1 {
+                    kind = 3
+                } elif flowc_cgen_loop_load(arena, src, left, id, &src0) == 1 {
+                    kind = 4
+                    src1 = rb
+                }
+            } elif flowc_cgen_loop_load(arena, src, left, id, &src0) == 1 and flowc_cgen_loop_load(arena, src, right, id, &src1) == 1 {
+                kind = 4
+            }
+        }
+    } elif arena.nodes[lhs].kind == AST_IDENT and arena.nodes[rhs].kind == AST_BINOP and arena.nodes[rhs].ival == TOK_PLUS {
+        acc = lhs
+        let left: i32 = arena.nodes[rhs].a
+        let right: i32 = arena.nodes[rhs].b
+        if flowc_cgen_ident_same(arena, src, left, lhs) == 1 {
+            if flowc_cgen_loop_load(arena, src, right, id, &src0) == 1 {
+                kind = 5
+            } elif arena.nodes[right].kind == AST_BINOP and arena.nodes[right].ival == TOK_STAR {
+                if flowc_cgen_loop_load(arena, src, arena.nodes[right].a, id, &src0) == 1 {
+                    if flowc_cgen_loop_load(arena, src, arena.nodes[right].b, id, &src1) == 1 {
+                        kind = 6
+                    }
+                }
+            }
+        } elif flowc_cgen_ident_same(arena, src, right, lhs) == 1 {
+            if flowc_cgen_loop_load(arena, src, left, id, &src0) == 1 {
+                kind = 5
+            }
+        }
+    }
+    if kind == 0 {
+        return 0
+    }
+    let mut typed: i32 = dst
+    if typed == AST_NONE {
+        typed = src0
+    }
+    let is_f64: i32 = flowc_cgen_elem_is_name(arena, src, typed, "f64")
+    let is_f32: i32 = flowc_cgen_elem_is_name(arena, src, typed, "f32")
+    if is_f32 == 0 and is_f64 == 0 {
+        return 0
+    }
+    if flowc_cgen_vector_kernel_safe(w, arena, src, kind, dst, src0, src1, kv, is_f64) == 0 {
+        return 0
+    }
+    flowc_cgen_emit_vector_loop(w, arena, src, id, kind, dst, src0, src1, kv, acc, is_f64)
+    return 1
+}
+
+# 1 when `e` reads no memory and calls nothing: identifiers, literals,
+# casts, negation and arithmetic. The kernel evaluates k once, before the
+# loop, so k must not change while the loop stores.
+function flowc_cgen_kernel_scalar_ok(arena: AstArena, e: i32, depth: i32) -> i32 {
+    if e == AST_NONE or depth > 32 {
+        return 0
+    }
+    let k: i32 = arena.nodes[e].kind
+    if k == AST_IDENT or k == AST_INT or k == AST_FLOAT {
+        return 1
+    }
+    if k == AST_CAST {
+        return flowc_cgen_kernel_scalar_ok(arena, arena.nodes[e].a, depth + 1)
+    }
+    if k == AST_UNARY and arena.nodes[e].ival == TOK_MINUS {
+        return flowc_cgen_kernel_scalar_ok(arena, arena.nodes[e].a, depth + 1)
+    }
+    if k == AST_BINOP {
+        if flowc_cgen_kernel_scalar_ok(arena, arena.nodes[e].a, depth + 1) == 0 {
+            return 0
+        }
+        return flowc_cgen_kernel_scalar_ok(arena, arena.nodes[e].b, depth + 1)
+    }
+    return 0
+}
+
+# 1 when a kernel read of `base` cannot see an earlier lane's store to
+# `dst`: the same name at the same index, or regions proven disjoint.
+# A shifted view such as `dst = src + 1` is a recurrence in the scalar loop;
+# loading four lanes before storing would change it (the #1417 rule).
+function flowc_cgen_kernel_read_ok(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, dst: i32, base: i32) -> i32 {
+    if base == AST_NONE {
+        return 1
+    }
+    if flowc_cgen_ident_same(arena, src, dst, base) == 1 {
+        return 1
+    }
+    if flowc_region_disjoint(arena, src, w[0].cur_fn, dst, base) == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Preconditions for the vector_size kernels beyond pattern shape.
+function flowc_cgen_vector_kernel_safe(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, kind: i32, dst: i32, src0: i32, src1: i32, kv: i32, is_f64: i32) -> i32 {
+    # The kernel loads and stores whole lanes with memcpy, which would skip
+    # the per-index FLOWC_CHECKS bounds tests.
+    if w[0].checks == 1 {
+        return 0
+    }
+    if kv != AST_NONE {
+        if flowc_cgen_kernel_scalar_ok(arena, kv, 0) == 0 {
+            return 0
+        }
+    }
+    let mut elem: string = "f32"
+    if is_f64 == 1 {
+        elem = "f64"
+    }
+    if dst != AST_NONE and flowc_cgen_elem_is_name(arena, src, dst, elem) == 0 {
+        return 0
+    }
+    if src0 != AST_NONE and flowc_cgen_elem_is_name(arena, src, src0, elem) == 0 {
+        return 0
+    }
+    if src1 != AST_NONE and flowc_cgen_elem_is_name(arena, src, src1, elem) == 0 {
+        return 0
+    }
+    # Fill (1) reads no memory; sum (5) and dot (6) store nothing.
+    if kind == 2 or kind == 3 or kind == 4 {
+        if flowc_cgen_kernel_read_ok(w, arena, src, dst, src0) == 0 {
+            return 0
+        }
+        if flowc_cgen_kernel_read_ok(w, arena, src, dst, src1) == 0 {
+            return 0
+        }
+    }
     return 1
 }
 
@@ -9986,6 +10900,10 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_IF {
+        if flowc_cgen_if_is_select(arena, src, id) == 1 {
+            flowc_cgen_emit_select_if(w, arena, src, id)
+            return
+        }
         # Emit `if (...) { ... } else { ... }` on one brace chain (no `}\n else`).
         flowc_cgen_puts(w, "  if (")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -10005,6 +10923,9 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_WHILE {
+        if flowc_cgen_try_emit_while_as_for(w, arena, src, id) == 1 {
+            return
+        }
         if arena.nodes[id].ival > 0 {
             flowc_cgen_puts(w, "  { int32_t __flowc_iter_")
             flowc_cgen_put_i32(w, id)
@@ -10084,8 +11005,13 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         }
         # A stepped loop with a straight-line body gets portable SIMD hints
         # (#113, #414, #1031, #739). Unit-stride `dst[i] = src[i]` is
-        # memmove; other simple bodies get OpenMP simd / clang / GCC ivdep.
+        # memmove; other simple bodies get OpenMP simd / clang / GCC ivdep,
+        # and recognized f32/f64 kernels get target-guarded vector_size
+        # loops when 128-bit SIMD is available.
         if flowc_cgen_try_emit_contiguous_copy(w, arena, src, id) == 1 {
+            return
+        }
+        if flowc_cgen_try_emit_vector_kernel(w, arena, src, id) == 1 {
             return
         }
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
@@ -12691,6 +13617,16 @@ export function flowc_cgen_emit_sigs(
         # named I, and the complex constructors use _Complex_I instead.
         flowc_cgen_puts(&w, "#undef I\n")
         flowc_cgen_puts(&w, "#include <time.h>\n")
+        # Portable 128-bit vector_size types for the #739 C kernels. SSE2 is
+        # baseline on x86-64; NEON is baseline on aarch64. Scalar fallback
+        # remains when neither is defined.
+        flowc_cgen_puts(&w, "#if defined(__SSE2__) || defined(__AVX__) || defined(__AVX2__) || defined(__ARM_NEON) || defined(__aarch64__)\n")
+        flowc_cgen_puts(&w, "typedef float flowc_v4f32 __attribute__((vector_size(16)));\n")
+        flowc_cgen_puts(&w, "typedef double flowc_v2f64 __attribute__((vector_size(16)));\n")
+        flowc_cgen_puts(&w, "#define FLOWC_HAS_V128 1\n")
+        flowc_cgen_puts(&w, "#else\n")
+        flowc_cgen_puts(&w, "#define FLOWC_HAS_V128 0\n")
+        flowc_cgen_puts(&w, "#endif\n")
         flowc_cgen_puts(&w, "#pragma clang diagnostic ignored \"-Wint-conversion\"\n")
         flowc_cgen_puts(&w, "#pragma clang diagnostic ignored \"-Wincompatible-pointer-types\"\n")
         # GCC 14 makes both of these errors by default and ignores clang

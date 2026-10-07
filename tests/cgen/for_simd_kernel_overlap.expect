@@ -1,0 +1,5 @@
+flags --no-checks
+# Possibly overlapping views keep the ordered scalar loop: no kernel lanes.
+- __flowc_vk
+- __flowc_vx
+exit 0

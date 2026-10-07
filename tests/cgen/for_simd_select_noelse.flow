@@ -1,0 +1,22 @@
+# An `if` with no `else` is a masked store. As a select it would read
+# `out[i]` when the guard is false, and the guard is often the bounds test
+# for that index, so the branch stays (salvaged from #1396).
+
+function keep_positive(out: ptr<f32>, x: ptr<f32>, n: i32) -> void {
+    for i in 0 to n {
+        let v: f32 = x[i]
+        if v > 0.0 {
+            out[i] = v
+        }
+    }
+}
+
+function main() -> i32 {
+    let x: [f32; 4] = [1.0, 0.0 - 1.0, 2.0, 0.0 - 2.0]
+    let mut y: [f32; 4] = [9.0, 9.0, 9.0, 9.0]
+    keep_positive(&y[0], &x[0], 4)
+    if y[0] != 1.0 { return 1 }
+    if y[1] != 9.0 { return 2 }
+    if y[2] != 2.0 { return 3 }
+    return 0
+}

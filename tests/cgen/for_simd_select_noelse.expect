@@ -1,0 +1,4 @@
+flags --no-checks
++ if (v > 0.0)
+- ) ? (
+exit 0

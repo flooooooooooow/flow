@@ -1,0 +1,40 @@
+# Unit-stride span copies (#739). Span parameters may view the same
+# buffer, so their copy keeps the ordered loop (#1417). Spans over two
+# distinct local arrays are proven disjoint and copy with one memcpy
+# through `.data`.
+
+function copy_span(dst: span<mut i32>, src: span<i32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
+
+function copy_local() -> i32 {
+    let mut a: [i32; 4] = [0, 0, 0, 0]
+    let b: [i32; 4] = [9, 8, 7, 6]
+    let da: span<mut i32> = a[0..4]
+    let sb: span<i32> = b[0..4]
+    for i in 0 to 4 {
+        da[i] = sb[i]
+    }
+    if a[0] != 9 {
+        return 1
+    }
+    if a[3] != 6 {
+        return 2
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let mut a: [i32; 4] = [0, 0, 0, 0]
+    let b: [i32; 4] = [9, 8, 7, 6]
+    copy_span(a[0..4], b[0..4], 4)
+    if a[0] != 9 {
+        return 3
+    }
+    if a[3] != 6 {
+        return 4
+    }
+    return copy_local()
+}

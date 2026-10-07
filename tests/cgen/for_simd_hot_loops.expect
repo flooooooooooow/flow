@@ -1,5 +1,6 @@
 # Elementwise and reduction loops get SIMD hints. Unproven pointer copies
 # remain sequential: memmove changes loop semantics for shifted overlap.
+# Recognized f32 reductions also get GCC/clang vector_size loops (#739).
 + #if defined(_OPENMP)
 + #pragma omp simd
 + #pragma omp simd reduction(+:
@@ -8,5 +9,8 @@
 + #pragma clang loop vectorize(enable) interleave(enable)
 + #pragma GCC ivdep
 - memmove((void*)(&(
++ FLOWC_HAS_V128
++ vector_size(16)
++ flowc_v4f32
 + for (int32_t i = 0; i < (n); i = i + 1) {
 exit 0
