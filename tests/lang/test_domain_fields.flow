@@ -1,0 +1,93 @@
+# Flow-native language test: lifetime domains through struct fields
+# and collections (docs/language/lifetime-domains.md, issue #684).
+#
+# Every function here is a case the checker must ACCEPT: a local
+# unannotated struct may hold a frame-local reference; a field whose
+# declared domain does not outlive the writer may receive one; a
+# longer-lived reference may be stored in an application-domain field;
+# a session function may fill a callback-domain field.
+#
+# Rejected programs live in compiler/fixtures/typecheck_rules/domain_*.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Holder {
+    view: ptr<i32>
+}
+
+struct BoundHolder {
+    @lifetime(callback)
+    view: ptr<i32>
+}
+
+struct AppHolder {
+    @lifetime(application)
+    view: ptr<i32>
+}
+
+let mut g: i32 = 7
+
+@lifetime(callback)
+function fill_local() -> i32 {
+    let mut h: Holder = Holder { view: null }
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    h.view = &scratch
+    if h.view == null {
+        return 1
+    }
+    if h.view[0] != 1 {
+        return 2
+    }
+    return 0
+}
+
+@lifetime(callback)
+function fill_same_domain() -> i32 {
+    let mut h: BoundHolder = BoundHolder { view: null }
+    let scratch: array<i32, 4> = [10, 20, 30, 40]
+    h.view = &scratch
+    if h.view[0] != 10 {
+        return 3
+    }
+    return 0
+}
+
+@lifetime(callback)
+function fill_from_static() -> i32 {
+    let mut h: AppHolder = AppHolder { view: null }
+    h.view = &g
+    if h.view[0] != 7 {
+        return 4
+    }
+    return 0
+}
+
+@lifetime(session)
+function fill_shorter_field() -> i32 {
+    let mut h: BoundHolder = BoundHolder { view: null }
+    let scratch: array<i32, 2> = [5, 6]
+    h.view = &scratch
+    if h.view[1] != 6 {
+        return 5
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let a: i32 = fill_local()
+    if a != 0 {
+        return a
+    }
+    let b: i32 = fill_same_domain()
+    if b != 0 {
+        return b
+    }
+    let c: i32 = fill_from_static()
+    if c != 0 {
+        return c
+    }
+    let d: i32 = fill_shorter_field()
+    if d != 0 {
+        return d
+    }
+    return 0
+}

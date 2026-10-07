@@ -1,0 +1,15 @@
+# expect: ok
+struct Holder {
+    @lifetime(application)
+    count: i32
+}
+
+@lifetime(callback)
+function process() -> void {
+    let mut h: Holder = Holder { count: 0 }
+    h.count = 7
+}
+
+function main() -> i32 {
+    return 0
+}

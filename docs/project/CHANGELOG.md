@@ -35,6 +35,13 @@ All notable changes to FLOW will be documented in this file.
   application-domain pointer may not be stored in a persistent static and an
   `@lifetime(application)` function may not call a persistent one. Compact
   summaries encode unannotated callables as domain rank 6. (#679)
+- Type checker: lifetime domains propagate through struct fields and
+  collections (#684). A shorter-lived reference stored in a field or
+  element of a longer-lived static is an escape at any nesting depth,
+  including through a struct or array literal. A struct field may declare
+  `@lifetime(D)`; storing a shorter-lived reference into it is LD5,
+  wherever the instance lives. The annotation is erased before codegen.
+  See [domain-fields.md](../language/domain-fields.md).
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.

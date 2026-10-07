@@ -565,6 +565,10 @@
           "path": "language/lifetime-request-persistent.md"
         },
         {
+          "label": "Domain Fields and Collections",
+          "path": "language/domain-fields.md"
+        },
+        {
           "label": "Region Inference",
           "path": "language/region-inference.md"
         },
