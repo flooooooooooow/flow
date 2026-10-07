@@ -165,7 +165,7 @@ function check_mnist_unsupported() -> i32 {
     if not a_contains(out_text(), "CASE mnist [webgpu] UNSUPPORTED") {
         return T_FAIL
     }
-    if not a_contains(out_text(), "reason=tensor-model-execution") {
+    if not a_contains(out_text(), "reason=device-execution") {
         return T_FAIL
     }
     return T_PASS

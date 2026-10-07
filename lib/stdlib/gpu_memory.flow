@@ -20,6 +20,11 @@ extern {
     function flow_gpu_copy_d2h(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
     function flow_gpu_copy_d2d(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32
     function flow_gpu_sync() -> void
+    function flow_gpu_scale_bias_f32(out: ptr<void>, input: ptr<void>, scale: f32, bias: f32, n: i64) -> i32
+    function flow_gpu_relu_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i32
+    function flow_gpu_invert_clamp01_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i32
+    function flow_gpu_gemm_f32(out: ptr<void>, input: ptr<void>, weight: ptr<void>, m: i64, k: i64, n: i64) -> i32
+    function flow_gpu_model_dispatch_count() -> i64
     function flow_gpu_mul_f32(out: ptr<void>, a: ptr<void>, b: ptr<void>, n: i64) -> i32
     function flow_gpu_mul_backward_a_f32(grad_a: ptr<void>, grad_out: ptr<void>, b: ptr<void>, n: i64) -> i32
     function flow_gpu_mul_backward_b_f32(grad_b: ptr<void>, grad_out: ptr<void>, a: ptr<void>, n: i64) -> i32
@@ -218,4 +223,9 @@ export function gpu_copy_device_to_device(dst: GpuBuffer, src: GpuBuffer, nbytes
 
 export function unified_allocate(size: i64) -> GpuBuffer {
     return gpu_alloc_unified(size)
+}
+
+# Only completed device-side tensor dispatches count as GPU execution proof.
+export function gpu_model_dispatch_count() -> i64 {
+    return flow_gpu_model_dispatch_count()
 }

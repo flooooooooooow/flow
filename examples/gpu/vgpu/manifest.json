@@ -11,7 +11,7 @@
       "renderer": "vgpu_gradient",
       "width": 160,
       "height": 90,
-      "time": 0.0,
+      "time": 0,
       "reference": "examples/gpu/vgpu/refs/gradient_160x90.rgba8.hex",
       "comparison": {
         "mode": "exact-rgba8"
@@ -27,26 +27,28 @@
       "upstream": "https://vgpu.sh/examples/mnist",
       "source": "examples/gpu/vgpu/mnist.flow",
       "comparison": {
-        "mode": "numerical"
+        "mode": "numerical",
+        "maxAbs": 0.0001
       },
-      "capability": "tensor-model-execution",
       "backends": [
         "metal",
         "webgpu"
-      ]
+      ],
+      "model": "mnist"
     },
     {
       "id": "depth",
       "upstream": "https://vgpu.sh/examples/depth",
       "source": "examples/gpu/vgpu/depth_estimation.flow",
       "comparison": {
-        "mode": "numerical"
+        "mode": "numerical",
+        "maxAbs": 0.0001
       },
-      "capability": "tensor-model-execution",
       "backends": [
         "metal",
         "webgpu"
-      ]
+      ],
+      "model": "depth"
     }
   ]
 }

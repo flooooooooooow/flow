@@ -1,0 +1,96 @@
+# GpuTensor resource binding, conversions, and compatibility (#814).
+import "stdlib/gpu_memory.flow"
+import "stdlib/gpu_tensor.flow"
+import "stdlib/tensor.flow"
+
+function check_alloc_and_layout() -> i32 {
+    let gt: GpuTensor = gpu_tensor_alloc_f32(2, 3, 1, 1)
+    if gpu_tensor_is_empty(gt) { return 1 }
+    if gt.size != 6 { return 2 }
+    if not gpu_tensor_matches(gt, GPU_DTYPE_F32, 2, 3, 1, 1) { return 3 }
+    if gpu_tensor_require(gt, GPU_DTYPE_F32, 2, 3, 1, 1) != 0 { return 4 }
+    if gpu_tensor_require(gt, GPU_DTYPE_I32, 2, 3, 1, 1) != 2 { return 5 }
+    if gpu_tensor_require(gt, GPU_DTYPE_F32, 2, 2, 1, 1) != 3 { return 6 }
+    if not gpu_tensor_can_bind(gt, GPU_DTYPE_F32, GPU_ACCESS_READ) { return 7 }
+    if gpu_tensor_can_bind(gt, GPU_DTYPE_I32, GPU_ACCESS_READ) { return 8 }
+    let lay: GpuTensorLayout = gpu_tensor_layout(gt)
+    if not gpu_tensor_layout_eq(lay, gpu_tensor_layout(gt)) { return 9 }
+    gpu_tensor_free(gt)
+    return 0
+}
+
+function check_fill_and_roundtrip() -> i32 {
+    let host: Tensor = tensor_fill(2, 2, 1, 1, 3.0)
+    let gt: GpuTensor = gpu_tensor_from_host(host)
+    if gpu_tensor_is_empty(gt) { return 1 }
+    if gt.data[0] != 3.0 { return 2 }
+    if gpu_tensor_fill(gt, 4.0) != 0 { return 3 }
+    let back: Tensor = gpu_tensor_to_host(gt)
+    if back.data[3] != 4.0 { return 4 }
+    tensor_free(host)
+    tensor_free(back)
+    gpu_tensor_free(gt)
+    return 0
+}
+
+function check_host_view_is_explicit() -> i32 {
+    let host: Tensor = tensor_fill(4, 1, 1, 1, 2.0)
+    let view: GpuTensor = gpu_tensor_view_host(host)
+    if gpu_tensor_is_device(view) { return 1 }
+    if gpu_tensor_is_zero_copy(view) { return 2 }
+    if view.data[0] != 2.0 { return 3 }
+    view.data[0] = 9.0
+    if host.data[0] != 9.0 { return 4 }
+    tensor_free(host)
+    return 0
+}
+
+function check_same_storage_through_ops() -> i32 {
+    let src: GpuTensor = gpu_tensor_alloc_f32(4, 1, 1, 1)
+    if gpu_tensor_fill(src, 10.0) != 0 { return 1 }
+    let p0: ptr<f32> = gpu_tensor_ptr(src)
+    if gpu_tensor_normalize(src, src, 2.0) != 0 { return 2 }
+    if gpu_tensor_ptr(src) != p0 { return 3 }
+    if src.data[0] != 5.0 { return 4 }
+    if gpu_tensor_scale_bias(src, src, 2.0, 1.0) != 0 { return 5 }
+    if gpu_tensor_ptr(src) != p0 { return 6 }
+    if src.data[1] != 11.0 { return 7 }
+    gpu_tensor_free(src)
+    return 0
+}
+
+function check_from_buffer_rejects_mismatch() -> i32 {
+    let gt: GpuTensor = gpu_tensor_alloc_f32(2, 2, 1, 1)
+    if gpu_tensor_is_empty(gt) { return 1 }
+    if gpu_tensor_is_device(gt) {
+        let wrap: GpuTensor = gpu_tensor_from_buffer(gpu_tensor_buffer(gt), GPU_DTYPE_F32, 8, 8, 1, 1, GPU_ACCESS_READ)
+        if not gpu_tensor_is_empty(wrap) { return 2 }
+    }
+    let bad: GpuTensor = gpu_tensor_from_buffer(gpu_null_buffer(), GPU_DTYPE_F32, 2, 2, 1, 1, GPU_ACCESS_READ)
+    if not gpu_tensor_is_empty(bad) { return 3 }
+    gpu_tensor_free(gt)
+    return 0
+}
+
+function main() -> i32 {
+    let r1: i32 = check_alloc_and_layout()
+    if r1 != 0 { return 10 + r1 }
+    let r2: i32 = check_fill_and_roundtrip()
+    if r2 != 0 { return 20 + r2 }
+    let r3: i32 = check_host_view_is_explicit()
+    if r3 != 0 { return 30 + r3 }
+    let r4: i32 = check_same_storage_through_ops()
+    if r4 != 0 { return 40 + r4 }
+    let r5: i32 = check_from_buffer_rejects_mismatch()
+    if r5 != 0 { return 50 + r5 }
+    # Public GPU typed allocation wrappers reject n * sizeof(T) overflow
+    # and invalid flags before ever calling the native runtime.
+    if not gpu_is_null(gpu_alloc_f32(2305843009213693952)) { return 59 }
+    if not gpu_is_null(gpu_alloc_i32(2305843009213693952)) { return 60 }
+    if not gpu_is_null(gpu_alloc_f64(1152921504606846976)) { return 63 }
+    if not gpu_is_null(gpu_alloc_flags(8, 99)) { return 64 }
+    # Reject overflow before allocating or indexing the backing buffer.
+    if gpu_tensor_numel(65536, 65536, 1, 1) != 0 { return 61 }
+    if not gpu_tensor_is_empty(gpu_tensor_alloc_f32(65536, 65536, 1, 1)) { return 62 }
+    return 0
+}

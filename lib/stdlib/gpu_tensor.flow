@@ -1,0 +1,705 @@
+# GPU tensors over the shared GpuBuffer resource model (#814).
+#
+# Import: import "stdlib/gpu_tensor.flow"
+#
+# A GpuTensor is a shaped, typed view of the same GpuBuffer used by ordinary
+# @gpu compute (and, later, render) stages. It is not a second inference
+# runtime: model execution reads and writes this storage in place.
+#
+# Zero-copy: when the backend exposes a unified/shared mapping, `data` is
+# `gpu_host_ptr(buffer)` and host kernels / @gpu launches share that pointer.
+# Explicit conversion: private buffers and the non-Apple stub allocate host
+# staging; `gpu_tensor_upload` / `gpu_tensor_download` copy when needed.
+
+import "stdlib/gpu_memory.flow"
+import "stdlib/tensor.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<f32>
+    function free(p: ptr<f32>)
+    function memset(p: ptr<f32>, val: i32, size: i64) -> ptr<f32>
+}
+
+# ============================================================================
+# DTYPE / ACCESS / RESOURCE KIND
+# ============================================================================
+
+# Element type of a GPU tensor view. Closed set so bindings can be checked
+# without running a device.
+export const GPU_DTYPE_F32: i32 = 1
+export const GPU_DTYPE_F16: i32 = 2
+export const GPU_DTYPE_I32: i32 = 3
+export const GPU_DTYPE_U8: i32 = 4
+
+# Resource access. Bits so READ_WRITE is READ | WRITE.
+export const GPU_ACCESS_READ: i32 = 1
+export const GPU_ACCESS_WRITE: i32 = 2
+export const GPU_ACCESS_READ_WRITE: i32 = 3
+
+# Kind of the backing resource. Buffers are implemented here; texture is a
+# reserved tag so #811 typed textures can bind through the same layout check.
+export const GPU_RES_BUFFER: i32 = 1
+export const GPU_RES_TEXTURE: i32 = 2
+
+# ============================================================================
+# TYPES
+# ============================================================================
+
+# Shaped view of a shared GPU buffer (or host staging when the device is a stub).
+export struct GpuTensor {
+    buffer: GpuBuffer,
+    data: ptr<f32>,
+    size: i32,
+    dim0: i32,
+    dim1: i32,
+    dim2: i32,
+    dim3: i32,
+    dtype: i32,
+    access: i32,
+    kind: i32,
+    owns_host: i32,
+    owns_buffer: i32,
+    zero_copy: i32
+}
+
+# Compile-time-friendly layout descriptor. Compare these without a device.
+export struct GpuTensorLayout {
+    dtype: i32,
+    dim0: i32,
+    dim1: i32,
+    dim2: i32,
+    dim3: i32,
+    access: i32,
+    kind: i32
+}
+
+# ============================================================================
+# LAYOUT HELPERS
+# ============================================================================
+
+# Byte width of one element, or 0 for an unknown dtype.
+export function gpu_dtype_bytes(dtype: i32) -> i32 {
+    if dtype == GPU_DTYPE_F32 { return 4 }
+    if dtype == GPU_DTYPE_F16 { return 2 }
+    if dtype == GPU_DTYPE_I32 { return 4 }
+    if dtype == GPU_DTYPE_U8 { return 1 }
+    return 0
+}
+
+# Number of elements in a 4-D shape, or 0 if any dimension is not positive.
+export function gpu_tensor_numel(d0: i32, d1: i32, d2: i32, d3: i32) -> i32 {
+    if d0 <= 0 or d1 <= 0 or d2 <= 0 or d3 <= 0 {
+        return 0
+    }
+    let mut n: i64 = d0 as i64
+    if (d1 as i64) > 2147483647 / n { return 0 }
+    n = n * (d1 as i64)
+    if (d2 as i64) > 2147483647 / n { return 0 }
+    n = n * (d2 as i64)
+    if (d3 as i64) > 2147483647 / n { return 0 }
+    n = n * (d3 as i64)
+    return n as i32
+}
+
+# Layout snapshot of a live tensor (shape, dtype, access, kind).
+export function gpu_tensor_layout(gt: GpuTensor) -> GpuTensorLayout {
+    return GpuTensorLayout {
+        dtype: gt.dtype,
+        dim0: gt.dim0,
+        dim1: gt.dim1,
+        dim2: gt.dim2,
+        dim3: gt.dim3,
+        access: gt.access,
+        kind: gt.kind
+    }
+}
+
+# True when two layouts agree on dtype, shape, access and resource kind.
+export function gpu_tensor_layout_eq(a: GpuTensorLayout, b: GpuTensorLayout) -> bool {
+    if a.dtype != b.dtype { return false }
+    if a.dim0 != b.dim0 or a.dim1 != b.dim1 or a.dim2 != b.dim2 or a.dim3 != b.dim3 {
+        return false
+    }
+    if a.access != b.access { return false }
+    if a.kind != b.kind { return false }
+    return true
+}
+
+# ============================================================================
+# LIFECYCLE
+# ============================================================================
+
+# Empty tensor (null storage). All bind checks fail.
+export function gpu_tensor_empty() -> GpuTensor {
+    return GpuTensor {
+        buffer: gpu_null_buffer(),
+        data: null,
+        size: 0,
+        dim0: 0,
+        dim1: 0,
+        dim2: 0,
+        dim3: 0,
+        dtype: 0,
+        access: 0,
+        kind: 0,
+        owns_host: 0,
+        owns_buffer: 0,
+        zero_copy: 0
+    }
+}
+
+# True when the tensor has no host-visible storage.
+export function gpu_tensor_is_empty(gt: GpuTensor) -> bool {
+    return gt.data == null or gt.size <= 0
+}
+
+function gpu_tensor_zero(data: ptr<f32>, nbytes: i64) {
+    if data != null and nbytes > 0 {
+        let _z: ptr<f32> = memset(data, 0, nbytes)
+    }
+}
+
+# Allocate a GpuTensor. Uses a unified GpuBuffer when the backend provides one
+# (zero-copy). Otherwise host staging, with an explicit device buffer when alloc
+# succeeds (private / non-unified) or host-only storage on the stub.
+export function gpu_tensor_alloc(dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32) -> GpuTensor {
+    let n: i32 = gpu_tensor_numel(d0, d1, d2, d3)
+    let elem: i32 = gpu_dtype_bytes(dtype)
+    if n <= 0 or elem <= 0 {
+        return gpu_tensor_empty()
+    }
+    let nbytes: i64 = (n as i64) * (elem as i64)
+    let mut buf: GpuBuffer = gpu_null_buffer()
+    if dtype == GPU_DTYPE_F32 {
+        buf = gpu_alloc_f32(n as i64)
+    } elif dtype == GPU_DTYPE_I32 {
+        buf = gpu_alloc_i32(n as i64)
+    } else {
+        buf = gpu_alloc(nbytes)
+    }
+
+    let mut data: ptr<f32> = null
+    let mut zero_copy: i32 = 0
+    let mut owns_host: i32 = 0
+    if not gpu_is_null(buf) {
+        if gpu_is_unified(buf) {
+            let hp: ptr<void> = gpu_host_ptr(buf)
+            data = hp
+            zero_copy = 1
+            gpu_tensor_zero(data, nbytes)
+        } else {
+            data = malloc(nbytes)
+            owns_host = 1
+            gpu_tensor_zero(data, nbytes)
+        }
+    } else {
+        data = malloc(nbytes)
+        owns_host = 1
+        gpu_tensor_zero(data, nbytes)
+    }
+    if data == null {
+        gpu_free(buf)
+        return gpu_tensor_empty()
+    }
+    return GpuTensor {
+        buffer: buf,
+        data: data,
+        size: n,
+        dim0: d0,
+        dim1: d1,
+        dim2: d2,
+        dim3: d3,
+        dtype: dtype,
+        access: GPU_ACCESS_READ_WRITE,
+        kind: GPU_RES_BUFFER,
+        owns_host: owns_host,
+        owns_buffer: 1,
+        zero_copy: zero_copy
+    }
+}
+
+# Allocate an f32 GpuTensor with shape (d0, d1, d2, d3).
+export function gpu_tensor_alloc_f32(d0: i32, d1: i32, d2: i32, d3: i32) -> GpuTensor {
+    return gpu_tensor_alloc(GPU_DTYPE_F32, d0, d1, d2, d3)
+}
+
+# Wrap an existing GpuBuffer as a tensor view. Unified buffers are zero-copy;
+# private buffers get host staging (explicit upload/download).
+export function gpu_tensor_from_buffer(buf: GpuBuffer, dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32, access: i32) -> GpuTensor {
+    let n: i32 = gpu_tensor_numel(d0, d1, d2, d3)
+    let elem: i32 = gpu_dtype_bytes(dtype)
+    if gpu_is_null(buf) or n <= 0 or elem <= 0 {
+        return gpu_tensor_empty()
+    }
+    let required: i64 = (n as i64) * (elem as i64)
+    if gpu_size(buf) < required {
+        return gpu_tensor_empty()
+    }
+    let mut use_access: i32 = access
+    if use_access <= 0 {
+        use_access = GPU_ACCESS_READ_WRITE
+    }
+    let mut data: ptr<f32> = null
+    let mut zero_copy: i32 = 0
+    let mut owns_host: i32 = 0
+    if gpu_is_unified(buf) {
+        let hp: ptr<void> = gpu_host_ptr(buf)
+        data = hp
+        zero_copy = 1
+    } else {
+        data = malloc(required)
+        owns_host = 1
+        if data == null {
+            return gpu_tensor_empty()
+        }
+        # A view of an existing private device buffer must see its contents,
+        # not a freshly zeroed and misleading host staging allocation.
+        if gpu_copy_d2h_f32(data, buf, required) != 0 {
+            free(data)
+            return gpu_tensor_empty()
+        }
+    }
+    if data == null {
+        return gpu_tensor_empty()
+    }
+    return GpuTensor {
+        buffer: buf,
+        data: data,
+        size: n,
+        dim0: d0,
+        dim1: d1,
+        dim2: d2,
+        dim3: d3,
+        dtype: dtype,
+        access: use_access,
+        kind: GPU_RES_BUFFER,
+        owns_host: owns_host,
+        owns_buffer: 0,
+        zero_copy: zero_copy
+    }
+}
+
+# Copy a host Tensor into a GpuTensor (explicit upload).
+export function gpu_tensor_from_host(t: Tensor) -> GpuTensor {
+    let gt: GpuTensor = gpu_tensor_alloc_f32(t.dim0, t.dim1, t.dim2, t.dim3)
+    if gpu_tensor_is_empty(gt) {
+        return gt
+    }
+    let mut i: i32 = 0
+    while i < t.size {
+        gt.data[i] = t.data[i]
+        i = i + 1
+    }
+    let _u: i32 = gpu_tensor_upload(gt)
+    return gt
+}
+
+# Host-only view of an existing Tensor. No device buffer; this is the explicit
+# conversion used when a backend cannot alias host and device storage.
+export function gpu_tensor_view_host(t: Tensor) -> GpuTensor {
+    return GpuTensor {
+        buffer: gpu_null_buffer(),
+        data: t.data,
+        size: t.size,
+        dim0: t.dim0,
+        dim1: t.dim1,
+        dim2: t.dim2,
+        dim3: t.dim3,
+        dtype: GPU_DTYPE_F32,
+        access: GPU_ACCESS_READ_WRITE,
+        kind: GPU_RES_BUFFER,
+        owns_host: 0,
+        owns_buffer: 0,
+        zero_copy: 0
+    }
+}
+
+# Release owned host staging and, when this tensor allocated it, the GpuBuffer.
+export function gpu_tensor_free(gt: GpuTensor) {
+    if gt.owns_host == 1 and gt.data != null {
+        free(gt.data)
+    }
+    if gt.owns_buffer == 1 {
+        gpu_free(gt.buffer)
+    }
+}
+
+# ============================================================================
+# RESOURCE ACCESS
+# ============================================================================
+
+# The backing GpuBuffer (same handle @gpu / compute stages consume).
+export function gpu_tensor_buffer(gt: GpuTensor) -> GpuBuffer {
+    return gt.buffer
+}
+
+# Host-visible pointer for kernels and model ops. On unified memory this is
+# the device mapping (zero-copy).
+export function gpu_tensor_ptr(gt: GpuTensor) -> ptr<f32> {
+    return gt.data
+}
+
+# True when `data` is a mapping of `buffer` (no staging copy required).
+export function gpu_tensor_is_zero_copy(gt: GpuTensor) -> bool {
+    return gt.zero_copy == 1
+}
+
+# True when a real device buffer is attached (false on the stub fallback).
+export function gpu_tensor_is_device(gt: GpuTensor) -> bool {
+    return not gpu_is_null(gt.buffer)
+}
+
+# True when `a` and `b` share the same host-visible storage pointer.
+export function gpu_tensor_same_storage(a: GpuTensor, b: GpuTensor) -> bool {
+    if a.data == null or b.data == null {
+        return false
+    }
+    return a.data == b.data
+}
+
+# ============================================================================
+# EXPLICIT CONVERSIONS
+# ============================================================================
+
+# Copy host staging to the device buffer. No-op for zero-copy and stub.
+export function gpu_tensor_upload(gt: GpuTensor) -> i32 {
+    if gpu_tensor_is_empty(gt) {
+        return 0 - 1
+    }
+    if gpu_is_null(gt.buffer) {
+        return 0
+    }
+    if gt.zero_copy == 1 {
+        return 0
+    }
+    let nbytes: i64 = (gt.size as i64) * (gpu_dtype_bytes(gt.dtype) as i64)
+    return gpu_copy_h2d_f32(gt.buffer, gt.data, nbytes)
+}
+
+# Copy the device buffer to host staging. No-op for zero-copy and stub.
+export function gpu_tensor_download(gt: GpuTensor) -> i32 {
+    if gpu_tensor_is_empty(gt) {
+        return 0 - 1
+    }
+    if gpu_is_null(gt.buffer) {
+        return 0
+    }
+    if gt.zero_copy == 1 {
+        return 0
+    }
+    let nbytes: i64 = (gt.size as i64) * (gpu_dtype_bytes(gt.dtype) as i64)
+    return gpu_copy_d2h_f32(gt.data, gt.buffer, nbytes)
+}
+
+# Explicit download into a new host Tensor.
+export function gpu_tensor_to_host(gt: GpuTensor) -> Tensor {
+    let t: Tensor = tensor_zeros(gt.dim0, gt.dim1, gt.dim2, gt.dim3)
+    if gpu_tensor_is_empty(gt) {
+        return t
+    }
+    let _d: i32 = gpu_tensor_download(gt)
+    let mut i: i32 = 0
+    while i < gt.size {
+        t.data[i] = gt.data[i]
+        i = i + 1
+    }
+    return t
+}
+
+# Fill every element with `val` (in-place on the shared storage).
+export function gpu_tensor_fill(gt: GpuTensor, val: f32) -> i32 {
+    if gpu_tensor_is_empty(gt) {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < gt.size {
+        gt.data[i] = val
+        i = i + 1
+    }
+    return gpu_tensor_upload(gt)
+}
+
+# ============================================================================
+# COMPATIBILITY
+# ============================================================================
+
+# True when shape and dtype match the expected 4-D layout.
+export function gpu_tensor_matches(gt: GpuTensor, dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32) -> bool {
+    if gpu_tensor_is_empty(gt) { return false }
+    if gt.dtype != dtype { return false }
+    if gt.dim0 != d0 or gt.dim1 != d1 or gt.dim2 != d2 or gt.dim3 != d3 {
+        return false
+    }
+    return true
+}
+
+# True when two tensors can alias as the same logical resource layout.
+export function gpu_tensor_compatible(a: GpuTensor, b: GpuTensor) -> bool {
+    if gpu_tensor_is_empty(a) or gpu_tensor_is_empty(b) {
+        return false
+    }
+    if a.dtype != b.dtype { return false }
+    if a.dim0 != b.dim0 or a.dim1 != b.dim1 or a.dim2 != b.dim2 or a.dim3 != b.dim3 {
+        return false
+    }
+    if a.kind != b.kind { return false }
+    return true
+}
+
+# True when the tensor's dtype and access bits cover a shader/model bind.
+export function gpu_tensor_can_bind(gt: GpuTensor, dtype: i32, access: i32) -> bool {
+    if gpu_tensor_is_empty(gt) { return false }
+    if gt.dtype != dtype { return false }
+    if access <= 0 or access > GPU_ACCESS_READ_WRITE { return false }
+    if (gt.access & access) != access { return false }
+    return true
+}
+
+# 0 when the tensor matches; 1 empty, 2 dtype, 3 shape.
+export function gpu_tensor_require(gt: GpuTensor, dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32) -> i32 {
+    if gpu_tensor_is_empty(gt) {
+        return 1
+    }
+    if gt.dtype != dtype {
+        return 2
+    }
+    if gt.dim0 != d0 or gt.dim1 != d1 or gt.dim2 != d2 or gt.dim3 != d3 {
+        return 3
+    }
+    return 0
+}
+
+# ============================================================================
+# IN-PLACE OPS ON SHARED STORAGE
+# ============================================================================
+
+# dst[i] = src[i] / scale. Same-storage src==dst is allowed.
+export function gpu_tensor_normalize(src: GpuTensor, dst: GpuTensor, scale: f32) -> i32 {
+    if gpu_tensor_is_empty(src) or gpu_tensor_is_empty(dst) {
+        return 0 - 1
+    }
+    if src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
+        return 0 - 1
+    }
+    if scale == 0.0 {
+        return 0 - 1
+    }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let gpu_rc: i32 = flow_gpu_scale_bias_f32(dst.buffer.device,
+            src.buffer.device, 1.0 / scale, 0.0, src.size as i64)
+        # No silent CPU fallback after a real Metal execution failure.
+        return gpu_rc
+    }
+    let mut i: i32 = 0
+    while i < src.size {
+        dst.data[i] = src.data[i] / scale
+        i = i + 1
+    }
+    return gpu_tensor_upload(dst)
+}
+
+# dst[i] = src[i] * scale + bias.
+export function gpu_tensor_scale_bias(src: GpuTensor, dst: GpuTensor, scale: f32, bias: f32) -> i32 {
+    if gpu_tensor_is_empty(src) or gpu_tensor_is_empty(dst) {
+        return 0 - 1
+    }
+    if src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
+        return 0 - 1
+    }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let gpu_rc: i32 = flow_gpu_scale_bias_f32(dst.buffer.device,
+            src.buffer.device, scale, bias, src.size as i64)
+        # No silent CPU fallback after a real Metal execution failure.
+        return gpu_rc
+    }
+    let mut i: i32 = 0
+    while i < src.size {
+        dst.data[i] = src.data[i] * scale + bias
+        i = i + 1
+    }
+    return gpu_tensor_upload(dst)
+}
+
+# dst[i] = max(0, src[i]).
+export function gpu_tensor_relu(src: GpuTensor, dst: GpuTensor) -> i32 {
+    if gpu_tensor_is_empty(src) or gpu_tensor_is_empty(dst) {
+        return 0 - 1
+    }
+    if src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
+        return 0 - 1
+    }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let gpu_rc: i32 = flow_gpu_relu_f32(dst.buffer.device,
+            src.buffer.device, src.size as i64)
+        # No silent CPU fallback after a real Metal execution failure.
+        return gpu_rc
+    }
+    let mut i: i32 = 0
+    while i < src.size {
+        let v: f32 = src.data[i]
+        if v > 0.0 {
+            dst.data[i] = v
+        } else {
+            dst.data[i] = 0.0
+        }
+        i = i + 1
+    }
+    return gpu_tensor_upload(dst)
+}
+
+# dst[i] = clamp(src[i], 0, 1).
+export function gpu_tensor_clamp01(src: GpuTensor, dst: GpuTensor) -> i32 {
+    if gpu_tensor_is_empty(src) or gpu_tensor_is_empty(dst) {
+        return 0 - 1
+    }
+    if src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < src.size {
+        let v: f32 = src.data[i]
+        if v < 0.0 {
+            dst.data[i] = 0.0
+        } elif v > 1.0 {
+            dst.data[i] = 1.0
+        } else {
+            dst.data[i] = v
+        }
+        i = i + 1
+    }
+    return gpu_tensor_upload(dst)
+}
+
+# dst[i] = 1 - clamp(src[i], 0, 1).
+export function gpu_tensor_invert01(src: GpuTensor, dst: GpuTensor) -> i32 {
+    if gpu_tensor_is_empty(src) or gpu_tensor_is_empty(dst) or
+       src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
+        return 0 - 1
+    }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let rc: i32 = flow_gpu_invert_clamp01_f32(dst.buffer.device,
+            src.buffer.device, src.size as i64)
+        # Propagate device failure; CPU execution is a separate path.
+        return rc
+    }
+    # Explicit staging fallback: transform directly and upload once rather
+    # than uploading the intermediate clamped tensor to private GPU memory.
+    let mut i: i32 = 0
+    while i < dst.size {
+        let mut v: f32 = src.data[i]
+        if v < 0.0 { v = 0.0 }
+        if v > 1.0 { v = 1.0 }
+        dst.data[i] = 1.0 - v
+        i = i + 1
+    }
+    return gpu_tensor_upload(dst)
+}
+
+# out = inp @ weight for 2-D f32 layouts: inp (M,K), weight (K,N), out (M,N).
+export function gpu_tensor_linear(out: GpuTensor, inp: GpuTensor, weight: GpuTensor) -> i32 {
+    if gpu_tensor_require(inp, GPU_DTYPE_F32, inp.dim0, inp.dim1, 1, 1) != 0 {
+        return 1
+    }
+    if gpu_tensor_require(weight, GPU_DTYPE_F32, weight.dim0, weight.dim1, 1, 1) != 0 {
+        return 1
+    }
+    if gpu_tensor_require(out, GPU_DTYPE_F32, out.dim0, out.dim1, 1, 1) != 0 {
+        return 1
+    }
+    if weight.dim0 != inp.dim1 {
+        return 2
+    }
+    if out.dim0 != inp.dim0 or out.dim1 != weight.dim1 {
+        return 3
+    }
+    # Matrix kernels cannot safely overwrite an input/weight source.
+    if out.data == inp.data or out.data == weight.data or
+       (not gpu_is_null(out.buffer) and
+        (out.buffer.device == inp.buffer.device or
+         out.buffer.device == weight.buffer.device)) {
+        return 4
+    }
+    let M: i32 = inp.dim0
+    let K: i32 = inp.dim1
+    let N: i32 = weight.dim1
+    if out.zero_copy == 1 and inp.zero_copy == 1 and weight.zero_copy == 1 and
+       not gpu_is_null(out.buffer) and not gpu_is_null(inp.buffer) and
+       not gpu_is_null(weight.buffer) {
+        let gpu_rc: i32 = flow_gpu_gemm_f32(out.buffer.device,
+            inp.buffer.device, weight.buffer.device, M as i64, K as i64, N as i64)
+        # No silent CPU fallback after a real Metal execution failure.
+        return gpu_rc
+    }
+    let mut i: i32 = 0
+    while i < M {
+        let mut j: i32 = 0
+        while j < N {
+            let mut acc: f32 = 0.0
+            let mut k: i32 = 0
+            while k < K {
+                acc = acc + inp.data[i * K + k] * weight.data[k * N + j]
+                k = k + 1
+            }
+            out.data[i * N + j] = acc
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return gpu_tensor_upload(out)
+}
+
+# Maximum |a[i] - b[i]| for equal-shape f32 tensors.
+export function gpu_tensor_max_abs_diff(a: GpuTensor, b: GpuTensor) -> f32 {
+    if not gpu_tensor_compatible(a, b) {
+        return 1.0e30
+    }
+    let mut m: f32 = 0.0
+    let mut i: i32 = 0
+    while i < a.size {
+        let mut d: f32 = a.data[i] - b.data[i]
+        if d < 0.0 {
+            d = 0.0 - d
+        }
+        if d > m {
+            m = d
+        }
+        i = i + 1
+    }
+    return m
+}
+
+# Flat index of the maximum f32 element, or -1 if empty.
+export function gpu_tensor_argmax(gt: GpuTensor) -> i32 {
+    if gpu_tensor_is_empty(gt) {
+        return 0 - 1
+    }
+    let mut max_idx: i32 = 0
+    let mut max_val: f32 = gt.data[0]
+    let mut i: i32 = 1
+    while i < gt.size {
+        if gt.data[i] > max_val {
+            max_val = gt.data[i]
+            max_idx = i
+        }
+        i = i + 1
+    }
+    return max_idx
+}
+
+# Mean of all f32 elements, or 0 if empty.
+export function gpu_tensor_mean(gt: GpuTensor) -> f32 {
+    if gpu_tensor_is_empty(gt) {
+        return 0.0
+    }
+    let mut sum: f32 = 0.0
+    let mut i: i32 = 0
+    while i < gt.size {
+        sum = sum + gt.data[i]
+        i = i + 1
+    }
+    return sum / (gt.size as f32)
+}

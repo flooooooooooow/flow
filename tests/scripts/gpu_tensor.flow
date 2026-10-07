@@ -1,0 +1,171 @@
+# Shared GpuTensor resources, vgpu MNIST/depth numerical path, and shader emit.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+function flow_run(path: string) -> i32 {
+    return t_run_argv(sl_of3(t_root() + "/flow", "run", path))
+}
+
+function flow_gpu(path: string, wgsl: bool) -> i32 {
+    if wgsl {
+        let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "gpu", "--wgsl")
+        sl_push(argv, path)
+        return t_run_argv(argv)
+    }
+    return t_run_argv(sl_of3(t_root() + "/flow", "gpu", path))
+}
+
+function check_stdlib_gpu_tensor() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if flow_run("tests/stdlib/test_gpu_tensor.flow") != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_stdlib_gpu_model() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if flow_run("tests/stdlib/test_gpu_model.flow") != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_mnist_numerical() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if flow_run("examples/gpu/vgpu/mnist.flow") != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let text: string = read_text(t_out())
+    if not a_contains(text, "vgpu mnist") { return T_FAIL }
+    if not a_contains(text, "class 0") { return T_FAIL }
+    if not a_contains(text, "match 1") { return T_FAIL }
+    return T_PASS
+}
+
+function check_depth_numerical() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if flow_run("examples/gpu/vgpu/depth_estimation.flow") != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let text: string = read_text(t_out())
+    if not a_contains(text, "vgpu depth") { return T_FAIL }
+    if not a_contains(text, "match 1") { return T_FAIL }
+    return T_PASS
+}
+
+function check_mnist_shaders() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if flow_gpu("examples/gpu/vgpu/mnist.flow", false) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_exists("build/gpu/mnist_preprocess.metal") { return T_FAIL }
+    if not a_exists("build/gpu/mnist_dense_layer.metal") { return T_FAIL }
+    if not a_exists("build/gpu/mnist_postprocess.metal") { return T_FAIL }
+    if flow_gpu("examples/gpu/vgpu/mnist.flow", true) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_exists("build/wgsl/mnist_preprocess.wgsl") { return T_FAIL }
+    if not a_exists("build/wgsl/mnist_dense_layer.wgsl") { return T_FAIL }
+    if not a_exists("build/wgsl/mnist_postprocess.wgsl") { return T_FAIL }
+    return T_PASS
+}
+
+function check_depth_shaders() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if flow_gpu("examples/gpu/vgpu/depth_estimation.flow", false) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_exists("build/gpu/depth_feature_extract.metal") { return T_FAIL }
+    if not a_exists("build/gpu/depth_projection_layer.metal") { return T_FAIL }
+    if not a_exists("build/gpu/depth_colormap_tint.metal") { return T_FAIL }
+    if flow_gpu("examples/gpu/vgpu/depth_estimation.flow", true) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_exists("build/wgsl/depth_feature_extract.wgsl") { return T_FAIL }
+    if not a_exists("build/wgsl/depth_projection_layer.wgsl") { return T_FAIL }
+    if not a_exists("build/wgsl/depth_colormap_tint.wgsl") { return T_FAIL }
+    return T_PASS
+}
+
+function check_gpu_test_numerical() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "gpu", "test")
+    sl_push2(argv, "--suite", "vgpu")
+    sl_push(argv, "--all-backends")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let text: string = read_text(t_out())
+    # Metal may be unavailable on this host; WebGPU shader generation
+    # alone never counts as model execution.
+    if not a_contains(text, "CASE mnist [metal] NUMERICAL") and
+       not a_contains(text, "CASE mnist [metal] UNSUPPORTED reason=device-execution") { return T_FAIL }
+    if not a_contains(text, "CASE depth [metal] NUMERICAL") and
+       not a_contains(text, "CASE depth [metal] UNSUPPORTED reason=device-execution") { return T_FAIL }
+    if not a_contains(text, "CASE mnist [webgpu] UNSUPPORTED") { return T_FAIL }
+    if not a_contains(text, "CASE depth [webgpu] UNSUPPORTED") { return T_FAIL }
+    if not a_contains(text, "reason=device-execution") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("gpu_tensor")
+    t_start()
+    t_end("stdlib_gpu_tensor", check_stdlib_gpu_tensor())
+    t_start()
+    t_end("stdlib_gpu_model", check_stdlib_gpu_model())
+    t_start()
+    t_end("mnist_numerical", check_mnist_numerical())
+    t_start()
+    t_end("depth_numerical", check_depth_numerical())
+    t_start()
+    t_end("mnist_shaders", check_mnist_shaders())
+    t_start()
+    t_end("depth_shaders", check_depth_shaders())
+    t_start()
+    t_end("gpu_test_numerical", check_gpu_test_numerical())
+    t_done()
+    return 0
+}

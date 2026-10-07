@@ -1,12 +1,147 @@
 import "stdlib/tensor.flow"
+import "stdlib/gpu_memory.flow"
+import "stdlib/gpu_tensor.flow"
 
-# vgpu compatibility case: Depth estimation execution
+# vgpu compatibility case: depth estimation on shared GPU tensor resources.
+#
+# Feature extract and colormap tint are ordinary @gpu kernels. The projection
+# layer writes the same GpuTensor storage — no host Tensor copy between
+# stages. Metal and WebGPU shaders come from `flow gpu` on this file.
 
 @gpu
-function estimator(input: ptr<f32>, output: ptr<f32>) {
-    # Compatibility placeholder for the depth estimator
+function depth_feature_extract(image: ptr<f32>, features: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        features[i] = image[i] * 0.8 + 0.1
+    }
 }
 
-function main() {
-    print("depth stub")
+@gpu
+function depth_projection_layer(features: ptr<f32>, weights: ptr<f32>, depth_map: ptr<f32>, M: i32, K: i32, N: i32) -> void {
+    let row: i32 = gpu_thread_id()
+    if row < M {
+        for col in 0 to N {
+            let mut acc: f32 = 0.0
+            for k in 0 to K {
+                acc = acc + features[row * K + k] * weights[k * N + col]
+            }
+            depth_map[row * N + col] = acc
+        }
+    }
+}
+
+@gpu
+function depth_colormap_tint(depth_map: ptr<f32>, colormap: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        let val: f32 = depth_map[i]
+        if val < 0.0 {
+            colormap[i] = 0.0
+        } elif val > 1.0 {
+            colormap[i] = 1.0
+        } else {
+            colormap[i] = 1.0 - val
+        }
+    }
+}
+
+function depth_cpu(image: Tensor, weights: Tensor) -> Tensor {
+    let features: Tensor = tensor_zeros(image.dim0, image.dim1, 1, 1)
+    let mut i: i32 = 0
+    while i < image.size {
+        features.data[i] = image.data[i] * 0.8 + 0.1
+        i = i + 1
+    }
+    let raw: Tensor = tensor_matmul(features, weights)
+    let color: Tensor = tensor_zeros(raw.dim0, raw.dim1, 1, 1)
+    i = 0
+    while i < raw.size {
+        let mut v: f32 = raw.data[i]
+        if v < 0.0 {
+            color.data[i] = 0.0
+        } elif v > 1.0 {
+            color.data[i] = 1.0
+        } else {
+            color.data[i] = 1.0 - v
+        }
+        i = i + 1
+    }
+    tensor_free(features)
+    tensor_free(raw)
+    return color
+}
+
+function main() -> i32 {
+    let dispatch_before: i64 = gpu_model_dispatch_count()
+    let feature_dim: i32 = 64
+    let depth_out: i32 = 64
+
+    let img_h: Tensor = tensor_fill(1, feature_dim, 1, 1, 0.5)
+    let w_h: Tensor = tensor_fill(feature_dim, depth_out, 1, 1, 0.02)
+
+    let img: GpuTensor = gpu_tensor_from_host(img_h)
+    let feat: GpuTensor = gpu_tensor_alloc_f32(1, feature_dim, 1, 1)
+    let w: GpuTensor = gpu_tensor_from_host(w_h)
+    let depth: GpuTensor = gpu_tensor_alloc_f32(1, depth_out, 1, 1)
+    let color: GpuTensor = gpu_tensor_alloc_f32(1, depth_out, 1, 1)
+
+    if gpu_tensor_is_empty(img) or gpu_tensor_is_empty(color) {
+        println("vgpu depth")
+        println("alloc failed")
+        return 1
+    }
+    if gpu_tensor_require(img, GPU_DTYPE_F32, 1, feature_dim, 1, 1) != 0 {
+        return 2
+    }
+    if gpu_tensor_require(w, GPU_DTYPE_F32, feature_dim, depth_out, 1, 1) != 0 {
+        return 3
+    }
+
+    let p_feat: ptr<f32> = gpu_tensor_ptr(feat)
+    let p_color: ptr<f32> = gpu_tensor_ptr(color)
+
+    if gpu_tensor_scale_bias(img, feat, 0.8, 0.1) != 0 { return 4 }
+    depth_feature_extract(gpu_tensor_ptr(img), gpu_tensor_ptr(feat), feature_dim)
+    if gpu_tensor_linear(depth, feat, w) != 0 { return 5 }
+    if gpu_tensor_invert01(depth, color) != 0 { return 6 }
+    depth_colormap_tint(gpu_tensor_ptr(depth), gpu_tensor_ptr(color), depth_out)
+
+    if gpu_tensor_ptr(feat) != p_feat { return 7 }
+    if gpu_tensor_ptr(color) != p_color { return 8 }
+
+    let cpu: Tensor = depth_cpu(img_h, w_h)
+    let gpu_host: Tensor = gpu_tensor_to_host(color)
+    let mut ok: i32 = 1
+    let mut i: i32 = 0
+    while i < depth_out {
+        let mut d: f32 = gpu_host.data[i] - cpu.data[i]
+        if d < 0.0 { d = 0.0 - d }
+        if d > 0.0001 { ok = 0 }
+        i = i + 1
+    }
+
+    println("vgpu depth")
+    println(gpu_backend_name())
+    if gpu_model_dispatch_count() > dispatch_before and gpu_backend_name() == "metal" {
+        println("GPU_DEVICE_EXECUTED metal")
+    } else {
+        println("GPU_DEVICE_UNAVAILABLE")
+    }
+    print("match ")
+    println(ok)
+
+    tensor_free(img_h)
+    tensor_free(w_h)
+    tensor_free(cpu)
+    tensor_free(gpu_host)
+    gpu_tensor_free(img)
+    gpu_tensor_free(feat)
+    gpu_tensor_free(w)
+    gpu_tensor_free(depth)
+    gpu_tensor_free(color)
+
+    if ok != 1 {
+        return 9
+    }
+    return 0
 }
