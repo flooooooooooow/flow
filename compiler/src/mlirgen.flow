@@ -13007,6 +13007,33 @@ function mlg_affine_tile_l2_size() -> i32 {
     return mlg_env_bounded_positive(getenv("FLOWC_MLIR_TILE_L2"), 2, 128)
 }
 
+# Validate user-supplied tiling knobs before loop eligibility. A malformed
+# request must not silently fall back to a different schedule (#665).
+function mlg_affine_tile_config_valid(m: ptr<Mlg>, st: i32) -> i32 {
+    if mlg_affine_enabled() == 0 {
+        return 1
+    }
+    let tile: i32 = mlg_affine_tile_size()
+    let l2: i32 = mlg_affine_tile_l2_size()
+    if tile < 0 {
+        mlg_refuse(m, st, "FLOWC_MLIR_TILE must be an integer in [2, 64]")
+        return 0
+    }
+    if l2 < 0 {
+        mlg_refuse(m, st, "FLOWC_MLIR_TILE_L2 must be an integer in [2, 128]")
+        return 0
+    }
+    if l2 > 0 and tile == 0 {
+        mlg_refuse(m, st, "FLOWC_MLIR_TILE_L2 requires FLOWC_MLIR_TILE")
+        return 0
+    }
+    if l2 > 0 and l2 < tile {
+        mlg_refuse(m, st, "affine L2 tile must be >= the inner tile")
+        return 0
+    }
+    return 1
+}
+
 function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     let tile: i32 = mlg_affine_tile_size()
     if tile <= 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
@@ -13966,6 +13993,9 @@ function mlg_emit_scf_parallel(m: ptr<Mlg>, st: i32, step_val: i32) {
 
 function mlg_emit_for(m: ptr<Mlg>, st: i32) {
     let par: i32 = mlg_for_is_parallel(m, st)
+    if par == 0 and mlg_affine_tile_config_valid(m, st) == 0 {
+        return
+    }
     if par == 1 and mlg_affine_parallel_eligible(m, st) == 1 {
         let mut step_val: i32 = 0
         let _has: i32 = mlg_const_step(m, m[0].arena.nodes[st].ival, &step_val)
