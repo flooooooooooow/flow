@@ -64,6 +64,10 @@ function check_single_nix_definition() -> i32 {
         outln("root flake.nix must not define its own derivation")
         return T_FAIL
     }
+    if not a_exists(repo_root() + "/flake.lock") or not a_exists(repo_root() + "/packaging/nix/flake.lock") {
+        outln("both flakes must carry a flake.lock pinning nixpkgs")
+        return T_FAIL
+    }
     let d: string = read_text(repo_root() + "/packaging/nix/default.nix")
     if not s_contains(d, "FLOW_BUILD_ROOT") or not s_contains(d, "installCheckPhase") {
         outln("Nix package must send builds to the user cache and run an install check")
