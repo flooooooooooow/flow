@@ -230,7 +230,8 @@ from the Python version it replaced.
 
 - **Done:** three consecutive generation fixed-points in
   [`self_host_full.flow`](../../compiler/scripts/self_host_full.flow), run by
-  roundtrip and by CI. gen1 = the bootstrap driver compiling all of
+  roundtrip and by CI. gen1 = the checked-in bootstrap C, built with cc
+  (rebuilt when `compiler/build/flowc_bootstrap` is older), compiling all of
   `compiler/src`; gen2 = gen1 compiling it; gen3 = gen2 compiling it. Each
   generation must pass flowc's self-tests and compile an ordinary program, and
   `gen1.c == gen2.c == gen3.c` with `gen2.o == gen3.o`.

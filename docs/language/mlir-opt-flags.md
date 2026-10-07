@@ -40,8 +40,13 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 Tensor-valued function boundaries keep value semantics in the emitted MLIR:
 elementwise results use a fresh `tensor.empty` destination before One-Shot
-Bufferization lowers the boundary to memrefs. The boundary regression checks
-the destination form and both calls in `tests/scripts/mlir_bufferize_boundary.flow`.
+Bufferization lowers the boundary to memrefs. Mutable tensor locals stay SSA
+so a counted loop can carry them as `scf.for` `iter_args` and One-Shot
+Bufferization can reuse the destination in place. See
+[MLIR tensor value semantics](mlir-value-semantics.md). The regressions in
+`tests/scripts/mlir_bufferize_boundary.flow` check the destination form,
+function-boundary bufferization, hot-loop SSA, and the alias-free LICM
+and vectorization follow-ons.
 
 The Flow-native `scripts/tools/mlir_tune/main.flow` schedule generator also
 supports loop interchange for three-dimensional structured operations:

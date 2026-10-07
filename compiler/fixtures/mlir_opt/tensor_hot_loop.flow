@@ -1,0 +1,24 @@
+# Mutable tensor values stay SSA through counted loops. One-Shot
+# Bufferization can then reuse the destination in place instead of
+# allocating on every iteration.
+
+extern {
+    function tensor_add(a: tensor_f32, b: tensor_f32) -> tensor_f32
+    function tensor_add_scalar(a: tensor_f32, s: f32) -> tensor_f32
+}
+
+function accumulate(a: tensor_f32, b: tensor_f32, n: i32) -> tensor_f32 {
+    let mut acc: tensor_f32 = a
+    for i in 0 to n step 1 {
+        acc = tensor_add(acc, b)
+    }
+    return acc
+}
+
+function scale_loop(a: tensor_f32, s: f32, n: i32) -> tensor_f32 {
+    let mut acc: tensor_f32 = a
+    for i in 0 to n step 1 {
+        acc = tensor_add_scalar(acc, s)
+    }
+    return acc
+}
