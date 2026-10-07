@@ -16,7 +16,7 @@ Parent issue: [#739](https://github.com/flooooooooooow/flow/issues/739)
 |---|---|
 | `for i in 0 to n { y[i] = ... }` with a straight-line body | `#pragma omp simd` (with `reduction` when the body is `acc = acc ⊕ expr`) when `_OPENMP` is defined; otherwise clang `loop vectorize` or GCC `ivdep` |
 | Unit-stride `dst[i] = src[i]` on pointers, arrays, or spans | One `memcpy` of `(hi - lo) * sizeof(element)` when region inference proves the two regions disjoint; spans go through `.data`, and with runtime checks each span gets one range test. Otherwise the ordered loop stays (#1417) |
-| Counted `while i < n { ...; i = i + 1 }` | The same C `for` as the equivalent counted loop, including SIMD hints. `continue` and `@max_iterations` keep the `while`. Overlapping while-copies stay elementwise so they keep loop order |
+| Counted `while i < n { ...; i = i + 1 }` | A C `for (; i < n; i = i + k)` with the clang and GCC loop hints. OpenMP simd is left out: it needs an init clause and would privatize `i`. `continue` and `@max_iterations` keep the `while`. Overlapping while-copies stay elementwise so they keep loop order |
 | Clip / min / max `if` / `else` stores to the same `base[i]` | A C ternary (`?:`), which the auto-vectorizer treats as a select. An `if` without `else` keeps the branch, since the select would read `base[i]` when the guard is false. Arbitrary predicate reductions stay scalar |
 | Recognized f32/f64 kernels (fill, scale, axpy, add, sum, dot) | GCC/clang `vector_size(16)` strip-mined loops behind `FLOWC_HAS_V128`, plus a scalar tail. See the conditions below |
 

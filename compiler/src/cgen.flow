@@ -9755,51 +9755,17 @@ function flowc_cgen_body_omp_safe_skip(arena: AstArena, src: ptr<u8>, body: i32,
     return 1
 }
 
-function flowc_cgen_emit_omp_reduction_op_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32, op: i32, opch: string) {
-    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
-        return
-    }
-    let mut any: i32 = 0
-    let mut st: i32 = arena.nodes[body].a
-    while st != AST_NONE {
-        if st != skip {
-            if flowc_cgen_reduction_op(arena, src, st) == op {
-                if flowc_cgen_reduction_seen_before(arena, src, body, st, op) == 0 {
-                    if any == 0 {
-                        flowc_cgen_puts(w, " reduction(")
-                        flowc_cgen_puts(w, opch)
-                        flowc_cgen_puts(w, ":")
-                        any = 1
-                    } else {
-                        flowc_cgen_puts(w, ",")
-                    }
-                    flowc_cgen_put_span(w, src, arena.nodes[arena.nodes[st].a].name_start, arena.nodes[arena.nodes[st].a].name_end)
-                }
-            }
-        }
-        st = arena.nodes[st].next
-    }
-    if any == 1 {
-        flowc_cgen_puts(w, ")")
-    }
-}
-
+# Hints for a while rotated to `for (; i < n; ...)`. No OpenMP simd: its
+# loop must be in canonical form with an init clause (clang -fopenmp rejects
+# `for (;` outright), and it privatizes `i`, which a while loop often reads
+# after the loop.
 function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32) {
-    if flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1 {
-        flowc_cgen_puts(w, "#if defined(_OPENMP)\n")
-        flowc_cgen_puts(w, "#pragma omp simd")
-        flowc_cgen_emit_omp_reduction_op_skip(w, arena, src, body, skip, TOK_PLUS, "+")
-        flowc_cgen_emit_omp_reduction_op_skip(w, arena, src, body, skip, TOK_MINUS, "-")
-        flowc_cgen_emit_omp_reduction_op_skip(w, arena, src, body, skip, TOK_STAR, "*")
-        flowc_cgen_puts(w, "\n#elif defined(__clang__)\n")
-        flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
-        flowc_cgen_puts(w, "#elif defined(__GNUC__)\n")
-        flowc_cgen_puts(w, "#pragma GCC ivdep\n")
-        flowc_cgen_puts(w, "#endif\n")
-        return
-    }
     flowc_cgen_puts(w, "#if defined(__clang__)\n")
     flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
+    if flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1 {
+        flowc_cgen_puts(w, "#elif defined(__GNUC__)\n")
+        flowc_cgen_puts(w, "#pragma GCC ivdep\n")
+    }
     flowc_cgen_puts(w, "#endif\n")
 }
 
