@@ -1,0 +1,58 @@
+# The #739 vector_size kernels load four lanes before they store. On a
+# shifted view (`dst = src + 1`) the scalar loop is a recurrence: each store
+# feeds the next load. Pointer parameters may be such views, so scale, axpy
+# and add keep the scalar loop there (the #1417 rule). A scale factor that
+# reads the destination changes as the loop stores, so it is not hoisted.
+
+function scale(dst: ptr<f32>, src: ptr<f32>, k: f32, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i] * k
+    }
+}
+
+function axpy(dst: ptr<f32>, src: ptr<f32>, k: f32, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = dst[i] + k * src[i]
+    }
+}
+
+function add(dst: ptr<f32>, a: ptr<f32>, b: ptr<f32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = a[i] + b[i]
+    }
+}
+
+function scale_by_first(dst: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i] * dst[0]
+    }
+}
+
+function main() -> i32 {
+    # x[i + 1] = x[i] * 2 doubles along the array: 1, 2, 4, ..., 128.
+    let mut x: [f32; 8] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    scale(&x[1], &x[0], 2.0, 7)
+    if x[4] != 16.0 { return 1 }
+    if x[7] != 128.0 { return 2 }
+
+    # y[i + 1] = y[i + 1] + y[i] gives the running sums 1, 2, ..., 8.
+    let mut y: [f32; 8] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    axpy(&y[1], &y[0], 1.0, 7)
+    if y[4] != 5.0 { return 3 }
+    if y[7] != 8.0 { return 4 }
+
+    # z[i + 1] = z[i] + one[i] counts up: 0, 1, ..., 7.
+    let mut z: [f32; 8] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let one: [f32; 8] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    add(&z[1], &z[0], &one[0], 7)
+    if z[4] != 4.0 { return 5 }
+    if z[7] != 7.0 { return 6 }
+
+    # d[0] becomes 3 * 2 = 6 first, then every later lane uses 6.
+    let mut d: [f32; 8] = [2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let s: [f32; 8] = [3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    scale_by_first(&d[0], &s[0], 8)
+    if d[0] != 6.0 { return 7 }
+    if d[5] != 6.0 { return 8 }
+    return 0
+}

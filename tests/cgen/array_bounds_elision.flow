@@ -1,0 +1,14 @@
+# An ascending loop bounded by the array's literal size proves its element reads.
+
+function sum(xs: array<i32, 3>) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to 3 {
+        total = total + xs[i]
+    }
+    return total
+}
+
+function main() -> i32 {
+    let values: array<i32, 3> = [4, 5, 6]
+    return sum(values)
+}

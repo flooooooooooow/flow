@@ -1,0 +1,4 @@
+env FLOWC_CHECKS=1
++ xs[i]
+- ((unsigned)(
+exit 15
