@@ -8895,7 +8895,7 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     # hints on the ascending body (#739).
     if dir > 0 {
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c, arena.nodes[id].name_start, arena.nodes[id].name_end)
         } else {
             flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
         }
@@ -9208,13 +9208,221 @@ function flowc_cgen_emit_omp_reductions(w: ptr<CgenBuf>, arena: AstArena, src: p
     flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*")
 }
 
+# Store bases of a loop body for flowc_cgen_loop_mem_independent: the
+# destination INDEX nodes of indexed stores and select ifs, up to 16.
+const FLOWC_MEMI_MAX: i32 = 16
+
+# 1 when `ix` is the identifier named by [ns, ne).
+function flowc_cgen_ix_is_name(arena: AstArena, src: ptr<u8>, ix: i32, ns: i32, ne: i32) -> i32 {
+    if ix == AST_NONE or ix < 0 or arena.nodes[ix].kind != AST_IDENT {
+        return 0
+    }
+    return flowc_cgen_span_eq(src, arena.nodes[ix].name_start, arena.nodes[ix].name_end, ns, ne)
+}
+
+# 1 when every indexed read under `node` either reads a store base at the
+# loop index or reads storage proven disjoint from every store base, and
+# nothing reads through `*p`. `stores` holds the store INDEX nodes; those
+# nodes themselves are destinations, so only their index is walked.
+function flowc_cgen_memi_reads_ok(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, node: i32, stores: ptr<i32>, nst: i32, ns: i32, ne: i32, depth: i32) -> i32 {
+    if node == AST_NONE or node < 0 or node >= arena.len {
+        return 1
+    }
+    if depth > 64 {
+        return 0
+    }
+    let k: i32 = arena.nodes[node].kind
+    # Type nodes carry tags in their link fields (#1423) and hold no reads.
+    if k == AST_TYPE {
+        return flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].next, stores, nst, ns, ne, depth + 1)
+    }
+    if k == AST_UNARY and arena.nodes[node].ival == TOK_STAR {
+        return 0
+    }
+    if k == AST_INDEX {
+        let base: i32 = arena.nodes[node].a
+        let mut is_store: i32 = 0
+        let mut j: i32 = 0
+        while j < nst {
+            if stores[j] == node {
+                is_store = 1
+            }
+            j = j + 1
+        }
+        if is_store == 0 {
+            if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+                return 0
+            }
+            j = 0
+            while j < nst {
+                let sb: i32 = arena.nodes[stores[j]].a
+                if flowc_cgen_ident_same(arena, src, base, sb) == 1 {
+                    if flowc_cgen_ix_is_name(arena, src, arena.nodes[node].b, ns, ne) == 0 {
+                        return 0
+                    }
+                } elif flowc_region_disjoint(arena, src, w[0].cur_fn, base, sb) != 1 {
+                    return 0
+                }
+                j = j + 1
+            }
+        }
+        if flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].b, stores, nst, ns, ne, depth + 1) == 0 {
+            return 0
+        }
+        if is_store == 0 {
+            if flowc_cgen_memi_reads_ok(w, arena, src, base, stores, nst, ns, ne, depth + 1) == 0 {
+                return 0
+            }
+        }
+        return flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].next, stores, nst, ns, ne, depth + 1)
+    }
+    if flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].a, stores, nst, ns, ne, depth + 1) == 0 {
+        return 0
+    }
+    if flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].b, stores, nst, ns, ne, depth + 1) == 0 {
+        return 0
+    }
+    if flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].c, stores, nst, ns, ne, depth + 1) == 0 {
+        return 0
+    }
+    return flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[node].next, stores, nst, ns, ne, depth + 1)
+}
+
+# 1 when the iterations of a straight-line body touch memory independently,
+# so `#pragma omp simd` and `GCC ivdep` promise nothing false (#1424): every
+# store is `base[i]` with `i` the loop counter [ns, ne); two store bases are
+# the same name or proven disjoint; and every indexed read is a store base
+# at `i` or proven disjoint from all store bases. Two pointer parameters may
+# be shifted views of one buffer (`dst = src + 1`), where the scalar loop is
+# a recurrence, so they fail the proof and keep only the clang hint, which
+# still checks aliasing at run time.
+function flowc_cgen_loop_mem_independent(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32, ns: i32, ne: i32) -> i32 {
+    if body == AST_NONE {
+        return 1
+    }
+    if arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let stores: ptr<i32> = malloc(FLOWC_MEMI_MAX * 4) as ptr<i32>
+    let mut n: i32 = 0
+    let mut ok: i32 = 1
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE and ok == 1 {
+        if st != skip {
+            let mut dest: i32 = AST_NONE
+            if flowc_cgen_assign_is_index_store(arena, st) == 1 {
+                dest = arena.nodes[st].a
+            } elif arena.nodes[st].kind == AST_IF {
+                dest = flowc_cgen_if_select_dest(arena, src, st)
+            }
+            if dest != AST_NONE {
+                let db: i32 = arena.nodes[dest].a
+                if n >= FLOWC_MEMI_MAX or db == AST_NONE or arena.nodes[db].kind != AST_IDENT {
+                    ok = 0
+                } elif flowc_cgen_ix_is_name(arena, src, arena.nodes[dest].b, ns, ne) == 0 {
+                    ok = 0
+                } else {
+                    let mut j: i32 = 0
+                    while j < n {
+                        let ob: i32 = arena.nodes[stores[j]].a
+                        if flowc_cgen_ident_same(arena, src, db, ob) == 0 {
+                            if flowc_region_disjoint(arena, src, w[0].cur_fn, db, ob) != 1 {
+                                ok = 0
+                            }
+                        }
+                        j = j + 1
+                    }
+                    stores[n] = dest
+                    n = n + 1
+                }
+            }
+        }
+        st = arena.nodes[st].next
+    }
+    # Select ifs store the same `base[i]` in every arm, so collecting the
+    # then-arm destination is enough; the walk below marks every arm's
+    # destination node as a store too.
+    if ok == 1 {
+        st = arena.nodes[body].a
+        while st != AST_NONE and ok == 1 {
+            if st != skip {
+                if arena.nodes[st].kind == AST_IF {
+                    ok = flowc_cgen_memi_select_dests(arena, src, st, stores, &n)
+                }
+            }
+            st = arena.nodes[st].next
+        }
+    }
+    if ok == 1 {
+        st = arena.nodes[body].a
+        while st != AST_NONE and ok == 1 {
+            if st != skip {
+                if flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[st].a, stores, n, ns, ne, 0) == 0 {
+                    ok = 0
+                } elif flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[st].b, stores, n, ns, ne, 0) == 0 {
+                    ok = 0
+                } elif flowc_cgen_memi_reads_ok(w, arena, src, arena.nodes[st].c, stores, n, ns, ne, 0) == 0 {
+                    ok = 0
+                }
+            }
+            st = arena.nodes[st].next
+        }
+    }
+    free(stores as ptr<u8>)
+    return ok
+}
+
+# Adds the destination INDEX node of every arm of a select if to `stores`.
+function flowc_cgen_memi_select_dests(arena: AstArena, src: ptr<u8>, id: i32, stores: ptr<i32>, n: ptr<i32>) -> i32 {
+    if id == AST_NONE or arena.nodes[id].kind != AST_IF {
+        return 1
+    }
+    if flowc_cgen_if_select_dest(arena, src, id) == AST_NONE {
+        return 1
+    }
+    let then_st: i32 = flowc_cgen_block_index_store(arena, arena.nodes[id].b)
+    if then_st != AST_NONE {
+        if flowc_cgen_memi_add(stores, n, arena.nodes[then_st].a) == 0 {
+            return 0
+        }
+    }
+    let els: i32 = arena.nodes[id].c
+    if els == AST_NONE {
+        return 1
+    }
+    let else_st: i32 = flowc_cgen_block_index_store(arena, els)
+    if else_st != AST_NONE {
+        return flowc_cgen_memi_add(stores, n, arena.nodes[else_st].a)
+    }
+    if arena.nodes[els].kind == AST_IF {
+        return flowc_cgen_memi_select_dests(arena, src, els, stores, n)
+    }
+    return flowc_cgen_memi_select_dests(arena, src, flowc_cgen_block_only_if(arena, els), stores, n)
+}
+
+function flowc_cgen_memi_add(stores: ptr<i32>, n: ptr<i32>, node: i32) -> i32 {
+    let mut j: i32 = 0
+    while j < n[0] {
+        if stores[j] == node {
+            return 1
+        }
+        j = j + 1
+    }
+    if n[0] >= FLOWC_MEMI_MAX {
+        return 0
+    }
+    stores[n[0]] = node
+    n[0] = n[0] + 1
+    return 1
+}
+
 # Portable SIMD hints for a straight-line counted loop (#739): OpenMP simd
 # (with reduction clauses when the body is a reduction) when the compiler
 # defines `_OPENMP`, else clang loop hints or GCC ivdep. A simple body that
-# is not OpenMP-safe keeps only the clang hint so loop-carried scalar
-# updates are not promised independent.
-function flowc_cgen_emit_simd_pragmas(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32) {
-    if flowc_cgen_loop_omp_safe(arena, src, body) == 1 {
+# is not OpenMP-safe, or whose iterations may touch overlapping memory
+# (#1424), keeps only the clang hint so nothing false is promised.
+function flowc_cgen_emit_simd_pragmas(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, ns: i32, ne: i32) {
+    if flowc_cgen_loop_omp_safe(arena, src, body) == 1 and flowc_cgen_loop_mem_independent(w, arena, src, body, AST_NONE, ns, ne) == 1 {
         flowc_cgen_puts(w, "#if defined(_OPENMP)\n")
         flowc_cgen_puts(w, "#pragma omp simd")
         flowc_cgen_emit_omp_reductions(w, arena, src, body)
@@ -9759,10 +9967,10 @@ function flowc_cgen_body_omp_safe_skip(arena: AstArena, src: ptr<u8>, body: i32,
 # loop must be in canonical form with an init clause (clang -fopenmp rejects
 # `for (;` outright), and it privatizes `i`, which a while loop often reads
 # after the loop.
-function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32) {
+function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32, ns: i32, ne: i32) {
     flowc_cgen_puts(w, "#if defined(__clang__)\n")
     flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
-    if flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1 {
+    if flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1 and flowc_cgen_loop_mem_independent(w, arena, src, body, skip, ns, ne) == 1 {
         flowc_cgen_puts(w, "#elif defined(__GNUC__)\n")
         flowc_cgen_puts(w, "#pragma GCC ivdep\n")
     }
@@ -9819,7 +10027,7 @@ function flowc_cgen_try_emit_while_as_for(w: ptr<CgenBuf>, arena: AstArena, src:
         return 0
     }
     if flowc_cgen_body_is_simple_skip(arena, src, body, last) == 1 {
-        flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last)
+        flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last, arena.nodes[iv].name_start, arena.nodes[iv].name_end)
     }
     let saved_wbase: i32 = w[0].loop_defer_base
     w[0].loop_defer_base = w[0].defer_len
@@ -10064,7 +10272,7 @@ function flowc_cgen_emit_vector_loop(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     flowc_cgen_puts(w, "    }\n  }\n")
     flowc_cgen_puts(w, "#else\n")
     if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-        flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c, arena.nodes[id].name_start, arena.nodes[id].name_end)
     }
     flowc_cgen_puts(w, "  for (int32_t ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -11015,7 +11223,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             return
         }
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c, arena.nodes[id].name_start, arena.nodes[id].name_end)
         } else {
             flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
         }

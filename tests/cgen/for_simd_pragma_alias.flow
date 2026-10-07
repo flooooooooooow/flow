@@ -1,0 +1,24 @@
+# `#pragma omp simd` and `#pragma GCC ivdep` promise that iterations touch
+# memory independently (#1424). Two pointer parameters may be shifted views
+# of one buffer: with dst = src + 1 the scalar loop is a recurrence, and
+# GCC 15 at -O3 vectorized it under ivdep to a different result (this
+# program exited 1). The runner builds at -O0, so the text checks below
+# carry the regression. Such loops keep only the clang hint, which
+# still checks aliasing at run time.
+
+@noinline
+function bump(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i] + 1
+    }
+}
+
+function main() -> i32 {
+    let mut a: [i32; 32] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    bump(&a[1], &a[0], 31)
+    # a[k] = a[k - 1] + 1 counts up along the array.
+    if a[8] != 8 { return 1 }
+    if a[31] != 31 { return 2 }
+    return 0
+}

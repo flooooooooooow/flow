@@ -1,0 +1,6 @@
+flags --no-checks
+# Possibly overlapping parameters: no independence promise, clang hint only.
+- #pragma GCC ivdep
+- #pragma omp simd
++ #pragma clang loop vectorize(enable) interleave(enable)
+exit 0
