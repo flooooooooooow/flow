@@ -58,7 +58,7 @@ import .sem_types {
 }
 import .rt_summary {
     FLOWC_RT_UNKNOWN,
-    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
+    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_APPLICATION, FLOWC_RT_DOM_NONE,
     flowc_rt_forbidden, flowc_rt_name_bits
 }
 import .region {
@@ -845,7 +845,7 @@ function sem_collect_lifetime_domains(c: ptr<Sem>) {
         } elif k == DK_STATIC {
             let mut d3: i32 = sem_lifetime_domain(c, sem_iv_get(c.d_astart, i), sem_iv_get(c.d_alen, i))
             if d3 < 0 {
-                d3 = 3
+                d3 = FLOWC_RT_DOM_APPLICATION
             }
             sem_sm_put(c.static_domains, sem_decl_name(c, i), d3)
         }
@@ -856,7 +856,7 @@ function sem_collect_lifetime_domains(c: ptr<Sem>) {
 function sem_static_domain(c: ptr<Sem>, name: string) -> i32 {
     let d: i32 = sem_sm_get(c.static_domains, name)
     if d < 0 {
-        return 3
+        return FLOWC_RT_DOM_APPLICATION
     }
     return d
 }

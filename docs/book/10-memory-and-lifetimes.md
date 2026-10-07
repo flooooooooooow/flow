@@ -110,7 +110,7 @@ An arena owns one region and advances an offset for each allocation; resetting i
 
 ## 10.7 Lifetime domains
 
-The implemented order is `callback < frame < session < application`.
+The implemented order is `callback < frame < request < session < application < persistent`.
 
 ```flow
 @lifetime(callback)

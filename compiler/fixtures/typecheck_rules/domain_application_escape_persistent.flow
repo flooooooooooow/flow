@@ -1,0 +1,13 @@
+# expect: lifetime domain escape: `scratch` lives in the `application` domain but is stored in `held`, which lives in the `persistent` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 8, column 5
+@lifetime(persistent)
+let mut held: ptr<i32> = null
+
+@lifetime(application)
+function boot() {
+    let mut scratch: array<i32, 4> = [0; 4]
+    held = scratch
+}
+
+function main() -> i32 {
+    return 0
+}

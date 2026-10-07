@@ -1840,7 +1840,7 @@ The list covers the keyword families in the specification.
 | Real-time | `@rt_safe` | Reject direct or transitive calls to the currently forbidden allocation set. |
 | Safety boundary | `@safe`, `@unsafe` | Mark certified versus escaped operations; safety-profile extern use requires explicit care. |
 | Stable ABI | `@flow_api` | Preserve a plain exported C name. |
-| Lifetime | `@lifetime(callback|frame|session|application)` | Apply lifetime-domain checking. |
+| Lifetime | `@lifetime(callback|frame|request|session|application|persistent)` | Apply lifetime-domain checking. |
 | Loop bound | `@max_iterations(N)` before supported while loops | Required by safety/flight profiles. |
 | Internal compiler | `@test`, synthesized `@monomorphized` | Compiler metadata; not a general user optimisation control. |
 | Selection proposals | `@require(...)`, `@prefer(...)` | Documented target surface; not fully wired into ordinary source compilation. |
@@ -1933,7 +1933,8 @@ mutable, and static-extent forms. A span does not own storage. The AI MUST keep
 the owner alive, respect mutability, and check the current lowering. Inferred
 bare spans and dependent/trait-shaped extents are not shipped.
 
-Lifetime domains use `@lifetime(callback|frame|session|application)` and enforce
+Lifetime domains use
+`@lifetime(callback|frame|request|session|application|persistent)` and enforce
 four current rules:
 
 1. a shorter-lived value may not enter a longer-lived static;
