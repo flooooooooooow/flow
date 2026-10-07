@@ -81,4 +81,6 @@ A phase that is >10% and has no row here is a remaining gap on #735.
 
 `flow-compile-profile/1` phase objects: `name`, `ms`, `us`. Totals: `source_loc`, `ast_nodes`, `total_ms`, `startup_ms`, `loc_per_s`, `ast_nodes_per_s`.
 
+`cache` counts AST cache lookups ([#736](https://github.com/flooooooooooow/flow/issues/736)): `hits`, `misses`, `stores` (records written after a miss) and `bypassed` (no user cache directory, so no lookup). A bundle looks each module up more than once, so a cold build already has hits. A no-op rebuild has no misses, and editing one module gives one miss. The text report prints the same four numbers as `AST cache: ...`.
+
 `compile_bench` program rows keep `emit_ms`, `cc_ms`, `run_ms`, `total_ms`, `cold_total_ms`, `warm_total_ms`, `reps`, `loc_per_emit_s`.

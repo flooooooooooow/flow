@@ -86,6 +86,45 @@ decision because it changes output bits.
 **Status:** Open.
 
 ---
+
+### 2026-10-08: Persistent cache trust boundary (#736)
+
+**Context:** The #736 parse cache (#1302, #1345) writes non-executable
+`FCAC` records under `$XDG_CACHE_HOME/flow/ast` or `~/.cache/flow/ast` and
+never opens a checkout's `.flow_cache/`. Loading a record copies integers
+into the AST arena after checking the magic, schema, node size and length.
+It creates the directories with mode 0755, opens records with `fopen`
+(following symlinks), and checks neither the record's owner and mode nor a
+checksum of the payload. On a shared machine, anyone who can write that
+directory can plant a record whose AST differs from the source it claims
+to match, and flowc then compiles code the user did not write. Draft #1402
+(path bounds, root index validation) and closed draft #1413 (owner-only
+directories, `O_EXCL` 0600 writes, symlink refusal, schema 737) took
+different positions. A typecheck or codegen cache inherits the same
+answer, so those layers wait on it too.
+
+**Options:**
+1. Single-user model. Create the directories 0700. Refuse a directory or
+   record that the user does not own or that group or other can write.
+   Write with `O_CREAT|O_EXCL` 0600 to a temporary name, then rename.
+   Refuse symlinks. Store a checksum of the source and payload. A refused
+   or corrupt record falls back to parsing.
+2. Content checksum only. Keep paths and modes, and store a hash of the
+   source and the payload in the record; a mismatch falls back to parsing.
+   This catches corruption. A writer who can recompute the hash still gets
+   through.
+3. No persistent cache by default. Keep an in-process cache, and turn the
+   persistent one on with `FLOW_CACHE=1`.
+
+**Recommendation:** Option 1. It is what #1413 drafted, and it matches the
+#736 acceptance line that opening an untrusted checkout cannot execute code
+because it contains crafted cache data.
+
+**Status:** Open. The parse cache keeps its current behaviour until this is
+decided.
+
+---
+
 ### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
 
 **Context:** Issue #564 records that shipped handlers are tail-resumptive
