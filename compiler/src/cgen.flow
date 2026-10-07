@@ -9212,6 +9212,56 @@ function flowc_cgen_emit_omp_reductions(w: ptr<CgenBuf>, arena: AstArena, src: p
 # destination INDEX nodes of indexed stores and select ifs, up to 16.
 const FLOWC_MEMI_MAX: i32 = 16
 
+# The parameter of the current function that `ident` names, or AST_NONE
+# when it names something else or the body rebinds, shadows or addresses it.
+function flowc_cgen_param_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ident: i32) -> i32 {
+    let fn: i32 = w[0].cur_fn
+    if fn == AST_NONE or fn < 0 or ident == AST_NONE or ident < 0 {
+        return AST_NONE
+    }
+    if arena.nodes[ident].kind != AST_IDENT or arena.nodes[fn].kind != AST_FN {
+        return AST_NONE
+    }
+    let ns: i32 = arena.nodes[ident].name_start
+    let ne: i32 = arena.nodes[ident].name_end
+    let mut p: i32 = arena.nodes[fn].a
+    while p != AST_NONE {
+        if flowc_cgen_span_eq(src, arena.nodes[p].name_start, arena.nodes[p].name_end, ns, ne) == 1 {
+            if flowc_cgen_name_rebound_in_node(arena, src, arena.nodes[fn].c, ns, ne) == 1 {
+                return AST_NONE
+            }
+            return p
+        }
+        p = arena.nodes[p].next
+    }
+    return AST_NONE
+}
+
+# 1 when the bases `a` and `b` cannot overlap: region inference proves it
+# (#694, #1417), or they are two different parameters and #731 proved one
+# of them disjoint from every other pointer parameter at every call site
+# (the parameter is emitted `restrict`).
+function flowc_cgen_bases_disjoint(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, a: i32, b: i32) -> i32 {
+    if flowc_region_disjoint(arena, src, w[0].cur_fn, a, b) == 1 {
+        return 1
+    }
+    let pa: i32 = flowc_cgen_param_node(w, arena, src, a)
+    let pb: i32 = flowc_cgen_param_node(w, arena, src, b)
+    if pa == AST_NONE or pb == AST_NONE or pa == pb {
+        return 0
+    }
+    if w[0].na_clone == 1 {
+        if flowc_noalias_param_restrict_clone(arena, src, w[0].cur_fn, pa) == 1 or flowc_noalias_param_restrict_clone(arena, src, w[0].cur_fn, pb) == 1 {
+            return 1
+        }
+        return 0
+    }
+    if flowc_noalias_param_restrict(arena, src, w[0].cur_fn, pa) == 1 or flowc_noalias_param_restrict(arena, src, w[0].cur_fn, pb) == 1 {
+        return 1
+    }
+    return 0
+}
+
 # 1 when `ix` is the identifier named by [ns, ne).
 function flowc_cgen_ix_is_name(arena: AstArena, src: ptr<u8>, ix: i32, ns: i32, ne: i32) -> i32 {
     if ix == AST_NONE or ix < 0 or arena.nodes[ix].kind != AST_IDENT {
@@ -9260,7 +9310,7 @@ function flowc_cgen_memi_reads_ok(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
                     if flowc_cgen_ix_is_name(arena, src, arena.nodes[node].b, ns, ne) == 0 {
                         return 0
                     }
-                } elif flowc_region_disjoint(arena, src, w[0].cur_fn, base, sb) != 1 {
+                } elif flowc_cgen_bases_disjoint(w, arena, src, base, sb) != 1 {
                     return 0
                 }
                 j = j + 1
@@ -9326,7 +9376,7 @@ function flowc_cgen_loop_mem_independent(w: ptr<CgenBuf>, arena: AstArena, src: 
                     while j < n {
                         let ob: i32 = arena.nodes[stores[j]].a
                         if flowc_cgen_ident_same(arena, src, db, ob) == 0 {
-                            if flowc_region_disjoint(arena, src, w[0].cur_fn, db, ob) != 1 {
+                            if flowc_cgen_bases_disjoint(w, arena, src, db, ob) != 1 {
                                 ok = 0
                             }
                         }
