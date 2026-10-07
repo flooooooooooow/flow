@@ -3,13 +3,16 @@
 The CI workflow (`.github/workflows/ci.yml`) runs on two pools.
 
 - **ubuntu-latest**, GitHub-hosted. The heavy jobs: self-host, roundtrip,
-  goldens and MLIR, parity gates, corpus parity, native tools, language
-  tests, tier-2 and the Windows smoke. The free plan allows 20 of these at a
+  goldens and MLIR, parity gates, corpus parity, native tools, tier-2 and
+  the Windows smoke. The free plan allows 20 of these at a
   time for the whole repository.
 - **flow-vps-1 and flow-vps-2**, self-hosted, labels `self-hosted`, `linux`,
   `x64` and `flow-vps`. The light jobs: Detect changes, the checks job (Doc
   links), the small report jobs that carry required check names, Doc
-  examples, Smoke and CI.
+  examples, Smoke and CI, and Language tests (with Runtime tests), which
+  measured faster here: about 50 s against 80 s on ubuntu-latest. The long
+  jobs stay hosted so they never hold up the two VPS runners that every run
+  needs for Detect changes and CI.
 
 ## Which events use the VPS
 

@@ -70,14 +70,18 @@ permissions:
 # on a green run.
 #
 # Runners. The light jobs (Detect changes, the checks job and the small
-# report jobs, doc examples, smoke and CI) run on two self-hosted runners,
-# flow-vps-1 and flow-vps-2 (labels self-hosted and flow-vps), to take load
-# off the hosted pool. The heavy jobs stay on ubuntu-latest, which has more
-# cores. Every routed job uses the `&flow-runner` anchor on `changes`, which
-# picks the VPS only for trusted events: a push to main, a merge queue
-# batch, and a pull request from a branch of this repository. A pull
-# request from a fork, and any other event, runs on ubuntu-latest, so
-# outside code never reaches the VPS.
+# report jobs, Doc examples, Smoke and CI) and Language tests run on two
+# self-hosted runners, flow-vps-1 and flow-vps-2 (labels self-hosted and
+# flow-vps), to take load off the hosted pool. Language tests is there
+# because it measured faster on the VPS (about 50 s against 80 s). The long
+# jobs stay on ubuntu-latest, where they do not hold up the two VPS runners
+# that every run needs for Detect changes and CI.
+#
+# Every routed job uses the `&flow-runner` anchor on `changes`, which picks
+# the VPS only for trusted events: a push to main, a merge queue batch, and
+# a pull request from a branch of this repository. A pull request from a
+# fork, and any other event, runs on ubuntu-latest, so outside code never
+# reaches the VPS.
 #
 # If the VPS runners are down, routed jobs wait in the queue for them.
 # Set the repository variable FLOW_VPS_RUNNERS to `off` to send every job
@@ -800,7 +804,7 @@ jobs:
   # `Runtime tests` job below.
   lang-tests:
     name: Language tests
-    runs-on: ubuntu-latest
+    runs-on: *flow-runner
     timeout-minutes: 45
     needs: changes
     if: |
