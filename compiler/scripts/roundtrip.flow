@@ -400,7 +400,7 @@ function main() -> i32 {
     hdrs(hdr, "sem_cheader")
     compile_module(host, "sem_model", "token ast lexer sem_util sem_types")
     hdrs(hdr, "sem_model")
-    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary region")
+    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary region type_id")
     hdrs(hdr, "sem_check")
 
     compile_module(host, "pipeline_fusion", "ast")

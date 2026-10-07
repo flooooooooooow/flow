@@ -1,0 +1,7 @@
+# expect: persistent static 'names' must hold a TransportSafe value, but its element type is `string`, which refers to process memory and does not survive a restart
+@lifetime(persistent)
+let mut names: [string; 2] = ["", ""]
+
+function main() -> i32 {
+    return 0
+}

@@ -58,9 +58,11 @@ import .sem_types {
 }
 import .rt_summary {
     FLOWC_RT_UNKNOWN,
-    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_APPLICATION, FLOWC_RT_DOM_NONE,
+    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_APPLICATION,
+    FLOWC_RT_DOM_PERSISTENT, FLOWC_RT_DOM_NONE,
     flowc_rt_forbidden, flowc_rt_name_bits
 }
+import .type_id { flowc_type_transport_blocker }
 import .region {
     flowc_region_check_on, flowc_region_call_unproven, flowc_region_call_why,
     flowc_region_fn_of_node, RI_WHY_SAME, RI_WHY_UNKNOWN
@@ -4588,6 +4590,26 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
                 sem_err(c, "Attribute '@" + aname + "' is not allowed on module static '" + name + "'; only '@lifetime(...)' is")
             }
             i = i + 1
+        }
+    }
+    # #1421: persistent outlives the process, so what it holds must be
+    # TransportSafe (no pointer, span, string or other reference into
+    # process memory). Checking the declared type covers every store.
+    if sem_static_domain(c, name) == FLOWC_RT_DOM_PERSISTENT {
+        let decl_ty: i32 = sem_na(c, node)
+        let blocker: i32 = flowc_type_transport_blocker(c.ar, c.src, decl_ty)
+        if blocker >= 0 {
+            let mut what: string = "its type"
+            let mut ty_node: i32 = blocker
+            if blocker != decl_ty {
+                what = "its element type"
+            }
+            if sem_nk(c, blocker) == AST_FIELD {
+                what = "field '" + sem_nname(c, blocker) + "'"
+                ty_node = sem_na(c, blocker)
+            }
+            let ty_text: string = sem_s_strip(sem_s_span(c.src, c.ar.nodes[ty_node].start, c.ar.nodes[ty_node].end))
+            sem_err(c, "persistent static '" + name + "' must hold a TransportSafe value, but " + what + " is `" + ty_text + "`, which refers to process memory and does not survive a restart")
         }
     }
     let pt: i32 = sem_pt_of_ast(c, sem_na(c, node))

@@ -39,7 +39,19 @@ Parking a request-local pointer in a session or application static is LD1.
 Storage that is intended to outlive this process run: a file-backed map, a
 database handle, a durable counter. It is the longest domain, so:
 
-- a persistent static may not hold an `application` (or shorter) reference
+- a persistent static must be TransportSafe (#1421): fixed-width scalars
+  and fixed arrays of them. A pointer, span, string or function value
+  refers to process memory and is meaningless after a restart, so the
+  declaration is rejected with the field or element type that carries it:
+
+  ```text
+  error: persistent static 'held' must hold a TransportSafe value, but its
+  type is `ptr<i32>`, which refers to process memory and does not survive a restart
+  ```
+
+  Since no reference can be stored there, a persistent static never holds
+  an `application` (or shorter) reference. A value read back keeps its
+  declared type.
 - an `@lifetime(application)` function may not call a persistent function
 - unannotated `main` may call persistent setup, same as it may call
   application setup
@@ -72,6 +84,7 @@ Same-rank calls and stores are allowed. `remember` writing `hits` is fine.
 
 Accepted program: `tests/lang/test_lifetime_request_persistent.flow`.
 
-Rejected programs: `compiler/fixtures/typecheck_rules/domain_request_*.flow`
-and `domain_application_call_persistent.flow` /
-`domain_application_escape_persistent.flow`.
+Rejected programs: `compiler/fixtures/typecheck_rules/domain_request_*.flow`,
+`domain_application_call_persistent.flow`, and
+`domain_persistent_pointer_static.flow` /
+`domain_persistent_string_array.flow` (TransportSafe).

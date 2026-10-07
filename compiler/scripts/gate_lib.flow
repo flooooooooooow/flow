@@ -375,7 +375,7 @@ export function self_emit_plan() -> ptr<ProcStrs> {
     sl_push(p, "H sem_cheader")
     sl_push(p, "E sem_model token ast lexer sem_util sem_types")
     sl_push(p, "H sem_model")
-    sl_push(p, "E sem_check token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary region")
+    sl_push(p, "E sem_check token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary region type_id")
     sl_push(p, "H sem_check")
     sl_push(p, "E pipeline_fusion ast")
     sl_push(p, "H pipeline_fusion")
