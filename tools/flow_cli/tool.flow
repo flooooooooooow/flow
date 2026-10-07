@@ -206,7 +206,10 @@ function tool_flowc() -> string {
     if s_len(fb) > 0 and is_exec(fb) {
         return fb
     }
-    let dir: string = root() + "/build/flow-tools"
+    let dir: string = cache_dir("flow-tools")
+    if s_len(dir) == 0 {
+        return ""
+    }
     let flowc: string = dir + "/flowc"
     let boot_c: string = root() + "/compiler/bootstrap/flowc_stage_a.c"
     if is_exec(flowc) and not newer(boot_c, flowc) {
@@ -259,7 +262,10 @@ export function tool_build(spec: string) -> string {
     if s_len(flowc) == 0 {
         return ""
     }
-    let dir: string = root() + "/build/flow-tools"
+    let dir: string = cache_dir("flow-tools")
+    if s_len(dir) == 0 {
+        return ""
+    }
     let bin: string = dir + "/" + t.name
     # Rebuilt when the bootstrap flowc, the program or any module it imports
     # (followed through every import, as flowc's bundle does) changed.

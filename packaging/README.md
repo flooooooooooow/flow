@@ -26,6 +26,8 @@ nix build ./packaging/nix#flow
 ./result/bin/flow version
 ```
 
+The root `flake.nix` builds the same package (`nix build .#flow`, or `nix run github:flooooooooooow/flow -- version`). Both flakes call `packaging/nix/default.nix`. The package builds the bootstrap compiler and the `flow` command at build time. At run time the store copy is read-only, so compiled programs go to `$FLOW_BUILD_ROOT` (default `~/.cache/flow/build`) and tool binaries and the runtime archive go to `~/.cache/flow`. The `Nix package` workflow builds both flakes and runs a program on Linux and macOS.
+
 This is a repository-local flake specification. It is not a claim that Flow has been accepted into nixpkgs.
 
 ### Debian / Ubuntu
