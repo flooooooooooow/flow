@@ -41,6 +41,11 @@ records `published: false`.
 ./flow tool qualify_release --dry-run --out build/qualify
 ```
 
+`VERSION` is read from the commit that `--rev` names, so the archive and its
+label come from the same commit. `--version` is only a check: it must equal
+that `VERSION`. Without `--artifacts-only`, the gates run on the checkout, so
+`--rev` must resolve to `HEAD`.
+
 `--dry-run` is implied. The default `--mode local` path:
 
 1. Runs `./flow tool sync_version --check` and `./flow tool changelog_check`.
