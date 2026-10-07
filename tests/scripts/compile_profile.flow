@@ -111,6 +111,18 @@ function check_disabled_value(host: string, val: string) -> i32 {
     return T_PASS
 }
 
+# The shipped compiler's pre-main constructor reads the clock only when
+# profiling is on (#735). The constructor cannot be observed from outside,
+# so check the C that the checked-in bootstrap compiles.
+function check_ctor_clock_gated() -> i32 {
+    let c: string = read_text(t_root() + "/compiler/bootstrap/flowc_stage_a.c")
+    let want: string = "static void flowc_prof_ctor(void) {\n  if (flowc_prof_mode_c() != 0) {\n    flowc_prof_process_start = flowc_prof_now_ns_c();"
+    if not s_contains(c, want) {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function check_explicitly_disabled() -> i32 {
     if t_need_cc() != T_PASS { return T_SKIP }
     let host: string = host_bin()
@@ -255,6 +267,8 @@ function main() -> i32 {
     t_end("off_by_default", check_off_by_default())
     t_start()
     t_end("explicitly_disabled", check_explicitly_disabled())
+    t_start()
+    t_end("ctor_clock_gated", check_ctor_clock_gated())
     t_start()
     t_end("compile_bench_phases", check_compile_bench())
     t_start()
