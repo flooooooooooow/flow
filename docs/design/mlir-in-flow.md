@@ -77,6 +77,10 @@ the fix that caused it.
   `array<T>(n)` zeroes its elements.
 * Intrinsics the C backend provides: `sizeof<T>()`, `alignof<T>()`,
   `type_family_id<T>()`, `type_schema_id<T>()`, `type_transport_safe<T>()`,
+  `type_schema_revision<T>()`, `type_member_count<T>()`, `type_member_table<T>()`,
+  `type_layout_native64<T>()`, `type_layout_wasm32<T>()`,
+  `type_sizeof_native64<T>()`, `type_sizeof_wasm32<T>()`,
+  `type_alignof_native64<T>()`, `type_alignof_wasm32<T>()`,
   `flow_panic`,
   `i32_to_f32`, `str` as the string type.
 * C interop: libc and `<math.h>` functions without a declaration are
