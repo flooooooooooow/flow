@@ -1026,7 +1026,10 @@ function rt_cache_key_valid(key: string) -> i32 {
     while i < 16 {
         let c: i32 = p[i] as i32
         let digit: i32 = rt_is_digit(c)
-        let lower_hex: i32 = (c >= 97 and c <= 102) as i32
+        let mut lower_hex: i32 = 0
+        if c >= 97 and c <= 102 {
+            lower_hex = 1
+        }
         if digit == 0 and lower_hex == 0 {
             return 0
         }
