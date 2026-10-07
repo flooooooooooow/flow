@@ -5091,7 +5091,14 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     if tensor_result == 1 {
         mlg_s(m, " %lhs, %rhs : f32")
     } else {
-        mlg_s(m, " %in, %out : f32")
+        # Memref lowering uses v0 as the destination/current output value
+        # and v1 as the explicit input. For non-commutative operations the
+        # semantic order is therefore %out OP %in, not %in OP %out.
+        if op == TOK_MINUS or op == TOK_SLASH {
+            mlg_s(m, " %out, %in : f32")
+        } else {
+            mlg_s(m, " %in, %out : f32")
+        }
     }
     mlg_nl(m)
     mlg_line(m)
