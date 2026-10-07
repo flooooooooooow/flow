@@ -196,6 +196,12 @@ export struct CgenBuf {
     len_hoist_span_start: i32,
     len_hoist_span_end: i32,
     len_hoist_id: i32,
+    # When a loop is `for i in 0 to N` with literal N, bounds_hi_val is N.
+    # We use this to elide bounds checks on static arrays when N <= size.
+    bounds_hi_val: i32,
+    # The body of that loop. An array indexed under bounds_hi_val must not be
+    # rebound, shadowed or addressed in it (#729, the #1414 rule).
+    bounds_hi_body: i32,
     # The AST_PROGRAM of the module being emitted, so a name can resolve to a
     # module static (a top-level `let`). AST_NONE in scratch buffers.
     root: i32,
@@ -205,7 +211,7 @@ export struct CgenBuf {
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, root: AST_NONE, na_clone: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -6398,6 +6404,21 @@ function flowc_cgen_is_proven_span_index(w: ptr<CgenBuf>, arena: AstArena, src: 
             }
         }
     }
+    # `for i in 0 to N` with literal N indexes `array<T, M>` in range when
+    # N <= M (#729). The array must not be rebound, shadowed or addressed in
+    # the loop body, the same rule the span path applies.
+    if w[0].bounds_loop_start >= 0 and w[0].bounds_hi_val >= 0 {
+        if arena.nodes[idx].kind == AST_IDENT {
+            if flowc_cgen_span_eq(src, arena.nodes[idx].name_start, arena.nodes[idx].name_end, w[0].bounds_loop_start, w[0].bounds_loop_end) == 1 {
+                if flowc_cgen_name_rebound_in_node(arena, src, w[0].bounds_hi_body, arena.nodes[base].name_start, arena.nodes[base].name_end) == 0 {
+                    let csize: i32 = flowc_cgen_checked_array_size(w, arena, src, base)
+                    if csize > 0 and w[0].bounds_hi_val <= csize {
+                        return 1
+                    }
+                }
+            }
+        }
+    }
     # A literal index on a static-extent span is in range when 0 <= i < N.
     let ext: i32 = flowc_cgen_span_static_extent(w, arena, src, base)
     if ext > 0 and arena.nodes[idx].kind == AST_INT {
@@ -8811,9 +8832,31 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     let saved_loop_end: i32 = w[0].bounds_loop_end
     let saved_span_start: i32 = w[0].bounds_span_start
     let saved_span_end: i32 = w[0].bounds_span_end
+    let saved_hi_val: i32 = w[0].bounds_hi_val
     let saved_len_start: i32 = w[0].len_hoist_span_start
     let saved_len_end: i32 = w[0].len_hoist_span_end
     let saved_len_id: i32 = w[0].len_hoist_id
+
+    let lo: i32 = arena.nodes[id].a
+    let hi: i32 = arena.nodes[id].b
+    let mut lo_ok: i32 = 0
+    if lo != AST_NONE and arena.nodes[lo].kind == AST_INT and arena.nodes[lo].ival >= 0 {
+        lo_ok = 1
+    }
+    # A literal `0 to N` bound proves `0 <= i < N` only while the body leaves
+    # the induction name alone: no assignment, shadowing or `&i` (#729).
+    let saved_hi_body: i32 = w[0].bounds_hi_body
+    let body: i32 = arena.nodes[id].c
+    if dir == 1 and lo_ok == 1 and hi != AST_NONE and arena.nodes[hi].kind == AST_INT and flowc_cgen_name_rebound_in_node(arena, src, body, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 {
+        w[0].bounds_hi_val = arena.nodes[hi].ival
+        w[0].bounds_hi_body = body
+        w[0].bounds_loop_start = arena.nodes[id].name_start
+        w[0].bounds_loop_end = arena.nodes[id].name_end
+    } else {
+        w[0].bounds_hi_val = -1
+        w[0].bounds_hi_body = AST_NONE
+    }
+
     let proven_span: i32 = flowc_cgen_bounds_span_base(w, arena, src, id, dir)
     if proven_span != AST_NONE {
         w[0].bounds_loop_start = arena.nodes[id].name_start
@@ -8821,8 +8864,10 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
         w[0].bounds_span_start = arena.nodes[proven_span].name_start
         w[0].bounds_span_end = arena.nodes[proven_span].name_end
     } else {
-        w[0].bounds_loop_start = -1
-        w[0].bounds_loop_end = -1
+        if w[0].bounds_hi_val < 0 {
+            w[0].bounds_loop_start = -1
+            w[0].bounds_loop_end = -1
+        }
         w[0].bounds_span_start = -1
         w[0].bounds_span_end = -1
     }
@@ -8878,6 +8923,8 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     w[0].bounds_loop_end = saved_loop_end
     w[0].bounds_span_start = saved_span_start
     w[0].bounds_span_end = saved_span_end
+    w[0].bounds_hi_val = saved_hi_val
+    w[0].bounds_hi_body = saved_hi_body
     w[0].len_hoist_span_start = saved_len_start
     w[0].len_hoist_span_end = saved_len_end
     w[0].len_hoist_id = saved_len_id
