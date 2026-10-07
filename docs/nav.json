@@ -729,6 +729,10 @@
           "path": "library/memory.md"
         },
         {
+          "label": "Runtime memory profile",
+          "path": "library/memory-profile.md"
+        },
+        {
           "label": "GPU Memory",
           "path": "library/gpu-memory.md"
         },

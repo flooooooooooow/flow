@@ -1196,6 +1196,9 @@ function test_cgen_emit() -> i32 {
     if flowc_bytes_contains(bp, n, "if (") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "flow_mem_profile_init") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "FLOW_MEM_PROFILE") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "flow_mem_note_stack") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "FLOW_MEM_NSITE") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "live_map_overflow") == 0 { ok = 0 }
 
     if n > 0 and n < cap {
         bp[n] = 0

@@ -4,7 +4,16 @@
 + flow_mem_malloc
 + flow_mem_free
 + flow_mem_note_temp
-+ (deferred, needs #669)
++ flow_mem_note_stack
++ flow_mem_note_arena
++ FLOW_MEM_NSITE
++ FLOW_MEM_MAP
++ flow_mem_hash
++ live_map_overflow
++ site_concat
++ promotion_bytes
++ flow_mem_note_copy_site
 + __flowc_str_concat
 - (malloc(32)
+- (deferred, needs #669)
 exit 0

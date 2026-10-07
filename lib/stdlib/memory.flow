@@ -8,6 +8,8 @@ extern {
     function calloc(nmemb: i64, size: i64) -> ptr<void>
     function realloc(p: ptr<void>, size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
+    # Compiler prelude hook (#740). No-op unless FLOW_MEM_PROFILE is set.
+    function flow_mem_note_arena(n: i64) -> void
 }
 
 # ── Sizes ──────────────────────────────────────────────────────────
@@ -150,6 +152,7 @@ export function arena_alloc(arena: ptr<Arena>, size: i64) -> ptr<void> {
     }
     let out: ptr<void> = a.buffer + a.offset
     arena[0].offset = a.offset + aligned
+    flow_mem_note_arena(aligned)
     return out
 }
 
@@ -233,6 +236,7 @@ export function frame_alloc(f: ptr<FrameArena>, size: i64) -> ptr<void> {
     }
     let out: ptr<void> = base + off
     f[0].arena.offset = off + aligned
+    flow_mem_note_arena(aligned)
     return out
 }
 
