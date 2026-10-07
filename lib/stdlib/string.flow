@@ -59,8 +59,10 @@ export function str_is_ascii_digit(c: u8) -> bool {
     return c >= 48 and c <= 57
 }
 
-# Exclusive end of the line starting at `start` (index of '\n', or length).
-# CRLF counts as one terminator; `start` past the end yields the length.
+# Exclusive end of the line starting at `start`: the index of the first LF or
+# CR, or the length, without allocating.
+# `start` past the end yields the length. str_line_next skips CRLF as one
+# terminator.
 export function str_line_end(s: string, start: i32) -> i32 {
     let n: i32 = strlen(s) as i32
     if start < 0 or start >= n {

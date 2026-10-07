@@ -2684,7 +2684,7 @@ FLOW String Utilities  Linear scans stay on the caller's buffer: parse, format a
 |------|-----------|------|
 | `str_is_ascii_ws` | `(c: u8) -> bool` | ASCII whitespace that Python's int() accepts: space, tab, LF, VT, FF, CR. |
 | `str_is_ascii_digit` | `(c: u8) -> bool` | - |
-| `str_line_end` | `(s: string, start: i32) -> i32` | Exclusive end of the line starting at `start` (index of '\n', or length). CRLF counts as one terminator; `start` past the end yields the length. |
+| `str_line_end` | `(s: string, start: i32) -> i32` | Exclusive end of the line starting at `start`: the index of the first LF or CR, or the length, without allocating. `start` past the end yields the length. str_line_next skips CRLF as one terminator. |
 | `str_line_next` | `(s: string, end: i32) -> i32` | Start of the next line after a line that ended at `end`, or -1 if done. LF or CR advances one byte; CRLF advances two bytes. |
 | `str_parse_i64_at` | `(s: string, start: i32) -> ParseI64` | Parse one signed decimal token starting at `start`. Leading ASCII whitespace is skipped, matching Python int(). The token is an optional sign and one or more digits. Overflow of i64 is an error (ok = false); the value never wraps. Trailing junk is left in `end` for the caller to |
 | `str_parse_i64` | `(s: string) -> ParseI64` | Parse `s` as a whole, like Python int() on ASCII: leading and trailing whitespace allowed, anything else is an error. |
