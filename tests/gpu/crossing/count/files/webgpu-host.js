@@ -4,6 +4,9 @@ export { runFlowKernelChain } from "./gpu-kernel-chain.mjs";
 // Validated, exported Flow graph -> WebGPU compute/render submission.
 export { runFlowWebGpuGraph } from "./gpu-graph-host.mjs";
 
+// Typed textured geometry: real indexed/instanced WebGPU draw and readback.
+export { renderFlowSampledDraw } from "./gpu-sampled-draw.mjs";
+
 // Generic WebGPU host for Flow GPU kernels and fullscreen FSL shaders.
 //
 // Compute kernels use the reflection emitted by tools/gpu/main.flow.

@@ -1,0 +1,150 @@
+# Portable P1 vertex/fragment stage descriptors and code generation (#811).
+# The stage interface is checked as Flow data before source is emitted.
+# A real Metal/WebGPU pipeline host still has to bind buffers, textures,
+# samplers, depth targets, and command encoders.
+
+import "stdlib/gpu_resource_types.flow"
+
+export const GPU_TOPOLOGY_TRIANGLES: i32 = 1
+export const GPU_TOPOLOGY_LINES: i32 = 2
+export const GPU_INDEX_NONE: i32 = 0
+export const GPU_INDEX_U16: i32 = 2
+export const GPU_INDEX_U32: i32 = 4
+
+export struct GpuDrawDesc {
+    vertex_count: i32,
+    index_count: i32,
+    instance_count: i32,
+    first_vertex: i32,
+    first_instance: i32,
+    index_format: i32,
+    index_bytes: i64,
+    topology: i32
+}
+
+export struct GpuRenderTargets {
+    color: GpuTextureDesc,
+    depth: GpuTextureDesc,
+    has_depth: bool
+}
+
+export struct GpuSampledPipeline {
+    texture: GpuTextureDesc,
+    sampler: GpuSamplerDesc,
+    targets: GpuRenderTargets,
+    varying: GpuVarying
+}
+
+# GPU index addressability and instancing are validated before draw.
+export function gpu_draw_valid(d: GpuDrawDesc) -> bool {
+    if d.vertex_count < 1 or d.instance_count < 1 or
+       d.first_vertex < 0 or d.first_instance < 0 {
+        return false
+    }
+    if d.vertex_count > 2147483647 - d.first_vertex or
+       d.instance_count > 2147483647 - d.first_instance {
+        return false
+    }
+    if d.topology != GPU_TOPOLOGY_TRIANGLES and d.topology != GPU_TOPOLOGY_LINES {
+        return false
+    }
+    if d.index_format == GPU_INDEX_NONE {
+        if d.index_count != 0 or d.index_bytes != 0 {
+            return false
+        }
+        return true
+    }
+    if d.index_format != GPU_INDEX_U16 and d.index_format != GPU_INDEX_U32 {
+        return false
+    }
+    if d.index_count <= 0 or d.index_bytes < 0 { return false }
+    if (d.index_count as i64) > d.index_bytes / (d.index_format as i64) {
+        return false
+    }
+    return true
+}
+
+export function gpu_targets_valid(rt: GpuRenderTargets) -> bool {
+    if not gpu_texture_valid(rt.color) or
+       (rt.color.usage & GPU_USE_COLOR_ATTACHMENT) == 0 or
+       rt.color.format == GPU_FORMAT_DEPTH32F {
+        return false
+    }
+    if rt.has_depth {
+        if not gpu_texture_valid(rt.depth) or
+           rt.depth.format != GPU_FORMAT_DEPTH32F or
+           (rt.depth.usage & GPU_USE_DEPTH_ATTACHMENT) == 0 {
+            return false
+        }
+        if rt.depth.width != rt.color.width or
+           rt.depth.height != rt.color.height or
+           rt.depth.samples != rt.color.samples {
+            return false
+        }
+    }
+    return true
+}
+
+# Texture sampling is forbidden from multisampled / writable-only image
+# bindings. A cube lookup requires vec3<f32>; a 2D sample uses vec2<f32>.
+export function gpu_sampled_pipeline_valid(p: GpuSampledPipeline) -> bool {
+    if not gpu_texture_valid(p.texture) or
+       (p.texture.usage & GPU_USE_SAMPLED) == 0 or
+       p.texture.samples != 1 or p.texture.format == GPU_FORMAT_DEPTH32F or
+       not gpu_sampler_valid(p.sampler) or not gpu_targets_valid(p.targets) {
+        return false
+    }
+    let mut components: i32 = 2
+    if p.texture.dimension == GPU_TEX_CUBE { components = 3 }
+    if not gpu_varying_valid(p.varying) or
+       p.varying.location != 0 or
+       p.varying.scalar != GPU_SCALAR_F32 or
+       p.varying.components != components or
+       p.varying.interpolation != GPU_INTERPOLATE_PERSPECTIVE {
+        return false
+    }
+    return true
+}
+
+# These emit a real position-fetch and texture-sampling shader pair; they
+# do not emit empty stage stubs. Source is independent of draw/instance
+# counts. Indexing and MSAA state are enforced by the future pipeline host.
+export function gpu_emit_wgsl_sampled(p: GpuSampledPipeline) -> string {
+    if not gpu_sampled_pipeline_valid(p) { return "" }
+    let mut uv_type: string = "vec2<f32>"
+    let mut tex_type: string = "texture_2d<f32>"
+    let mut uv_expr: string = "position.xy * 0.5 + vec2<f32>(0.5)"
+    if p.texture.dimension == GPU_TEX_CUBE {
+        uv_type = "vec3<f32>"
+        tex_type = "texture_cube<f32>"
+        uv_expr = "normalize(position.xyz)"
+    }
+    let mut s: string = "@group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;\n"
+    s = s + "@group(0) @binding(1) var image: " + tex_type + ";\n"
+    s = s + "@group(0) @binding(2) var tex_sampler: sampler;\n"
+    s = s + "struct VertexOut { @builtin(position) position: vec4<f32>, @location(0) uv: " + uv_type + ", };\n"
+    s = s + "@vertex fn scene_vs(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) instance_id: u32) -> VertexOut {\n"
+    s = s + " let position = positions[vertex_id]; var o: VertexOut; o.position = position; o.uv = " + uv_expr + "; return o;\n}\n"
+    s = s + "@fragment fn scene_fs(input: VertexOut) -> @location(0) vec4<f32> {\n"
+    s = s + " return textureSample(image, tex_sampler, input.uv);\n}\n"
+    return s
+}
+
+export function gpu_emit_metal_sampled(p: GpuSampledPipeline) -> string {
+    if not gpu_sampled_pipeline_valid(p) { return "" }
+    let mut uv_type: string = "float2"
+    let mut tex_type: string = "texture2d<float>"
+    let mut uv_expr: string = "position.xy * 0.5f + float2(0.5f)"
+    if p.texture.dimension == GPU_TEX_CUBE {
+        uv_type = "float3"
+        tex_type = "texturecube<float>"
+        uv_expr = "normalize(position.xyz)"
+    }
+    let mut s: string = "#include <metal_stdlib>\nusing namespace metal;\n"
+    s = s + "struct VSOut { float4 position [[position]]; " + uv_type + " uv [[user(locn0)]]; };\n"
+    s = s + "vertex VSOut scene_vs(const device float4* positions [[buffer(0)]], uint vertex_id [[vertex_id]], uint instance_id [[instance_id]]) {\n"
+    s = s + " float4 position = positions[vertex_id]; VSOut o; o.position = position; o.uv = " + uv_expr + "; return o;\n}\n"
+    s = s + "fragment float4 scene_fs(VSOut input [[stage_in]], " + tex_type + " image [[texture(0)]], sampler tex_sampler [[sampler(0)]]) {\n"
+    s = s + " return image.sample(tex_sampler, input.uv);\n}\n"
+    return s
+}

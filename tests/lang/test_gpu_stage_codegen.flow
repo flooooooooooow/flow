@@ -1,0 +1,121 @@
+# P1 typed geometry and sampled stage contracts (#811).
+import "stdlib/gpu_stage_codegen.flow"
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+function has(src: string, word: string) -> bool {
+    let n: i32 = strlen(src) as i32
+    let m: i32 = strlen(word) as i32
+    let a: ptr<u8> = src as ptr<u8>
+    let b: ptr<u8> = word as ptr<u8>
+    if m == 0 { return true }
+    if m > n { return false }
+    let mut i: i32 = 0
+    while i <= n - m {
+        let mut j: i32 = 0
+        while j < m and a[i + j] == b[j] {
+            j = j + 1
+        }
+        if j == m { return true }
+        i = i + 1
+    }
+    return false
+}
+
+function main() -> i32 {
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 128, height: 128, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 128, height: 128, layers: 1, samples: 4,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let targets: GpuRenderTargets = GpuRenderTargets {
+        color: color, depth: depth, has_depth: true
+    }
+    if not gpu_targets_valid(targets) { return 1 }
+    let bad_depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 128, height: 128, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let bad_targets: GpuRenderTargets = GpuRenderTargets {
+        color: color, depth: bad_depth, has_depth: true
+    }
+    if gpu_targets_valid(bad_targets) { return 2 }
+
+    let sampler: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_LINEAR,
+        address_u: GPU_ADDRESS_REPEAT, address_v: GPU_ADDRESS_CLAMP,
+        address_w: GPU_ADDRESS_CLAMP
+    }
+    let sampled: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 32, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let vary: GpuVarying = GpuVarying {
+        location: 0, scalar: GPU_SCALAR_F32,
+        components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    let p: GpuSampledPipeline = GpuSampledPipeline {
+        texture: sampled, sampler: sampler, targets: targets, varying: vary
+    }
+    if not gpu_sampled_pipeline_valid(p) { return 3 }
+    let w: string = gpu_emit_wgsl_sampled(p)
+    let m: string = gpu_emit_metal_sampled(p)
+    if not has(w, "@vertex fn scene_vs") { return 4 }
+    if not has(w, "@fragment fn scene_fs") { return 5 }
+    if not has(w, "textureSample(") { return 6 }
+    if not has(m, "vertex VSOut scene_vs") { return 7 }
+    if not has(m, "fragment float4 scene_fs") { return 8 }
+    if not has(m, ".sample(") { return 9 }
+
+    let cube: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA16F,
+        width: 32, height: 32, layers: 6, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let cv: GpuVarying = GpuVarying {
+        location: 0, scalar: GPU_SCALAR_F32,
+        components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    let cp: GpuSampledPipeline = GpuSampledPipeline {
+        texture: cube, sampler: sampler, targets: targets, varying: cv
+    }
+    if not gpu_sampled_pipeline_valid(cp) { return 10 }
+    if not has(gpu_emit_wgsl_sampled(cp), "texture_cube<f32>") { return 11 }
+    if not has(gpu_emit_metal_sampled(cp), "texturecube<float>") { return 12 }
+
+    let bad_p: GpuSampledPipeline = GpuSampledPipeline {
+        texture: cube, sampler: sampler, targets: targets, varying: vary
+    }
+    if gpu_sampled_pipeline_valid(bad_p) { return 13 }
+    if gpu_emit_metal_sampled(bad_p) != "" { return 14 }
+
+    let d: GpuDrawDesc = GpuDrawDesc {
+        vertex_count: 3, index_count: 6, instance_count: 10,
+        first_vertex: 0, first_instance: 0, index_format: GPU_INDEX_U16,
+        index_bytes: 12, topology: GPU_TOPOLOGY_TRIANGLES
+    }
+    if not gpu_draw_valid(d) { return 15 }
+    let bad_draw: GpuDrawDesc = GpuDrawDesc {
+        vertex_count: 3, index_count: 6, instance_count: 10,
+        first_vertex: 0, first_instance: 0, index_format: GPU_INDEX_U16,
+        index_bytes: 10, topology: GPU_TOPOLOGY_TRIANGLES
+    }
+    if gpu_draw_valid(bad_draw) { return 16 }
+    let overflow: GpuDrawDesc = GpuDrawDesc {
+        vertex_count: 16, index_count: 0, instance_count: 2,
+        first_vertex: 2147483640, first_instance: 0,
+        index_format: GPU_INDEX_NONE, index_bytes: 0,
+        topology: GPU_TOPOLOGY_TRIANGLES
+    }
+    if gpu_draw_valid(overflow) { return 17 }
+    return 0
+}

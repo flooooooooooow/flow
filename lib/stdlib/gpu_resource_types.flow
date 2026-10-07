@@ -1,0 +1,211 @@
+# Resource and stage-interface contracts for the cross-backend GPU IR (#811).
+# These are backend-independent descriptor checks. Shader source comes from
+# gpu_stage_codegen. Callers validate before constructing render/compute passes.
+
+export const GPU_TEX_2D: i32 = 1
+export const GPU_TEX_CUBE: i32 = 2
+
+export const GPU_FORMAT_RGBA8: i32 = 1
+export const GPU_FORMAT_RGBA16F: i32 = 2
+export const GPU_FORMAT_DEPTH32F: i32 = 3
+
+export const GPU_USE_SAMPLED: i32 = 1
+export const GPU_USE_STORAGE: i32 = 2
+export const GPU_USE_COLOR_ATTACHMENT: i32 = 4
+export const GPU_USE_DEPTH_ATTACHMENT: i32 = 8
+
+export const GPU_FILTER_NEAREST: i32 = 1
+export const GPU_FILTER_LINEAR: i32 = 2
+export const GPU_ADDRESS_CLAMP: i32 = 1
+export const GPU_ADDRESS_REPEAT: i32 = 2
+
+export const GPU_SCALAR_F32: i32 = 1
+export const GPU_SCALAR_I32: i32 = 2
+export const GPU_SCALAR_U32: i32 = 3
+
+export const GPU_INTERPOLATE_PERSPECTIVE: i32 = 1
+export const GPU_INTERPOLATE_FLAT: i32 = 2
+
+export struct GpuTextureDesc {
+    dimension: i32,
+    format: i32,
+    width: i32,
+    height: i32,
+    layers: i32,
+    samples: i32,
+    usage: i32
+}
+
+export struct GpuSamplerDesc {
+    min_filter: i32,
+    mag_filter: i32,
+    address_u: i32,
+    address_v: i32,
+    address_w: i32
+}
+
+export struct GpuVarying {
+    location: i32,
+    scalar: i32,
+    components: i32,
+    interpolation: i32
+}
+
+export struct GpuVertexAttribute {
+    location: i32,
+    offset: i32,
+    stride: i32,
+    scalar_bytes: i32,
+    components: i32
+}
+
+export function gpu_texture_bytes_per_pixel(format: i32) -> i32 {
+    if format == GPU_FORMAT_RGBA8 { return 4 }
+    if format == GPU_FORMAT_RGBA16F { return 8 }
+    if format == GPU_FORMAT_DEPTH32F { return 4 }
+    return 0
+}
+
+export function gpu_texture_valid(d: GpuTextureDesc) -> bool {
+    if d.dimension != GPU_TEX_2D and d.dimension != GPU_TEX_CUBE { return false }
+    if d.width <= 0 or d.height <= 0 or d.width > 16384 or d.height > 16384 {
+        return false
+    }
+    if d.layers <= 0 or d.layers > 2048 { return false }
+    if d.samples != 1 and d.samples != 2 and d.samples != 4 and d.samples != 8 {
+        return false
+    }
+    if gpu_texture_bytes_per_pixel(d.format) == 0 { return false }
+    if d.usage <= 0 or (d.usage & (0 - 16)) != 0 { return false }
+
+    # A cube view consists of square faces in groups of six. MSAA and cube
+    # sampling cannot alias an ordinary 2D render/storage texture binding.
+    if d.dimension == GPU_TEX_CUBE {
+        if d.width != d.height or d.layers % 6 != 0 or d.samples != 1 {
+            return false
+        }
+    }
+    if d.samples > 1 {
+        if d.dimension != GPU_TEX_2D or d.layers != 1 or (d.usage & GPU_USE_STORAGE) != 0 {
+            return false
+        }
+    }
+
+    if d.format == GPU_FORMAT_DEPTH32F {
+        if (d.usage & GPU_USE_DEPTH_ATTACHMENT) == 0 and
+           (d.usage & GPU_USE_SAMPLED) == 0 {
+            return false
+        }
+        if (d.usage & GPU_USE_COLOR_ATTACHMENT) != 0 or
+           (d.usage & GPU_USE_STORAGE) != 0 {
+            return false
+        }
+    } else {
+        if (d.usage & GPU_USE_DEPTH_ATTACHMENT) != 0 {
+            return false
+        }
+    }
+    # Multisampled resources must have an attachment usage and are not
+    # sampled as ordinary non-multisample textures.
+    if d.samples > 1 and (d.usage & (GPU_USE_COLOR_ATTACHMENT | GPU_USE_DEPTH_ATTACHMENT)) == 0 {
+        return false
+    }
+    return true
+}
+
+export function gpu_texture_total_bytes(d: GpuTextureDesc) -> i64 {
+    if not gpu_texture_valid(d) { return 0 }
+    let pixels: i64 = (d.width as i64) * (d.height as i64)
+    return pixels * (d.layers as i64) * (d.samples as i64) *
+        (gpu_texture_bytes_per_pixel(d.format) as i64)
+}
+
+function gpu_filter_valid(f: i32) -> bool {
+    return f == GPU_FILTER_NEAREST or f == GPU_FILTER_LINEAR
+}
+
+function gpu_address_valid(a: i32) -> bool {
+    return a == GPU_ADDRESS_CLAMP or a == GPU_ADDRESS_REPEAT
+}
+
+export function gpu_sampler_valid(d: GpuSamplerDesc) -> bool {
+    return gpu_filter_valid(d.min_filter) and gpu_filter_valid(d.mag_filter) and
+        gpu_address_valid(d.address_u) and gpu_address_valid(d.address_v) and
+        gpu_address_valid(d.address_w)
+}
+
+export function gpu_varying_valid(v: GpuVarying) -> bool {
+    if v.location < 0 or v.location > 31 or v.components <= 0 or v.components > 4 {
+        return false
+    }
+    if v.scalar != GPU_SCALAR_F32 and v.scalar != GPU_SCALAR_I32 and v.scalar != GPU_SCALAR_U32 {
+        return false
+    }
+    if v.interpolation != GPU_INTERPOLATE_PERSPECTIVE and
+       v.interpolation != GPU_INTERPOLATE_FLAT {
+        return false
+    }
+    # Integer varyings require flat interpolation in Metal and WGSL.
+    if v.scalar != GPU_SCALAR_F32 and v.interpolation != GPU_INTERPOLATE_FLAT {
+        return false
+    }
+    return true
+}
+
+# Every fragment input needs one precisely matching vertex output; extra
+# vertex outputs are legal. Duplicate locations are rejected on both sides.
+export function gpu_stage_links(vertex: ptr<GpuVarying>, nv: i32,
+                                fragment: ptr<GpuVarying>, nf: i32) -> bool {
+    if nv < 0 or nf < 0 or nv > 32 or nf > 32 { return false }
+    if (nv > 0 and vertex == null) or (nf > 0 and fragment == null) {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < nv {
+        let v: GpuVarying = vertex[i]
+        if not gpu_varying_valid(v) { return false }
+        let mut j: i32 = i + 1
+        while j < nv {
+            if vertex[j].location == v.location { return false }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < nf {
+        let input: GpuVarying = fragment[i]
+        if not gpu_varying_valid(input) { return false }
+        let mut found: bool = false
+        let mut j: i32 = 0
+        while j < nv {
+            let output: GpuVarying = vertex[j]
+            if output.location == input.location {
+                if output.scalar != input.scalar or
+                   output.components != input.components or
+                   output.interpolation != input.interpolation {
+                    return false
+                }
+                found = true
+            }
+            j = j + 1
+        }
+        if not found { return false }
+        j = i + 1
+        while j < nf {
+            if fragment[j].location == input.location { return false }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return true
+}
+
+export function gpu_vertex_attribute_valid(a: GpuVertexAttribute) -> bool {
+    if a.location < 0 or a.location > 31 or a.components < 1 or a.components > 4 {
+        return false
+    }
+    if a.scalar_bytes != 2 and a.scalar_bytes != 4 { return false }
+    if a.stride <= 0 or a.stride > 2048 or a.offset < 0 { return false }
+    let bytes: i32 = a.scalar_bytes * a.components
+    return bytes <= a.stride and a.offset <= a.stride - bytes
+}

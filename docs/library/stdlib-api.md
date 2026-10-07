@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**119** modules scanned.
+**121** modules scanned.
 
 ## Modules
 
@@ -1819,11 +1819,75 @@ First-class GPU / unified memory  CPU heap stays in stdlib/memory.flow.
 | `gpu_copy_device_to_device` | `(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32` | - |
 | `unified_allocate` | `(size: i64) -> GpuBuffer` | - |
 
+### `gpu_resource_types.flow`
+
+Resource and stage-interface contracts for the cross-backend GPU IR (#811). These are backend-independent descriptor checks. Shader source comes from gpu_stage_codegen. Callers validate before constructing render/compute passes.
+
+**Structs:** `GpuTextureDesc`, `GpuSamplerDesc`, `GpuVarying`, `GpuVertexAttribute`
+
+**Constants:**
+
+- `GPU_TEX_2D: i32`
+- `GPU_TEX_CUBE: i32`
+- `GPU_FORMAT_RGBA8: i32`
+- `GPU_FORMAT_RGBA16F: i32`
+- `GPU_FORMAT_DEPTH32F: i32`
+- `GPU_USE_SAMPLED: i32`
+- `GPU_USE_STORAGE: i32`
+- `GPU_USE_COLOR_ATTACHMENT: i32`
+- `GPU_USE_DEPTH_ATTACHMENT: i32`
+- `GPU_FILTER_NEAREST: i32`
+- `GPU_FILTER_LINEAR: i32`
+- `GPU_ADDRESS_CLAMP: i32`
+- `GPU_ADDRESS_REPEAT: i32`
+- `GPU_SCALAR_F32: i32`
+- `GPU_SCALAR_I32: i32`
+- `GPU_SCALAR_U32: i32`
+- `GPU_INTERPOLATE_PERSPECTIVE: i32`
+- `GPU_INTERPOLATE_FLAT: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_texture_bytes_per_pixel` | `(format: i32) -> i32` | - |
+| `gpu_texture_valid` | `(d: GpuTextureDesc) -> bool` | - |
+| `gpu_texture_total_bytes` | `(d: GpuTextureDesc) -> i64` | - |
+| `gpu_sampler_valid` | `(d: GpuSamplerDesc) -> bool` | - |
+| `gpu_varying_valid` | `(v: GpuVarying) -> bool` | - |
+| `gpu_stage_links` | `(vertex: ptr<GpuVarying>, nv: i32,
+                                fragment: ptr<GpuVarying>, nf: i32) -> bool` | Every fragment input needs one precisely matching vertex output; extra vertex outputs are legal. Duplicate locations are rejected on both sides. |
+| `gpu_vertex_attribute_valid` | `(a: GpuVertexAttribute) -> bool` | - |
+
 ### `gpu_sim.flow`
 
 GPU simulation layer (CPU-backed) to model DeviceContext/Queue/Buffer/Layouts. This is a compatibility + teaching layer to mirror Mojo-style APIs.
 
 *No `export` items found (internal / extern-only module).*
+
+### `gpu_stage_codegen.flow`
+
+Portable P1 vertex/fragment stage descriptors and code generation (#811). The stage interface is checked as Flow data before source is emitted. A real Metal/WebGPU pipeline host still has to bind buffers, textures,
+
+**Structs:** `GpuDrawDesc`, `GpuRenderTargets`, `GpuSampledPipeline`
+
+**Constants:**
+
+- `GPU_TOPOLOGY_TRIANGLES: i32`
+- `GPU_TOPOLOGY_LINES: i32`
+- `GPU_INDEX_NONE: i32`
+- `GPU_INDEX_U16: i32`
+- `GPU_INDEX_U32: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_draw_valid` | `(d: GpuDrawDesc) -> bool` | GPU index addressability and instancing are validated before draw. |
+| `gpu_targets_valid` | `(rt: GpuRenderTargets) -> bool` | - |
+| `gpu_sampled_pipeline_valid` | `(p: GpuSampledPipeline) -> bool` | Texture sampling is forbidden from multisampled / writable-only image bindings. A cube lookup requires vec3<f32>; a 2D sample uses vec2<f32>. |
+| `gpu_emit_wgsl_sampled` | `(p: GpuSampledPipeline) -> string` | These emit a real position-fetch and texture-sampling shader pair; they do not emit empty stage stubs. Source is independent of draw/instance counts. Indexing and MSAA state are enforced by the future pipeline host. |
+| `gpu_emit_metal_sampled` | `(p: GpuSampledPipeline) -> string` | - |
 
 ### `io.flow`
 

@@ -1,0 +1,100 @@
+# Pure descriptor checks for P1 typed GPU resources (#811). No GPU required.
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let rgba: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 16, height: 8, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED | GPU_USE_COLOR_ATTACHMENT
+    }
+    if not gpu_texture_valid(rgba) { return 1 }
+    if gpu_texture_total_bytes(rgba) != 512 { return 2 }
+
+    let cube: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA16F,
+        width: 4, height: 4, layers: 6, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    if not gpu_texture_valid(cube) { return 3 }
+    if gpu_texture_total_bytes(cube) != 768 { return 4 }
+
+    let bad_cube: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA8,
+        width: 4, height: 8, layers: 5, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    if gpu_texture_valid(bad_cube) { return 5 }
+
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 8, height: 8, layers: 1, samples: 4,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    if not gpu_texture_valid(depth) { return 6 }
+    let bad_depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 8, height: 8, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    if gpu_texture_valid(bad_depth) { return 7 }
+
+    let bad_storage: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 8, height: 8, layers: 1, samples: 4,
+        usage: GPU_USE_STORAGE
+    }
+    if gpu_texture_valid(bad_storage) { return 8 }
+
+    let linear: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_NEAREST,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_REPEAT,
+        address_w: GPU_ADDRESS_CLAMP
+    }
+    if not gpu_sampler_valid(linear) { return 9 }
+    let bad_sampler: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: 99, mag_filter: GPU_FILTER_NEAREST,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_REPEAT,
+        address_w: GPU_ADDRESS_CLAMP
+    }
+    if gpu_sampler_valid(bad_sampler) { return 10 }
+
+    let float_out: GpuVarying = GpuVarying {
+        location: 0, scalar: GPU_SCALAR_F32,
+        components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    let int_out: GpuVarying = GpuVarying {
+        location: 1, scalar: GPU_SCALAR_I32,
+        components: 1, interpolation: GPU_INTERPOLATE_FLAT
+    }
+    let mut outs: array<GpuVarying, 2> = [float_out, int_out]
+    let mut inputs: array<GpuVarying, 1> = [int_out]
+    if not gpu_stage_links(&outs[0], 2, &inputs[0], 1) { return 11 }
+
+    let mismatch: GpuVarying = GpuVarying {
+        location: 1, scalar: GPU_SCALAR_I32,
+        components: 2, interpolation: GPU_INTERPOLATE_FLAT
+    }
+    inputs[0] = mismatch
+    if gpu_stage_links(&outs[0], 2, &inputs[0], 1) { return 12 }
+    inputs[0] = float_out
+    if not gpu_stage_links(&outs[0], 2, &inputs[0], 1) { return 13 }
+    if gpu_stage_links(&outs[0], 2, null, 1) { return 14 }
+
+    let invalid_integer: GpuVarying = GpuVarying {
+        location: 3, scalar: GPU_SCALAR_U32,
+        components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    if gpu_varying_valid(invalid_integer) { return 15 }
+
+    let attr: GpuVertexAttribute = GpuVertexAttribute {
+        location: 0, offset: 8, stride: 20,
+        scalar_bytes: 4, components: 3
+    }
+    if not gpu_vertex_attribute_valid(attr) { return 16 }
+    let bad_attr: GpuVertexAttribute = GpuVertexAttribute {
+        location: 0, offset: 16, stride: 20,
+        scalar_bytes: 4, components: 3
+    }
+    if gpu_vertex_attribute_valid(bad_attr) { return 17 }
+    return 0
+}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Flow P1 GPU: Sampled Geometry</title>
+</head>
+<body>
+  <main>
+    <h1>Flow typed GPU resources: live textured draw</h1>
+    <p>Flow generates the vertex and fragment shaders. The WebGPU host
+    submits two instanced fullscreen-triangle draws, with depth and 4×
+    multisample resolve, then checks the rendered pixels.</p>
+    <p>From the repository root, run
+    <code>node tools/gpu_graph/export_sampled.mjs</code> before serving
+    <code>site/</code>. No independent handwritten WGSL is substituted.</p>
+    <button id="run">Run on WebGPU</button>
+    <pre id="result" aria-live="polite">No GPU test has run.</pre>
+  </main>
+  <script type="module">
+    import {getDevice} from "./webgpu-host.js";
+    import {renderFlowSampledDraw} from "./gpu-sampled-draw.mjs";
+    const run=document.getElementById("run");
+    const result=document.getElementById("result");
+    run.addEventListener("click",async()=>{
+      run.disabled=true;
+      let device;
+      try{
+        const source=await fetch("./generated/sampled_quad.wgsl");
+        if(!source.ok)throw new Error("Flow WGSL missing: run export_sampled.mjs");
+        const wgsl=await source.text();
+        const gpu=await getDevice();
+        device=gpu.device;
+        const positions=new Float32Array([
+          -1,-1,0,1,  1,-1,0,1, -1, 1,0,1,
+          -1, 1,0,1,  1,-1,0,1,  1, 1,0,1
+        ]);
+        const pixel=[13,113,211,255];
+        const output=await renderFlowSampledDraw(device,{
+          wgsl,positions,instances:2,
+          textureWidth:1,textureHeight:1,
+          textureRGBA:new Uint8Array(pixel),
+          sampler:{minFilter:"nearest",magFilter:"nearest"},
+          width:64,height:36,depth:true,samples:4
+        });
+        const off=((Math.floor(output.height/2)*output.width)+
+          Math.floor(output.width/2))*4;
+        const measured=Array.from(output.rgba.slice(off,off+4));
+        const pass=pixel.every((value,i)=>measured[i]===value);
+        result.textContent=(pass?"PASS":"FAIL")+
+          "\nDevice: "+output.execution+
+          "\nInstances: "+output.instances+
+          "\nCenter reference RGBA: "+pixel+
+          "\nCenter readback RGBA: "+measured+
+          "\nTotal bytes: "+output.rgba.length+
+          "\nTime: "+output.elapsedMs+" ms";
+        if(!pass)throw new Error("center pixel differs from reference");
+      }catch(error){
+        result.textContent+="\nExecution error: "+error.message;
+      }finally{
+        if(device?.destroy)device.destroy();
+        run.disabled=false;
+      }
+    });
+  </script>
+</body>
+</html>
