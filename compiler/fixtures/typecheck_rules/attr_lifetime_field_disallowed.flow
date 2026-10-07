@@ -1,0 +1,9 @@
+# expect: Attribute '@inline' is not allowed on field 'view' of 'Holder'; only '@lifetime(...)' is
+struct Holder {
+    @inline
+    view: ptr<i32>
+}
+
+function main() -> i32 {
+    return 0
+}

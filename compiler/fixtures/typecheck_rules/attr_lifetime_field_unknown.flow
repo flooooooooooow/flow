@@ -1,0 +1,9 @@
+# expect: Unknown lifetime domain 'forever' on field 'view' of 'Holder'. Known domains: callback, frame, session, application (see docs/language/lifetime-domains.md)
+struct Holder {
+    @lifetime(forever)
+    view: ptr<i32>
+}
+
+function main() -> i32 {
+    return 0
+}

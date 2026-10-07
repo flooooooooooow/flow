@@ -136,6 +136,7 @@ export struct Sem {
     se_decl: ptr<SemIntVec>,
     sf_names: ptr<SemStrVec>,
     sf_types: ptr<SemIntVec>,
+    sf_domains: ptr<SemIntVec>,
     struct_types: ptr<SemStrMap>,
     generic_struct_types: ptr<SemStrMap>,
     opaque_c_types: ptr<SemStrMap>,
@@ -322,6 +323,7 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.se_decl = sem_iv_new()
     c.sf_names = sem_sv_new()
     c.sf_types = sem_iv_new()
+    c.sf_domains = sem_iv_new()
     c.struct_types = sem_sm_new()
     c.generic_struct_types = sem_sm_new()
     c.opaque_c_types = sem_sm_new()
@@ -869,6 +871,7 @@ export function sem_se_new(c: ptr<Sem>, name: string, kind: i32, decl: i32) -> i
 export function sem_se_add_field(c: ptr<Sem>, se: i32, name: string, pt: i32) {
     sem_sv_push(c.sf_names, name)
     sem_iv_push(c.sf_types, pt)
+    sem_iv_push(c.sf_domains, 0 - 1)
     sem_iv_set(c.se_flen, se, sem_iv_get(c.se_flen, se) + 1)
 }
 
@@ -882,6 +885,15 @@ export function sem_se_field_name(c: ptr<Sem>, se: i32, i: i32) -> string {
 
 export function sem_se_field_type(c: ptr<Sem>, se: i32, i: i32) -> i32 {
     return sem_iv_get(c.sf_types, sem_iv_get(c.se_fstart, se) + i)
+}
+
+# Declared `@lifetime(D)` rank of field i, or -1 when the field is unannotated.
+export function sem_se_field_domain(c: ptr<Sem>, se: i32, i: i32) -> i32 {
+    return sem_iv_get(c.sf_domains, sem_iv_get(c.se_fstart, se) + i)
+}
+
+export function sem_se_set_field_domain(c: ptr<Sem>, se: i32, i: i32, domain: i32) {
+    sem_iv_set(c.sf_domains, sem_iv_get(c.se_fstart, se) + i, domain)
 }
 
 # struct_types[name], or -1.
@@ -1222,6 +1234,7 @@ export function sem_ensure_generic_struct_instance(c: ptr<Sem>, name: string, ty
     i = 0
     while i < sem_se_nfields(c, g) {
         sem_se_add_field(c, se, sem_se_field_name(c, g, i), sem_substitute_pt(c, sem_se_field_type(c, g, i), map_names, map_types))
+        sem_se_set_field_domain(c, se, i, sem_se_field_domain(c, g, i))
         i = i + 1
     }
     sem_sm_put(c.struct_types, name, se)
@@ -2299,5 +2312,31 @@ export function sem_attribute_errors(c: ptr<Sem>, fn_name: string, start: i32, n
     }
     if sem_sv_has(seen, "safe") and sem_sv_has(seen, "unsafe") {
         sem_err(c, "Function '" + fn_name + "' cannot be both '@safe' and '@unsafe'")
+    }
+}
+
+# Field attributes are `@lifetime(D)` only (#684). Anything else is the
+# same "only @lifetime" refusal module statics already use.
+export function sem_field_attribute_errors(c: ptr<Sem>, struct_name: string, field_name: string, start: i32, n: i32) {
+    let known: string = "callback, frame, session, application"
+    let where: string = "field '" + field_name + "' of '" + struct_name + "'"
+    let mut lifetime_seen: bool = false
+    let mut i: i32 = 0
+    while i < n {
+        let args: ptr<SemStrVec> = sem_sv_new()
+        let name: string = sem_parse_attribute(sem_sv_get(c.attr_pool, start + i), args)
+        if sem_s_eq(name, "lifetime") == false {
+            sem_err(c, "Attribute '@" + name + "' is not allowed on " + where + "; only '@lifetime(...)' is")
+        } elif lifetime_seen {
+            sem_err(c, where + " declares more than one '@lifetime' domain; a field lives in exactly one domain")
+        } else {
+            lifetime_seen = true
+            if args.len != 1 {
+                sem_err(c, "Attribute '@lifetime' on " + where + " takes exactly one domain: " + known)
+            } elif sem_lifetime_index(sem_sv_get(args, 0)) < 0 {
+                sem_err(c, "Unknown lifetime domain '" + sem_sv_get(args, 0) + "' on " + where + ". Known domains: " + known + " (see docs/language/lifetime-domains.md)")
+            }
+        }
+        i = i + 1
     }
 }

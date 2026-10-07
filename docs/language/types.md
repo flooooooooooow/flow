@@ -293,4 +293,4 @@ The compiler checks struct fields, function parameter and return types, array el
 
 ## See also
 
-[Functions](functions.md), [Spans](spans.md), [Lifetime domains](lifetime-domains.md), [Syntax](syntax.md), and the [language specification](../LANGUAGE_SPEC.md).
+[Functions](functions.md), [Spans](spans.md), [Lifetime domains](lifetime-domains.md), [Domain fields](domain-fields.md), [Syntax](syntax.md), and the [language specification](../LANGUAGE_SPEC.md).

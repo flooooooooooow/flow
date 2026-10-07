@@ -141,10 +141,10 @@ The analysis does not prove a worst-case execution time and cannot fully reason 
 
 ## 10.9 Known limits
 
-The current lifetime analysis does not soundly follow references through arbitrary calls, struct fields, closure environments, heap cells, or pointer/integer laundering. Imported public functions do carry a compact effect/lifetime summary that type checking consults (#765). Those remaining limits are explicit parts of the contract rather than implied guarantees.
+The current lifetime analysis follows references through static-rooted field paths, collection elements, struct and array literals, and fields declared `@lifetime(D)` ([domain-fields.md](../language/domain-fields.md)). It does not soundly follow references through arbitrary calls, unannotated fields of a struct reached only by pointer, closure environments, heap cells, or pointer/integer laundering. Imported public functions do carry a compact effect/lifetime summary that type checking consults (#765). Those remaining limits are explicit parts of the contract rather than implied guarantees.
 
 ## Exercises
 
-Allocate and release a typed buffer without leaks; replace pointer-plus-length APIs with spans; choose an arena reset point for a renderer; and construct one checked negative example for each lifetime-domain rule.
+Allocate and release a typed buffer without leaks; replace pointer-plus-length APIs with spans; choose an arena reset point for a renderer; and construct one checked negative example for each lifetime-domain rule, including a store through a struct field (LD5).
 
 Next: [Modules, projects, packages, and interoperation](11-modules-packages-and-interop.md).

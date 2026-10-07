@@ -1,0 +1,6 @@
+# `@lifetime` on a struct field is checked and then erased (#684).
+# The word "lifetime" may appear in the #740 profiler report.
+- @lifetime
+- application
++ int32_t main(
+exit 0
