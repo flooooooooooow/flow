@@ -758,7 +758,13 @@ export function gl_cc() -> string {
 
 # Compile the checked-in bootstrap C to `bin` with ${CC:-cc} -O2, adding
 # -w when `quiet_warnings`. stderr is dropped when `drop_err`. The status.
+# A `bin` that exists and is not older than the bootstrap C is kept, as
+# the flow command and gl_flowc_cached keep it: each gate used to rebuild
+# it, which cost about 35 seconds a gate on CI.
 export function gl_build_flowc(bin: string, quiet_warnings: bool, drop_err: bool) -> i32 {
+    if is_exec(bin) and not newer("compiler/bootstrap/flowc_stage_a.c", bin) {
+        return 0
+    }
     let argv: ptr<ProcStrs> = sl_of2(gl_cc(), "-O2")
     if quiet_warnings {
         sl_push(argv, "-w")

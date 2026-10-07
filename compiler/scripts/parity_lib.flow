@@ -62,6 +62,11 @@ export function pl_flowc(prefix: string, nowarn: bool, quiet: bool) -> string {
         return fb
     }
     let bin: string = prefix + "compiler/build/flowc_bootstrap"
+    # Kept when it is not older than the bootstrap C, as the flow command
+    # keeps it; rebuilding it in every gate cost about 35 seconds each.
+    if is_exec(bin) and not newer(prefix + "compiler/bootstrap/flowc_stage_a.c", bin) {
+        return bin
+    }
     let _m: bool = mkdir_p(path_dirname(bin))
     let c: ptr<ProcCmd> = cmd(sl_of2(pl_cc(), "-O2"))
     if nowarn {

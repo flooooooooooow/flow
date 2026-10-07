@@ -1,0 +1,53 @@
+# ACTIONS-INTENDED: restores the flowc and flow CLI binaries that ci.yml jobs share.
+name: Restore flow build cache
+description: >-
+  Restore compiler/build/flowc_bootstrap, build/cli/flow and
+  build/flow-tools/flowc, keyed on the content of every file they are built
+  from, and mark them current so the flow stub and `flow tool` reuse them.
+
+outputs:
+  cache-hit:
+    description: "'true' when the binaries were restored"
+    value: ${{ steps.restore.outputs.cache-hit }}
+  key:
+    description: The cache key, for the job that saves it
+    value: ${{ steps.key.outputs.key }}
+  paths:
+    description: The cached paths, one per line
+    value: ${{ steps.key.outputs.paths }}
+
+runs:
+  using: composite
+  steps:
+    # The key covers the inputs of all three binaries: the bootstrap C, the
+    # stub that builds the CLI, the CLI sources and everything they can
+    # import (lib/ and compiler/src/bytebuf.flow), plus the runner image and
+    # the C compiler that built them. There are no restore-keys: a binary is
+    # only ever restored for exactly the sources it was built from.
+    - id: key
+      shell: bash
+      run: |
+        cc_id="$(cc --version 2>/dev/null | head -n 1 | sha256sum | cut -c1-16)"
+        echo "key=flow-bin-v1-${ImageOS:-unknown}-${RUNNER_ARCH}-${cc_id}-${{ hashFiles('flow', 'compiler/bootstrap/flowc_stage_a.c', 'tools/flow_cli/**', 'lib/**', 'compiler/src/bytebuf.flow') }}" >> "$GITHUB_OUTPUT"
+        {
+          echo "paths<<EOF"
+          echo "compiler/build/flowc_bootstrap"
+          echo "build/cli/flow"
+          echo "build/flow-tools/flowc"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.key.outputs.paths }}
+        key: ${{ steps.key.outputs.key }}
+
+    # A restored file keeps the mtime it had when it was saved, which is
+    # older than this checkout, so the stub and `flow tool` would rebuild
+    # it. The key matched the content of every input, so it is current.
+    - if: steps.restore.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        touch compiler/build/flowc_bootstrap build/cli/flow build/flow-tools/flowc
+        echo "flow build cache: restored flowc_bootstrap, the flow CLI and the tool flowc"
