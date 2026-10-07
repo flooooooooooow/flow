@@ -2022,6 +2022,21 @@ function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i3
         flowc_cgen_puts(w, "_flow_Atomic")
         return
     }
+    # GCC and Clang predefine these as macros in GNU mode on some hosts
+    # (`linux` and `unix` on Linux, `i386` on 32-bit x86), so a Flow name
+    # spelled like one would become `1` in the C (#1442).
+    if flowc_cgen_span_is(src, start, end, "linux") == 1 {
+        flowc_cgen_puts(w, "_flow_linux")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "unix") == 1 {
+        flowc_cgen_puts(w, "_flow_unix")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "i386") == 1 {
+        flowc_cgen_puts(w, "_flow_i386")
+        return
+    }
     # System headers expose these typedef names in the generated C preamble.
     if flowc_cgen_span_is(src, start, end, "DIR") == 1 {
         flowc_cgen_puts(w, "_flow_DIR")
