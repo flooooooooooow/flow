@@ -36,6 +36,30 @@ function str_has(hay: string, needle: string) -> bool {
     return false
 }
 
+# The emitted WGSL declares each binding at module scope next to an entry
+# point named after the pass, so the two names must differ. The Metal body
+# must not declare a local with a bound parameter's name.
+function shader_names_ok(g: GpuGraph) -> bool {
+    let mut i: i32 = 0
+    while i < g.pass_count {
+        let p: GpuPass = g.passes[i]
+        let metal: string = gpu_graph_emit_metal_pass(g, i)
+        let mut j: i32 = 0
+        while j < p.binding_count {
+            let rname: string = g.resources[p.bindings[j].resource_id].name
+            if rname == p.name {
+                return false
+            }
+            if str_has(metal, "float " + rname + "=") or str_has(metal, "float2 " + rname + "=") or str_has(metal, "float4 " + rname + "=") {
+                return false
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return true
+}
+
 function expect_ok(e: GpuGraphError, n: i32) -> i32 {
     if e.code != GPU_GRAPH_OK {
         return n
@@ -358,5 +382,11 @@ function main() -> i32 {
         return 58
     }
 
+
+    # 14. Every vgpu pass compiles: no WGSL binding shares its entry point's
+    # module-scope name, and no Metal local redeclares a bound texture.
+    if not shader_names_ok(fluid) { return 64 }
+    if not shader_names_ok(ocean) { return 65 }
+    if not shader_names_ok(surf) { return 66 }
     return 0
 }
