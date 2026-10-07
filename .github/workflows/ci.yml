@@ -85,9 +85,11 @@ permissions:
 #
 # If the VPS runners are down, routed jobs wait in the queue for them.
 # Set the repository variable FLOW_VPS_RUNNERS to `off` to send every job
-# back to ubuntu-latest, then re-run the waiting runs:
+# back to ubuntu-latest:
 #   gh variable set FLOW_VPS_RUNNERS --body off -R flooooooooooow/flow
-# Delete the variable (or set it to `on`) to use the VPS again. Each routed
+# A run reads the variable when it starts and when it is re-run, so cancel
+# the runs that are waiting and re-run them. Delete the variable (or set it
+# to `on`) to use the VPS again. Each routed
 # job has a timeout-minutes, so a job that hangs on the VPS fails instead of
 # holding a runner. The runner setup is in docs/project/ci-runners.md.
 jobs:

@@ -36,7 +36,8 @@ pool:
 gh variable set FLOW_VPS_RUNNERS --body off -R flooooooooooow/flow
 ```
 
-Then re-run the runs that were waiting. To use the VPS again:
+A run reads the variable when it starts and again when it is re-run, so
+cancel the runs that are waiting and re-run them. To use the VPS again:
 
 ```
 gh variable delete FLOW_VPS_RUNNERS -R flooooooooooow/flow
