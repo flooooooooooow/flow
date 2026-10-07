@@ -1,6 +1,7 @@
 # Runs every tests/webgpu/*.test.mjs (the mocked-device tests of the WebGPU
-# host modules, #811 #812 #814) with `node --test`, which expands the glob. They check the JavaScript that site/wasm-crossings ships;
-# a real adapter is not needed. Skipped when node is not installed.
+# host modules, #811 #812 #814) with `node --test`, which expands the glob.
+# They check the JavaScript that site/wasm-crossings ships; a real adapter
+# is not needed. Skipped when node is not installed.
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
 
