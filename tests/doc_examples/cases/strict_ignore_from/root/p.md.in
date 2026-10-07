@@ -1,0 +1,23 @@
+# Ignore with from=
+
+A copy of a compiled file counts as verified.
+
+```flow ignore="weird_t is not a C type" from="src/kernel.flow"
+function twice(x: weird_t) -> weird_t {
+    return x
+}
+```
+
+A copy that drifted from the file does not.
+
+```flow ignore="weird_t is not a C type" from="src/kernel.flow"
+function twice(x: weird_t) -> weird_t {
+    return x + x
+}
+```
+
+A plain ignore is still not compiler-checked in strict mode.
+
+```flow ignore="placeholder"
+function f() -> i32 { ... }
+```

@@ -16,6 +16,10 @@
 #   ```flow no-harness             verify as written or not at all
 #   ```flow preamble=<path>        compile after that file's contents
 #   ```flow from=<path>            the block must still appear in that file
+#   ```flow ignore="r" from=<path> not compiled here (MLIR-only, say), but
+#                                  verified while it is a verbatim copy of
+#                                  <path> (repository-relative), which a
+#                                  gate compiles; strict mode accepts it
 #   ```flow id=<name>              name the block for a later uses=
 #   ```flow uses=<a,b>             compile after the named earlier blocks
 #

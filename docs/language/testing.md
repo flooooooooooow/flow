@@ -154,9 +154,13 @@ tests/parser.exitcode
 
 For a named test, use its stable slug. `flow test --list` shows the test names; slugs are lower-case words joined by `_`:
 
-```flow ignore="illustrative placeholder syntax"
+```flow
+function delay_ok(samples: i32) -> bool {
+    return samples > 0
+}
+
 test "rejects a zero-delay cycle" {
-    ...
+    expect delay_ok(0) == false
 }
 ```
 
@@ -200,10 +204,35 @@ All other Flow projects get the project test runner from plain `flow test`.
 
 Prefer small named semantic properties over large scenario scripts:
 
-```flow ignore="illustrative placeholder syntax"
-test "automation changes exactly at its frame" { ... }
-test "feedback without positive delay is rejected" { ... }
-test "state roundtrip is deterministic" { ... }
+```flow
+function gain_at(frame: i32, change_frame: i32) -> f32 {
+    if frame < change_frame {
+        return 1.0
+    }
+    return 0.5
+}
+
+function feedback_ok(delay: i32) -> bool {
+    return delay > 0
+}
+
+function roundtrip(state: i32) -> i32 {
+    return (state * 3) / 3
+}
+
+test "automation changes exactly at its frame" {
+    expect gain_at(99, 100) == 1.0
+    expect gain_at(100, 100) == 0.5
+}
+
+test "feedback without positive delay is rejected" {
+    expect feedback_ok(0) == false
+}
+
+test "state roundtrip is deterministic" {
+    expect roundtrip(41) == roundtrip(41)
+    expect roundtrip(41) == 41
+}
 ```
 
 Use executable compatibility tests when the thing being tested is inherently process-level. Use goldens only when exact text or bytes are the public contract.
