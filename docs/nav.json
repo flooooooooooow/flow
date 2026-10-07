@@ -561,6 +561,10 @@
           "path": "language/lifetime-domains.md"
         },
         {
+          "label": "Region Inference",
+          "path": "language/region-inference.md"
+        },
+        {
           "label": "Effects Showcase",
           "path": "effects-showcase.md"
         },

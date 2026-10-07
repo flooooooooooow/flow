@@ -95,13 +95,20 @@ function span_window_total() -> f32 {
 
 `span<T, N>` adds a compile-time extent. A span never frees its source and may not outlive it.
 
-## 10.5 Arenas
+## 10.5 Local region inference
+
+Inside one function, flowc assigns each binding an abstract region. Two
+distinct owned locals occupy distinct storage, so a copy between pointers
+rooted at different arrays is proven disjoint and lowers to one `memcpy`. Two parameters may still be the same buffer; the analysis
+declines rather than guessing. See [region-inference.md](../language/region-inference.md).
+
+## 10.6 Arenas
 
 Flow's memory standard library includes `Arena` and frame-arena helpers. Because the API depends on imported declarations, the canonical runnable sources are [`lib/stdlib/memory.flow`](../../lib/stdlib/memory.flow) and [`examples/audio/lifetime_domains.flow`](../../examples/audio/lifetime_domains.flow), rather than isolated pseudo-calls copied without their import context.
 
 An arena owns one region and advances an offset for each allocation; resetting invalidates its contained transient objects together. Memory bumped from a module-static arena carries that arena's declared `@lifetime`, so it cannot be stored past the domain (and therefore the reset) that owns the arena.
 
-## 10.6 Lifetime domains
+## 10.7 Lifetime domains
 
 The implemented order is `callback < frame < session < application`.
 
@@ -119,7 +126,7 @@ The checker rejects direct shorter-lived escapes into longer-lived statics, retu
 
 Intentional violations are compiler-tested on the focused [lifetime domains](../language/lifetime-domains.md) page.
 
-## 10.7 Real-time safety
+## 10.8 Real-time safety
 
 `@rt_safe` constrains the reachable static call graph. It rejects known heap allocation, blocking locks, file/device I/O, and GPU submission on the RT path.
 
@@ -132,7 +139,7 @@ function process_sample(sample: f32, gain: f32) -> f32 {
 
 The analysis does not prove a worst-case execution time and cannot fully reason about arbitrary function pointers or external implementations.
 
-## 10.8 Known limits
+## 10.9 Known limits
 
 The current lifetime analysis does not soundly follow references through arbitrary calls, struct fields, closure environments, heap cells, or pointer/integer laundering. Imported public functions do carry a compact effect/lifetime summary that type checking consults (#765). Those remaining limits are explicit parts of the contract rather than implied guarantees.
 

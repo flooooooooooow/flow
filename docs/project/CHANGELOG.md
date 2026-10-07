@@ -39,6 +39,14 @@ All notable changes to FLOW will be documented in this file.
   (#765). Summaries are erased before codegen. Unprovable externs carry an
   `unknown` bit; this slice still rejects only the known unsafe names.
 - Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy volume. The #728 harness records those fields without workload source rewrites. (#740)
+- flowc infers abstract storage regions inside a function body and proves a
+  conservative set of non-aliasing facts with no annotations: distinct owned
+  locals, and a fresh local versus any parameter. Pointer arithmetic inherits
+  its base; two parameters, a reassignment, a call result, and two views of
+  the same identity stay "may alias". Proven-disjoint unit-stride copies
+  lower to `memcpy`; other copies keep the ordered loop. `FLOWC_REGION_CHECK=1` diagnoses
+  overlapping pointer arguments; `FLOWC_REGION_REPORT=1` writes per-binding
+  remarks (#694).
 - flowc emits C `restrict` and MLIR `{llvm.noalias}` for pointer parameters and locals only when a fail-closed provenance certificate proves disjointness: distinct local arrays, non-overlapping constant slices, and internal functions whose every call site is proven. Overlapping views, a buffer passed twice, exported/`@flow_api` functions, and pointers copied from parameters stay aliasable (#731).
 - FFI: Zero-copy contiguous buffer ABI (`FlowFfiBuffer` in `runtime/flow_ffi_buffer.h`, Flow `FFIBuffer`), borrowed vs owned lifetime, fail-closed layout checks that never silently copy, a pointer-identity lang test, and a microbenchmark identity row. (#737)
 - FFI: C / Python / native-library boundary audit (`ffi_crossing_class`, PEP 3118 mapping, fail-closed dtype/stride), #728 harness rows (`runtime_ffi_scalar`, `runtime_ffi_batch`, `runtime_ffi_buffer`, `memory_ffi_handoff`, `memory_ffi_copy`), and live break-even measurements on real C crossings (`benchmarks/micro/ffi_breakeven.flow`). (#737)

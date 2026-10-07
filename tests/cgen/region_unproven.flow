@@ -1,0 +1,12 @@
+# FLOWC_REGION_CHECK diagnoses overlapping views of one local (#694).
+
+function take(dst: ptr<i32>, src: ptr<i32>) -> i32 {
+    return dst[0] + src[0]
+}
+
+function main() -> i32 {
+    let mut y: array<i32, 4> = [1, 2, 3, 4]
+    let p: ptr<i32> = y
+    let q: ptr<i32> = y
+    return take(p, q)
+}

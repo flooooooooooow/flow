@@ -1,0 +1,27 @@
+# Constraint-based local region inference (#694).
+#
+# Distinct owned locals occupy distinct storage, so a unit-stride copy
+# between pointers rooted at two arrays is proven disjoint and lowers to
+# memcpy. Pointer parameters may be the same buffer, so their copy stays
+# an ordered element loop (#1417). FLOWC_REGION_REPORT names each
+# binding's region.
+
+function copy_params(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
+
+function main() -> i32 {
+    let mut a: array<i32, 4> = [1, 2, 3, 4]
+    let mut b: array<i32, 4> = [0, 0, 0, 0]
+    let pa: ptr<i32> = a
+    let pb: ptr<i32> = b
+    for i in 0 to 4 {
+        pb[i] = pa[i]
+    }
+    copy_params(pb, pa, 4)
+    if b[0] != 1 { return 1 }
+    if b[3] != 4 { return 2 }
+    return 0
+}
