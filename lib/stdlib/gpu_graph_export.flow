@@ -1,0 +1,161 @@
+# Portable JSON bridge from Flow's validated GPU graph to a real WebGPU
+# command-submission host. No vendor shaders are embedded here: the same
+# Flow graph emitter builds the WGSL for each pass (#812).
+import "stdlib/gpu_graph.flow"
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+function graph_hex_digit(n: i32) -> string {
+    if n == 0 { return "0" }
+    if n == 1 { return "1" }
+    if n == 2 { return "2" }
+    if n == 3 { return "3" }
+    if n == 4 { return "4" }
+    if n == 5 { return "5" }
+    if n == 6 { return "6" }
+    if n == 7 { return "7" }
+    if n == 8 { return "8" }
+    if n == 9 { return "9" }
+    if n == 10 { return "a" }
+    if n == 11 { return "b" }
+    if n == 12 { return "c" }
+    if n == 13 { return "d" }
+    if n == 14 { return "e" }
+    return "f"
+}
+
+function graph_decimal(n: i32) -> string {
+    if n == 0 { return "0" }
+    if n == (0 - 2147483647 - 1) { return "-2147483648" }
+    if n < 0 { return "-" + graph_decimal(0 - n) }
+    let mut value: i32 = n
+    let mut out: string = ""
+    while value > 0 {
+        out = graph_hex_digit(value % 10) + out
+        value = value / 10
+    }
+    return out
+}
+
+# Escape emitted shader newlines, quotes and backslashes so JSON can be
+# parsed directly by a browser. Other control characters use \u00XX.
+function graph_json_quote(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let mut out: string = "\""
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 34 {
+            out = out + "\\\""
+        } elif c == 92 {
+            out = out + "\\\\"
+        } elif c == 10 {
+            out = out + "\\n"
+        } elif c == 13 {
+            out = out + "\\r"
+        } elif c == 9 {
+            out = out + "\\t"
+        } elif c < 32 {
+            out = out + "\\u00" + graph_hex_digit(c / 16) +
+                graph_hex_digit(c % 16)
+        } else {
+            let mut chars: array<u8, 2> = []
+            chars[0] = c as u8
+            chars[1] = 0
+            out = out + (&chars[0] as string)
+        }
+        i = i + 1
+    }
+    return out + "\""
+}
+
+function graph_vec_json(d: GpuDim3) -> string {
+    return "[" + graph_decimal(d.x) + "," + graph_decimal(d.y) +
+        "," + graph_decimal(d.z) + "]"
+}
+
+# Fails closed on graph errors or unimplemented backend kernels. The caller
+# may only deliver this manifest to the browser if validation succeeded.
+export function gpu_graph_export_webgpu_json(g: ptr<GpuGraph>) -> string {
+    let err: GpuGraphError = gpu_graph_validate(g)
+    if err.code != GPU_GRAPH_OK { return "" }
+    let graph: GpuGraph = g[0]
+    let mut out: string = "{\"schema\":\"flow-gpu-graph/1\",\"hazardMode\":" +
+        graph_decimal(graph.hazard_mode) + ","
+    out = out + "\"resources\":["
+    let mut i: i32 = 0
+    while i < graph.resource_count {
+        let r: GpuGraphResource = graph.resources[i]
+        if i > 0 { out = out + "," }
+        out = out + "{\"id\":" + graph_decimal(r.id)
+        out = out + ",\"name\":" + graph_json_quote(r.name)
+        out = out + ",\"kind\":" + graph_decimal(r.kind)
+        out = out + ",\"format\":" + graph_decimal(r.format)
+        out = out + ",\"dim\":" + graph_decimal(r.dim)
+        out = out + ",\"width\":" + graph_decimal(r.width)
+        out = out + ",\"height\":" + graph_decimal(r.height)
+        out = out + ",\"depth\":" + graph_decimal(r.depth)
+        out = out + ",\"bytes\":" + graph_decimal(r.bytes)
+        out = out + ",\"physical\":" + graph_decimal(r.physical) + "}"
+        i = i + 1
+    }
+    out = out + "],\"pingpongs\":["
+    i = 0
+    while i < graph.pingpong_count {
+        let pp: GpuPingPong = graph.pingpongs[i]
+        if i > 0 { out = out + "," }
+        out = out + "{\"id\":" + graph_decimal(pp.id)
+        out = out + ",\"a\":" + graph_decimal(pp.a)
+        out = out + ",\"b\":" + graph_decimal(pp.b)
+        out = out + ",\"front\":" + graph_decimal(pp.front) + "}"
+        i = i + 1
+    }
+    out = out + "],\"passes\":["
+    i = 0
+    while i < graph.pass_count {
+        let p: GpuPass = graph.passes[i]
+        let wgsl: string = gpu_graph_emit_wgsl_pass(graph, i)
+        if wgsl == "" { return "" }
+        if i > 0 { out = out + "," }
+        out = out + "{\"id\":" + graph_decimal(p.id)
+        out = out + ",\"name\":" + graph_json_quote(p.name)
+        out = out + ",\"kind\":" + graph_decimal(p.kind)
+        out = out + ",\"iterations\":" + graph_decimal(p.iterations)
+        out = out + ",\"drawCount\":" + graph_decimal(p.draw_count)
+        out = out + ",\"workgroupBytes\":" + graph_decimal(p.workgroup_bytes)
+        out = out + ",\"barrier\":" + graph_decimal(p.barrier)
+        out = out + ",\"feedback\":" + graph_decimal(p.feedback)
+        out = out + ",\"workgroup\":" + graph_vec_json(p.workgroup)
+        out = out + ",\"dispatch\":" + graph_vec_json(p.dispatch)
+        out = out + ",\"wgsl\":" + graph_json_quote(wgsl)
+        out = out + ",\"bindings\":["
+        let mut j: i32 = 0
+        while j < p.binding_count {
+            let b: GpuBinding = p.bindings[j]
+            if j > 0 { out = out + "," }
+            out = out + "{\"resourceId\":" + graph_decimal(b.resource_id)
+            out = out + ",\"slot\":" + graph_decimal(b.slot)
+            out = out + ",\"usage\":" + graph_decimal(b.usage)
+            out = out + ",\"pingpongId\":" + graph_decimal(b.pingpong_id)
+            out = out + ",\"role\":" + graph_decimal(b.pingpong_role) + "}"
+            j = j + 1
+        }
+        out = out + "]}"
+        i = i + 1
+    }
+    out = out + "],\"deps\":["
+    i = 0
+    while i < graph.dep_count {
+        let dep: GpuDep = graph.deps[i]
+        if i > 0 { out = out + "," }
+        out = out + "[" + graph_decimal(dep.from_pass) + "," +
+            graph_decimal(dep.to_pass) + "," +
+            graph_decimal(dep.resource_id) + "]"
+        i = i + 1
+    }
+    out = out + "]}"
+    return out
+}

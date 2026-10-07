@@ -1,0 +1,11 @@
+# Export a fully validated typed Flow GPU graph for the WebGPU runner.
+# ./flow run examples/gpu/vgpu/export_fluid_graph.flow > build/fluid-graph.json
+import "stdlib/gpu_graph_export.flow"
+
+function main() -> i32 {
+    let mut g: GpuGraph = gpu_graph_vgpu_fluid()
+    let json: string = gpu_graph_export_webgpu_json(&g)
+    if json == "" { return 1 }
+    println(json)
+    return 0
+}

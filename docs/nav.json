@@ -729,6 +729,10 @@
           "path": "library/memory.md"
         },
         {
+          "label": "GPU Graph",
+          "path": "library/gpu-graph.md"
+        },
+        {
           "label": "GPU Memory",
           "path": "library/gpu-memory.md"
         },

@@ -1,0 +1,110 @@
+# GPU bodies for vgpu-derived storage pass graphs (#812).
+# Emitted WGSL and Metal share the same physical resource names and operation.
+# The ocean inverse uses a correctness-first separable 64-point inverse DFT;
+# this is intentionally not a tuned Stockham implementation.
+
+# Supported kernels have executable shader bodies. Unknown kernels emit nothing.
+export function gpu_graph_body_wgsl(name: string, a: string, b: string, c: string) -> string {
+    if name == "advect_velocity" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let v=textureLoad(" + a + ",xy).xy; let prev=clamp(xy-vec2<i32>(round(v*0.016)),vec2<i32>(0),size-vec2<i32>(1)); textureStore(" + b + ",xy,textureLoad(" + a + ",prev));"
+    }
+    if name == "curl" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let l=textureLoad(" + a + ",max(xy-vec2<i32>(1,0),vec2<i32>(0))).y; let r=textureLoad(" + a + ",min(xy+vec2<i32>(1,0),size-1)).y; let u=textureLoad(" + a + ",max(xy-vec2<i32>(0,1),vec2<i32>(0))).x; let d=textureLoad(" + a + ",min(xy+vec2<i32>(0,1),size-1)).x; textureStore(" + b + ",xy,vec4<f32>(0.5*(r-l-u+d),0.0,0.0,1.0));"
+    }
+    if name == "vorticity" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let l=textureLoad(" + c + ",max(xy-vec2<i32>(1,0),vec2<i32>(0))).x; let r=textureLoad(" + c + ",min(xy+vec2<i32>(1,0),size-1)).x; let u=textureLoad(" + c + ",max(xy-vec2<i32>(0,1),vec2<i32>(0))).x; let d=textureLoad(" + c + ",min(xy+vec2<i32>(0,1),size-1)).x; let grad=vec2<f32>(abs(r)-abs(l),abs(d)-abs(u)); let norm=grad/max(length(grad),0.00001); let f=vec2<f32>(norm.y,-norm.x)*textureLoad(" + c + ",xy).x*0.016; let v=textureLoad(" + a + ",xy); textureStore(" + b + ",xy,vec4<f32>(v.xy+f,v.zw));"
+    }
+    if name == "divergence" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let l=textureLoad(" + a + ",max(xy-vec2<i32>(1,0),vec2<i32>(0))).x; let r=textureLoad(" + a + ",min(xy+vec2<i32>(1,0),size-1)).x; let u=textureLoad(" + a + ",max(xy-vec2<i32>(0,1),vec2<i32>(0))).y; let d=textureLoad(" + a + ",min(xy+vec2<i32>(0,1),size-1)).y; textureStore(" + b + ",xy,vec4<f32>(0.5*(r-l+d-u),0.0,0.0,1.0));"
+    }
+    if name == "pressure" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let l=textureLoad(" + a + ",max(xy-vec2<i32>(1,0),vec2<i32>(0))).x; let r=textureLoad(" + a + ",min(xy+vec2<i32>(1,0),size-1)).x; let u=textureLoad(" + a + ",max(xy-vec2<i32>(0,1),vec2<i32>(0))).x; let d=textureLoad(" + a + ",min(xy+vec2<i32>(0,1),size-1)).x; let div=textureLoad(" + c + ",xy).x; textureStore(" + b + ",xy,vec4<f32>((l+r+u+d-div)*0.25,0.0,0.0,1.0));"
+    }
+    if name == "project" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let l=textureLoad(" + c + ",max(xy-vec2<i32>(1,0),vec2<i32>(0))).x; let r=textureLoad(" + c + ",min(xy+vec2<i32>(1,0),size-1)).x; let u=textureLoad(" + c + ",max(xy-vec2<i32>(0,1),vec2<i32>(0))).x; let d=textureLoad(" + c + ",min(xy+vec2<i32>(0,1),size-1)).x; let v=textureLoad(" + a + ",xy); textureStore(" + b + ",xy,vec4<f32>(v.xy-0.5*vec2<f32>(r-l,d-u),v.zw));"
+    }
+    if name == "advect_dye" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let v=textureLoad(" + c + ",xy).xy; let prev=clamp(xy-vec2<i32>(round(v*0.016)),vec2<i32>(0),size-vec2<i32>(1)); textureStore(" + b + ",xy,textureLoad(" + a + ",prev));"
+    }
+    if name == "initial_spectrum" {
+        return "if(id.x>=64u||id.y>=64u){return;} let i=(id.y*64u+id.x)*2u; " + a + "[i]=sin(f32(id.x*17u+id.y*11u)*0.073); " + a + "[i+1u]=0.0;"
+    }
+    if name == "spectrum" {
+        return "if(id.x>=64u||id.y>=64u){return;} let i=(id.y*64u+id.x)*2u; let re=" + a + "[i]; let im=" + a + "[i+1u]; let cs=cos(0.15); let sn=sin(0.15); " + b + "[i]=re*cs-im*sn; " + b + "[i+1u]=re*sn+im*cs;"
+    }
+    if name == "ifft_stage" {
+        return "if(id.x>=64u||id.y>=64u){return;} var re:f32=0.0; var im:f32=0.0; for(var k:u32=0u;k<64u;k=k+1u){let i=(id.y*64u+k)*2u; let phi=6.28318530718*f32(k*id.x)/64.0; let cs=cos(phi); let sn=sin(phi); re=re+" + a + "[i]*cs-" + a + "[i+1u]*sn; im=im+" + a + "[i]*sn+" + a + "[i+1u]*cs;} let j=(id.y*64u+id.x)*2u; " + b + "[j]=re/64.0; " + b + "[j+1u]=im/64.0;"
+    }
+    if name == "ifft_columns" {
+        return "if(id.x>=64u||id.y>=64u){return;} var re:f32=0.0; var im:f32=0.0; for(var k:u32=0u;k<64u;k=k+1u){let i=(k*64u+id.x)*2u; let phi=6.28318530718*f32(k*id.y)/64.0; let cs=cos(phi); let sn=sin(phi); re=re+" + a + "[i]*cs-" + a + "[i+1u]*sn; im=im+" + a + "[i]*sn+" + a + "[i+1u]*cs;} let j=(id.y*64u+id.x)*2u; " + b + "[j]=re/64.0; " + b + "[j+1u]=im/64.0;"
+    }
+    if name == "ifft_finalize" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let i=(id.y*64u+id.x)*2u; let re=" + a + "[i]; let im=" + a + "[i+1u]; textureStore(" + b + ",xy,vec4<f32>(re,im,length(vec2<f32>(re,im)),1.0));"
+    }
+    if name == "normal_foam" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let l=textureLoad(" + a + ",max(xy-vec2<i32>(1,0),vec2<i32>(0))).z; let r=textureLoad(" + a + ",min(xy+vec2<i32>(1,0),size-1)).z; let u=textureLoad(" + a + ",max(xy-vec2<i32>(0,1),vec2<i32>(0))).z; let d=textureLoad(" + a + ",min(xy+vec2<i32>(0,1),size-1)).z; let n=normalize(vec3<f32>(l-r,2.0,u-d)); textureStore(" + b + ",xy,vec4<f32>(n*0.5+vec3<f32>(0.5),1.0)); textureStore(" + c + ",xy,vec4<f32>(clamp(abs(r-l)+abs(d-u)-0.2,0.0,1.0),0.0,0.0,1.0));"
+    }
+    if name == "display" {
+        return "let xy=vec2<i32>(pos.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return vec4<f32>(0.0,0.0,0.0,1.0);} return textureLoad(" + b + ",xy);"
+    }
+    if name == "present" {
+        return "let xy=vec2<i32>(pos.xy); let size=vec2<i32>(textureDimensions(" + a + ")); if(any(xy>=size)){return vec4<f32>(0.0,0.0,0.0,1.0);} let d=textureLoad(" + a + ",xy); let n=textureLoad(" + b + ",xy); let foam=textureLoad(" + c + ",xy).x; return vec4<f32>(mix(n.xyz*abs(d.z),vec3<f32>(1.0),foam),1.0);"
+    }
+    if name == "surface" {
+        return "let xy=vec2<i32>(pos.xy); let size=vec2<i32>(textureDimensions(" + a + ")); if(any(xy>=size)){return vec4<f32>(0.0,0.0,0.0,1.0);} let d=textureLoad(" + a + ",xy); let n=textureLoad(" + b + ",xy); let foam=textureLoad(" + c + ",xy).x; return vec4<f32>(mix(n.xyz*abs(d.z),vec3<f32>(1.0),foam),1.0);"
+    }
+    return ""
+}
+
+# Supported kernels have executable shader bodies. Unknown kernels emit nothing.
+export function gpu_graph_body_metal(name: string, a: string, b: string, c: string) -> string {
+    if name == "advect_velocity" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; float2 v=" + a + ".read(xy).xy; uint2 prev=uint2(clamp(float2(xy)-round(v*0.016f),float2(0.0),float2(" + b + ".get_width()-1," + b + ".get_height()-1))); " + b + ".write(" + a + ".read(prev),xy);"
+    }
+    if name == "curl" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; uint2 lo=uint2(max(int(xy.x)-1,0),xy.y), ro=uint2(min(xy.x+1," + b + ".get_width()-1),xy.y); uint2 up=uint2(xy.x,max(int(xy.y)-1,0)), dn=uint2(xy.x,min(xy.y+1," + b + ".get_height()-1)); float c=0.5f*(" + a + ".read(ro).y-" + a + ".read(lo).y-" + a + ".read(up).x+" + a + ".read(dn).x); " + b + ".write(float4(c,0,0,1),xy);"
+    }
+    if name == "vorticity" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; uint2 lo=uint2(max(int(xy.x)-1,0),xy.y), ro=uint2(min(xy.x+1," + b + ".get_width()-1),xy.y); uint2 up=uint2(xy.x,max(int(xy.y)-1,0)), dn=uint2(xy.x,min(xy.y+1," + b + ".get_height()-1)); float2 grad=float2(abs(" + c + ".read(ro).x)-abs(" + c + ".read(lo).x),abs(" + c + ".read(dn).x)-abs(" + c + ".read(up).x)); float2 force=float2(grad.y,-grad.x)/max(length(grad),0.00001f)*" + c + ".read(xy).x*0.016f; float4 v=" + a + ".read(xy); " + b + ".write(float4(v.xy+force,v.zw),xy);"
+    }
+    if name == "divergence" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; uint2 lo=uint2(max(int(xy.x)-1,0),xy.y), ro=uint2(min(xy.x+1," + b + ".get_width()-1),xy.y); uint2 up=uint2(xy.x,max(int(xy.y)-1,0)), dn=uint2(xy.x,min(xy.y+1," + b + ".get_height()-1)); float d=0.5f*(" + a + ".read(ro).x-" + a + ".read(lo).x+" + a + ".read(dn).y-" + a + ".read(up).y); " + b + ".write(float4(d,0,0,1),xy);"
+    }
+    if name == "pressure" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; uint2 lo=uint2(max(int(xy.x)-1,0),xy.y), ro=uint2(min(xy.x+1," + b + ".get_width()-1),xy.y); uint2 up=uint2(xy.x,max(int(xy.y)-1,0)), dn=uint2(xy.x,min(xy.y+1," + b + ".get_height()-1)); float p=0.25f*(" + a + ".read(lo).x+" + a + ".read(ro).x+" + a + ".read(up).x+" + a + ".read(dn).x-" + c + ".read(xy).x); " + b + ".write(float4(p,0,0,1),xy);"
+    }
+    if name == "project" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; uint2 lo=uint2(max(int(xy.x)-1,0),xy.y), ro=uint2(min(xy.x+1," + b + ".get_width()-1),xy.y); uint2 up=uint2(xy.x,max(int(xy.y)-1,0)), dn=uint2(xy.x,min(xy.y+1," + b + ".get_height()-1)); float2 grad=0.5f*float2(" + c + ".read(ro).x-" + c + ".read(lo).x," + c + ".read(dn).x-" + c + ".read(up).x); float4 v=" + a + ".read(xy); " + b + ".write(float4(v.xy-grad,v.zw),xy);"
+    }
+    if name == "advect_dye" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; float2 v=" + c + ".read(xy).xy; uint2 prev=uint2(clamp(float2(xy)-round(v*0.016f),float2(0.0),float2(" + b + ".get_width()-1," + b + ".get_height()-1))); " + b + ".write(" + a + ".read(prev),xy);"
+    }
+    if name == "initial_spectrum" {
+        return "if(id.x>=64u||id.y>=64u)return; uint i=(id.y*64u+id.x)*2u; " + a + "[i]=sin(float(id.x*17u+id.y*11u)*0.073f); " + a + "[i+1u]=0.0f;"
+    }
+    if name == "spectrum" {
+        return "if(id.x>=64u||id.y>=64u)return; uint i=(id.y*64u+id.x)*2u; float re=" + a + "[i], im=" + a + "[i+1u]; float cs=cos(0.15f), sn=sin(0.15f); " + b + "[i]=re*cs-im*sn; " + b + "[i+1u]=re*sn+im*cs;"
+    }
+    if name == "ifft_stage" {
+        return "if(id.x>=64u||id.y>=64u)return; float re=0.0f,im=0.0f; for(uint k=0u;k<64u;++k){uint i=(id.y*64u+k)*2u;float phi=6.28318530718f*float(k*id.x)/64.0f;float cs=cos(phi),sn=sin(phi);re+=" + a + "[i]*cs-" + a + "[i+1u]*sn;im+=" + a + "[i]*sn+" + a + "[i+1u]*cs;}uint j=(id.y*64u+id.x)*2u;" + b + "[j]=re/64.0f;" + b + "[j+1u]=im/64.0f;"
+    }
+    if name == "ifft_columns" {
+        return "if(id.x>=64u||id.y>=64u)return; float re=0.0f,im=0.0f;for(uint k=0u;k<64u;++k){uint i=(k*64u+id.x)*2u;float phi=6.28318530718f*float(k*id.y)/64.0f;float cs=cos(phi),sn=sin(phi);re+=" + a + "[i]*cs-" + a + "[i+1u]*sn;im+=" + a + "[i]*sn+" + a + "[i+1u]*cs;}uint j=(id.y*64u+id.x)*2u;" + b + "[j]=re/64.0f;" + b + "[j+1u]=im/64.0f;"
+    }
+    if name == "ifft_finalize" {
+        return "uint2 xy=id.xy;if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return;uint i=(id.y*64u+id.x)*2u;float re=" + a + "[i],im=" + a + "[i+1u];" + b + ".write(float4(re,im,length(float2(re,im)),1.0f),xy);"
+    }
+    if name == "normal_foam" {
+        return "uint2 xy=id.xy;if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return;uint2 lo=uint2(max(int(xy.x)-1,0),xy.y),ro=uint2(min(xy.x+1," + b + ".get_width()-1),xy.y);uint2 up=uint2(xy.x,max(int(xy.y)-1,0)),dn=uint2(xy.x,min(xy.y+1," + b + ".get_height()-1));float l=" + a + ".read(lo).z,r=" + a + ".read(ro).z,u=" + a + ".read(up).z,d=" + a + ".read(dn).z;float3 n=normalize(float3(l-r,2.0f,u-d));" + b + ".write(float4(n*0.5f+float3(0.5f),1.0f),xy);" + c + ".write(float4(clamp(abs(r-l)+abs(d-u)-0.2f,0.0f,1.0f),0,0,1),xy);"
+    }
+    if name == "display" {
+        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return float4(0,0,0,1);return " + b + ".read(xy);"
+    }
+    if name == "present" {
+        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + a + ".get_width()||xy.y>=" + a + ".get_height())return float4(0,0,0,1);float4 d=" + a + ".read(xy),n=" + b + ".read(xy);float foam=" + c + ".read(xy).x;return float4(mix(n.xyz*abs(d.z),float3(1.0f),foam),1.0f);"
+    }
+    if name == "surface" {
+        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + a + ".get_width()||xy.y>=" + a + ".get_height())return float4(0,0,0,1);float4 d=" + a + ".read(xy),n=" + b + ".read(xy);float foam=" + c + ".read(xy).x;return float4(mix(n.xyz*abs(d.z),float3(1.0f),foam),1.0f);"
+    }
+    return ""
+}

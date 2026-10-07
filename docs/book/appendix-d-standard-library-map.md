@@ -18,7 +18,7 @@ signatures.
 | dynamics | `dynamics` and `dynamics/*` | state space, linalg, Gramian, LQR, GA, PDE, attractors, portraits |
 | graphics | `gfx`, `font`, `gif`, `ui`, `ui2d`, `ui_layout` | drawing, text, image output, widgets and layout |
 | 3D and Vulkan | `render3d`, `vulkan`, `vulkan_renderer`, `vulkan_abi_renderer` | software 3D and Vulkan wrappers |
-| GPU | `gpu_memory`, `gpu_kernels`, `gpu_gradients`, `gpu_sim` | Metal buffers, kernels, gradients, simulation |
+| GPU | `gpu_memory`, `gpu_graph`, `gpu_kernels`, `gpu_gradients`, `gpu_sim` | Metal buffers, render and compute graphs, kernels, gradients, simulation |
 | audio | `audio` and `audio/*` | device I/O, DSP, graphs, filters, synth, delays, WAV, notation |
 | RF | `rf` | IQ samples and baseband operations |
 | circuits | `circuit`, `spice` | modified nodal analysis and circuit input |
