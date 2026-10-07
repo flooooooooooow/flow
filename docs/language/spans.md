@@ -87,15 +87,13 @@ error: cannot write through `values`: span<i32> is an immutable view
        (declare it span<mut i32>)
 ```
 
-## Safe elimination of repeated bounds checks
+## Bounds checks in range loops
 
-For the canonical range loop `for i in 0 to samples.len`, the C backend
-can omit a redundant per-element bounds-fault branch for
-`samples[i]` **only while the proof remains valid**. If the body
-reassigns or takes the address of the span binding, or rebinds/shadows
-the induction name, the compiler must retain dynamic bounds checks.
-A span's `.len` may be changed by rebinding even when the original
-loop bound was its old length.
+In `for i in 0 to samples.len`, the C backend drops the per-element bounds
+check on `samples[i]`, because the loop bound proves the index is in range.
+The proof holds only while the body leaves `samples` and `i` alone. If the
+body assigns `samples`, takes its address, or rebinds or shadows `i`, the
+checks stay in:
 
 ```flow
 function sum_with_rebind(xs: &[i32], ys: &[i32]) -> i32 {
@@ -104,18 +102,14 @@ function sum_with_rebind(xs: &[i32], ys: &[i32]) -> i32 {
         if i == 1 {
             xs = ys
         }
-        sum = sum + xs[i]  # checked because xs was rebound
+        sum = sum + xs[i]  # checked: xs was reassigned in the loop
     }
     return sum
 }
 ```
 
-Structural C-output regressions distinguish the canonical
-non-mutating loop (`tests/cgen/span_bounds_elision.flow`), which should
-still omit unnecessary checks, from the rebinding case
-(`tests/cgen/span_bounds_rebinding.flow`), which must retain a
-`span index out of bounds` fault path. Compiler tests and generated-code
-validation remain required before claiming complete #729 optimisation.
+`tests/cgen/span_bounds_elision.flow` covers the loop that drops the
+check, and `tests/cgen/span_bounds_rebinding.flow` the loop that keeps it.
 
 ## Reference sugar
 
