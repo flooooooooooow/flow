@@ -1,38 +1,41 @@
-def parse_nth_int_after_key(json_str: str, key: str, target_occ: int) -> int:
-    occ = 0
-    idx = 0
-    key_len = len(key)
-    while True:
-        pos = json_str.find(key, idx)
-        if pos == -1:
-            return 0
-        occ += 1
-        if occ == target_occ:
-            j = pos + key_len
-            while j < len(json_str) and not json_str[j].isdigit():
-                j += 1
-            val = 0
-            while j < len(json_str) and json_str[j].isdigit():
-                val = val * 10 + int(json_str[j])
-                j += 1
-            return val
-        idx = pos + 1
+"""Real JSON-document parsing companion to Flow's json_parse benchmark.
 
-def main():
-    json_data = "{\"records\": [{\"id\": 10, \"count\": 250}, {\"id\": 20, \"count\": 350}, {\"id\": 30, \"count\": 450}, {\"id\": 40, \"count\": 550}]}"
-    key = "\"count\":"
+The substring scanner is independently measured in cold/json_key_scan.
+Both implementations repeat 1,000 full parses of the same fixture.
+"""
+import json
 
-    total_count = 0
-    for _ in range(10000):
-        c1 = parse_nth_int_after_key(json_data, key, 1)
-        c2 = parse_nth_int_after_key(json_data, key, 2)
-        c3 = parse_nth_int_after_key(json_data, key, 3)
-        c4 = parse_nth_int_after_key(json_data, key, 4)
-        total_count += c1 + c2 + c3 + c4
 
-    if total_count != 16000000:
-        raise ValueError("Sum mismatch")
+def main() -> int:
+    payload = '{"records": [{"id": 10, "count": 250}, {"id": 20, "count": 350}, {"id": 30, "count": 450}, {"id": 40, "count": 550}]}'
+    total = 0
+    for _ in range(1000):
+        doc = json.loads(payload)
+        rows = doc["records"]
+        if not isinstance(rows, list):
+            return 2
+        subtotal = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                return 3
+            field = row["count"]
+            if type(field) is not int:
+                return 4
+            subtotal += field
+        if len(rows) != 4 or subtotal != 1600:
+            return 5
+        total += subtotal
+    if total != 1600000:
+        return 6
+
+    try:
+        json.loads('{"records":[')
+    except json.JSONDecodeError:
+        pass
+    else:
+        return 7
     return 0
 
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

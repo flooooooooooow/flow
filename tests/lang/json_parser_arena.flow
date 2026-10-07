@@ -1,0 +1,39 @@
+# Parser arena ownership: nested objects, empty member names, numeric
+# strings, error documents, and repeated parse/free cycles (#747).
+import "scripts/tools/lib/json.flow"
+
+function main() -> i32 {
+    let data: string = "{\"\":0,\"nested\":{\"value\":123,\"title\":\"\"},\"items\":[1,2,3]}"
+    let mut n: i32 = 0
+    while n < 1000 {
+        let doc: ptr<Json> = json_parse(data)
+        if json_error(doc) != "" { json_free(doc); return 1 }
+        let empty: i32 = json_get(doc, 0, "")
+        if empty < 0 or json_int(doc, empty) != 0 {
+            json_free(doc)
+            return 2
+        }
+        let nested: i32 = json_get(doc, 0, "nested")
+        let value: i32 = json_get(doc, nested, "value")
+        if value < 0 or not json_is_int(doc, value) or
+           json_int(doc, value) != 123 {
+            json_free(doc)
+            return 3
+        }
+        let arr: i32 = json_get(doc, 0, "items")
+        if arr < 0 or json_kind(doc, arr) != json_kind_array() or
+           json_len(doc, arr) != 3 {
+            json_free(doc)
+            return 4
+        }
+        json_free(doc)
+        n = n + 1
+    }
+    let failed: ptr<Json> = json_parse("{\"items\":[1,2,")
+    if json_error(failed) == "" {
+        json_free(failed)
+        return 5
+    }
+    json_free(failed)
+    return 0
+}
