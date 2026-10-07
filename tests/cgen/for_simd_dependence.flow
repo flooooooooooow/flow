@@ -1,0 +1,30 @@
+# An indexed store does not make iterations independent: dst may point
+# into src. `acc = acc + acc * 2` reads the accumulator twice, so it is a
+# recurrence and gets no OpenMP reduction clause (#739).
+
+function shifted(a: ptr<i32>, n: i32) -> void {
+    let src: ptr<i32> = a
+    let dst: ptr<i32> = a + 1
+    for i in 0 to n {
+        dst[i] = src[i] + 1
+    }
+}
+
+function nonlinear(n: i32) -> i32 {
+    let mut acc: i32 = 1
+    for i in 0 to n {
+        acc = acc + acc * 2
+    }
+    return acc
+}
+
+function main() -> i32 {
+    let mut a: [i32; 5] = [1, 0, 0, 0, 0]
+    shifted(&a[0], 4)
+    if a[0] != 1 or a[1] != 2 or a[2] != 3 or
+       a[3] != 4 or a[4] != 5 {
+        return 1
+    }
+    if nonlinear(4) != 81 { return 2 }
+    return 0
+}

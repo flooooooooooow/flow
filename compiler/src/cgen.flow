@@ -8895,7 +8895,7 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     # hints on the ascending body (#739).
     if dir > 0 {
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c, id)
         } else {
             flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
         }
@@ -9094,11 +9094,19 @@ function flowc_cgen_reduction_op(arena: AstArena, src: ptr<u8>, st: i32) -> i32 
     let right: i32 = arena.nodes[rhs].b
     let left_same: i32 = flowc_cgen_ident_same(arena, src, left, lhs)
     let right_same: i32 = flowc_cgen_ident_same(arena, src, right, lhs)
+    # An OpenMP reduction reads the accumulator once. `acc = acc + acc * 2`
+    # reads it again in the other operand, so it is an ordered recurrence.
     if left_same == 1 and right_same == 0 {
+        if flowc_cgen_expr_uses_name(arena, src, right, arena.nodes[lhs].name_start, arena.nodes[lhs].name_end) == 1 {
+            return 0
+        }
         return op
     }
     if left_same == 0 and right_same == 1 {
         if op == TOK_MINUS {
+            return 0
+        }
+        if flowc_cgen_expr_uses_name(arena, src, left, arena.nodes[lhs].name_start, arena.nodes[lhs].name_end) == 1 {
             return 0
         }
         return op
@@ -9121,40 +9129,206 @@ function flowc_cgen_assign_is_index_store(arena: AstArena, st: i32) -> i32 {
     return 1
 }
 
-# 1 when a simple body is safe for `#pragma omp simd` / `GCC ivdep`: every
-# assignment is an indexed store or a recognized reduction. Scalar
-# loop-carried updates such as `acc = acc * 10 + i` stay off that path so
-# the C compiler's dependence analysis is not overridden (#739).
-function flowc_cgen_loop_omp_safe(arena: AstArena, src: ptr<u8>, body: i32) -> i32 {
-    if body == AST_NONE {
-        return 1
-    }
-    if arena.nodes[body].kind != AST_BLOCK {
+# 1 when `e` is `name[v]` with `v` the loop variable of `loop_id`.
+function flowc_cgen_is_same_index_read(arena: AstArena, src: ptr<u8>, e: i32, ns: i32, ne: i32, loop_id: i32) -> i32 {
+    if e == AST_NONE or e < 0 or arena.nodes[e].kind != AST_INDEX or arena.nodes[e].ival == 1 {
         return 0
     }
-    let mut st: i32 = arena.nodes[body].a
-    while st != AST_NONE {
-        let k: i32 = arena.nodes[st].kind
-        if k == AST_LET {
-            st = arena.nodes[st].next
-            continue
+    let base: i32 = arena.nodes[e].a
+    let ix: i32 = arena.nodes[e].b
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return 0
+    }
+    if flowc_cgen_span_eq(src, ns, ne, arena.nodes[base].name_start, arena.nodes[base].name_end) == 0 {
+        return 0
+    }
+    if ix == AST_NONE or arena.nodes[ix].kind != AST_IDENT {
+        return 0
+    }
+    return flowc_cgen_span_eq(src, arena.nodes[ix].name_start, arena.nodes[ix].name_end, arena.nodes[loop_id].name_start, arena.nodes[loop_id].name_end)
+}
+
+# 1 when `e` reads `name` only as `name[v]` at the loop variable, so the
+# value stored in this iteration is the only one of `name` it can see.
+# Unknown expression kinds answer 0.
+function flowc_cgen_reads_only_same_index(arena: AstArena, src: ptr<u8>, e: i32, ns: i32, ne: i32, loop_id: i32) -> i32 {
+    if e == AST_NONE or e < 0 {
+        return 1
+    }
+    if flowc_cgen_expr_uses_name(arena, src, e, ns, ne) == 0 {
+        return 1
+    }
+    if flowc_cgen_is_same_index_read(arena, src, e, ns, ne, loop_id) == 1 {
+        return 1
+    }
+    let k: i32 = arena.nodes[e].kind
+    if k == AST_BINOP {
+        if flowc_cgen_reads_only_same_index(arena, src, arena.nodes[e].a, ns, ne, loop_id) == 0 {
+            return 0
         }
-        if k == AST_IF {
-            if flowc_cgen_if_is_select(arena, src, st) == 0 {
+        return flowc_cgen_reads_only_same_index(arena, src, arena.nodes[e].b, ns, ne, loop_id)
+    }
+    if k == AST_UNARY or k == AST_CAST {
+        return flowc_cgen_reads_only_same_index(arena, src, arena.nodes[e].a, ns, ne, loop_id)
+    }
+    return 0
+}
+
+# 1 when the select `if` at `id` (see flowc_cgen_if_is_select) reads `name`
+# only as `name[v]` in its conditions and stored values.
+function flowc_cgen_select_reads_only_same_index(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32, loop_id: i32) -> i32 {
+    if id == AST_NONE or arena.nodes[id].kind != AST_IF {
+        return 0
+    }
+    if flowc_cgen_reads_only_same_index(arena, src, arena.nodes[id].a, ns, ne, loop_id) == 0 {
+        return 0
+    }
+    let then_st: i32 = flowc_cgen_block_index_store(arena, arena.nodes[id].b)
+    if then_st == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_reads_only_same_index(arena, src, arena.nodes[then_st].b, ns, ne, loop_id) == 0 {
+        return 0
+    }
+    let els: i32 = arena.nodes[id].c
+    if els == AST_NONE {
+        return 1
+    }
+    let else_st: i32 = flowc_cgen_block_index_store(arena, els)
+    if else_st != AST_NONE {
+        return flowc_cgen_reads_only_same_index(arena, src, arena.nodes[else_st].b, ns, ne, loop_id)
+    }
+    let mut inner: i32 = AST_NONE
+    if arena.nodes[els].kind == AST_IF {
+        inner = els
+    } else {
+        inner = flowc_cgen_block_only_if(arena, els)
+    }
+    return flowc_cgen_select_reads_only_same_index(arena, src, inner, ns, ne, loop_id)
+}
+
+# 1 when the identifier `base` names a pointer that the noalias analysis
+# made `restrict` (#731) in the function being emitted.
+function flowc_cgen_base_is_restrict(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32) -> i32 {
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return 0
+    }
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, base)
+    if decl == AST_NONE {
+        return 0
+    }
+    if arena.nodes[decl].kind == AST_PARAM {
+        if w[0].na_clone == 1 {
+            return flowc_noalias_param_restrict_clone(arena, src, w[0].cur_fn, decl)
+        }
+        return flowc_noalias_param_restrict(arena, src, w[0].cur_fn, decl)
+    }
+    if arena.nodes[decl].kind == AST_LET {
+        return flowc_noalias_local_restrict(arena, src, w[0].cur_fn, decl)
+    }
+    return 0
+}
+
+# 1 when every `let` in `body` before `stop` (other than `skip`) has an
+# initializer that reads `name` only as `name[v]`.
+function flowc_cgen_lets_read_only_same_index(arena: AstArena, src: ptr<u8>, body: i32, stop: i32, skip: i32, ns: i32, ne: i32, loop_id: i32) -> i32 {
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE and st != stop {
+        if st != skip and arena.nodes[st].kind == AST_LET {
+            if flowc_cgen_reads_only_same_index(arena, src, arena.nodes[st].b, ns, ne, loop_id) == 0 {
                 return 0
             }
-            st = arena.nodes[st].next
-            continue
-        }
-        if k != AST_ASSIGN {
-            return 0
-        }
-        if flowc_cgen_reduction_op(arena, src, st) == 0 and flowc_cgen_assign_is_index_store(arena, st) == 0 {
-            return 0
         }
         st = arena.nodes[st].next
     }
     return 1
+}
+
+# 1 when a simple body is safe for `#pragma omp simd` / `GCC ivdep` (#739).
+# Both pragmas tell the C compiler that iterations are independent. An
+# indexed store such as `dst[i] = src[i] + 1` does not prove that on its
+# own: `dst` may be `src + 1`, which carries a value from one iteration to
+# the next. The body (ignoring `skip`, the increment of a rotated while)
+# must be `let` statements followed by one statement, which is either
+#   - a reduction whose accumulator no `let` reads, or
+#   - a store `dst[v] = e`, or a select `if` that stores only to `dst[v]`,
+#     where `v` is the loop variable named by `loop_id`, the noalias
+#     analysis made `dst` restrict (#731), and every expression in the body
+#     reads `dst` only as `dst[v]`.
+# Restrict rules out another pointer reaching the stored elements, so no
+# iteration can read a value another iteration wrote. Other straight-line
+# loops keep the clang vectorize request, which leaves the dependence
+# check to the C compiler.
+function flowc_cgen_loop_omp_safe(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, loop_id: i32, skip: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK or loop_id == AST_NONE {
+        return 0
+    }
+    let mut eff: i32 = AST_NONE
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        if st != skip {
+            if eff != AST_NONE {
+                return 0
+            }
+            if arena.nodes[st].kind != AST_LET {
+                eff = st
+            }
+        }
+        st = arena.nodes[st].next
+    }
+    if eff == AST_NONE {
+        return 0
+    }
+    let k: i32 = arena.nodes[eff].kind
+    let mut dest: i32 = AST_NONE
+    if k == AST_ASSIGN {
+        if flowc_cgen_reduction_op(arena, src, eff) != 0 {
+            let acc: i32 = arena.nodes[eff].a
+            let mut p: i32 = arena.nodes[body].a
+            while p != eff {
+                if p != skip and arena.nodes[p].kind == AST_LET {
+                    if flowc_cgen_expr_uses_name(arena, src, arena.nodes[p].b, arena.nodes[acc].name_start, arena.nodes[acc].name_end) == 1 {
+                        return 0
+                    }
+                }
+                p = arena.nodes[p].next
+            }
+            return 1
+        }
+        if flowc_cgen_assign_is_index_store(arena, eff) == 0 {
+            return 0
+        }
+        dest = arena.nodes[eff].a
+    } elif k == AST_IF {
+        if flowc_cgen_if_is_select(arena, src, eff) == 0 {
+            return 0
+        }
+        dest = flowc_cgen_if_select_dest(arena, src, eff)
+    } else {
+        return 0
+    }
+    if dest == AST_NONE {
+        return 0
+    }
+    let base: i32 = arena.nodes[dest].a
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return 0
+    }
+    let ns: i32 = arena.nodes[base].name_start
+    let ne: i32 = arena.nodes[base].name_end
+    if flowc_cgen_is_same_index_read(arena, src, dest, ns, ne, loop_id) == 0 {
+        return 0
+    }
+    if flowc_cgen_base_is_restrict(w, arena, src, base) != 1 {
+        return 0
+    }
+    if flowc_cgen_lets_read_only_same_index(arena, src, body, eff, skip, ns, ne, loop_id) == 0 {
+        return 0
+    }
+    if k == AST_ASSIGN {
+        return flowc_cgen_reads_only_same_index(arena, src, arena.nodes[eff].b, ns, ne, loop_id)
+    }
+    return flowc_cgen_select_reads_only_same_index(arena, src, eff, ns, ne, loop_id)
 }
 
 # 1 when an earlier statement in `body` is already a reduction of `st`'s
@@ -9208,13 +9382,13 @@ function flowc_cgen_emit_omp_reductions(w: ptr<CgenBuf>, arena: AstArena, src: p
     flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*")
 }
 
-# Portable SIMD hints for a straight-line counted loop (#739): OpenMP simd
-# (with reduction clauses when the body is a reduction) when the compiler
-# defines `_OPENMP`, else clang loop hints or GCC ivdep. A simple body that
-# is not OpenMP-safe keeps only the clang hint so loop-carried scalar
-# updates are not promised independent.
-function flowc_cgen_emit_simd_pragmas(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32) {
-    if flowc_cgen_loop_omp_safe(arena, src, body) == 1 {
+# Portable SIMD hints for a straight-line counted loop (#739). A body that
+# flowc_cgen_loop_omp_safe accepts gets OpenMP simd (with a reduction clause
+# for a reduction) when the compiler defines `_OPENMP`, else clang loop hints
+# or GCC ivdep. Any other simple body keeps only the clang hint, so no
+# iteration is promised independent without proof.
+function flowc_cgen_emit_simd_pragmas(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, loop_id: i32) {
+    if flowc_cgen_loop_omp_safe(w, arena, src, body, loop_id, AST_NONE) == 1 {
         flowc_cgen_puts(w, "#if defined(_OPENMP)\n")
         flowc_cgen_puts(w, "#pragma omp simd")
         flowc_cgen_emit_omp_reductions(w, arena, src, body)
@@ -9724,45 +9898,14 @@ function flowc_cgen_body_is_simple_skip(arena: AstArena, src: ptr<u8>, body: i32
     return 1
 }
 
-function flowc_cgen_body_omp_safe_skip(arena: AstArena, src: ptr<u8>, body: i32, skip: i32) -> i32 {
-    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
-        return 0
-    }
-    let mut st: i32 = arena.nodes[body].a
-    while st != AST_NONE {
-        if st != skip {
-            let k: i32 = arena.nodes[st].kind
-            if k == AST_LET {
-                st = arena.nodes[st].next
-                continue
-            }
-            if k == AST_IF {
-                if flowc_cgen_if_is_select(arena, src, st) == 0 {
-                    return 0
-                }
-                st = arena.nodes[st].next
-                continue
-            }
-            if k != AST_ASSIGN {
-                return 0
-            }
-            if flowc_cgen_reduction_op(arena, src, st) == 0 and flowc_cgen_assign_is_index_store(arena, st) == 0 {
-                return 0
-            }
-        }
-        st = arena.nodes[st].next
-    }
-    return 1
-}
-
 # Hints for a while rotated to `for (; i < n; ...)`. No OpenMP simd: its
 # loop must be in canonical form with an init clause (clang -fopenmp rejects
 # `for (;` outright), and it privatizes `i`, which a while loop often reads
 # after the loop.
-function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32) {
+function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32, iv: i32) {
     flowc_cgen_puts(w, "#if defined(__clang__)\n")
     flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
-    if flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1 {
+    if flowc_cgen_loop_omp_safe(w, arena, src, body, iv, skip) == 1 {
         flowc_cgen_puts(w, "#elif defined(__GNUC__)\n")
         flowc_cgen_puts(w, "#pragma GCC ivdep\n")
     }
@@ -9819,7 +9962,7 @@ function flowc_cgen_try_emit_while_as_for(w: ptr<CgenBuf>, arena: AstArena, src:
         return 0
     }
     if flowc_cgen_body_is_simple_skip(arena, src, body, last) == 1 {
-        flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last)
+        flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last, iv)
     }
     let saved_wbase: i32 = w[0].loop_defer_base
     w[0].loop_defer_base = w[0].defer_len
@@ -10064,7 +10207,7 @@ function flowc_cgen_emit_vector_loop(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     flowc_cgen_puts(w, "    }\n  }\n")
     flowc_cgen_puts(w, "#else\n")
     if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-        flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c, id)
     }
     flowc_cgen_puts(w, "  for (int32_t ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -11015,7 +11158,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             return
         }
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c, id)
         } else {
             flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
         }

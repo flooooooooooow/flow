@@ -1,0 +1,3 @@
++ #pragma omp simd reduction(+:total)
++ #pragma GCC ivdep
+exit 0
