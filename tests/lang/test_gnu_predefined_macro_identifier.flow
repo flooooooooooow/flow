@@ -1,0 +1,37 @@
+# Regression (#1442): identifiers named after macros that GCC and Clang
+# predefine in GNU mode (`linux` and `unix` on Linux, `i386` on 32-bit x86,
+# `TARGET_OS_*` on macOS) compile on every host. flowc renames them as it
+# renames C keywords.
+
+struct Host {
+    unix: i32,
+    linux: i32,
+}
+
+function linux(unix: i32) -> i32 {
+    return unix + 1
+}
+
+function probe() -> i32 {
+    return linux(1)
+}
+
+function main() -> i32 {
+    let linux_gate: i32 = 1
+    let linux: i32 = 3
+    let unix: i32 = 4
+    let i386: i32 = 5
+    let TARGET_OS_MAC: i32 = 6
+    let TARGET_IPHONE_SIMULATOR: i32 = 7
+    if linux + unix + i386 + TARGET_OS_MAC + TARGET_IPHONE_SIMULATOR + linux_gate != 26 {
+        return 1
+    }
+    let h: Host = Host { unix: 2, linux: 3 }
+    if h.unix + h.linux != 5 {
+        return 2
+    }
+    if probe() != 2 {
+        return 3
+    }
+    return 0
+}

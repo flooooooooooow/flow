@@ -1,0 +1,45 @@
+# Regression (#1443): a ptr<T> parameter indexes as a pointer even when
+# another function has a span<T> parameter with the same name. The span
+# facts used to be looked up by name across the whole module, so `bump`
+# was lowered as `xs.data[i]` and the C did not compile.
+
+function total(xs: span<i32>) -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to xs.len {
+        s = s + xs[i]
+    }
+    return s
+}
+
+function bump(xs: ptr<i32>, n: i32) {
+    for i in 0 to n {
+        xs[i] = xs[i] + 1
+    }
+}
+
+function head_sum(xs: ptr<f64>) -> f64 {
+    let ys: span<f64> = xs[0..2]
+    return ys[0] + ys[1]
+}
+
+function scale(xs: span<f64>) -> f64 {
+    return xs[0] * 2.0
+}
+
+function main() -> i32 {
+    let mut a: array<i32, 4> = [1, 2, 3, 4]
+    let p: ptr<i32> = a
+    bump(p, 4)
+    if total(a) != 14 {
+        return 1
+    }
+    let mut d: array<f64, 3> = [1.5, 2.5, 4.0]
+    let q: ptr<f64> = d
+    if head_sum(q) != 4.0 {
+        return 2
+    }
+    if scale(d) != 3.0 {
+        return 3
+    }
+    return 0
+}
