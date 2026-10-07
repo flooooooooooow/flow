@@ -1,0 +1,65 @@
+# #740 / #745: typed heap and callback arena arithmetic must fail closed.
+# Rejected allocations must never modify offset, high-water or live storage.
+import "stdlib/memory.flow"
+
+function main() -> i32 {
+    if align_up(0 - 1, 8) != -1 { return 1 }
+    if align_up(9223372036854775807, 8) != -1 { return 2 }
+    if align_up(9, 8) != 16 { return 3 }
+    if align_up(8, 8) != 8 { return 4 }
+    if align_up(8, 3) != -1 { return 5 }
+
+    if alloc_bytes(0 - 1) != null { return 6 }
+    if alloc_zeroed(0 - 1) != null { return 7 }
+    if alloc_i32(2305843009213693952) != null { return 8 }
+    if alloc_f64(1152921504606846976) != null { return 9 }
+    if alloc_uninit(8, 1152921504606846976) != null { return 10 }
+    if alloc_uninit(0, 8) != null { return 11 }
+    if grow_uninit(null, 0 - 1) != null { return 12 }
+    if grow_zeroed(null, 1, 8) != null { return 13 }
+
+    let mut arena: Arena = arena_create(32)
+    if arena.buffer == null { return 14 }
+    let first: ptr<void> = arena_alloc(&arena, 9)
+    if first == null or arena.offset != 16 { return 15 }
+    if arena_alloc(&arena, -1) != null or arena.offset != 16 { return 16 }
+    if arena_alloc(&arena, 9223372036854775807) != null or
+       arena.offset != 16 { return 17 }
+    if arena_alloc_i32(&arena, 2305843009213693952) != null or
+       arena.offset != 16 { return 18 }
+    if arena_alloc(&arena, 17) != null or arena.offset != 16 { return 19 }
+    let second: ptr<void> = arena_alloc(&arena, 16)
+    if second == null or arena.offset != 32 { return 20 }
+    if arena_alloc(&arena, 8) != null or arena.offset != 32 { return 21 }
+    arena_reset(&arena)
+    if arena.offset != 0 { return 22 }
+    if arena_alloc(&arena, 32) == null or arena.offset != 32 { return 23 }
+    arena_destroy(&arena)
+
+    let mut frame: FrameArena = frame_arena_create(32)
+    if frame.arena.buffer == null { return 24 }
+    frame_begin(&frame)
+    let samples: ptr<f32> = frame_alloc_f32(&frame, 3)
+    if samples == null or frame_used(frame) != 16 { return 25 }
+    samples[0] = 1.0
+    if frame_alloc(&frame, -4) != null or frame_used(frame) != 16 { return 26 }
+    if frame_alloc_f64(&frame, 1152921504606846976) != null or
+       frame_used(frame) != 16 { return 27 }
+    if frame_alloc(&frame, 9223372036854775807) != null or
+       frame_used(frame) != 16 { return 28 }
+    let second_frame: ptr<void> = frame_alloc(&frame, 16)
+    if second_frame == null or frame_used(frame) != 32 { return 29 }
+    if frame_alloc(&frame, 8) != null or frame_used(frame) != 32 { return 30 }
+    frame_end(&frame)
+    if frame_high_water(frame) != 32 or frame_count(frame) != 1 { return 31 }
+    frame_begin(&frame)
+    if frame_used(frame) != 0 { return 32 }
+    if frame_alloc(&frame, 8) == null or frame_used(frame) != 8 { return 33 }
+    frame_end(&frame)
+    if frame_high_water(frame) != 32 or frame_count(frame) != 2 { return 34 }
+    frame_arena_destroy(&frame)
+
+    let empty: Arena = arena_create(0 - 1)
+    if empty.buffer != null or empty.capacity != 0 { return 35 }
+    return 0
+}

@@ -28,6 +28,28 @@ Every successful heap allocation must be released exactly once unless ownership 
 
 The libc layer exposes `malloc`, `calloc`, `realloc`, and `free`. Typed helpers include `alloc_bytes`, `alloc_zeroed`, `alloc_i32`, `alloc_f32`, `alloc_f64`, memory copy/zero helpers, and layout helpers.
 
+## Allocation failure and integer overflow
+
+Heap allocators, typed allocations and both arenas reject non-positive
+requests, invalid element counts and byte counts that overflow `i64`.
+They return `null` and never call libc with a negative size or a wrapped
+`count * sizeof(T)`. `align_up` returns `-1` when the alignment is not a
+positive power of two, the size is negative, or the rounded size would
+overflow `i64`.
+
+The frame allocator checks `0 <= offset <= capacity` and then
+`rounded_bytes <= capacity - offset`, so it never computes an
+overflowing `offset + rounded_bytes`. A rejected allocation leaves the
+arena offset, the frame high-water mark and the frame count unchanged.
+The checks do not allocate, so they are safe on callback paths.
+
+`grow_uninit(p, 0)` and `grow_zeroed(p, old, 0)` return `null` and leave
+`p` owned by the caller. `grow_zeroed` also requires `old_size >= 0`, and
+`old_size == 0` when `p` is null, so a new region cannot skip zeroing. A
+failed `realloc` leaves the original pointer owned by the caller.
+
+`tests/lang/test_memory_bounds.flow` covers these cases.
+
 ## Arena allocator
 
 ```flow

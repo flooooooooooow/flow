@@ -39,11 +39,17 @@ export function is_power_of_two(value: i64) -> bool {
     return (value & (value - 1)) == 0
 }
 
+# -1 signals invalid/overflowing alignment. Never compute size+mask
+# before establishing that it fits in signed 64-bit arithmetic.
 export function align_up(size: i64, alignment: i64) -> i64 {
-    if !is_power_of_two(alignment) {
-        return size
+    if size < 0 or !is_power_of_two(alignment) {
+        return -1
     }
-    return (size + alignment - 1) & ~(alignment - 1)
+    let mask: i64 = alignment - 1
+    if size > 9223372036854775807 - mask {
+        return -1
+    }
+    return (size + mask) & ~mask
 }
 
 export function align_down(size: i64, alignment: i64) -> i64 {
@@ -56,22 +62,33 @@ export function align_down(size: i64, alignment: i64) -> i64 {
 # ── Typed heap helpers ──────────────────────────────────────────────
 
 export function alloc_bytes(size: i64) -> ptr<void> {
+    if size <= 0 { return null }
     return malloc(size)
 }
 
 export function alloc_zeroed(size: i64) -> ptr<void> {
+    if size <= 0 { return null }
     return calloc(1, size)
 }
 
 export function alloc_i32(count: i64) -> ptr<i32> {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return null
+    }
     return calloc(count, sizeof_i32())
 }
 
 export function alloc_f32(count: i64) -> ptr<f32> {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return null
+    }
     return calloc(count, sizeof_f32())
 }
 
 export function alloc_f64(count: i64) -> ptr<f64> {
+    if count <= 0 or count > 9223372036854775807 / 8 {
+        return null
+    }
     return calloc(count, sizeof_f64())
 }
 
@@ -96,10 +113,14 @@ export function memory_copy_i32(dst: ptr<i32>, src: ptr<i32>, count: i64) -> voi
 # new element before reading it. Use grow_zeroed when zero-fill is needed.
 
 export function grow_uninit(p: ptr<void>, new_size: i64) -> ptr<void> {
+    if new_size <= 0 { return null }
     return realloc(p, new_size)
 }
 
 export function grow_zeroed(p: ptr<void>, old_size: i64, new_size: i64) -> ptr<void> {
+    if old_size < 0 or new_size <= 0 or (p == null and old_size != 0) {
+        return null
+    }
     let result: ptr<void> = realloc(p, new_size)
     if result != null {
         if new_size > old_size {
@@ -118,6 +139,10 @@ export function grow_zeroed(p: ptr<void>, old_size: i64, new_size: i64) -> ptr<v
 # Allocate exactly count * elem_size bytes, no minimum capacity floor.
 # Callers must initialize elements before reading.
 export function alloc_uninit(elem_size: i64, count: i64) -> ptr<void> {
+    if elem_size <= 0 or count <= 0 or
+       count > 9223372036854775807 / elem_size {
+        return null
+    }
     return malloc(elem_size * count)
 }
 
@@ -131,6 +156,9 @@ export struct Arena {
 }
 
 export function arena_create(capacity: i64) -> Arena {
+    if capacity <= 0 {
+        return Arena { buffer: null, capacity: 0, offset: 0 }
+    }
     let raw: ptr<void> = malloc(capacity)
     if raw == null {
         return Arena { buffer: null, capacity: 0, offset: 0 }
@@ -140,12 +168,12 @@ export function arena_create(capacity: i64) -> Arena {
 }
 
 export function arena_alloc(arena: ptr<Arena>, size: i64) -> ptr<void> {
+    if arena == null or size <= 0 { return null }
     let a: Arena = arena[0]
     let aligned: i64 = align_up(size, 8)
-    if a.buffer == null {
-        return null
-    }
-    if a.offset + aligned > a.capacity {
+    if a.buffer == null or aligned <= 0 or a.capacity < 0 or
+       a.offset < 0 or a.offset > a.capacity or
+       aligned > a.capacity - a.offset {
         return null
     }
     let out: ptr<void> = a.buffer + a.offset
@@ -154,10 +182,16 @@ export function arena_alloc(arena: ptr<Arena>, size: i64) -> ptr<void> {
 }
 
 export function arena_alloc_i32(arena: ptr<Arena>, count: i64) -> ptr<i32> {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return null
+    }
     return arena_alloc(arena, count * sizeof_i32())
 }
 
 export function arena_alloc_f32(arena: ptr<Arena>, count: i64) -> ptr<f32> {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return null
+    }
     return arena_alloc(arena, count * sizeof_f32())
 }
 
@@ -221,14 +255,13 @@ export function frame_begin(f: ptr<FrameArena>) -> void {
 }
 
 export function frame_alloc(f: ptr<FrameArena>, size: i64) -> ptr<void> {
+    if f == null or size <= 0 { return null }
     let base: ptr<i8> = f[0].arena.buffer
     let off: i64 = f[0].arena.offset
     let cap: i64 = f[0].arena.capacity
     let aligned: i64 = align_up(size, 8)
-    if base == null {
-        return null
-    }
-    if off + aligned > cap {
+    if base == null or aligned <= 0 or cap < 0 or
+       off < 0 or off > cap or aligned > cap - off {
         return null
     }
     let out: ptr<void> = base + off
@@ -237,14 +270,23 @@ export function frame_alloc(f: ptr<FrameArena>, size: i64) -> ptr<void> {
 }
 
 export function frame_alloc_i32(f: ptr<FrameArena>, count: i64) -> ptr<i32> {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return null
+    }
     return frame_alloc(f, count * sizeof_i32())
 }
 
 export function frame_alloc_f32(f: ptr<FrameArena>, count: i64) -> ptr<f32> {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return null
+    }
     return frame_alloc(f, count * sizeof_f32())
 }
 
 export function frame_alloc_f64(f: ptr<FrameArena>, count: i64) -> ptr<f64> {
+    if count <= 0 or count > 9223372036854775807 / 8 {
+        return null
+    }
     return frame_alloc(f, count * sizeof_f64())
 }
 
