@@ -1,0 +1,101 @@
+# Microbenchmark for the #729 codegen taxes.
+#
+# 1. Complex times a real scalar (#630): `z * c64(r, 0.0)` against the same
+#    work on split real/imag f32 arrays. With the componentwise lowering
+#    there is no __mulsc3 call, so the ratio stays near 1.
+# 2. Span bounds checks (#615, #1414): a canonical `for i in 0 to xs.len`
+#    loop (check elided) against the same loop indexing through a value the
+#    compiler cannot prove in range (check kept).
+#
+# Run: ./flow run benchmarks/micro/codegen_taxes.flow
+# It prints seconds per variant and the ratio; the checks lines make the
+# results observable so the loops cannot be removed.
+
+extern {
+    function printf(fmt: string, a: f64, b: f64) -> i32
+    function clock() -> i64
+}
+
+function scale_complex(zs: ptr<c64>, n: i32, r: f32) {
+    for i in 0 to n {
+        zs[i] = zs[i] * c64(r, 0.0)
+    }
+}
+
+function scale_split(re: ptr<f32>, im: ptr<f32>, n: i32, r: f32) {
+    for i in 0 to n {
+        re[i] = re[i] * r
+        im[i] = im[i] * r
+    }
+}
+
+function sum_elided(xs: span<f32>) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to xs.len {
+        s = s + xs[i]
+    }
+    return s
+}
+
+function sum_checked(xs: span<f32>, stride: i32) -> f32 {
+    let mut s: f32 = 0.0
+    let mut j: i32 = 0
+    for i in 0 to xs.len {
+        s = s + xs[j]
+        j = j + stride
+    }
+    return s
+}
+
+function seconds(t0: i64, t1: i64) -> f64 {
+    return ((t1 - t0) as f64) / 1000000.0
+}
+
+function main() -> i32 {
+    let n: i32 = 4096
+    let mut a: array<c64, 4096>
+    let mut re: array<f32, 4096>
+    let mut im: array<f32, 4096>
+    let pa: ptr<c64> = a
+    let pr: ptr<f32> = re
+    let pi: ptr<f32> = im
+    for i in 0 to n {
+        pa[i] = c64(1.0, 2.0)
+        pr[i] = 1.0
+        pi[i] = 2.0
+    }
+    let reps: i32 = 100000
+
+    let t0: i64 = clock()
+    for k in 0 to reps {
+        scale_complex(pa, n, 1.0000001)
+    }
+    let t1: i64 = clock()
+    for k in 0 to reps {
+        scale_split(pr, pi, n, 1.0000001)
+    }
+    let t2: i64 = clock()
+    printf("checks complex %f split %f\n", crealf(pa[17]) as f64, pr[17] as f64)
+    let c_s: f64 = seconds(t0, t1)
+    let p_s: f64 = seconds(t1, t2)
+    printf("complex_real_scale_s %f split_floats_s %f\n", c_s, p_s)
+    printf("complex_over_split %f (#630 measured %f before the fix)\n", c_s / p_s, 5.48)
+
+    let mut acc_e: f32 = 0.0
+    let mut acc_c: f32 = 0.0
+    let t3: i64 = clock()
+    for k in 0 to reps {
+        acc_e = acc_e + sum_elided(re)
+    }
+    let t4: i64 = clock()
+    for k in 0 to reps {
+        acc_c = acc_c + sum_checked(re, 1)
+    }
+    let t5: i64 = clock()
+    printf("checks elided %f checked %f\n", acc_e as f64, acc_c as f64)
+    let e_s: f64 = seconds(t3, t4)
+    let k_s: f64 = seconds(t4, t5)
+    printf("span_elided_s %f span_checked_s %f\n", e_s, k_s)
+    printf("checked_over_elided %f elided_s %f\n", k_s / e_s, e_s)
+    return 0
+}
