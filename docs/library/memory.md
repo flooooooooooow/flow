@@ -114,9 +114,10 @@ When enabled, the program writes a report at exit to stderr, or to the file name
 - peak live heap (high-water mark of still-live routed bytes)
 - peak RSS via `getrusage` (kilobytes; macOS bytes are normalised)
 - compiler-temporary bytes (string concat / format helpers)
-- copy volume from routed `memcpy` and string joins
+- copy volume from routed `memcpy`, string joins, and compiler-emitted aggregate copies
+- copy operation count (`copy_count`), the #732 metric wired into the #728 harness
 
-`./flow tool bench_harness` sets both variables on the memory suite, so the #728 schema records `allocations`, `heap_bytes`, `peak_live_heap`, `temp_bytes`, `copies` and `median_rss_kb` without rewriting workload sources. Runtime rows leave the profiler off so `flow_vs_native` is not the wrapper tax.
+`./flow tool bench_harness` sets both variables on the memory suite, so the #728 schema records `allocations`, `heap_bytes`, `peak_live_heap`, `temp_bytes`, `copies`, `copy_count` and `median_rss_kb` without rewriting workload sources. Runtime rows leave the profiler off so `flow_vs_native` is not the wrapper tax.
 
 Stack/arena promotion bytes and per-source copy attribution are reported as deferred until the lifetime work in #669.
 

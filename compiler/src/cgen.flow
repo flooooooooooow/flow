@@ -213,11 +213,14 @@ export struct CgenBuf {
     root: i32,
     # 1 while emitting `__flowc_na_<name>`, the proven-call clone of an
     # internal function with mixed aliasable and disjoint call sites (#731).
-    na_clone: i32
+    na_clone: i32,
+    # #732 destination-passing: 0 none, 1 hidden `T* __flowc_sret` parameter
+    # (single-module pointer ABI), 2 callee-local sret slot (bundle-safe).
+    sret: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0, sret: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -718,6 +721,387 @@ function flowc_cgen_rupdate_values_use_name(arena: AstArena, src: ptr<u8>, lit: 
     return 0
 }
 
+# --- #732 overwrite-dependence and destination-passing --------------------
+# A same-storage record update y_j = f_j(x_{R_j}) has an overwrite-
+# dependence edge j -> i when output j reads old slot i and i != j.
+# Writing i destroys x_i, so j must be written first. Zero-temporary
+# construction exists iff that graph is acyclic (issue comment on #732).
+
+const FLOWC_RUPD_MAX: i32 = 32
+
+function flowc_cgen_struct_field_index(arena: AstArena, src: ptr<u8>, st: i32, fs: i32, fe: i32) -> i32 {
+    if st == AST_NONE or fe <= fs {
+        return 0 - 1
+    }
+    let mut f: i32 = arena.nodes[st].a
+    let mut i: i32 = 0
+    while f != AST_NONE {
+        if flowc_cgen_span_eq(src, fs, fe, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
+            return i
+        }
+        i = i + 1
+        f = arena.nodes[f].next
+    }
+    return 0 - 1
+}
+
+# 1 when `id` reads dest.slot (a field access) or the whole dest object.
+function flowc_cgen_expr_reads_slot(arena: AstArena, src: ptr<u8>, id: i32, dns: i32, dne: i32, fs: i32, fe: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_FIELD_ACCESS {
+        let base: i32 = arena.nodes[id].a
+        if base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
+            if flowc_cgen_span_eq(src, dns, dne, arena.nodes[base].name_start, arena.nodes[base].name_end) == 1 {
+                return flowc_cgen_span_eq(src, fs, fe, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            }
+        }
+        return flowc_cgen_expr_reads_slot(arena, src, base, dns, dne, fs, fe)
+    }
+    if k == AST_IDENT {
+        return flowc_cgen_span_eq(src, dns, dne, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    }
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_STRING {
+        return 0
+    }
+    if k == AST_CALL {
+        let mut arg: i32 = arena.nodes[id].a
+        while arg != AST_NONE {
+            if flowc_cgen_expr_reads_slot(arena, src, arg, dns, dne, fs, fe) == 1 {
+                return 1
+            }
+            arg = arena.nodes[arg].next
+        }
+        return 0
+    }
+    if k == AST_BINOP or k == AST_INDEX {
+        if flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].a, dns, dne, fs, fe) == 1 { return 1 }
+        if flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].b, dns, dne, fs, fe) == 1 { return 1 }
+        if k == AST_INDEX {
+            return flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].c, dns, dne, fs, fe)
+        }
+        return 0
+    }
+    if k == AST_UNARY or k == AST_CAST or k == AST_FIELD {
+        return flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].a, dns, dne, fs, fe)
+    }
+    if k == AST_IF_EXPR {
+        if flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].a, dns, dne, fs, fe) == 1 { return 1 }
+        if flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].b, dns, dne, fs, fe) == 1 { return 1 }
+        return flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].c, dns, dne, fs, fe)
+    }
+    if k == AST_STRUCT_LIT or k == AST_ARRAY_LIT {
+        let mut el: i32 = arena.nodes[id].a
+        while el != AST_NONE {
+            let mut e: i32 = el
+            if k == AST_STRUCT_LIT {
+                e = arena.nodes[el].a
+            }
+            if flowc_cgen_expr_reads_slot(arena, src, e, dns, dne, fs, fe) == 1 { return 1 }
+            el = arena.nodes[el].next
+        }
+        if k == AST_ARRAY_LIT {
+            return flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].b, dns, dne, fs, fe)
+        }
+        return flowc_cgen_expr_reads_slot(arena, src, arena.nodes[id].c, dns, dne, fs, fe)
+    }
+    return 1
+}
+
+# Topological write order of listed fields of `lit` onto dest[dns..dne].
+# Returns the listed-field count, or -1 when the overwrite graph is cyclic
+# or the struct is unknown. `order` holds AST_FIELD nodes.
+function flowc_cgen_rupdate_order(arena: AstArena, src: ptr<u8>, lit: i32, dns: i32, dne: i32, order: ptr<i32>) -> i32 {
+    if lit == AST_NONE {
+        return 0 - 1
+    }
+    let st: i32 = flowc_cgen_find_struct(arena, src, arena.nodes[lit].name_start, arena.nodes[lit].name_end)
+    if st == AST_NONE {
+        return 0 - 1
+    }
+    let mut listed: array<i32, 32> = []
+    let mut n: i32 = 0
+    let mut uf: i32 = arena.nodes[lit].a
+    while uf != AST_NONE {
+        if n >= FLOWC_RUPD_MAX {
+            return 0 - 1
+        }
+        listed[n] = uf
+        n = n + 1
+        uf = arena.nodes[uf].next
+    }
+    if n == 0 {
+        return 0
+    }
+    let mut idx: array<i32, 32> = []
+    let mut i: i32 = 0
+    while i < n {
+        let f: i32 = listed[i]
+        idx[i] = flowc_cgen_struct_field_index(arena, src, st, arena.nodes[f].name_start, arena.nodes[f].name_end)
+        if idx[i] < 0 {
+            return 0 - 1
+        }
+        i = i + 1
+    }
+    # edge j -> i (j precedes i) when listed j reads old listed i, i != j.
+    let mut indeg: array<i32, 32> = []
+    let mut adj: array<i32, 1024> = []
+    i = 0
+    while i < n {
+        indeg[i] = 0
+        i = i + 1
+    }
+    i = 0
+    while i < n * n {
+        adj[i] = 0
+        i = i + 1
+    }
+    let mut j: i32 = 0
+    while j < n {
+        let val: i32 = arena.nodes[listed[j]].a
+        i = 0
+        while i < n {
+            if i != j {
+                let slot: i32 = listed[i]
+                if flowc_cgen_expr_reads_slot(arena, src, val, dns, dne, arena.nodes[slot].name_start, arena.nodes[slot].name_end) == 1 {
+                    if adj[j * FLOWC_RUPD_MAX + i] == 0 {
+                        adj[j * FLOWC_RUPD_MAX + i] = 1
+                        indeg[i] = indeg[i] + 1
+                    }
+                }
+            }
+            i = i + 1
+        }
+        j = j + 1
+    }
+    let mut q: array<i32, 32> = []
+    let mut qh: i32 = 0
+    let mut qt: i32 = 0
+    i = 0
+    while i < n {
+        if indeg[i] == 0 {
+            q[qt] = i
+            qt = qt + 1
+        }
+        i = i + 1
+    }
+    let mut written: i32 = 0
+    while qh < qt {
+        let cur: i32 = q[qh]
+        qh = qh + 1
+        order[written] = listed[cur]
+        written = written + 1
+        i = 0
+        while i < n {
+            if adj[cur * FLOWC_RUPD_MAX + i] == 1 {
+                indeg[i] = indeg[i] - 1
+                if indeg[i] == 0 {
+                    q[qt] = i
+                    qt = qt + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    if written != n {
+        return 0 - 1
+    }
+    return n
+}
+
+# 1 when same-storage construction of `lit` onto dest is overwrite-certified.
+function flowc_cgen_rupdate_dep_ok(arena: AstArena, src: ptr<u8>, lit: i32, dns: i32, dne: i32) -> i32 {
+    let mut order: array<i32, 32> = []
+    if flowc_cgen_rupdate_order(arena, src, lit, dns, dne, &order[0]) < 0 {
+        return 0
+    }
+    return 1
+}
+
+function flowc_cgen_fn_has_export_attr(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < fn {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
+            if (arena.nodes[i].ival & AST_ATTR_EXPORTED) != 0 {
+                return 1
+            }
+            if flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "flow_api") == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# 1 when some AST_IDENT mentions the function name (taken as a value).
+function flowc_cgen_fn_used_as_value(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_IDENT {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# 1 when `fn` returns a named user struct (sret candidate type).
+function flowc_cgen_fn_ret_is_struct(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE {
+        return 0
+    }
+    return flowc_cgen_is_struct_type(arena, src, arena.nodes[fn].b)
+}
+
+# 1 when `fn` is the inner node of an `export function` item.
+function flowc_cgen_fn_is_export_item(arena: AstArena, fn: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_EXPORT and arena.nodes[i].a == fn {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Pointer-ABI sret for a single-module function: hidden `T* __flowc_sret`.
+# Bundles keep the C return type and use a callee-local slot instead so
+# later modules still call with the recorded signature.
+function flowc_cgen_fn_sret_abi(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE or w[0].sigs_len > 0 {
+        return 0
+    }
+    if arena.nodes[fn].c == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_is_cli_main(arena, src, fn) == 1 {
+        return 0
+    }
+    if flowc_cgen_span_is(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end, "main") == 1 {
+        return 0
+    }
+    if flowc_cgen_fn_ret_is_struct(arena, src, fn) == 0 {
+        return 0
+    }
+    if flowc_cgen_fn_has_export_attr(arena, src, fn) == 1 {
+        return 0
+    }
+    # An `export function` can be called from a module compiled on its own
+    # (roundtrip.flow, stage_a_self_emit), whose caller only sees the
+    # value-return declaration. Keep the plain C signature for it.
+    if flowc_cgen_fn_is_export_item(arena, fn) == 1 {
+        return 0
+    }
+    if flowc_cgen_library_mode() == 1 {
+        return 0
+    }
+    # Bundle mode concatenates modules into one TU. The first module has
+    # sigs_len == 0, so a sigs_len check is not enough: pointer-ABI sret
+    # on that module's helpers would leave later modules calling the old
+    # value-return signature (self-host regen).
+    if flowc_cgen_bundle_mode() == 1 {
+        return 0
+    }
+    if flowc_cgen_fn_used_as_value(arena, src, fn) == 1 {
+        return 0
+    }
+    return 1
+}
+
+# 2 when the current function returns a struct in a bundle (local sret slot).
+function flowc_cgen_fn_sret_slot(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    if fn == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_fn_sret_abi(w, arena, src, fn) == 1 {
+        return 0
+    }
+    if arena.nodes[fn].c == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_span_is(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end, "main") == 1 {
+        return 0
+    }
+    if flowc_cgen_is_cli_main(arena, src, fn) == 1 {
+        return 0
+    }
+    return flowc_cgen_fn_ret_is_struct(arena, src, fn)
+}
+
+function flowc_cgen_call_sret_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    if call == AST_NONE or arena.nodes[call].kind != AST_CALL {
+        return AST_NONE
+    }
+    let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[call].name_start, arena.nodes[call].name_end)
+    if fn == AST_NONE {
+        return AST_NONE
+    }
+    if flowc_cgen_fn_sret_abi(w, arena, src, fn) == 0 {
+        return AST_NONE
+    }
+    return fn
+}
+
+# Emit `name(&dest, args)` for a pointer-ABI sret call. dest_kind 0 is
+# `&__flowc_sr<dest_id>`, 1 is `&ident`, 2 is `__flowc_sret`.
+function flowc_cgen_try_sret_call_into(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32) -> i32 {
+    let fn: i32 = flowc_cgen_call_sret_fn(w, arena, src, call)
+    if fn == AST_NONE {
+        return 0
+    }
+    if flowc_cgen_fn_is_overloaded(arena, src, fn) == 1 {
+        flowc_cgen_put_mangled_fn(w, arena, src, fn)
+    } else {
+        flowc_cgen_put_ident(w, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+    }
+    flowc_cgen_putc(w, 40)
+    if dest_kind == 2 {
+        flowc_cgen_puts(w, "__flowc_sret")
+    } elif dest_kind == 1 {
+        flowc_cgen_putc(w, 38)
+        flowc_cgen_put_ident(w, src, dest_ns, dest_ne)
+    } else {
+        flowc_cgen_puts(w, "&__flowc_sr")
+        flowc_cgen_put_i32(w, dest_id)
+    }
+    let mut arg: i32 = arena.nodes[call].a
+    let mut param_idx: i32 = 0
+    while arg != AST_NONE {
+        flowc_cgen_puts(w, ", ")
+        let fat_pty: i32 = flowc_cgen_fn_param_type(arena, fn, param_idx)
+        if flowc_cgen_is_fat_ty(arena, fat_pty) == 1 {
+            flowc_cgen_emit_as_fat(w, arena, src, arg, fat_pty)
+        } else {
+            flowc_cgen_emit_expr(w, arena, src, arg)
+        }
+        arg = arena.nodes[arg].next
+        param_idx = param_idx + 1
+    }
+    flowc_cgen_putc(w, 41)
+    return 1
+}
+
+function flowc_cgen_note_agg_copy(w: ptr<CgenBuf>) {
+    flowc_cgen_puts(w, "flow_mem_note_copy(sizeof(*__flowc_sret))")
+}
+
+function flowc_cgen_note_copy_of(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) {
+    flowc_cgen_puts(w, "flow_mem_note_copy(sizeof(")
+    flowc_cgen_put_ident(w, src, ns, ne)
+    flowc_cgen_puts(w, "))")
+}
+
 # 1 when struct literal field value `v` is a named array (a variable, field
 # or element whose type is array<T, N>): C cannot initialize an array member
 # from it, so the literal copies it in with memcpy.
@@ -953,11 +1337,16 @@ function flowc_cgen_emit_sl_member(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 
 # Destination of a record-update field write. dest_kind 0 is the expression-
 # position temporary `__flowc_sl<dest_id>`; dest_kind 1 is the identifier
-# src[dest_ns..dest_ne] (a let, assignment target, or last-use local).
+# src[dest_ns..dest_ne] (a let, assignment target, or last-use local);
+# dest_kind 2 is the sret pointer `(*__flowc_sret)` (#732).
 function flowc_cgen_emit_rupdate_dest(w: ptr<CgenBuf>, src: ptr<u8>, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32) {
     if dest_kind == 0 {
         flowc_cgen_puts(w, "__flowc_sl")
         flowc_cgen_put_i32(w, dest_id)
+        return
+    }
+    if dest_kind == 2 {
+        flowc_cgen_puts(w, "(*__flowc_sret)")
         return
     }
     flowc_cgen_put_ident(w, src, dest_ns, dest_ne)
@@ -969,43 +1358,61 @@ function flowc_cgen_emit_rupdate_member(w: ptr<CgenBuf>, arena: AstArena, src: p
     flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
 }
 
+function flowc_cgen_emit_rupdate_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, uf: i32, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32, as_stmt: i32) {
+    let uv: i32 = arena.nodes[uf].a
+    if as_stmt == 1 {
+        flowc_cgen_puts(w, "  ")
+    }
+    if flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
+        # As for a struct literal: a pointer field takes the decayed
+        # array, an array field its elements.
+        flowc_cgen_puts(w, "flow_mem_note_copy(sizeof(")
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, ")); memcpy(&")
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, "), __typeof__(&")
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
+        flowc_cgen_emit_expr(w, arena, src, uv)
+        flowc_cgen_puts(w, ")[0])){ (")
+        flowc_cgen_emit_expr(w, arena, src, uv)
+        flowc_cgen_puts(w, ") }, (void*)(")
+        flowc_cgen_emit_expr(w, arena, src, uv)
+        flowc_cgen_puts(w, ")), sizeof(")
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, "))")
+    } else {
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_expr(w, arena, src, uv)
+    }
+    if as_stmt == 1 {
+        flowc_cgen_puts(w, ";\n")
+    } else {
+        flowc_cgen_puts(w, "; ")
+    }
+}
+
 # Write each listed field of record-update `lit` onto dest. as_stmt 1 emits
 # indented C statements; 0 keeps the GNU statement-expression `"; "` form.
+# When dest_ns/dest_ne name the same-storage object, fields are written in
+# overwrite-dependence order (#732).
 function flowc_cgen_emit_rupdate_writes(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lit: i32, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32, as_stmt: i32) {
+    let mut order: array<i32, 32> = []
+    let n: i32 = flowc_cgen_rupdate_order(arena, src, lit, dest_ns, dest_ne, &order[0])
+    if n >= 0 {
+        let mut i: i32 = 0
+        while i < n {
+            flowc_cgen_emit_rupdate_one(w, arena, src, order[i], dest_kind, dest_id, dest_ns, dest_ne, as_stmt)
+            i = i + 1
+        }
+        return
+    }
     let mut uf: i32 = arena.nodes[lit].a
     while uf != AST_NONE {
-        let uv: i32 = arena.nodes[uf].a
-        if as_stmt == 1 {
-            flowc_cgen_puts(w, "  ")
-        }
-        if flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
-            # As for a struct literal: a pointer field takes the decayed
-            # array, an array field its elements.
-            flowc_cgen_puts(w, "memcpy(&")
-            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-            flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
-            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-            flowc_cgen_puts(w, "), __typeof__(&")
-            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-            flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
-            flowc_cgen_emit_expr(w, arena, src, uv)
-            flowc_cgen_puts(w, ")[0])){ (")
-            flowc_cgen_emit_expr(w, arena, src, uv)
-            flowc_cgen_puts(w, ") }, (void*)(")
-            flowc_cgen_emit_expr(w, arena, src, uv)
-            flowc_cgen_puts(w, ")), sizeof(")
-            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-            flowc_cgen_puts(w, "))")
-        } else {
-            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-            flowc_cgen_puts(w, " = ")
-            flowc_cgen_emit_expr(w, arena, src, uv)
-        }
-        if as_stmt == 1 {
-            flowc_cgen_puts(w, ";\n")
-        } else {
-            flowc_cgen_puts(w, "; ")
-        }
+        flowc_cgen_emit_rupdate_one(w, arena, src, uf, dest_kind, dest_id, dest_ns, dest_ne, as_stmt)
         uf = arena.nodes[uf].next
     }
 }
@@ -1025,18 +1432,35 @@ function flowc_cgen_try_rupdate_let(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     if flowc_cgen_expr_uses_name(arena, src, init, dns, dne) == 1 {
         return 0
     }
+    let base: i32 = arena.nodes[init].c
+    # `let s = Name { ..foo(), f: v }` when foo uses pointer-ABI sret:
+    # construct foo into s, then overwrite listed fields. That elides the
+    # extra full-object copy of foo's temporary (#732).
+    if base != AST_NONE and arena.nodes[base].kind == AST_CALL {
+        if flowc_cgen_call_sret_fn(w, arena, src, base) != AST_NONE {
+            flowc_cgen_puts(w, ";\n  ")
+            let _sc: i32 = flowc_cgen_try_sret_call_into(w, arena, src, base, 1, 0, dns, dne)
+            flowc_cgen_puts(w, ";\n")
+            flowc_cgen_emit_rupdate_writes(w, arena, src, init, 1, 0, dns, dne, 1)
+            return 1
+        }
+    }
+    flowc_cgen_puts(w, ";\n  ")
+    flowc_cgen_note_copy_of(w, src, dns, dne)
+    flowc_cgen_puts(w, ";\n  ")
+    flowc_cgen_put_ident(w, src, dns, dne)
     flowc_cgen_puts(w, " = (")
-    flowc_cgen_emit_expr(w, arena, src, arena.nodes[init].c)
+    flowc_cgen_emit_expr(w, arena, src, base)
     flowc_cgen_puts(w, ");\n")
     flowc_cgen_emit_rupdate_writes(w, arena, src, init, 1, 0, dns, dne, 1)
     return 1
 }
 
-# `return Name { ..local, f: v }` when `local` is a function-scoped binding
-# and no update value reads it: mutate the dead base and return it. C still
-# copies into the caller's return slot, so value semantics hold. Withheld
-# when the base is captured, a module static, or a pending defer could
-# observe the mutation (#732, related #696).
+# `return Name { ..local, f: v }` when `local` is a function-scoped binding.
+# With an sret dest, construct into `*__flowc_sret` (dest is distinct).
+# Same-storage mutation of the dead base is overwrite-certified (#732).
+# Withheld when the base is captured, a module static, or a pending defer
+# could observe the mutation (related #696).
 function flowc_cgen_try_rupdate_return(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ret_expr: i32) -> i32 {
     if flowc_cgen_is_record_update(arena, ret_expr) == 0 {
         return 0
@@ -1045,6 +1469,20 @@ function flowc_cgen_try_rupdate_return(w: ptr<CgenBuf>, arena: AstArena, src: pt
         return 0
     }
     let base: i32 = arena.nodes[ret_expr].c
+    if w[0].sret != 0 and base != AST_NONE and arena.nodes[base].kind == AST_CALL {
+        if flowc_cgen_call_sret_fn(w, arena, src, base) != AST_NONE {
+            flowc_cgen_puts(w, "  ")
+            let _sc: i32 = flowc_cgen_try_sret_call_into(w, arena, src, base, 2, 0, 0, 0)
+            flowc_cgen_puts(w, ";\n")
+            flowc_cgen_emit_rupdate_writes(w, arena, src, ret_expr, 2, 0, 0, 0, 1)
+            if w[0].sret == 1 {
+                flowc_cgen_puts(w, "  return;\n")
+            } else {
+                flowc_cgen_puts(w, "  return *__flowc_sret;\n")
+            }
+            return 1
+        }
+    }
     if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
         return 0
     }
@@ -1060,8 +1498,24 @@ function flowc_cgen_try_rupdate_return(w: ptr<CgenBuf>, arena: AstArena, src: pt
     if arena.nodes[decl].kind != AST_LET and arena.nodes[decl].kind != AST_PARAM {
         return 0
     }
+    if w[0].sret != 0 {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_note_agg_copy(w)
+        flowc_cgen_puts(w, ";\n  *__flowc_sret = (")
+        flowc_cgen_emit_expr(w, arena, src, base)
+        flowc_cgen_puts(w, ");\n")
+        flowc_cgen_emit_rupdate_writes(w, arena, src, ret_expr, 2, 0, 0, 0, 1)
+        if w[0].sret == 1 {
+            flowc_cgen_puts(w, "  return;\n")
+        } else {
+            flowc_cgen_puts(w, "  return *__flowc_sret;\n")
+        }
+        return 1
+    }
     if flowc_cgen_rupdate_values_use_name(arena, src, ret_expr, bns, bne) == 1 {
-        return 0
+        if flowc_cgen_rupdate_dep_ok(arena, src, ret_expr, bns, bne) == 0 {
+            return 0
+        }
     }
     flowc_cgen_emit_rupdate_writes(w, arena, src, ret_expr, 1, 0, bns, bne, 1)
     flowc_cgen_puts(w, "  return ")
@@ -1086,9 +1540,6 @@ function flowc_cgen_try_rupdate_assign(w: ptr<CgenBuf>, arena: AstArena, src: pt
     }
     let dns: i32 = arena.nodes[lhs].name_start
     let dne: i32 = arena.nodes[lhs].name_end
-    if flowc_cgen_rupdate_values_use_name(arena, src, rhs, dns, dne) == 1 {
-        return 0
-    }
     let base: i32 = arena.nodes[rhs].c
     let mut same: i32 = 0
     if base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
@@ -1096,8 +1547,26 @@ function flowc_cgen_try_rupdate_assign(w: ptr<CgenBuf>, arena: AstArena, src: pt
             same = 1
         }
     }
+    if flowc_cgen_rupdate_values_use_name(arena, src, rhs, dns, dne) == 1 {
+        # Same-storage: overwrite-dependence may still certify a write order.
+        # Distinct dest: values read the old dest, so keep the temporary.
+        if same == 0 or flowc_cgen_rupdate_dep_ok(arena, src, rhs, dns, dne) == 0 {
+            return 0
+        }
+    }
     if same == 0 {
+        if base != AST_NONE and arena.nodes[base].kind == AST_CALL {
+            if flowc_cgen_call_sret_fn(w, arena, src, base) != AST_NONE {
+                flowc_cgen_puts(w, "  ")
+                let _sc: i32 = flowc_cgen_try_sret_call_into(w, arena, src, base, 1, 0, dns, dne)
+                flowc_cgen_puts(w, ";\n")
+                flowc_cgen_emit_rupdate_writes(w, arena, src, rhs, 1, 0, dns, dne, 1)
+                return 1
+            }
+        }
         flowc_cgen_puts(w, "  ")
+        flowc_cgen_note_copy_of(w, src, dns, dne)
+        flowc_cgen_puts(w, ";\n  ")
         flowc_cgen_put_ident(w, src, dns, dne)
         flowc_cgen_puts(w, " = (")
         flowc_cgen_emit_expr(w, arena, src, base)
@@ -7360,6 +7829,21 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_emit_eff_call(w, arena, src, id, espan[0], espan[1])
             return
         }
+        # Pointer-ABI sret call in expression position: construct into a
+        # temporary and yield it (#732). Let/assign/return pass a dest.
+        let sret_fn: i32 = flowc_cgen_call_sret_fn(w, arena, src, id)
+        if sret_fn != AST_NONE {
+            flowc_cgen_puts(w, "({ ")
+            flowc_cgen_emit_ret_type(w, arena, src, arena.nodes[sret_fn].b)
+            flowc_cgen_puts(w, " __flowc_sr")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, "; ")
+            let _sc: i32 = flowc_cgen_try_sret_call_into(w, arena, src, id, 0, id, 0, 0)
+            flowc_cgen_puts(w, "; __flowc_sr")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, "; })")
+            return
+        }
         # i32_to_f32(v) with no Flow definition in this module: the Python
         # host's default helper, inlined so a later module may define it.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "i32_to_f32") == 1 and arena.nodes[id].a != AST_NONE {
@@ -8149,6 +8633,10 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_puts(w, "({ ")
         flowc_cgen_put_struct_lit_name(w, arena, src, id)
         flowc_cgen_puts(w, " __flowc_sl")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, "; flow_mem_note_copy(sizeof(__flowc_sl")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, ")); __flowc_sl")
         flowc_cgen_put_i32(w, id)
         flowc_cgen_puts(w, " = (")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
@@ -10953,6 +11441,15 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if pre == 0 and flowc_cgen_try_rupdate_let(w, arena, src, id, init) == 1 {
             return
         }
+        # `let q = foo(...)` when foo uses pointer-ABI sret: `T q; foo(&q, ...)`.
+        if pre == 0 and init != AST_NONE and arena.nodes[init].kind == AST_CALL {
+            if flowc_cgen_call_sret_fn(w, arena, src, init) != AST_NONE {
+                flowc_cgen_puts(w, ";\n  ")
+                let _sl: i32 = flowc_cgen_try_sret_call_into(w, arena, src, init, 1, 0, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+        }
         flowc_cgen_puts(w, " = ")
         let mut cast_ptr: i32 = 0
         if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
@@ -11081,7 +11578,43 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
             flowc_cgen_puts(w, ";\n")
             flowc_cgen_emit_defers_to(w, arena, src, 0)
+            if w[0].sret != 0 {
+                flowc_cgen_puts(w, "  ")
+                flowc_cgen_note_agg_copy(w)
+                flowc_cgen_puts(w, "; *__flowc_sret = __flowc_ret;\n")
+                if w[0].sret == 1 {
+                    flowc_cgen_puts(w, "  return; }\n")
+                } else {
+                    flowc_cgen_puts(w, "  return *__flowc_sret; }\n")
+                }
+                return
+            }
             flowc_cgen_puts(w, "  return __flowc_ret; }\n")
+            return
+        }
+        if w[0].sret != 0 {
+            if flowc_cgen_try_sret_call_into(w, arena, src, ret_expr, 2, 0, 0, 0) == 1 {
+                if w[0].sret == 1 {
+                    flowc_cgen_puts(w, ";\n  return;\n")
+                } else {
+                    flowc_cgen_puts(w, ";\n  return *__flowc_sret;\n")
+                }
+                return
+            }
+            flowc_cgen_puts(w, "  ")
+            flowc_cgen_note_agg_copy(w)
+            flowc_cgen_puts(w, ";\n  *__flowc_sret = ")
+            if ret_fat != AST_NONE {
+                flowc_cgen_emit_as_fat(w, arena, src, ret_expr, ret_fat)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, ret_expr)
+            }
+            flowc_cgen_puts(w, ";\n")
+            if w[0].sret == 1 {
+                flowc_cgen_puts(w, "  return;\n")
+            } else {
+                flowc_cgen_puts(w, "  return *__flowc_sret;\n")
+            }
             return
         }
         flowc_cgen_puts(w, "  return ")
@@ -11580,6 +12113,17 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if flowc_cgen_try_rupdate_assign(w, arena, src, id) == 1 {
             return
         }
+        # `q = foo(...)` onto a plain identifier: destination-passing (#732).
+        let as_lhs: i32 = arena.nodes[id].a
+        let as_rhs: i32 = arena.nodes[id].b
+        if as_lhs != AST_NONE and arena.nodes[as_lhs].kind == AST_IDENT and as_rhs != AST_NONE and arena.nodes[as_rhs].kind == AST_CALL {
+            if flowc_cgen_call_sret_fn(w, arena, src, as_rhs) != AST_NONE {
+                flowc_cgen_puts(w, "  ")
+                let _sa: i32 = flowc_cgen_try_sret_call_into(w, arena, src, as_rhs, 1, 0, arena.nodes[as_lhs].name_start, arena.nodes[as_lhs].name_end)
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+        }
         # a = lhs expr, b = rhs expr
         flowc_cgen_puts(w, "  ")
         # A local sized array takes the value by copy: C arrays are not
@@ -11588,7 +12132,9 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT {
             let ldecl: i32 = flowc_cgen_scoped_decl(w, arena, src, lhs)
             if ldecl != AST_NONE and arena.nodes[ldecl].kind == AST_LET and flowc_cgen_is_sized_array(arena, src, arena.nodes[ldecl].a) == 1 {
-                flowc_cgen_puts(w, "memcpy(")
+                flowc_cgen_puts(w, "flow_mem_note_copy(sizeof(")
+                flowc_cgen_emit_expr(w, arena, src, lhs)
+                flowc_cgen_puts(w, ")); memcpy(")
                 flowc_cgen_emit_expr(w, arena, src, lhs)
                 flowc_cgen_puts(w, ", ")
                 # An array literal becomes a compound literal of the same type.
@@ -12150,17 +12696,34 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
     }
     # Stage-A: emit return type; omitted (AST_NONE) → void.
     # Function pointer return types are emitted as void* (simplification).
+    # Large struct returns use destination-passing (#732): a hidden
+    # `T* __flowc_sret` in single-module TUs, or a callee-local slot in a bundle.
     let ret_ty: i32 = arena.nodes[id].b
     if flowc_cgen_is_sized_array(arena, src, ret_ty) == 1 {
         flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
     flowc_cgen_emit_attr_prefix(w, arena, src, id)
-    flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+    if flowc_cgen_fn_sret_abi(w, arena, src, id) == 1 {
+        w[0].sret = 1
+        flowc_cgen_puts(w, "void")
+    } else {
+        if flowc_cgen_fn_sret_slot(w, arena, src, id) == 1 {
+            w[0].sret = 2
+        } else {
+            w[0].sret = 0
+        }
+        flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+    }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_na_fn_name(w, arena, src, id)
     flowc_cgen_putc(w, 40)
-    let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
+    if w[0].sret == 1 {
+        flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+        flowc_cgen_puts(w, "* __flowc_sret")
+        first = 0
+    }
+    let mut param: i32 = arena.nodes[id].a
     while param != AST_NONE {
         if first == 0 {
             flowc_cgen_puts(w, ", ")
@@ -12175,24 +12738,42 @@ function flowc_cgen_emit_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: 
             flowc_cgen_puts(w, ", ...")
         }
         flowc_cgen_puts(w, ");\n")
+        w[0].sret = 0
         return
     }
     flowc_cgen_puts(w, ") ")
     # A self tail call becomes a jump back to the top of the body (#951).
     if w[0].mono_ntp == 0 and flowc_cgen_has_self_tail_call(arena, src, id) == 1 {
         w[0].tail_fn = id
-        flowc_cgen_puts(w, "{\n  __flowc_tail: ;\n")
+        flowc_cgen_puts(w, "{\n")
+        if w[0].sret == 2 {
+            flowc_cgen_puts(w, "  ")
+            flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+            flowc_cgen_puts(w, " __flowc_sret_slot;\n  ")
+            flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+            flowc_cgen_puts(w, "* __flowc_sret = &__flowc_sret_slot;\n")
+        }
+        flowc_cgen_puts(w, "  __flowc_tail: ;\n")
         flowc_cgen_emit_span_data_temps(w, arena, src, id)
         flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[arena.nodes[id].c].a)
         flowc_cgen_puts(w, "}\n")
         w[0].tail_fn = AST_NONE
+        w[0].sret = 0
         flowc_cgen_putc(w, 10)
         return
     }
     flowc_cgen_puts(w, "{\n")
+    if w[0].sret == 2 {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+        flowc_cgen_puts(w, " __flowc_sret_slot;\n  ")
+        flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+        flowc_cgen_puts(w, "* __flowc_sret = &__flowc_sret_slot;\n")
+    }
     flowc_cgen_emit_span_data_temps(w, arena, src, id)
     flowc_cgen_emit_scoped_stmts(w, arena, src, arena.nodes[arena.nodes[id].c].a)
     flowc_cgen_puts(w, "}\n")
+    w[0].sret = 0
     flowc_cgen_putc(w, 10)
 }
 
@@ -12266,14 +12847,24 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         flowc_cgen_emit_array_ret_typedef(w, arena, src, ret_ty)
     }
     flowc_cgen_emit_attr_prefix(w, arena, src, id)
-    flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+    let sret_abi: i32 = flowc_cgen_fn_sret_abi(w, arena, src, id)
+    if sret_abi == 1 {
+        flowc_cgen_puts(w, "void")
+    } else {
+        flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+    }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_na_fn_name(w, arena, src, id)
     flowc_cgen_putc(w, 40)
     let saved_fn: i32 = w[0].cur_fn
     w[0].cur_fn = id
-    let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
+    if sret_abi == 1 {
+        flowc_cgen_emit_ret_type(w, arena, src, ret_ty)
+        flowc_cgen_puts(w, "* __flowc_sret")
+        first = 0
+    }
+    let mut param: i32 = arena.nodes[id].a
     while param != AST_NONE {
         if first == 0 {
             flowc_cgen_puts(w, ", ")
@@ -13269,6 +13860,18 @@ export function flowc_cgen_library_mode() -> i32 {
     return 0
 }
 
+# 1 when FLOWC_BUNDLE=1 (multi-module emit, including compiler self-host).
+export function flowc_cgen_bundle_mode() -> i32 {
+    let v: ptr<u8> = getenv("FLOWC_BUNDLE") as ptr<u8>
+    if v == null {
+        return 0
+    }
+    if v[0] == 49 and v[1] == 0 {
+        return 1
+    }
+    return 0
+}
+
 # Opt-in runtime memory profiler (#740). Dormant unless FLOW_MEM_PROFILE is
 # set when the program starts: one predictable branch per routed allocation
 # and no output otherwise. Init is lazy on the first routed allocation so
@@ -13286,6 +13889,7 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "static unsigned long long flow_mem_alloc_bytes = 0ULL;\n")
     flowc_cgen_puts(w, "static unsigned long long flow_mem_temp_bytes = 0ULL;\n")
     flowc_cgen_puts(w, "static unsigned long long flow_mem_copy_bytes = 0ULL;\n")
+    flowc_cgen_puts(w, "static unsigned long long flow_mem_copy_count = 0ULL;\n")
     flowc_cgen_puts(w, "static long long flow_mem_live_bytes = 0;\n")
     flowc_cgen_puts(w, "static long long flow_mem_peak_live = 0;\n")
     flowc_cgen_puts(w, "#define FLOW_MEM_MAP 1024\n")
@@ -13316,7 +13920,7 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "static inline void flow_mem_note_copy(size_t n) {\n")
     flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n")
     flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n")
-    flowc_cgen_puts(w, "  flow_mem_copy_bytes += (unsigned long long)n;\n}\n")
+    flowc_cgen_puts(w, "  flow_mem_copy_count++; flow_mem_copy_bytes += (unsigned long long)n;\n}\n")
     flowc_cgen_puts(w, "static inline void* flow_mem_malloc(size_t n) {\n")
     flowc_cgen_puts(w, "  void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;\n}\n")
     flowc_cgen_puts(w, "static inline void* flow_mem_calloc(size_t c, size_t s) {\n")
@@ -13347,6 +13951,7 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  fprintf(fp, \"peak RSS (kB)         : %lld\\n\", peak_rss_kb);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"temp lifetime bytes   : %llu\\n\", flow_mem_temp_bytes);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"copy volume (bytes)   : %llu\\n\", flow_mem_copy_bytes);\n")
+    flowc_cgen_puts(w, "  fprintf(fp, \"copy operations       : %llu\\n\", flow_mem_copy_count);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"stack/arena promotion : (deferred, needs #669)\\n\");\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"copy volume by site   : (deferred, needs #669)\\n\");\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"==================================\\n\");\n")
@@ -13356,6 +13961,7 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  fprintf(fp, \"peak_rss_kb: %lld\\n\", peak_rss_kb);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"temp_bytes: %llu\\n\", flow_mem_temp_bytes);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"copies: %llu\\n\", flow_mem_copy_bytes);\n")
+    flowc_cgen_puts(w, "  fprintf(fp, \"copy_count: %llu\\n\", flow_mem_copy_count);\n")
     flowc_cgen_puts(w, "  if (fp != stderr) fclose(fp);\n}\n")
     flowc_cgen_puts(w, "static void flow_mem_profile_init(void) {\n")
     flowc_cgen_puts(w, "  const char* e; if (flow_mem_inited) return; flow_mem_inited = 1;\n")
