@@ -159,8 +159,10 @@ struct HashMap_i64_i64 {
 }
 
 # fmix-style mix so sequential and patterned keys do not cluster (#745).
+# The high word is folded in first: keys that differ only above bit 31
+# (`i << 32`, packed pairs) would otherwise share one hash.
 function hash_i64(k: i64) -> i32 {
-    let mut h: u32 = (k as i32) as u32
+    let mut h: u32 = ((k ^ (k >> 32)) as i32) as u32
     h = h ^ (h >> 16)
     h = h * 0x7feb352d
     h = h ^ (h >> 15)

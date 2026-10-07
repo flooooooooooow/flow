@@ -47,5 +47,31 @@ function main() -> i32 {
         return 8
     }
     hashmap_i64_i64_free(m)
+
+    # Keys that differ only above bit 31 (packed pairs, `i << 32`) must not
+    # share one hash, or every probe walks one cluster and the map is O(n)
+    # per operation (#745).
+    if hash_i64((1 as i64) << 32) == hash_i64((2 as i64) << 32) {
+        return 9
+    }
+    let mut seen: array<i32, 64>
+    let mut b: i32 = 0
+    while b < 64 {
+        seen[b] = 0
+        b = b + 1
+    }
+    let mut distinct: i32 = 0
+    let mut j: i32 = 1
+    while j <= 64 {
+        let slot: i32 = hash_i64((j as i64) << 32) % 64
+        if seen[slot] == 0 {
+            seen[slot] = 1
+            distinct = distinct + 1
+        }
+        j = j + 1
+    }
+    if distinct < 32 {
+        return 10
+    }
     return 0
 }

@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 static int32_t hash_i64(int64_t k) {
-    uint32_t h = (uint32_t)(int32_t)k;
+    uint32_t h = (uint32_t)(int32_t)(k ^ (k >> 32));
     h ^= h >> 16;
     h *= 0x7feb352du;
     h ^= h >> 15;
