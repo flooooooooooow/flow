@@ -128,3 +128,9 @@ file). `messy.flow` (ids 2 and 3) is re-indented and re-spaced, and keeps
 on one line each, commas included. `messy_comments.flow` (id 10) keeps
 its comments and parentheses and only changes indentation and blank
 lines. The files that are already laid out (ids 5, 6, 8) get no edit.
+
+## 9. Standard library added after the recording
+
+A module added to `lib/stdlib` after the Python recording adds completion
+items that the recording lacks, such as the GPU modules for #811, #812 and
+#814.

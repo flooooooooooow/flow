@@ -1,0 +1,37 @@
+# vgpu compatibility case: https://vgpu.sh/examples/fluid
+#
+# Interactive fluid as a typed render/compute graph: storage textures,
+# velocity/dye/pressure ping-pong, transient curl/divergence, Jacobi
+# pressure iterations, and a display pass. The same Flow graph emits
+# Metal and WGSL. Device dispatch is the P4 harness; this program
+# validates hazards and prints both backend modules.
+
+import "stdlib/gpu_graph.flow"
+
+function main() -> i32 {
+    let mut g: GpuGraph = gpu_graph_vgpu_fluid()
+    let gp: ptr<GpuGraph> = &g
+    let err: GpuGraphError = gpu_graph_validate(gp)
+    if err.code != GPU_GRAPH_OK {
+        println(gpu_graph_error_name(err.code))
+        return 1
+    }
+    if !gpu_graph_same_source_both_backends(g) {
+        return 2
+    }
+
+    println("vgpu fluid graph")
+    println(g.pass_count)
+    println(g.resource_count)
+    println(g.dep_count)
+
+    println("--- wgsl advect_velocity ---")
+    println(gpu_graph_emit_wgsl_pass(g, 0))
+    println("--- metal advect_velocity ---")
+    println(gpu_graph_emit_metal_pass(g, 0))
+    println("--- wgsl display ---")
+    println(gpu_graph_emit_wgsl_pass(g, 7))
+    println("--- metal display ---")
+    println(gpu_graph_emit_metal_pass(g, 7))
+    return 0
+}

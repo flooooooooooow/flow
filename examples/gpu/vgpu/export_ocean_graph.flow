@@ -1,0 +1,11 @@
+# Export the synthetic FFT-ocean compute/render graph with row+column IFFT.
+# ./flow run examples/gpu/vgpu/export_ocean_graph.flow > build/ocean-graph.json
+import "stdlib/gpu_graph_export.flow"
+
+function main() -> i32 {
+    let mut g: GpuGraph = gpu_graph_vgpu_fft_ocean()
+    let json: string = gpu_graph_export_webgpu_json(&g)
+    if json == "" { return 1 }
+    println(json)
+    return 0
+}
