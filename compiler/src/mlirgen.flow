@@ -3094,7 +3094,9 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
 function mlg_register_tiles_enabled() -> i32 {
     let v: string = getenv("FLOWC_MLIR_REGISTER_TILES")
     let p: ptr<u8> = v
-    if p != null and p[0] == 49 {
+    # Feature flags are exact, not prefix-truthy: "10"/"1junk" must not
+    # accidentally enable hardware-sensitive lowering (#666).
+    if p != null and p[0] == 49 and p[1] == 0 {
         return 1
     }
     return 0
@@ -3174,6 +3176,12 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     }
     let am: i32 = m[0].vc_n[at - MT_VECTOR]
     let bn: i32 = m[0].vc_n[bt - MT_VECTOR]
+    # Reject malformed vector dimensions before registering the nested
+    # result type; a refused tile must not mutate the vector-type table.
+    if am <= 0 or bn <= 0 {
+        mlg_refuse(m, e, "register tile operands must have positive lane counts")
+        return V_NONE
+    }
     let cap_s: string = getenv("FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
     let mut cap: i32 = 0
     if mlg_register_tile_cap(cap_s, &cap) == 0 {
@@ -3182,7 +3190,7 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     }
     let rt: i32 = mlg_vector_of(m, bt, am)
     let tile_lanes: i32 = mlg_vector_scalar_lanes(m, rt)
-    if am <= 0 or bn <= 0 or tile_lanes <= 0 or tile_lanes > cap {
+    if tile_lanes <= 0 or tile_lanes > cap {
         mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
         return V_NONE
     }
