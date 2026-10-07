@@ -2649,8 +2649,6 @@ PlanChoice flowc_plan_select(PlanFacts f0, const char* location, const char* det
 } else {
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; count < (6); count = count + 1) {
   plans[count] = count;
@@ -5912,8 +5910,6 @@ const char* flowc_claim_substr(const char* s, int32_t start, int32_t end) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   buf[i] = src[(start + i)];
@@ -6054,8 +6050,6 @@ const char* flowc_claim_facet_law(const char* facet) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   buf[i] = ((p[i] == 45) ? (32) : (p[i]));
@@ -6143,8 +6137,6 @@ const char* flowc_claim_law_facet(const char* law) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   buf[i] = ((p[i] == 95) ? (45) : (p[i]));
@@ -6379,8 +6371,6 @@ FlowcClaimAddress flowc_claim_parse_slug(const char* raw) {
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < (ln); j = j + 1) {
   buf[j] = ((lp[j] == 95) ? (32) : (lp[j]));
@@ -7167,8 +7157,6 @@ const char* extract_ident(const char* s, int32_t start) {
   int32_t k = start;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (i); k = k + 1) {
   buf[j] = p[k];
@@ -7322,8 +7310,6 @@ const char* flowc_replace_eq(const char* s) {
   int32_t m = start;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; m < (end); m = m + 1) {
   buf[k] = op[m];
@@ -7495,8 +7481,6 @@ const char* mp_substr(const char* s, int32_t start, int32_t end) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   buf[i] = p[(start + i)];
@@ -8763,8 +8747,6 @@ const char* geom_lower(const char* s) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   uint8_t c = p[i];
@@ -9098,8 +9080,6 @@ const char* geom_latex_escape(const char* text) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (rl); k = k + 1) {
   buf[o] = rp[k];
@@ -9626,8 +9606,6 @@ GsEnv gs_env_copy(GsEnv* e) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((e[0]).n); i = i + 1) {
   (c).names[i] = (e[0]).names[i];
@@ -9660,8 +9638,6 @@ void gs_env_set(GsEnv* e, const char* name, GsVal v) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((e[0]).n); i = i + 1) {
   nn[i] = (e[0]).names[i];
@@ -9810,8 +9786,6 @@ int32_t gs_node(GsCtx* c, int32_t kind) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((c[0]).nnode); i = i + 1) {
   nb[i] = (c[0]).nodes[i];
@@ -10008,8 +9982,6 @@ int32_t gs_parse(GsCtx* c, const char* text) {
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < ((c[0]).ncache); j = j + 1) {
   nk[j] = (c[0]).cache_keys[j];
@@ -10289,8 +10261,6 @@ void gs_math_to_pixel(GsCtx* c, double* xs, double* ys, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   xs[i] = ((g[0]).ax_ox + (xs[i] * (g[0]).ax_scale));
@@ -10642,8 +10612,6 @@ void gs_cmd_fill(GsCtx* c, GsEnv* env, const char* text) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (n1); k = k + 1) {
   xs[k] = xs1[k];
@@ -10825,8 +10793,6 @@ void gs_exec_block(GsCtx* c, GsEnv* env, const char* header, const char** body, 
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < ((c[0]).nfn); j = j + 1) {
   nb[j] = (c[0]).fns[j];
@@ -11025,8 +10991,6 @@ const char* gs_lower(const char* s) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   uint8_t ch = p[i];
@@ -13015,8 +12979,6 @@ int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t en
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   dst[i] = src[(start + i)];
@@ -13195,8 +13157,6 @@ void bb_put_bytes(ByteBuf* b, uint8_t* src, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   dst[(base + i)] = src[i];
@@ -13221,8 +13181,6 @@ void bb_put_span(ByteBuf* b, uint8_t* src, int32_t s, int32_t e) {
   int32_t i = s;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (e); i = i + 1) {
   dst[o] = src[i];
@@ -13271,8 +13229,6 @@ const char* bb_str(ByteBuf* b) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((b[0]).len); i = i + 1) {
   out[i] = (b[0]).p[i];
@@ -13608,8 +13564,6 @@ ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   (c[0]).p[i] = src[i];
@@ -14204,8 +14158,6 @@ int32_t flowc_shader_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (sn); k = k + 1) {
   buf[k] = sp[k];
@@ -16165,8 +16117,6 @@ const char* sem_s_slice(const char* s, int32_t start, int32_t end) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   out[i] = p[(start + i)];
@@ -16407,8 +16357,6 @@ SemStrMap* sem_sm_new() {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (64); i = i + 1) {
   m->keys[i] = NULL;
@@ -16448,8 +16396,6 @@ void sem_sm_grow(SemStrMap* m) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (m->cap); i = i + 1) {
   m->keys[i] = NULL;
@@ -20864,8 +20810,6 @@ int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (rc); k = k + 1) {
   buf[k] = (ow).buf[k];
@@ -21901,8 +21845,6 @@ void dy_round(uint8_t* dig, int32_t nd, int32_t pr, uint8_t* out, int32_t* dp) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (pr); i = i + 1) {
   out[i] = ((i < nd) ? (dig[i]) : (48));
@@ -21948,8 +21890,6 @@ void dy_round(uint8_t* dig, int32_t nd, int32_t pr, uint8_t* out, int32_t* dp) {
   int32_t z = 1;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; z < (pr); z = z + 1) {
   out[z] = 48;
@@ -25357,8 +25297,6 @@ int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < ((out[0]).len); k = k + 1) {
   buf[k] = (out[0]).p[k];
@@ -29415,8 +29353,6 @@ void fb_put_sorted_params(Fb* c, ByteBuf* b, int32_t sf) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   used[i] = 0;
@@ -30018,8 +29954,6 @@ int32_t fb_check_loops(Fb* c, int32_t f) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (n); k = k + 1) {
   state[k] = 0;
@@ -31269,8 +31203,6 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (n); k = k + 1) {
   indeg[k] = 0;
@@ -31986,8 +31918,6 @@ int32_t flowc_flow_blocks_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) 
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (m); k = k + 1) {
   buf[k] = (out[0]).p[k];
@@ -32569,8 +32499,6 @@ int32_t type_name_append_lit(uint8_t* out, int32_t cap, int32_t off, const char*
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   out[(off + i)] = p[i];
@@ -32590,8 +32518,6 @@ int32_t type_name_append_span(uint8_t* src, int32_t start, int32_t end, uint8_t*
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   out[(off + i)] = src[(start + i)];
@@ -32775,8 +32701,6 @@ int32_t expr_type_copy_string(const char* value, uint8_t* out, int32_t cap) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   out[i] = p[i];
@@ -32796,8 +32720,6 @@ int32_t expr_type_copy_span(uint8_t* src, int32_t start, int32_t end, uint8_t* o
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   out[i] = src[(start + i)];
@@ -38647,8 +38569,6 @@ const char* pdg_lower(const char* s) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   uint8_t c = p[i];
@@ -38882,8 +38802,6 @@ void pdg_push_step(PdgDoc* d, int32_t kind, const char* text, const char* detail
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((d[0]).nstep); i = i + 1) {
   nb[i] = (d[0]).steps[i];
@@ -39236,8 +39154,6 @@ int32_t pdg_push_thm(PdgDoc* d) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((d[0]).nthm); i = i + 1) {
   nb[i] = (d[0]).thms[i];
@@ -39364,8 +39280,6 @@ PdgMap flowc_pdg_map_new(int32_t cap) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nslots); i = i + 1) {
   slots[i] = (0 - 1);
@@ -40190,8 +40104,6 @@ void pdg_add_line(PdgLine* lines, int32_t* n, int32_t number, const char* englis
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nrefs); i = i + 1) {
   r[i] = refs[i];
@@ -40315,8 +40227,6 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   int32_t z = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; z < (meta_cap); z = z + 1) {
   meta_has[z] = 0;
@@ -40440,8 +40350,6 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   int32_t q = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; q < (npending); q = q + 1) {
   premise[np] = pending[q];
@@ -41172,8 +41080,6 @@ int32_t flowc_proof_book_mode() {
   int32_t f = part_start[p];
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; f < (part_start[(p + 1)]); f = f + 1) {
   files[nf] = all_files[f];
@@ -43193,8 +43099,6 @@ int32_t* mlg_alloc_i32(int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   p[i] = 0;
@@ -44622,8 +44526,6 @@ int32_t mlg_intern(Mlg* m, uint8_t* p, int32_t n) {
   int32_t j2 = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j2 < (n); j2 = j2 + 1) {
   (m[0]).pool[((m[0]).pool_len + j2)] = p[j2];
@@ -44649,8 +44551,6 @@ int32_t mlg_intern_src(Mlg* m, int32_t id, int32_t nl) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((n - 1)); i = i + 1) {
   tmp[i] = (m[0]).src[(s + i)];
@@ -45598,8 +45498,6 @@ void mlg_name_tests(Mlg* m, int32_t root) {
   uint8_t* pre = (uint8_t*)("test_");
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; n < (5); n = n + 1) {
   buf[n] = pre[n];
@@ -45619,8 +45517,6 @@ void mlg_name_tests(Mlg* m, int32_t root) {
   uint8_t* cs = (uint8_t*)("case");
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; n < (9); n = n + 1) {
   buf[n] = cs[(n - 5)];
@@ -46847,8 +46743,6 @@ void mlg_emit_print_value(Mlg* m, int32_t arg, int32_t nl) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (fl); i = i + 1) {
   buf[(1 + i)] = fp[i];
@@ -47421,8 +47315,6 @@ int32_t mlg_emit_unknown_call(Mlg* m, int32_t e, int32_t want_value) {
   int32_t q = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; q < (np); q = q + 1) {
   pts[q] = (m[0]).uk_pt[((u * 16) + q)];
@@ -47458,8 +47350,6 @@ int32_t mlg_emit_unknown_call(Mlg* m, int32_t e, int32_t want_value) {
   int32_t w = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; w < (np); w = w + 1) {
   (m[0]).uk_pt[((k * 16) + w)] = pts[w];
@@ -51669,8 +51559,6 @@ int32_t mlg_append_side(uint8_t* dst, int32_t dlen, uint8_t* src, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   dst[(dlen + i)] = src[i];
@@ -52146,8 +52034,6 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (MLG_MAX_ARGS); i = i + 1) {
   saved_at[i] = (m[0]).at[i];
@@ -52244,8 +52130,6 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (MLG_MAX_ARGS); i = i + 1) {
   (m[0]).at[i] = saved_at[i];
@@ -52937,8 +52821,6 @@ int32_t mlg_synth_call(Mlg* m, int32_t ns, int32_t ne, const char* suffix, int32
   int32_t n = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; n < ((ne - ns)); n = n + 1) {
   buf[n] = (m[0]).src[(ns + n)];
@@ -52947,8 +52829,6 @@ int32_t mlg_synth_call(Mlg* m, int32_t ns, int32_t ne, const char* suffix, int32
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < (sl); j = j + 1) {
   buf[n] = sp[j];
@@ -53781,8 +53661,6 @@ void mlg_cur_vals(Mlg* m, int32_t* locs, int32_t n, int32_t* vals) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   vals[i] = (m[0]).l_ssa[locs[i]];
@@ -53793,8 +53671,6 @@ void mlg_set_vals(Mlg* m, int32_t* locs, int32_t n, int32_t* vals) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   (m[0]).l_ssa[locs[i]] = vals[i];
@@ -54333,8 +54209,6 @@ int32_t mlg_push_loop(Mlg* m, int32_t region, int32_t header, int32_t end, int32
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   (m[0]).lp_carry[((k * MLG_MAX_MERGE) + i)] = locs[i];
@@ -56526,8 +56400,6 @@ void mlg_capture_return_defers(Mlg* m) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   buf[i] = (m[0]).out[(mark + i)];
@@ -57651,8 +57523,6 @@ int32_t mlg_xput(Mlg* m, uint8_t* p, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   (m[0]).src[(s + i)] = p[i];
@@ -57729,8 +57599,6 @@ void mlg_add_enum(Mlg* m, int32_t d) {
   int32_t q = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; q < (vl); q = q + 1) {
   tmp[q] = (m[0]).src[(vs + q)];
@@ -57739,8 +57607,6 @@ void mlg_add_enum(Mlg* m, int32_t d) {
   int32_t r = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; r < (6); r = r + 1) {
   tmp[(vl + r)] = sfx[r];
@@ -58431,8 +58297,6 @@ int32_t mlg_synth_fn2(Mlg* m, int32_t a0, int32_t a1, int32_t b0, int32_t b1, in
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((a1 - a0)); i = i + 1) {
   tmp[i] = (m[0]).src[(a0 + i)];
@@ -58441,8 +58305,6 @@ int32_t mlg_synth_fn2(Mlg* m, int32_t a0, int32_t a1, int32_t b0, int32_t b1, in
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < ((b1 - b0)); j = j + 1) {
   tmp[(((a1 - a0) + 1) + j)] = (m[0]).src[(b0 + j)];
@@ -59534,8 +59396,6 @@ void mn_request_call(Mlg* m, Mono* mo, int32_t e) {
   int32_t q = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; q < (np); q = q + 1) {
   targs[q] = tmp[q];
@@ -59753,8 +59613,6 @@ int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, ui
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   cur[i] = buf[i];
@@ -59815,8 +59673,6 @@ int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, ui
   int32_t z = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; z < (nl); z = z + 1) {
   cur[z] = nxt[z];
@@ -59840,8 +59696,6 @@ int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, ui
   int32_t v = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; v < (cl); v = v + 1) {
   out[v] = cur[v];
@@ -60348,8 +60202,6 @@ void mn_generate(Mlg* m, Mono* mo) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((mo[0]).nsr); i = i + 1) {
   pend[np] = i;
@@ -60373,8 +60225,6 @@ void mn_generate(Mlg* m, Mono* mo) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((mo[0]).nfr); i = i + 1) {
   pend[np] = i;
@@ -62618,8 +62468,6 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nc); i = i + 1) {
   (m[0]).l_ssa[locs[i]] = its[i];
@@ -62660,8 +62508,6 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nc); i = i + 1) {
   (m[0]).l_ssa[locs[i]] = res[i];
@@ -63172,8 +63018,6 @@ int32_t mlg_write_cembed(Mlg* m, int32_t root) {
   int32_t n = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; n < (pl); n = n + 1) {
   buf[n] = prp[n];
@@ -65594,11 +65438,16 @@ int32_t flowc_cgen_loop_body_is_simple(AstArena arena, uint8_t* src, int32_t bod
 int32_t flowc_cgen_ident_same(AstArena arena, uint8_t* src, int32_t id, int32_t other);
 int32_t flowc_cgen_reduction_op(AstArena arena, uint8_t* src, int32_t st);
 int32_t flowc_cgen_assign_is_index_store(AstArena arena, int32_t st);
-int32_t flowc_cgen_loop_omp_safe(AstArena arena, uint8_t* src, int32_t body);
+int32_t flowc_cgen_is_same_index_read(AstArena arena, uint8_t* src, int32_t e, int32_t ns, int32_t ne, int32_t loop_id);
+int32_t flowc_cgen_reads_only_same_index(AstArena arena, uint8_t* src, int32_t e, int32_t ns, int32_t ne, int32_t loop_id);
+int32_t flowc_cgen_select_reads_only_same_index(AstArena arena, uint8_t* src, int32_t id, int32_t ns, int32_t ne, int32_t loop_id);
+int32_t flowc_cgen_base_is_restrict(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base);
+int32_t flowc_cgen_lets_read_only_same_index(AstArena arena, uint8_t* src, int32_t body, int32_t stop, int32_t skip, int32_t ns, int32_t ne, int32_t loop_id);
+int32_t flowc_cgen_loop_omp_safe(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t loop_id, int32_t skip);
 int32_t flowc_cgen_reduction_seen_before(AstArena arena, uint8_t* src, int32_t body, int32_t st, int32_t op);
 void flowc_cgen_emit_omp_reduction_op(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t op, const char* opch);
 void flowc_cgen_emit_omp_reductions(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body);
-void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body);
+void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t loop_id);
 int32_t flowc_cgen_expr_is_simple_bound(AstArena arena, int32_t e);
 int32_t flowc_cgen_index_is_loop_var(AstArena arena, uint8_t* src, int32_t idx, int32_t loop_id);
 int32_t flowc_cgen_step_is_unit(AstArena arena, int32_t step);
@@ -65618,8 +65467,7 @@ int32_t flowc_cgen_ident_written_except(AstArena arena, uint8_t* src, int32_t id
 int32_t flowc_cgen_assign_is_add_const(AstArena arena, uint8_t* src, int32_t st, int32_t ident, int32_t* step_out);
 int32_t flowc_cgen_block_last_stmt(AstArena arena, int32_t body);
 int32_t flowc_cgen_body_is_simple_skip(AstArena arena, uint8_t* src, int32_t body, int32_t skip);
-int32_t flowc_cgen_body_omp_safe_skip(AstArena arena, uint8_t* src, int32_t body, int32_t skip);
-void flowc_cgen_emit_simd_pragmas_skip(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t skip);
+void flowc_cgen_emit_simd_pragmas_skip(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t skip, int32_t iv);
 void flowc_cgen_emit_block_skip(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t skip);
 int32_t flowc_cgen_try_emit_while_as_for(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_elem_is_name(AstArena arena, uint8_t* src, int32_t base, const char* name);
@@ -66508,8 +66356,6 @@ int32_t flowc_cgen_sig_put_string_fields(AstArena arena, uint8_t* src, uint8_t* 
   int32_t i = ss;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (se); i = i + 1) {
   buf[n] = src[i];
@@ -66520,8 +66366,6 @@ int32_t flowc_cgen_sig_put_string_fields(AstArena arena, uint8_t* src, uint8_t* 
   i = fs;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (fe); i = i + 1) {
   buf[n] = src[i];
@@ -66562,8 +66406,6 @@ int32_t flowc_cgen_sig_put_array_fields(AstArena arena, uint8_t* src, uint8_t* b
   int32_t i = ss;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (se); i = i + 1) {
   buf[n] = src[i];
@@ -66574,8 +66416,6 @@ int32_t flowc_cgen_sig_put_array_fields(AstArena arena, uint8_t* src, uint8_t* b
   i = fs;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (fe); i = i + 1) {
   buf[n] = src[i];
@@ -66586,8 +66426,6 @@ int32_t flowc_cgen_sig_put_array_fields(AstArena arena, uint8_t* src, uint8_t* b
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((dw).len); i = i + 1) {
   buf[n] = digits[i];
@@ -67748,8 +67586,6 @@ int32_t flowc_cgen_sig_put_overload(AstArena arena, uint8_t* src, uint8_t* buf, 
   int32_t i = ns;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (ne); i = i + 1) {
   buf[n] = src[i];
@@ -67770,8 +67606,6 @@ int32_t flowc_cgen_sig_put_overload(AstArena arena, uint8_t* src, uint8_t* buf, 
   i = ((arena).nodes[ty]).name_start;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (((arena).nodes[ty]).name_end); i = i + 1) {
   buf[n] = src[i];
@@ -69042,8 +68876,6 @@ int32_t flowc_cgen_sig_put(AstArena arena, uint8_t* src, uint8_t* buf, int32_t c
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nlen); i = i + 1) {
   buf[(len + i)] = src[(ns + i)];
@@ -69092,8 +68924,6 @@ int32_t flowc_cgen_sig_put_spans(AstArena arena, uint8_t* src, uint8_t* buf, int
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nlen); i = i + 1) {
   buf[((len + 1) + i)] = src[(ns + i)];
@@ -69307,8 +69137,6 @@ int32_t flowc_cgen_sig_put_user_libc(AstArena arena, uint8_t* src, uint8_t* buf,
   int32_t i = ns;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (ne); i = i + 1) {
   buf[n] = src[i];
@@ -69319,8 +69147,6 @@ int32_t flowc_cgen_sig_put_user_libc(AstArena arena, uint8_t* src, uint8_t* buf,
   i = ts;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (te); i = i + 1) {
   buf[n] = src[i];
@@ -69427,8 +69253,6 @@ int32_t flowc_cgen_sig_put_recv(AstArena arena, uint8_t* src, uint8_t* buf, int3
   int32_t i = ns;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (ne); i = i + 1) {
   buf[n] = src[i];
@@ -69439,8 +69263,6 @@ int32_t flowc_cgen_sig_put_recv(AstArena arena, uint8_t* src, uint8_t* buf, int3
   i = ts;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (te); i = i + 1) {
   buf[n] = src[i];
@@ -70483,8 +70305,6 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   (w[0]).plan_order[i] = 0;
@@ -71286,8 +71106,6 @@ int32_t flowc_cgen_sig_put_fats(AstArena arena, uint8_t* src, uint8_t* buf, int3
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (nlen); i = i + 1) {
   buf[((len + 1) + i)] = src[(ns + i)];
@@ -74210,7 +74028,7 @@ void flowc_cgen_emit_for_dir(CgenBuf* w, AstArena arena, uint8_t* src, int32_t i
 }
   if (dir > 0) {
   if (flowc_cgen_loop_body_is_simple(arena, src, ((arena).nodes[id]).c) == 1) {
-  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c);
+  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c, id);
 } else {
   flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0);
 }
@@ -74419,10 +74237,16 @@ int32_t flowc_cgen_reduction_op(AstArena arena, uint8_t* src, int32_t st) {
   int32_t left_same = flowc_cgen_ident_same(arena, src, left, lhs);
   int32_t right_same = flowc_cgen_ident_same(arena, src, right, lhs);
   if (left_same == 1 && right_same == 0) {
+  if (flowc_cgen_expr_uses_name(arena, src, right, ((arena).nodes[lhs]).name_start, ((arena).nodes[lhs]).name_end) == 1) {
+  return 0;
+}
   return op;
 }
   if (left_same == 0 && right_same == 1) {
   if (op == TOK_MINUS) {
+  return 0;
+}
+  if (flowc_cgen_expr_uses_name(arena, src, left, ((arena).nodes[lhs]).name_start, ((arena).nodes[lhs]).name_end) == 1) {
   return 0;
 }
   return op;
@@ -74444,36 +74268,227 @@ int32_t flowc_cgen_assign_is_index_store(AstArena arena, int32_t st) {
   return 1;
 }
 
-int32_t flowc_cgen_loop_omp_safe(AstArena arena, uint8_t* src, int32_t body) {
-  if (body == AST_NONE) {
-  return 1;
-}
-  if (((arena).nodes[body]).kind != AST_BLOCK) {
+int32_t flowc_cgen_is_same_index_read(AstArena arena, uint8_t* src, int32_t e, int32_t ns, int32_t ne, int32_t loop_id) {
+  if (e == AST_NONE || e < 0 || ((arena).nodes[e]).kind != AST_INDEX || ((arena).nodes[e]).ival == 1) {
   return 0;
 }
+  int32_t base = ((arena).nodes[e]).a;
+  int32_t ix = ((arena).nodes[e]).b;
+  if (base == AST_NONE || ((arena).nodes[base]).kind != AST_IDENT) {
+  return 0;
+}
+  if (flowc_cgen_span_eq(src, ns, ne, ((arena).nodes[base]).name_start, ((arena).nodes[base]).name_end) == 0) {
+  return 0;
+}
+  if (ix == AST_NONE || ((arena).nodes[ix]).kind != AST_IDENT) {
+  return 0;
+}
+  return flowc_cgen_span_eq(src, ((arena).nodes[ix]).name_start, ((arena).nodes[ix]).name_end, ((arena).nodes[loop_id]).name_start, ((arena).nodes[loop_id]).name_end);
+}
+
+int32_t flowc_cgen_reads_only_same_index(AstArena arena, uint8_t* src, int32_t e, int32_t ns, int32_t ne, int32_t loop_id) {
+  __flowc_tail: ;
+  if (e == AST_NONE || e < 0) {
+  return 1;
+}
+  if (flowc_cgen_expr_uses_name(arena, src, e, ns, ne) == 0) {
+  return 1;
+}
+  if (flowc_cgen_is_same_index_read(arena, src, e, ns, ne, loop_id) == 1) {
+  return 1;
+}
+  int32_t k = ((arena).nodes[e]).kind;
+  if (k == AST_BINOP) {
+  if (flowc_cgen_reads_only_same_index(arena, src, ((arena).nodes[e]).a, ns, ne, loop_id) == 0) {
+  return 0;
+}
+  {
+  __auto_type __flowc_targ0 = arena;
+  __auto_type __flowc_targ1 = src;
+  __auto_type __flowc_targ2 = ((arena).nodes[e]).b;
+  __auto_type __flowc_targ3 = ns;
+  __auto_type __flowc_targ4 = ne;
+  __auto_type __flowc_targ5 = loop_id;
+  arena = __flowc_targ0;
+  src = __flowc_targ1;
+  e = __flowc_targ2;
+  ns = __flowc_targ3;
+  ne = __flowc_targ4;
+  loop_id = __flowc_targ5;
+  goto __flowc_tail;
+  }
+}
+  if (k == AST_UNARY || k == AST_CAST) {
+  {
+  __auto_type __flowc_targ0 = arena;
+  __auto_type __flowc_targ1 = src;
+  __auto_type __flowc_targ2 = ((arena).nodes[e]).a;
+  __auto_type __flowc_targ3 = ns;
+  __auto_type __flowc_targ4 = ne;
+  __auto_type __flowc_targ5 = loop_id;
+  arena = __flowc_targ0;
+  src = __flowc_targ1;
+  e = __flowc_targ2;
+  ns = __flowc_targ3;
+  ne = __flowc_targ4;
+  loop_id = __flowc_targ5;
+  goto __flowc_tail;
+  }
+}
+  return 0;
+}
+
+int32_t flowc_cgen_select_reads_only_same_index(AstArena arena, uint8_t* src, int32_t id, int32_t ns, int32_t ne, int32_t loop_id) {
+  __flowc_tail: ;
+  if (id == AST_NONE || ((arena).nodes[id]).kind != AST_IF) {
+  return 0;
+}
+  if (flowc_cgen_reads_only_same_index(arena, src, ((arena).nodes[id]).a, ns, ne, loop_id) == 0) {
+  return 0;
+}
+  int32_t then_st = flowc_cgen_block_index_store(arena, ((arena).nodes[id]).b);
+  if (then_st == AST_NONE) {
+  return 0;
+}
+  if (flowc_cgen_reads_only_same_index(arena, src, ((arena).nodes[then_st]).b, ns, ne, loop_id) == 0) {
+  return 0;
+}
+  int32_t els = ((arena).nodes[id]).c;
+  if (els == AST_NONE) {
+  return 1;
+}
+  int32_t else_st = flowc_cgen_block_index_store(arena, els);
+  if (else_st != AST_NONE) {
+  return flowc_cgen_reads_only_same_index(arena, src, ((arena).nodes[else_st]).b, ns, ne, loop_id);
+}
+  int32_t inner = AST_NONE;
+  if (((arena).nodes[els]).kind == AST_IF) {
+  inner = els;
+} else {
+  inner = flowc_cgen_block_only_if(arena, els);
+}
+  {
+  __auto_type __flowc_targ0 = arena;
+  __auto_type __flowc_targ1 = src;
+  __auto_type __flowc_targ2 = inner;
+  __auto_type __flowc_targ3 = ns;
+  __auto_type __flowc_targ4 = ne;
+  __auto_type __flowc_targ5 = loop_id;
+  arena = __flowc_targ0;
+  src = __flowc_targ1;
+  id = __flowc_targ2;
+  ns = __flowc_targ3;
+  ne = __flowc_targ4;
+  loop_id = __flowc_targ5;
+  goto __flowc_tail;
+  }
+}
+
+int32_t flowc_cgen_base_is_restrict(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base) {
+  if (base == AST_NONE || ((arena).nodes[base]).kind != AST_IDENT) {
+  return 0;
+}
+  int32_t decl = flowc_cgen_scoped_decl(w, arena, src, base);
+  if (decl == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[decl]).kind == AST_PARAM) {
+  if ((w[0]).na_clone == 1) {
+  return flowc_noalias_param_restrict_clone(arena, src, (w[0]).cur_fn, decl);
+}
+  return flowc_noalias_param_restrict(arena, src, (w[0]).cur_fn, decl);
+}
+  if (((arena).nodes[decl]).kind == AST_LET) {
+  return flowc_noalias_local_restrict(arena, src, (w[0]).cur_fn, decl);
+}
+  return 0;
+}
+
+int32_t flowc_cgen_lets_read_only_same_index(AstArena arena, uint8_t* src, int32_t body, int32_t stop, int32_t skip, int32_t ns, int32_t ne, int32_t loop_id) {
+  int32_t st = ((arena).nodes[body]).a;
+  while (st != AST_NONE && st != stop) {
+  if (st != skip && ((arena).nodes[st]).kind == AST_LET) {
+  if (flowc_cgen_reads_only_same_index(arena, src, ((arena).nodes[st]).b, ns, ne, loop_id) == 0) {
+  return 0;
+}
+}
+  st = ((arena).nodes[st]).next;
+}
+  return 1;
+}
+
+int32_t flowc_cgen_loop_omp_safe(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t loop_id, int32_t skip) {
+  if (body == AST_NONE || ((arena).nodes[body]).kind != AST_BLOCK || loop_id == AST_NONE) {
+  return 0;
+}
+  int32_t eff = AST_NONE;
   int32_t st = ((arena).nodes[body]).a;
   while (st != AST_NONE) {
-  int32_t k = ((arena).nodes[st]).kind;
-  if (k == AST_LET) {
-  st = ((arena).nodes[st]).next;
-  continue;
-}
-  if (k == AST_IF) {
-  if (flowc_cgen_if_is_select(arena, src, st) == 0) {
+  if (st != skip) {
+  if (eff != AST_NONE) {
   return 0;
 }
-  st = ((arena).nodes[st]).next;
-  continue;
+  if (((arena).nodes[st]).kind != AST_LET) {
+  eff = st;
 }
-  if (k != AST_ASSIGN) {
-  return 0;
-}
-  if (flowc_cgen_reduction_op(arena, src, st) == 0 && flowc_cgen_assign_is_index_store(arena, st) == 0) {
-  return 0;
 }
   st = ((arena).nodes[st]).next;
+}
+  if (eff == AST_NONE) {
+  return 0;
+}
+  int32_t k = ((arena).nodes[eff]).kind;
+  int32_t dest = AST_NONE;
+  if (k == AST_ASSIGN) {
+  if (flowc_cgen_reduction_op(arena, src, eff) != 0) {
+  int32_t acc = ((arena).nodes[eff]).a;
+  int32_t p = ((arena).nodes[body]).a;
+  while (p != eff) {
+  if (p != skip && ((arena).nodes[p]).kind == AST_LET) {
+  if (flowc_cgen_expr_uses_name(arena, src, ((arena).nodes[p]).b, ((arena).nodes[acc]).name_start, ((arena).nodes[acc]).name_end) == 1) {
+  return 0;
+}
+}
+  p = ((arena).nodes[p]).next;
 }
   return 1;
+}
+  if (flowc_cgen_assign_is_index_store(arena, eff) == 0) {
+  return 0;
+}
+  dest = ((arena).nodes[eff]).a;
+} else {
+  if (k == AST_IF) {
+  if (flowc_cgen_if_is_select(arena, src, eff) == 0) {
+  return 0;
+}
+  dest = flowc_cgen_if_select_dest(arena, src, eff);
+} else {
+  return 0;
+}
+}
+  if (dest == AST_NONE) {
+  return 0;
+}
+  int32_t base = ((arena).nodes[dest]).a;
+  if (base == AST_NONE || ((arena).nodes[base]).kind != AST_IDENT) {
+  return 0;
+}
+  int32_t ns = ((arena).nodes[base]).name_start;
+  int32_t ne = ((arena).nodes[base]).name_end;
+  if (flowc_cgen_is_same_index_read(arena, src, dest, ns, ne, loop_id) == 0) {
+  return 0;
+}
+  if (flowc_cgen_base_is_restrict(w, arena, src, base) != 1) {
+  return 0;
+}
+  if (flowc_cgen_lets_read_only_same_index(arena, src, body, eff, skip, ns, ne, loop_id) == 0) {
+  return 0;
+}
+  if (k == AST_ASSIGN) {
+  return flowc_cgen_reads_only_same_index(arena, src, ((arena).nodes[eff]).b, ns, ne, loop_id);
+}
+  return flowc_cgen_select_reads_only_same_index(arena, src, eff, ns, ne, loop_id);
 }
 
 int32_t flowc_cgen_reduction_seen_before(AstArena arena, uint8_t* src, int32_t body, int32_t st, int32_t op) {
@@ -74525,8 +74540,8 @@ void flowc_cgen_emit_omp_reductions(CgenBuf* w, AstArena arena, uint8_t* src, in
   flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*");
 }
 
-void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body) {
-  if (flowc_cgen_loop_omp_safe(arena, src, body) == 1) {
+void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t loop_id) {
+  if (flowc_cgen_loop_omp_safe(w, arena, src, body, loop_id, AST_NONE) == 1) {
   flowc_cgen_puts(w, "#if defined(_OPENMP)\n");
   flowc_cgen_puts(w, "#pragma omp simd");
   flowc_cgen_emit_omp_reductions(w, arena, src, body);
@@ -75019,41 +75034,10 @@ int32_t flowc_cgen_body_is_simple_skip(AstArena arena, uint8_t* src, int32_t bod
   return 1;
 }
 
-int32_t flowc_cgen_body_omp_safe_skip(AstArena arena, uint8_t* src, int32_t body, int32_t skip) {
-  if (body == AST_NONE || ((arena).nodes[body]).kind != AST_BLOCK) {
-  return 0;
-}
-  int32_t st = ((arena).nodes[body]).a;
-  while (st != AST_NONE) {
-  if (st != skip) {
-  int32_t k = ((arena).nodes[st]).kind;
-  if (k == AST_LET) {
-  st = ((arena).nodes[st]).next;
-  continue;
-}
-  if (k == AST_IF) {
-  if (flowc_cgen_if_is_select(arena, src, st) == 0) {
-  return 0;
-}
-  st = ((arena).nodes[st]).next;
-  continue;
-}
-  if (k != AST_ASSIGN) {
-  return 0;
-}
-  if (flowc_cgen_reduction_op(arena, src, st) == 0 && flowc_cgen_assign_is_index_store(arena, st) == 0) {
-  return 0;
-}
-}
-  st = ((arena).nodes[st]).next;
-}
-  return 1;
-}
-
-void flowc_cgen_emit_simd_pragmas_skip(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t skip) {
+void flowc_cgen_emit_simd_pragmas_skip(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t skip, int32_t iv) {
   flowc_cgen_puts(w, "#if defined(__clang__)\n");
   flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n");
-  if (flowc_cgen_body_omp_safe_skip(arena, src, body, skip) == 1) {
+  if (flowc_cgen_loop_omp_safe(w, arena, src, body, iv, skip) == 1) {
   flowc_cgen_puts(w, "#elif defined(__GNUC__)\n");
   flowc_cgen_puts(w, "#pragma GCC ivdep\n");
 }
@@ -75107,7 +75091,7 @@ int32_t flowc_cgen_try_emit_while_as_for(CgenBuf* w, AstArena arena, uint8_t* sr
   return 0;
 }
   if (flowc_cgen_body_is_simple_skip(arena, src, body, last) == 1) {
-  flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last);
+  flowc_cgen_emit_simd_pragmas_skip(w, arena, src, body, last, iv);
 }
   int32_t saved_wbase = (w[0]).loop_defer_base;
   (w[0]).loop_defer_base = (w[0]).defer_len;
@@ -75355,7 +75339,7 @@ void flowc_cgen_emit_vector_loop(CgenBuf* w, AstArena arena, uint8_t* src, int32
   flowc_cgen_puts(w, "    }\n  }\n");
   flowc_cgen_puts(w, "#else\n");
   if (flowc_cgen_loop_body_is_simple(arena, src, ((arena).nodes[id]).c) == 1) {
-  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c);
+  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c, id);
 }
   flowc_cgen_puts(w, "  for (int32_t ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
@@ -76265,7 +76249,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   return;
 }
   if (flowc_cgen_loop_body_is_simple(arena, src, ((arena).nodes[id]).c) == 1) {
-  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c);
+  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c, id);
 } else {
   flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0);
 }
@@ -78106,8 +78090,6 @@ void flowc_cgen_scan_cembed_names(CgenBuf* w, uint8_t* src, int32_t start, int32
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (nlen); k = k + 1) {
   (w[0]).cembed_names[(off + k)] = src[(name_start + k)];
@@ -78930,8 +78912,6 @@ int32_t flowc_cgen_export_mark(AstArena arena, uint8_t* src, int32_t root, uint8
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (8); i = i + 1) {
   buf[(n + i)] = tag[i];
@@ -78940,8 +78920,6 @@ int32_t flowc_cgen_export_mark(AstArena arena, uint8_t* src, int32_t root, uint8
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < ((e - s)); i = i + 1) {
   buf[(n + i)] = list[(s + i)];
@@ -79371,8 +79349,6 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   int32_t sdi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; sdi < ((arena).len); sdi = sdi + 1) {
   st_done[sdi] = 0;
@@ -80021,8 +79997,6 @@ void flowc_cgen_mono_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ns, in
   ci = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; ci < (nconc); ci = ci + 1) {
   tp_concrete[ci] = conc[ci];
@@ -85912,8 +85886,6 @@ int32_t flowc_overload_call_prepare(FlowcOverloadCallScratch* scratch, int32_t a
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (arg_count); i = i + 1) {
   (scratch[0]).ident_types[i] = AST_NONE;
@@ -86340,8 +86312,6 @@ void flowc_tc_note(TcCtx* ctx, const char* label, int32_t start, int32_t end) {
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   buf[i] = src[(start + i)];
@@ -87329,8 +87299,6 @@ void flowc_tc_eff_check_row_call(TcCtx* ctx, AstArena arena, int32_t call) {
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < (plen); j = j + 1) {
   names[(nlen + j)] = (ctx[0]).eff[(p + j)];
@@ -87356,8 +87324,6 @@ void flowc_tc_eff_check_row_call(TcCtx* ctx, AstArena arena, int32_t call) {
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < ((ee - es)); j = j + 1) {
   names[(nlen + j)] = src[(es + j)];
@@ -88215,8 +88181,6 @@ void flowc_tc_seed_bind(TcCtx* ctx, uint8_t* dep_src, int32_t start, int32_t end
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   (ctx[0]).seed_buf[(off + i)] = dep_src[(start + i)];
@@ -88254,8 +88218,6 @@ void flowc_tc_seed_bind_enum_variant(TcCtx* ctx, uint8_t* src, int32_t ens, int3
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (en_len); i = i + 1) {
   (ctx[0]).seed_buf[(off + i)] = src[(ens + i)];
@@ -88264,8 +88226,6 @@ void flowc_tc_seed_bind_enum_variant(TcCtx* ctx, uint8_t* src, int32_t ens, int3
   i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (vn_len); i = i + 1) {
   (ctx[0]).seed_buf[(((off + en_len) + 1) + i)] = src[(vns + i)];
@@ -88390,8 +88350,6 @@ TcCtx flowc_tc_init(uint8_t* src) {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (seed_cap); zi = zi + 1) {
   raw_seed[zi] = 0;
@@ -90338,8 +90296,6 @@ int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   dst[i] = p[i];
@@ -90408,8 +90364,6 @@ uint8_t* flowc_resolve_abspath(uint8_t* path) {
   if (pre > 0) {
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; o < ((pre - 1)); o = o + 1) {
   out[o] = cp[o];
@@ -90420,8 +90374,6 @@ uint8_t* flowc_resolve_abspath(uint8_t* path) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (n); k = k + 1) {
   out[(o + k)] = path[k];
@@ -90516,8 +90468,6 @@ int32_t flowc_append_range_helpers(uint8_t* src, int32_t n, int32_t cap) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (k); i = i + 1) {
   src[(n + i)] = h[i];
@@ -90772,8 +90722,6 @@ int32_t flowc_impl_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   int32_t z = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; z < (o); z = z + 1) {
   src[z] = out[z];
@@ -91186,8 +91134,6 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
 } else {
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; s < (edit_pos[pick]); s = s + 1) {
   out[o] = src[s];
@@ -91196,8 +91142,6 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   int32_t q = edit_s[pick];
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; q < (edit_e[pick]); q = q + 1) {
   out[o] = pool[q];
@@ -91209,8 +91153,6 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
 }
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; s < (n); s = s + 1) {
   out[o] = src[s];
@@ -91219,8 +91161,6 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   int32_t z = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; z < (o); z = z + 1) {
   src[z] = out[z];
@@ -91277,8 +91217,6 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   int32_t ni = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; ni < (namelen); ni = ni + 1) {
   out_path[(11 + ni)] = import_span_src[(s + ni)];
@@ -91312,8 +91250,6 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   int32_t ai = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; ai < (nabs); ai = ai + 1) {
   out_path[ai] = import_span_src[(s + ai)];
@@ -91359,8 +91295,6 @@ int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start,
   int32_t di = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; di < (dlen); di = di + 1) {
   out_path[o] = dirp[di];
@@ -91412,8 +91346,6 @@ int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, 
   int32_t di = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; di < (dlen); di = di + 1) {
   out_path[o] = ((uint8_t*)(search_dir))[di];
@@ -91424,8 +91356,6 @@ int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, 
   int32_t ni = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; ni < (namelen); ni = ni + 1) {
   uint8_t c = import_span_src[(s + ni)];
@@ -91462,8 +91392,6 @@ int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, 
   ni = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; ni < (namelen); ni = ni + 1) {
   uint8_t c = import_span_src[(s + ni)];
@@ -91562,8 +91490,6 @@ int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   out[(o + i)] = p[i];
@@ -91828,8 +91754,6 @@ int32_t flowc_resolve_try_under(const char* root, uint8_t* src, int32_t s, int32
   int32_t i = s;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (e); i = i + 1) {
   out[o] = ((src[i] == 46) ? (47) : (src[i]));
@@ -92011,8 +91935,6 @@ int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap) {
   int32_t j = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; j < (last_slash); j = j + 1) {
   out[j] = p[j];
@@ -92058,8 +91980,6 @@ int32_t flowc_resolve_normalize(uint8_t* p, int32_t n) {
   int32_t k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (len); k = k + 1) {
   p[(o + k)] = p[(i + k)];
@@ -92150,8 +92070,6 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SRC_CAP); zi = zi + 1) {
   src[zi] = 0;
@@ -92228,8 +92146,6 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SRC_CAP); zi = zi + 1) {
   src[zi] = 0;
@@ -92481,8 +92397,6 @@ int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search
   int32_t pi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; pi < (FLOWC_RESOLVE_MAX_MODS); pi = pi + 1) {
   placed[pi] = 0;
@@ -92546,8 +92460,6 @@ int32_t flowc_resolve_add_templates(AstArena arena, int32_t root, uint8_t* src, 
   int32_t i = s;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (e); i = i + 1) {
   tpl[n] = src[i];
@@ -92570,8 +92482,6 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SRC_CAP); zi = zi + 1) {
   src[zi] = 0;
@@ -92588,8 +92498,6 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   int32_t ti = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; ti < (tpl_len[0]); ti = ti + 1) {
   src[(nsrc + ti)] = tpl[ti];
@@ -92635,8 +92543,6 @@ int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SRC_CAP); zi = zi + 1) {
   src[zi] = 0;
@@ -92679,8 +92585,6 @@ int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32
   int32_t k = ns;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (ne); k = k + 1) {
   buf[n] = src[k];
@@ -92774,8 +92678,6 @@ int32_t flowc_resolve_emit_renames(uint8_t* buf, int32_t len, int32_t mi, int32_
   k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (nl); k = k + 1) {
   out[n] = buf[((e + 2) + k)];
@@ -92801,8 +92703,6 @@ int32_t flowc_resolve_emit_renames(uint8_t* buf, int32_t len, int32_t mi, int32_
   k = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; k < (nl); k = k + 1) {
   out[n] = buf[((e + 2) + k)];
@@ -92852,8 +92752,6 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SRC_CAP); zi = zi + 1) {
   tmp[zi] = 0;
@@ -92866,8 +92764,6 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (nsrc); zi = zi + 1) {
   own[zi] = tmp[zi];
@@ -92946,8 +92842,6 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   int32_t psz = (FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP);
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (psz); zi = zi + 1) {
   path_store[zi] = 0;
@@ -92972,8 +92866,6 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (psz); zi = zi + 1) {
   order_store[zi] = 0;
@@ -93011,8 +92903,6 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SRC_CAP); zi = zi + 1) {
   src[zi] = 0;
@@ -93114,8 +93004,6 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   int32_t psz = (FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP);
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (psz); zi = zi + 1) {
   path_store[zi] = 0;
@@ -93139,8 +93027,6 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (psz); zi = zi + 1) {
   order_store[zi] = 0;
@@ -93161,8 +93047,6 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (FLOWC_RESOLVE_SIG_CAP); zi = zi + 1) {
   sigs[zi] = 0;
@@ -93328,8 +93212,6 @@ int32_t* mb_alloc_i32(int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   p[i] = 0;
@@ -93341,8 +93223,6 @@ void mb_zero(uint8_t* p, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   p[i] = 0;
@@ -93356,8 +93236,6 @@ int32_t mb_put(uint8_t* dst, int32_t o, int32_t cap, uint8_t* s, int32_t n) {
   int32_t i = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; i < (n); i = i + 1) {
   dst[(o + i)] = s[i];
@@ -93457,8 +93335,6 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
   int32_t q = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; q < (n); q = q + 1) {
   out[w] = raw[(s + q)];
@@ -94291,8 +94167,6 @@ int32_t flowc_emit_body() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (out_cap); zi = zi + 1) {
   out[zi] = 0;
@@ -94326,8 +94200,6 @@ int32_t flowc_emit_body() {
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (256); zi = zi + 1) {
   dir_buf[zi] = 0;
@@ -94375,8 +94247,6 @@ int32_t flowc_emit_body() {
   zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (src_cap); zi = zi + 1) {
   src[zi] = 0;
@@ -94950,8 +94820,6 @@ int32_t test_cgen_for() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95007,8 +94875,6 @@ int32_t test_cgen_logic() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95055,8 +94921,6 @@ int32_t test_cgen_string() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95100,8 +94964,6 @@ int32_t test_cgen_emit() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95154,8 +95016,6 @@ int32_t test_parse_fixture_file() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95439,8 +95299,6 @@ int32_t test_cgen_const() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95496,8 +95354,6 @@ int32_t test_cgen_struct() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95552,8 +95408,6 @@ int32_t test_cgen_ptr() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95653,8 +95507,6 @@ int32_t test_cgen_cast() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95697,8 +95549,6 @@ int32_t test_cgen_void() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95742,8 +95592,6 @@ int32_t test_jsgen_emit() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -95990,8 +95838,6 @@ int32_t test_resolve_sibling() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (256); zi = zi + 1) {
   out[zi] = 0;
@@ -96045,8 +95891,6 @@ int32_t test_rt_summary() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   buf[zi] = 0;
@@ -96118,8 +95962,6 @@ int32_t test_bundle_emit() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (out_cap); zi = zi + 1) {
   out[zi] = 0;
@@ -96195,8 +96037,6 @@ int32_t test_fmt_emit() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
@@ -96293,8 +96133,6 @@ int32_t test_cgen_match() {
   int32_t zi = 0;
 #if defined(__clang__)
 #pragma clang loop vectorize(enable) interleave(enable)
-#elif defined(__GNUC__)
-#pragma GCC ivdep
 #endif
   for (; zi < (cap); zi = zi + 1) {
   bp[zi] = 0;
