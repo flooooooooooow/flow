@@ -1796,7 +1796,7 @@ Manual memory management: real libc heap (C backend)  Flow has no GC. Heap memor
 | `alignof_f32` | `() -> i64` | - |
 | `alignof_f64` | `() -> i64` | - |
 | `is_power_of_two` | `(value: i64) -> bool` | ── Alignment helpers ─────────────────────────────────────────────── |
-| `align_up` | `(size: i64, alignment: i64) -> i64` | - |
+| `align_up` | `(size: i64, alignment: i64) -> i64` | -1 signals invalid/overflowing alignment. Never compute size+mask before establishing that it fits in signed 64-bit arithmetic. |
 | `align_down` | `(size: i64, alignment: i64) -> i64` | - |
 | `alloc_bytes` | `(size: i64) -> ptr<void>` | ── Typed heap helpers ────────────────────────────────────────────── |
 | `alloc_zeroed` | `(size: i64) -> ptr<void>` | - |
