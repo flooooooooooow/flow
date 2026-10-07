@@ -93,8 +93,9 @@ export function str_line_next(s: string, end: i32) -> i32 {
 
 # Parse one signed decimal token starting at `start`. Leading ASCII
 # whitespace is skipped, matching Python int(). The token is an optional
-# sign and one or more digits. Overflow of i64 is an error (ok = false),
-# not wraparound. Trailing junk is left in `end` for the caller to inspect.
+# sign and one or more digits. Overflow of i64 is an error (ok = false);
+# the value never wraps. Trailing junk is left in `end` for the caller to
+# inspect.
 export function str_parse_i64_at(s: string, start: i32) -> ParseI64 {
     let n: i32 = strlen(s) as i32
     let p: ptr<u8> = s as ptr<u8>

@@ -4,7 +4,7 @@ This issue is the top-level intake and design tracker for language and compiler 
 
 | Feature request | Scope | Status |
 |---|---|---|
-| #723 Structural Orchestration Algebra | Syntax-native composition graphs, structural concurrency, typed failure/fallback, deadlines, retry, quorum/race, cancellation, transactional regions, compensation, constraints, resource contracts and graph-aware lowering | Library first (decided 2026-10-07, see [orchestration: library first](#orchestration-library-first)) |
+| #723 Structural Orchestration Algebra | Syntax-native composition graphs, structural concurrency, typed failure/fallback, deadlines, retry, quorum/race, cancellation, transactional regions, compensation, constraints, resource contracts and graph-aware lowering | Library shipped: `std.orchestrate` ([docs](../library/orchestrate.md)). Syntax deferred (decided 2026-10-07, see [orchestration: library first](#orchestration-library-first)) |
 
 ## Orchestration: library first
 

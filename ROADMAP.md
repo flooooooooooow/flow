@@ -937,3 +937,11 @@ ROADMAP-SYNC: flow-2-0-epic-ergonomic-memory-safety-architecture
 
 Track the design and implementation of Flow 2.0 memory safety architecture.
 See: `docs/project/roadmap-2.0.md`
+
+## Later (Flow 3.0)
+
+Orchestration syntax (#723, #724). `std.orchestrate` ships the combinators
+(`seq`, `fanout`, Result joins; see docs/library/orchestrate.md). A syntax
+is decided later from real use of the library. If one is added it uses a
+dedicated operator or keyword, never `>>` (decision of 2026-10-07 in
+docs/project/Questions.md).

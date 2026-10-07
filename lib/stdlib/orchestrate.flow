@@ -1,0 +1,118 @@
+# std.orchestrate: composition combinators for the Structural
+# Orchestration Algebra (#723), as a library with no new syntax.
+#
+#   seq      run f, then g on its result
+#   fanout   run several functions on one input; results in a record
+#   seq_result / fanout_result / join   the same with Result values:
+#            seq stops at the first error, join reports the first error
+#            in branch order (deterministic, independent of timing)
+#
+# Branches run one after another on the calling thread, in source order.
+# Function-typed generic parameters do not lower to C yet, so the
+# combinators are concrete for i32 and f32 (and Result_i32_string).
+# See docs/library/orchestrate.md.
+
+import "stdlib/result.flow"
+
+export function seq_i32(f: (i32) -> i32, g: (i32) -> i32, a: i32) -> i32 {
+    return g(f(a))
+}
+
+export function seq_f32(f: (f32) -> f32, g: (f32) -> f32, a: f32) -> f32 {
+    return g(f(a))
+}
+
+export struct Fanout2_i32 {
+    v0: i32
+    v1: i32
+}
+
+export function fanout2_i32(f: (i32) -> i32, g: (i32) -> i32, a: i32) -> Fanout2_i32 {
+    return Fanout2_i32 { v0: f(a), v1: g(a) }
+}
+
+export struct Fanout3_i32 {
+    v0: i32
+    v1: i32
+    v2: i32
+}
+
+export function fanout3_i32(f: (i32) -> i32, g: (i32) -> i32, h: (i32) -> i32, a: i32) -> Fanout3_i32 {
+    return Fanout3_i32 { v0: f(a), v1: g(a), v2: h(a) }
+}
+
+export struct Fanout2_f32 {
+    v0: f32
+    v1: f32
+}
+
+export function fanout2_f32(f: (f32) -> f32, g: (f32) -> f32, a: f32) -> Fanout2_f32 {
+    return Fanout2_f32 { v0: f(a), v1: g(a) }
+}
+
+export struct Fanout3_f32 {
+    v0: f32
+    v1: f32
+    v2: f32
+}
+
+export function fanout3_f32(f: (f32) -> f32, g: (f32) -> f32, h: (f32) -> f32, a: f32) -> Fanout3_f32 {
+    return Fanout3_f32 { v0: f(a), v1: g(a), v2: h(a) }
+}
+
+# f, then g on f's value. An error from f is returned without calling g.
+export function seq_result_i32(
+    f: (i32) -> Result_i32_string,
+    g: (i32) -> Result_i32_string,
+    a: i32
+) -> Result_i32_string {
+    let r: Result_i32_string = f(a)
+    if is_err_i32(r) {
+        return r
+    }
+    return g(unwrap_result_i32(r))
+}
+
+export struct Fanout2_Result_i32 {
+    v0: Result_i32_string
+    v1: Result_i32_string
+}
+
+# Runs both branches and keeps both results; the caller picks a join.
+export function fanout2_result_i32(
+    f: (i32) -> Result_i32_string,
+    g: (i32) -> Result_i32_string,
+    a: i32
+) -> Fanout2_Result_i32 {
+    return Fanout2_Result_i32 { v0: f(a), v1: g(a) }
+}
+
+# Both branch values, or the error of the first failed branch.
+export struct Joined2_i32 {
+    ok: bool
+    v0: i32
+    v1: i32
+    error: string
+}
+
+# Join that requires every branch: ok with both values when both
+# succeed, otherwise the error of the first failed branch in order.
+export function join2_result_i32(f2: Fanout2_Result_i32) -> Joined2_i32 {
+    if is_err_i32(f2.v0) {
+        return Joined2_i32 { ok: false, v0: 0, v1: 0, error: unwrap_err_i32(f2.v0) }
+    }
+    if is_err_i32(f2.v1) {
+        return Joined2_i32 { ok: false, v0: 0, v1: 0, error: unwrap_err_i32(f2.v1) }
+    }
+    return Joined2_i32 { ok: true, v0: unwrap_result_i32(f2.v0), v1: unwrap_result_i32(f2.v1), error: "" }
+}
+
+# Join that accepts the first successful branch in order, for an
+# optional branch with a fallback. The error of the last branch when
+# neither succeeds.
+export function join2_first_ok_i32(f2: Fanout2_Result_i32) -> Result_i32_string {
+    if is_ok_i32(f2.v0) {
+        return f2.v0
+    }
+    return f2.v1
+}
