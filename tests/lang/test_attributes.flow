@@ -125,79 +125,99 @@ function main() -> i32 {
         puts("FAIL: frame rank should be 1")
         return 23
     }
-    if flowc_domain_rank("session") != 2 {
-        puts("FAIL: session rank should be 2")
+    if flowc_domain_rank("request") != 2 {
+        puts("FAIL: request rank should be 2")
         return 24
     }
-    if flowc_domain_rank("application") != 3 {
-        puts("FAIL: application rank should be 3")
+    if flowc_domain_rank("session") != 3 {
+        puts("FAIL: session rank should be 3")
         return 25
+    }
+    if flowc_domain_rank("application") != 4 {
+        puts("FAIL: application rank should be 4")
+        return 26
+    }
+    if flowc_domain_rank("persistent") != 5 {
+        puts("FAIL: persistent rank should be 5")
+        return 27
     }
     if flowc_domain_rank("bogus") != -1 {
         puts("FAIL: bogus domain should be -1")
-        return 26
+        return 28
+    }
+    if strcmp(flowc_domain_name(2), "request") != 0 {
+        puts("FAIL: rank 2 should be request")
+        return 29
+    }
+    if strcmp(flowc_domain_name(5), "persistent") != 0 {
+        puts("FAIL: rank 5 should be persistent")
+        return 30
+    }
+    if strcmp(flowc_known_domains(), "callback, frame, request, session, application, persistent") != 0 {
+        puts("FAIL: known domains list is wrong")
+        return 31
     }
 
     # validate_target_spec: valid specs
     if flowc_validate_target_spec("avx2") == 0 {
         puts("FAIL: 'avx2' should be valid")
-        return 27
+        return 32
     }
     if flowc_validate_target_spec("avx2,fma") == 0 {
         puts("FAIL: 'avx2,fma' should be valid")
-        return 28
+        return 33
     }
     if flowc_validate_target_spec("+avx2") == 0 {
         puts("FAIL: '+avx2' should be valid")
-        return 29
+        return 34
     }
     if flowc_validate_target_spec("-sse") == 0 {
         puts("FAIL: '-sse' should be valid")
-        return 30
+        return 35
     }
     if flowc_validate_target_spec("arch=haswell") == 0 {
         puts("FAIL: 'arch=haswell' should be valid")
-        return 31
+        return 36
     }
     if flowc_validate_target_spec("tune=native") == 0 {
         puts("FAIL: 'tune=native' should be valid")
-        return 32
+        return 37
     }
     if flowc_validate_target_spec("no-sse") == 0 {
         puts("FAIL: 'no-sse' should be valid")
-        return 33
+        return 38
     }
     if flowc_validate_target_spec("avx2, fma") == 0 {
         puts("FAIL: 'avx2, fma' with space should be valid")
-        return 34
+        return 39
     }
 
     # validate_target_spec: invalid specs
     if flowc_validate_target_spec("") == 1 {
         puts("FAIL: empty spec should be invalid")
-        return 35
+        return 40
     }
     if flowc_validate_target_spec("avx2,,fma") == 1 {
         puts("FAIL: empty component should be invalid")
-        return 36
+        return 41
     }
     if flowc_validate_target_spec("avx2!") == 1 {
         puts("FAIL: 'avx2!' should be invalid")
-        return 37
+        return 42
     }
 
     # normalize_target_spec
     let norm: string = flowc_normalize_target_spec(" avx2 , fma ,  sse4.2 ")
     if strcmp(norm, "avx2,fma,sse4.2") != 0 {
         printf("FAIL: normalized = '%s', expected 'avx2,fma,sse4.2'\n", norm)
-        return 38
+        return 43
     }
 
     # normalize: empty items dropped
     let norm2: string = flowc_normalize_target_spec("avx2,,fma")
     if strcmp(norm2, "avx2,fma") != 0 {
         printf("FAIL: normalized2 = '%s', expected 'avx2,fma'\n", norm2)
-        return 39
+        return 44
     }
 
     puts("All attributes tests passed")

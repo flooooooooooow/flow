@@ -1120,10 +1120,11 @@ Example: `tests/runtime/test_pointers.flow`.
 
 Where a value lives is a second question from where the allocator put it. A
 lifetime domain names how long it lives. Full description:
-[lifetime-domains.md](language/lifetime-domains.md).
+[lifetime-domains.md](language/lifetime-domains.md). Axiom §7 `request` and
+`persistent` names: [lifetime-request-persistent.md](language/lifetime-request-persistent.md).
 
 ```text
-callback  <  frame  <  session  <  application
+callback  <  frame  <  request  <  session  <  application  <  persistent
 ```
 
 `@lifetime(D)` goes on a function, where it declares the domain the frame runs
@@ -1174,7 +1175,8 @@ public function (#765); see
 **Status:** ✅ C-backend type checker. Tests:
 `compiler/fixtures/typecheck_rules/domain_arena_*.flow`,
 `tests/lang/test_lifetime_domains.flow`,
-`tests/lang/test_arena_domains.flow`. Example:
+`tests/lang/test_arena_domains.flow`,
+`tests/lang/test_lifetime_request_persistent.flow`. Example:
 `examples/audio/lifetime_domains.flow`.
 
 ### 8.5 Local Region Inference

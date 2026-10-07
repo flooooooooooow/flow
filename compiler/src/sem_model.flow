@@ -2113,15 +2113,20 @@ export function sem_parse_attribute(attr: string, args: ptr<SemStrVec>) -> strin
 function sem_lifetime_index(d: string) -> i32 {
     if sem_s_eq(d, "callback") { return 0 }
     if sem_s_eq(d, "frame") { return 1 }
-    if sem_s_eq(d, "session") { return 2 }
-    if sem_s_eq(d, "application") { return 3 }
+    if sem_s_eq(d, "request") { return 2 }
+    if sem_s_eq(d, "session") { return 3 }
+    if sem_s_eq(d, "application") { return 4 }
+    if sem_s_eq(d, "persistent") { return 5 }
     return 0 - 1
 }
 
 export function sem_domain_name(i: i32) -> string {
     if i == 0 { return "callback" }
     if i == 1 { return "frame" }
-    if i == 2 { return "session" }
+    if i == 2 { return "request" }
+    if i == 3 { return "session" }
+    if i == 4 { return "application" }
+    if i == 5 { return "persistent" }
     return "application"
 }
 
@@ -2265,7 +2270,7 @@ export function sem_attribute_errors(c: ptr<Sem>, fn_name: string, start: i32, n
             if args.len > 0 and sem_takes_args(name) == false {
                 sem_err(c, "Attribute '@" + name + "' on function '" + fn_name + "' takes no arguments")
             } elif sem_s_eq(name, "lifetime") {
-                let known2: string = "callback, frame, session, application"
+                let known2: string = "callback, frame, request, session, application, persistent"
                 if lifetime_seen {
                     sem_err(c, "'" + fn_name + "' declares more than one '@lifetime' domain; a declaration lives in exactly one domain")
                 } else {
