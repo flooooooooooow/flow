@@ -5230,6 +5230,8 @@ int32_t is_semantic_attr(const char* name);
 int32_t flowc_is_known_attr(const char* name);
 int32_t flowc_attr_takes_args(const char* name);
 int32_t flowc_domain_rank(const char* domain);
+const char* flowc_domain_name(int32_t rank);
+const char* flowc_known_domains();
 int32_t is_lifetime_domain(const char* s);
 FlowcParsedAttr flowc_parse_attribute(const char* attr);
 int32_t is_target_char(int32_t c);
@@ -5438,26 +5440,49 @@ int32_t flowc_domain_rank(const char* domain) {
   if (streq(domain, "frame") == 1) {
   return 1;
 }
-  if (streq(domain, "session") == 1) {
+  if (streq(domain, "request") == 1) {
   return 2;
 }
-  if (streq(domain, "application") == 1) {
+  if (streq(domain, "session") == 1) {
   return 3;
+}
+  if (streq(domain, "application") == 1) {
+  return 4;
+}
+  if (streq(domain, "persistent") == 1) {
+  return 5;
 }
   return (-1);
 }
 
+const char* flowc_domain_name(int32_t rank) {
+  if (rank == 0) {
+  return "callback";
+}
+  if (rank == 1) {
+  return "frame";
+}
+  if (rank == 2) {
+  return "request";
+}
+  if (rank == 3) {
+  return "session";
+}
+  if (rank == 4) {
+  return "application";
+}
+  if (rank == 5) {
+  return "persistent";
+}
+  return "";
+}
+
+const char* flowc_known_domains() {
+  return "callback, frame, request, session, application, persistent";
+}
+
 int32_t is_lifetime_domain(const char* s) {
-  if (streq(s, "callback") == 1) {
-  return 1;
-}
-  if (streq(s, "frame") == 1) {
-  return 1;
-}
-  if (streq(s, "session") == 1) {
-  return 1;
-}
-  if (streq(s, "application") == 1) {
+  if (flowc_domain_rank(s) >= 0) {
   return 1;
 }
   return 0;
@@ -19405,11 +19430,17 @@ int32_t sem_lifetime_index(const char* d) {
   if (sem_s_eq(d, "frame")) {
   return 1;
 }
-  if (sem_s_eq(d, "session")) {
+  if (sem_s_eq(d, "request")) {
   return 2;
 }
-  if (sem_s_eq(d, "application")) {
+  if (sem_s_eq(d, "session")) {
   return 3;
+}
+  if (sem_s_eq(d, "application")) {
+  return 4;
+}
+  if (sem_s_eq(d, "persistent")) {
+  return 5;
 }
   return (0 - 1);
 }
@@ -19422,7 +19453,16 @@ const char* sem_domain_name(int32_t i) {
   return "frame";
 }
   if (i == 2) {
+  return "request";
+}
+  if (i == 3) {
   return "session";
+}
+  if (i == 4) {
+  return "application";
+}
+  if (i == 5) {
+  return "persistent";
 }
   return "application";
 }
@@ -19566,7 +19606,7 @@ void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n)
   sem_err(c, __flowc_str_concatn(5, "Attribute '@", name, "' on function '", fn_name, "' takes no arguments"));
 } else {
   if (sem_s_eq(name, "lifetime")) {
-  const char* known2 = "callback, frame, session, application";
+  const char* known2 = "callback, frame, request, session, application, persistent";
   if (lifetime_seen) {
   sem_err(c, __flowc_str_concatn(3, "'", fn_name, "' declares more than one '@lifetime' domain; a declaration lives in exactly one domain"));
 } else {
@@ -63750,9 +63790,11 @@ const int32_t FLOWC_RT_IO = 8;
 const int32_t FLOWC_RT_UNKNOWN = 16;
 const int32_t FLOWC_RT_DOM_CALLBACK = 0;
 const int32_t FLOWC_RT_DOM_FRAME = 1;
-const int32_t FLOWC_RT_DOM_SESSION = 2;
-const int32_t FLOWC_RT_DOM_APPLICATION = 3;
-const int32_t FLOWC_RT_DOM_NONE = 4;
+const int32_t FLOWC_RT_DOM_REQUEST = 2;
+const int32_t FLOWC_RT_DOM_SESSION = 3;
+const int32_t FLOWC_RT_DOM_APPLICATION = 4;
+const int32_t FLOWC_RT_DOM_PERSISTENT = 5;
+const int32_t FLOWC_RT_DOM_NONE = 6;
 #undef RT_MAX_FN
 static const int32_t RT_MAX_FN = 256;
 #undef RT_MAX_CALLS
@@ -64105,11 +64147,17 @@ const char* flowc_rt_domain_name(int32_t d) {
   if (d == FLOWC_RT_DOM_FRAME) {
   return "frame";
 }
+  if (d == FLOWC_RT_DOM_REQUEST) {
+  return "request";
+}
   if (d == FLOWC_RT_DOM_SESSION) {
   return "session";
 }
   if (d == FLOWC_RT_DOM_APPLICATION) {
   return "application";
+}
+  if (d == FLOWC_RT_DOM_PERSISTENT) {
+  return "persistent";
 }
   return "";
 }
@@ -64121,11 +64169,17 @@ int32_t flowc_rt_domain_of_span(uint8_t* src, int32_t s, int32_t e) {
   if (rt_span_is(src, s, e, "frame") == 1) {
   return FLOWC_RT_DOM_FRAME;
 }
+  if (rt_span_is(src, s, e, "request") == 1) {
+  return FLOWC_RT_DOM_REQUEST;
+}
   if (rt_span_is(src, s, e, "session") == 1) {
   return FLOWC_RT_DOM_SESSION;
 }
   if (rt_span_is(src, s, e, "application") == 1) {
   return FLOWC_RT_DOM_APPLICATION;
+}
+  if (rt_span_is(src, s, e, "persistent") == 1) {
+  return FLOWC_RT_DOM_PERSISTENT;
 }
   return FLOWC_RT_DOM_NONE;
 }
@@ -64312,7 +64366,7 @@ int32_t rt_add_fn(AstArena arena, uint8_t* src, int32_t fn, int32_t is_extern, i
 }
   ns[nfn] = ((arena).nodes[fn]).name_start;
   ne[nfn] = ((arena).nodes[fn]).name_end;
-  { __typeof__(domain[nfn]) __flowc_st2257 = rt_fn_lifetime(arena, src, fn); domain[nfn] = __flowc_st2257; }
+  { __typeof__(domain[nfn]) __flowc_st2299 = rt_fn_lifetime(arena, src, fn); domain[nfn] = __flowc_st2299; }
   bits[nfn] = 0;
   ps[nfn] = 0;
   pe[nfn] = 0;
@@ -81052,7 +81106,7 @@ void sem_collect_types(Sem* c) {
   if (k == DK_ALIAS) {
   int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
   int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
-  { __typeof__(tys->base[alias_t]) __flowc_st3078 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3078; }
+  { __typeof__(tys->base[alias_t]) __flowc_st3079 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3079; }
   int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
   sem_scope_define_global(c, s2);
   int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
@@ -81144,7 +81198,7 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
 }
-  { __typeof__(tys->ret[f]) __flowc_st3521 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3521; }
+  { __typeof__(tys->ret[f]) __flowc_st3522 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3522; }
   i = 0;
   for (; i < (sem_fi_neffects(c, fi)); i = i + 1) {
   sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
@@ -81244,7 +81298,7 @@ void sem_collect_lifetime_domains(Sem* c) {
   if (k == DK_STATIC) {
   int32_t d3 = sem_lifetime_domain(c, sem_iv_get(c->d_astart, i), sem_iv_get(c->d_alen, i));
   if (d3 < 0) {
-  d3 = 3;
+  d3 = FLOWC_RT_DOM_APPLICATION;
 }
   sem_sm_put(c->static_domains, sem_decl_name(c, i), d3);
 }
@@ -81256,7 +81310,7 @@ void sem_collect_lifetime_domains(Sem* c) {
 int32_t sem_static_domain(Sem* c, const char* name) {
   int32_t d = sem_sm_get(c->static_domains, name);
   if (d < 0) {
-  return 3;
+  return FLOWC_RT_DOM_APPLICATION;
 }
   return d;
 }
@@ -83434,7 +83488,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st14036 = sem_static_length(c, e); tys->size[sp] = __flowc_st14036; }
+  { __typeof__(tys->size[sp]) __flowc_st14037 = sem_static_length(c, e); tys->size[sp] = __flowc_st14037; }
   return sp;
 }
 
@@ -83508,14 +83562,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st14385 = sem_iv_new(); c->return_sink = __flowc_st14385; }
+  { __typeof__(c->return_sink) __flowc_st14386 = sem_iv_new(); c->return_sink = __flowc_st14386; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st14415 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14415; }
+  { __typeof__(tys->ret[f]) __flowc_st14416 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14416; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st14424 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14424; }
+  { __typeof__(tys->ret[f]) __flowc_st14425 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14425; }
 }
   return f;
 }
@@ -84868,16 +84922,16 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st20242 = sem_sv_new(); c->local_storage = __flowc_st20242; }
-  { __typeof__(c->span_origin) __flowc_st20246 = sem_sm_new(); c->span_origin = __flowc_st20246; }
-  { __typeof__(c->current_return_type) __flowc_st20255 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st20255; }
+  { __typeof__(c->local_storage) __flowc_st20243 = sem_sv_new(); c->local_storage = __flowc_st20243; }
+  { __typeof__(c->span_origin) __flowc_st20247 = sem_sm_new(); c->span_origin = __flowc_st20247; }
+  { __typeof__(c->current_return_type) __flowc_st20256 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st20256; }
   i = 0;
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
   sem_define_var(c, sem_fi_param_name(c, fi, i), pt, 0);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st20298 = sem_iv_new(); c->return_sink = __flowc_st20298; }
+  { __typeof__(c->return_sink) __flowc_st20299 = sem_iv_new(); c->return_sink = __flowc_st20299; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
@@ -86986,23 +87040,11 @@ void flowc_tc_rt_consult_call(TcCtx* ctx, AstArena arena, int32_t call) {
   flowc_eff_diag_s("lifetime domain violation: '");
   flowc_eff_diag_span(src, ((arena).nodes[fn]).name_start, ((arena).nodes[fn]).name_end);
   flowc_eff_diag_s("' is in the `");
-  if (need == FLOWC_RT_DOM_CALLBACK) {
-  flowc_eff_diag_s("callback");
-} else {
-  flowc_eff_diag_s("frame");
-}
+  flowc_eff_diag_s(flowc_rt_domain_name(need));
   flowc_eff_diag_s("` domain but calls '");
   flowc_eff_diag_span(src, ns, ne);
   flowc_eff_diag_s("', which is in the `");
-  if (cal_dom == FLOWC_RT_DOM_FRAME) {
-  flowc_eff_diag_s("frame");
-} else {
-  if (cal_dom == FLOWC_RT_DOM_SESSION) {
-  flowc_eff_diag_s("session");
-} else {
-  flowc_eff_diag_s("application");
-}
-}
+  flowc_eff_diag_s(flowc_rt_domain_name(cal_dom));
   flowc_eff_diag_s("` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)");
   flowc_eff_diag_end();
 }
@@ -88288,8 +88330,8 @@ void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint
   return;
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
-  { __typeof__((ctx[0]).eff_len) __flowc_st9616 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9616; }
-  { __typeof__((ctx[0]).eff_len) __flowc_st9637 = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9637; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st9592 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9592; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st9613 = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9613; }
   (ctx[0]).eff_seed_len = (ctx[0]).eff_len;
   int32_t item = ((dep_arena).nodes[dep_root]).a;
   while (item != AST_NONE) {
@@ -89027,7 +89069,7 @@ void ut_register_unit(UCtx* u, AstArena arena, int32_t d) {
   (u[0]).u_ne[k] = ne;
   (u[0]).u_dims[k] = dims;
   (u[0]).u_ok[k] = ok;
-  { __typeof__((u[0]).u_rad[k]) __flowc_st13257 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st13257; }
+  { __typeof__((u[0]).u_rad[k]) __flowc_st13233 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st13233; }
   (u[0]).u_len = (k + 1);
 }
 
@@ -90057,8 +90099,8 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_err(ctx);
   (ctx[0]).fatal = ((ctx[0]).fatal + 1);
 }
-  { __typeof__((ctx[0]).eff_len) __flowc_st17980 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17980; }
-  { __typeof__((ctx[0]).eff_len) __flowc_st18004 = flowc_rt_summary_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st18004; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st17956 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17956; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st17980 = flowc_rt_summary_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st17980; }
   flowc_tc_collect_globals(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_rows(ctx, arena, root);
@@ -90068,7 +90110,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 }
   flowc_tc_check_fns(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
-  { __typeof__((ctx[0]).err) __flowc_st18062 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st18062; }
+  { __typeof__((ctx[0]).err) __flowc_st18038 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st18038; }
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;
