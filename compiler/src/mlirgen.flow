@@ -10416,8 +10416,12 @@ function mlg_rupdate_values_use_name(m: ptr<Mlg>, lit: i32, ns: i32, ne: i32) ->
     return 0
 }
 
+# `return Name { ..base, f: v }` with a local base: insert the listed fields
+# into the base value and return it, with no copy through memory (#696).
+# A record update reaches the emitter as an AST_STRUCT_LIT whose c holds the
+# base; AST_RECORD_UPDATE is only the parser's marker.
 function mlg_try_rupdate_return(m: ptr<Mlg>, st: i32, ret_expr: i32) -> i32 {
-    if mlg_kind(m, ret_expr) != AST_RECORD_UPDATE {
+    if mlg_kind(m, ret_expr) != AST_STRUCT_LIT or m[0].arena.nodes[ret_expr].c == AST_NONE {
         return 0
     }
     if m[0].ndf > 0 or m[0].lam_len > 0 {
@@ -10438,8 +10442,35 @@ function mlg_try_rupdate_return(m: ptr<Mlg>, st: i32, ret_expr: i32) -> i32 {
         return 0
     }
 
-    let mut base_val: i32 = m[0].l_ssa[decl]
     let bk: i32 = m[0].l_mt[decl]
+    if mlg_is_struct_mt(bk) == 0 or bk != m[0].ret_mt {
+        return 0
+    }
+    let sid0: i32 = bk - MT_STRUCT
+    let st0: i32 = m[0].st_node[sid0]
+    # Every listed field must exist before anything is emitted.
+    let mut chk: i32 = m[0].arena.nodes[ret_expr].a
+    while chk != AST_NONE {
+        let mut seen: i32 = 0
+        let mut q: i32 = m[0].arena.nodes[st0].a
+        while q != AST_NONE {
+            if mlg_span_eq(m, mlg_ns(m, q), mlg_ne(m, q), mlg_ns(m, chk), mlg_ne(m, chk)) == 1 {
+                seen = 1
+            }
+            q = m[0].arena.nodes[q].next
+        }
+        if seen == 0 {
+            return 0
+        }
+        chk = m[0].arena.nodes[chk].next
+    }
+    # A struct local is alloca-backed off wasm32, and a field store such as
+    # `p.x = a` writes the alloca without updating the SSA value. Read the
+    # current value from storage.
+    let mut base_val: i32 = m[0].l_ssa[decl]
+    if m[0].l_alloca[decl] != V_NONE {
+        base_val = mlg_load(m, m[0].l_alloca[decl], bk)
+    }
 
     let mut f: i32 = m[0].arena.nodes[ret_expr].a
     while f != AST_NONE {
