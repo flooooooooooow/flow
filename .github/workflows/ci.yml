@@ -655,11 +655,6 @@ jobs:
     if: |
       needs.changes.outputs.compiler == 'true' ||
       needs.changes.outputs.workflow == 'true'
-    env:
-      # Four workers instead of the default two (half the CPUs). Programs
-      # whose run depends on machine load are listed in
-      # compiler/corpus_parity/timing.txt and only their build is compared.
-      FLOW_GATE_JOBS: '4'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
