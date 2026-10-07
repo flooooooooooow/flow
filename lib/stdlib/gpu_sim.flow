@@ -107,6 +107,9 @@ function host_buffer_f32(ptr: ptr<f32>, len: i32) -> HostBufferF32 {
 }
 
 function host_alloc_f32(len: i32) -> HostBufferF32 {
+    if len <= 0 or len > 536870911 {
+        return HostBufferF32 { data: null, len: 0 }
+    }
     let bytes: i32 = len * 4
     let raw: ptr<f32> = malloc(bytes)
     return HostBufferF32 { data: raw, len: len }
@@ -117,6 +120,9 @@ function host_free_f32(buf: HostBufferF32) -> void {
 }
 
 function device_alloc_f32(len: i32) -> DeviceBufferF32 {
+    if len <= 0 or len > 536870911 {
+        return DeviceBufferF32 { data: null, len: 0 }
+    }
     let bytes: i32 = len * 4
     let raw: ptr<f32> = malloc(bytes)
     return DeviceBufferF32 { data: raw, len: len }
@@ -127,26 +133,47 @@ function device_free_f32(buf: DeviceBufferF32) -> void {
 }
 
 function copy_host_to_device(src: HostBufferF32, dst: DeviceBufferF32) -> void {
+    if src.data == null or dst.data == null or src.len <= 0 or
+       src.len > dst.len or src.len > 536870911 {
+        return
+    }
     let bytes: i32 = src.len * 4
     memcpy(dst.data, src.data, bytes)
 }
 
 function copy_device_to_host(src: DeviceBufferF32, dst: HostBufferF32) -> void {
+    if src.data == null or dst.data == null or src.len <= 0 or
+       src.len > dst.len or src.len > 536870911 {
+        return
+    }
     let bytes: i32 = src.len * 4
     memcpy(dst.data, src.data, bytes)
 }
 
 function layout_1d(size: i32) -> Layout {
+    if size <= 0 {
+        return Layout { size: 0, stride: 0 }
+    }
     return Layout { size: size, stride: 1 }
 }
 
 function layout_2d(rows: i32, cols: i32) -> Layout2D {
+    if rows <= 0 or cols <= 0 or rows > 2147483647 / cols {
+        return Layout2D { rows: 0, cols: 0, stride: 0 }
+    }
     return Layout2D { rows: rows, cols: cols, stride: cols }
 }
 
 function layout_3d(depth: i32, rows: i32, cols: i32) -> Layout3D {
+    if depth <= 0 or rows <= 0 or cols <= 0 or rows > 2147483647 / cols {
+        return Layout3D { depth: 0, rows: 0, cols: 0, stride_y: 0, stride_z: 0 }
+    }
+    let plane: i32 = rows * cols
+    if depth > 2147483647 / plane {
+        return Layout3D { depth: 0, rows: 0, cols: 0, stride_y: 0, stride_z: 0 }
+    }
     let stride_y: i32 = cols
-    let stride_z: i32 = rows * cols
+    let stride_z: i32 = plane
     return Layout3D { depth: depth, rows: rows, cols: cols, stride_y: stride_y, stride_z: stride_z }
 }
 
@@ -182,28 +209,79 @@ function layout_index_3d(layout: Layout3D, z: i32, row: i32, col: i32) -> i32 {
     return z * layout.stride_z + row * layout.stride_y + col
 }
 
+# Empty configuration is an explicit failure value, never a dispatch.
+# The CPU simulator uses signed i32 dimensions and 1024 threads per block.
+function grid_invalid() -> LaunchConfig {
+    let zero: Dim3 = Dim3 { x: 0, y: 0, z: 0 }
+    return LaunchConfig { grid: zero, block: zero, total_threads: 0 }
+}
+
 function grid_1d(n: i32, block_x: i32) -> LaunchConfig {
-    let blocks: i32 = (n + block_x - 1) / block_x
+    if n <= 0 or block_x <= 0 or block_x > 1024 {
+        return grid_invalid()
+    }
+    # Ceil division without n + block_x - 1 overflow.
+    let blocks: i32 = (n - 1) / block_x + 1
+    if blocks > 2147483647 / block_x {
+        return grid_invalid()
+    }
     let grid: Dim3 = Dim3 { x: blocks, y: 1, z: 1 }
     let block: Dim3 = Dim3 { x: block_x, y: 1, z: 1 }
     return LaunchConfig { grid: grid, block: block, total_threads: blocks * block_x }
 }
 
 function grid_2d(width: i32, height: i32, block_x: i32, block_y: i32) -> LaunchConfig {
-    let blocks_x: i32 = (width + block_x - 1) / block_x
-    let blocks_y: i32 = (height + block_y - 1) / block_y
+    if width <= 0 or height <= 0 or block_x <= 0 or block_y <= 0 {
+        return grid_invalid()
+    }
+    if block_x > 1024 or block_y > 1024 / block_x {
+        return grid_invalid()
+    }
+    let threads: i32 = block_x * block_y
+    let blocks_x: i32 = (width - 1) / block_x + 1
+    let blocks_y: i32 = (height - 1) / block_y + 1
+    if blocks_x > 2147483647 / blocks_y {
+        return grid_invalid()
+    }
+    let blocks: i32 = blocks_x * blocks_y
+    if blocks > 2147483647 / threads {
+        return grid_invalid()
+    }
     let grid: Dim3 = Dim3 { x: blocks_x, y: blocks_y, z: 1 }
     let block: Dim3 = Dim3 { x: block_x, y: block_y, z: 1 }
-    return LaunchConfig { grid: grid, block: block, total_threads: blocks_x * blocks_y * block_x * block_y }
+    return LaunchConfig { grid: grid, block: block, total_threads: blocks * threads }
 }
 
 function grid_3d(width: i32, height: i32, depth: i32, block_x: i32, block_y: i32, block_z: i32) -> LaunchConfig {
-    let blocks_x: i32 = (width + block_x - 1) / block_x
-    let blocks_y: i32 = (height + block_y - 1) / block_y
-    let blocks_z: i32 = (depth + block_z - 1) / block_z
+    if width <= 0 or height <= 0 or depth <= 0 or
+       block_x <= 0 or block_y <= 0 or block_z <= 0 {
+        return grid_invalid()
+    }
+    if block_x > 1024 or block_y > 1024 / block_x {
+        return grid_invalid()
+    }
+    let xy: i32 = block_x * block_y
+    if block_z > 1024 / xy {
+        return grid_invalid()
+    }
+    let threads: i32 = xy * block_z
+    let blocks_x: i32 = (width - 1) / block_x + 1
+    let blocks_y: i32 = (height - 1) / block_y + 1
+    let blocks_z: i32 = (depth - 1) / block_z + 1
+    if blocks_x > 2147483647 / blocks_y {
+        return grid_invalid()
+    }
+    let blocks_xy: i32 = blocks_x * blocks_y
+    if blocks_xy > 2147483647 / blocks_z {
+        return grid_invalid()
+    }
+    let blocks: i32 = blocks_xy * blocks_z
+    if blocks > 2147483647 / threads {
+        return grid_invalid()
+    }
     let grid: Dim3 = Dim3 { x: blocks_x, y: blocks_y, z: blocks_z }
     let block: Dim3 = Dim3 { x: block_x, y: block_y, z: block_z }
-    return LaunchConfig { grid: grid, block: block, total_threads: blocks_x * blocks_y * blocks_z * block_x * block_y * block_z }
+    return LaunchConfig { grid: grid, block: block, total_threads: blocks * threads }
 }
 
 function enqueue_queue(q: CommandQueue) -> CommandQueue {
