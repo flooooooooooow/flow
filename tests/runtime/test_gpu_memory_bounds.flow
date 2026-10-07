@@ -1,0 +1,28 @@
+# Host-independent checks: invalid lengths must fail before any GPU API call.
+# A fake, heap-backed handle is safe here ONLY because every request is
+# rejected by the Flow wrapper. The test intentionally never dispatches.
+import "stdlib/gpu_memory.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+}
+
+function main() -> i32 {
+    let fake: ptr<void> = malloc(16)
+    if fake == null { return 1 }
+    let buf: GpuBuffer = GpuBuffer { device: fake, size: 8, flags: GPU_MEM_SHARED }
+    if gpu_copy_h2d(buf, fake, 9) != -1 { return 2 }
+    if gpu_copy_d2h(fake, buf, 9) != -1 { return 3 }
+    if gpu_copy_d2d(buf, buf, 9) != -1 { return 4 }
+    if gpu_copy_h2d(buf, fake, 0) != -1 { return 5 }
+    if gpu_mul_f32(buf, buf, buf, 3) != -1 { return 6 }
+    if gpu_mul_backward_a_f32(buf, buf, buf, 3) != -1 { return 7 }
+    if gpu_mul_backward_b_f32(buf, buf, buf, 3) != -1 { return 8 }
+    if gpu_mul_f32(buf, buf, buf, 4294967296) != -1 { return 9 }
+    if not gpu_is_null(gpu_alloc_i32(2305843009213693952)) { return 10 }
+    if not gpu_is_null(gpu_alloc_f64(1152921504606846976)) { return 11 }
+    if not gpu_is_null(gpu_alloc_flags(8, 99)) { return 12 }
+    free(fake)
+    return 0
+}

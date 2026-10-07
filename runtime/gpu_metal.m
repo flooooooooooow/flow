@@ -225,7 +225,7 @@ int flow_gpu_copy_d2d(void *dst_gpu, void *src_gpu, int64_t nbytes) {
     }
     @autoreleasepool {
         if (dst->shared && src->shared) {
-            memcpy([dst_mtl contents], [src_mtl contents], (size_t)nbytes);
+            memmove([dst_mtl contents], [src_mtl contents], (size_t)nbytes);
             return 0;
         }
         return flow_gpu_blit_copy(dst_mtl, 0, src_mtl, 0, (NSUInteger)nbytes);
@@ -267,15 +267,13 @@ static int flow_gpu_dispatch_mul_elem(void *out_gpu, void *x_gpu, void *y_gpu, i
     if (!out_gpu || !x_gpu || !y_gpu || n <= 0) {
         return -1;
     }
-    if (flow_gpu_compute_init() != 0) {
-        return -1;
-    }
-
     FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
     FlowGpuBuffer *x = (FlowGpuBuffer *)x_gpu;
     FlowGpuBuffer *y = (FlowGpuBuffer *)y_gpu;
-    int64_t nbytes = n * (int64_t)sizeof(float);
-    if (nbytes > out->size || nbytes > x->size || nbytes > y->size) {
+    if (!flow_gpu_f32_launch_fits(n, out->size, x->size, y->size)) {
+        return -1;
+    }
+    if (flow_gpu_compute_init() != 0) {
         return -1;
     }
 

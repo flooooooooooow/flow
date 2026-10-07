@@ -69,3 +69,20 @@ Flags include `GPU_MEM_DEFAULT`, `GPU_MEM_SHARED`, and `GPU_MEM_PRIVATE`.
 The full checked round-trip is [`examples/gpu/gpu_memory_roundtrip.flow`](../../examples/gpu/gpu_memory_roundtrip.flow).
 
 Runtime implementation: `runtime/gpu_memory.h`, `runtime/gpu_metal.m`, and `runtime/gpu_memory_stub.c`.
+
+## Buffer-size and dispatch safety
+
+The Flow wrappers reject these calls before they reach the GPU backend:
+
+- a copy larger than the source or destination buffer's `size`;
+- an allocation with unknown flags, or a typed allocation whose count is
+  zero, negative or overflows the byte size;
+- an f32 kernel whose count exceeds any of its three buffers or the
+  shader's 32-bit count.
+
+A rejected copy or kernel returns `-1`; a rejected allocation returns a
+null buffer. `GpuBuffer.size` is a public field, so the Metal runtime
+checks the native allocation sizes again before it dispatches.
+
+Shared-to-shared device copies use `memmove`, so overlapping buffers copy
+correctly.

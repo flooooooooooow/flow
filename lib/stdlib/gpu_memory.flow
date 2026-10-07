@@ -53,7 +53,7 @@ export function gpu_is_null(buf: GpuBuffer) -> bool {
 }
 
 export function gpu_alloc_flags(size: i64, flags: i32) -> GpuBuffer {
-    if size <= 0 {
+    if size <= 0 or (flags != GPU_MEM_DEFAULT and flags != GPU_MEM_SHARED and flags != GPU_MEM_PRIVATE) {
         return gpu_null_buffer()
     }
     let h: ptr<void> = flow_gpu_alloc(size, flags)
@@ -78,14 +78,23 @@ export function gpu_alloc_private(size: i64) -> GpuBuffer {
 }
 
 export function gpu_alloc_f32(count: i64) -> GpuBuffer {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return gpu_null_buffer()
+    }
     return gpu_alloc(count * 4)
 }
 
 export function gpu_alloc_f64(count: i64) -> GpuBuffer {
+    if count <= 0 or count > 9223372036854775807 / 8 {
+        return gpu_null_buffer()
+    }
     return gpu_alloc(count * 8)
 }
 
 export function gpu_alloc_i32(count: i64) -> GpuBuffer {
+    if count <= 0 or count > 9223372036854775807 / 4 {
+        return gpu_null_buffer()
+    }
     return gpu_alloc(count * 4)
 }
 
@@ -118,14 +127,14 @@ export function gpu_is_unified(buf: GpuBuffer) -> bool {
 }
 
 export function gpu_copy_h2d(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32 {
-    if dst.device == null or src == null or nbytes <= 0 {
+    if dst.device == null or src == null or nbytes <= 0 or nbytes > dst.size {
         return 0 - 1
     }
     return flow_gpu_copy_h2d(dst.device, src, nbytes)
 }
 
 export function gpu_copy_d2h(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32 {
-    if dst == null or src.device == null or nbytes <= 0 {
+    if dst == null or src.device == null or nbytes <= 0 or nbytes > src.size {
         return 0 - 1
     }
     return flow_gpu_copy_d2h(dst, src.device, nbytes)
@@ -153,7 +162,7 @@ export function gpu_copy_d2h_f32(dst: ptr<f32>, src: GpuBuffer, nbytes: i64) -> 
 }
 
 export function gpu_copy_d2d(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32 {
-    if dst.device == null or src.device == null or nbytes <= 0 {
+    if dst.device == null or src.device == null or nbytes <= 0 or nbytes > dst.size or nbytes > src.size {
         return 0 - 1
     }
     return flow_gpu_copy_d2d(dst.device, src.device, nbytes)
@@ -167,21 +176,24 @@ export function gpu_sync() -> void {
 # The backward pair is the same kernel with different operands:
 # grad_a = grad_out * b, grad_b = grad_out * a.
 export function gpu_mul_f32(out: GpuBuffer, a: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
-    if out.device == null or a.device == null or b.device == null or n <= 0 {
+    if out.device == null or a.device == null or b.device == null or n <= 0 or n > 4294967295 or
+       n > out.size / 4 or n > a.size / 4 or n > b.size / 4 {
         return 0 - 1
     }
     return flow_gpu_mul_f32(out.device, a.device, b.device, n)
 }
 
 export function gpu_mul_backward_a_f32(grad_a: GpuBuffer, grad_out: GpuBuffer, b: GpuBuffer, n: i64) -> i32 {
-    if grad_a.device == null or grad_out.device == null or b.device == null or n <= 0 {
+    if grad_a.device == null or grad_out.device == null or b.device == null or n <= 0 or n > 4294967295 or
+       n > grad_a.size / 4 or n > grad_out.size / 4 or n > b.size / 4 {
         return 0 - 1
     }
     return flow_gpu_mul_backward_a_f32(grad_a.device, grad_out.device, b.device, n)
 }
 
 export function gpu_mul_backward_b_f32(grad_b: GpuBuffer, grad_out: GpuBuffer, a: GpuBuffer, n: i64) -> i32 {
-    if grad_b.device == null or grad_out.device == null or a.device == null or n <= 0 {
+    if grad_b.device == null or grad_out.device == null or a.device == null or n <= 0 or n > 4294967295 or
+       n > grad_b.size / 4 or n > grad_out.size / 4 or n > a.size / 4 {
         return 0 - 1
     }
     return flow_gpu_mul_backward_b_f32(grad_b.device, grad_out.device, a.device, n)
