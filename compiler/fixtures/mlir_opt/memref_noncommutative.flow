@@ -1,0 +1,15 @@
+# #664 regression: the memref/in-place tensor intrinsic path uses the
+# first operand as the destination. Non-commutative operations must keep
+# source order: a-b and a/b, never b-a or b/a.
+extern {
+    function tensor_sub(a: memref_f32, b: memref_f32) -> memref_f32
+    function tensor_div(a: memref_f32, b: memref_f32) -> memref_f32
+}
+
+function sub_into(a: memref_f32, b: memref_f32) -> memref_f32 {
+    return tensor_sub(a, b)
+}
+
+function div_into(a: memref_f32, b: memref_f32) -> memref_f32 {
+    return tensor_div(a, b)
+}
