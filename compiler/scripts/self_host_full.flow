@@ -2,9 +2,18 @@
 # one C translation unit, and three consecutive generations agree byte for
 # byte.
 #
-#   gen1 = <bootstrap driver> compiles compiler/src/main.flow
+#   gen1 = the checked-in bootstrap C, built with cc, compiles compiler/src/main.flow
 #   gen2 = gen1 compiles compiler/src/main.flow
 #   gen3 = gen2 compiles compiler/src/main.flow
+#
+# gen1 == gen2 holds only when compiler/bootstrap/flowc_stage_a.c is what
+# compiler/src emits of itself, so this is also the check that the bootstrap
+# C was regenerated. gen0 is therefore always compiler/build/flowc_bootstrap,
+# rebuilt when it is missing or older than the bootstrap C. A Stage-A driver
+# left in compiler/build by roundtrip.flow, or a flowc_bootstrap built from an
+# earlier bootstrap C, would compare the current compiler/src against some
+# other compiler (#1363 showed up locally this way as a spurious vector_size
+# and TOK_* diff).
 #
 # Each generation is a complete flowc: run it with no FLOWC_IN and it runs
 # the front-end self-test suite; run it with FLOWC_IN/FLOWC_OUT/FLOWC_BUNDLE
@@ -18,7 +27,7 @@
 #   ./flow tool compiler/scripts/self_host_full.flow
 #
 # Env:
-#   FLOWC_BOOTSTRAP=<path>  use this binary as the gen0 emitter
+#   FLOWC_BOOTSTRAP=<path>  use this binary as the gen0 emitter instead
 
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/gate_lib.flow"
@@ -124,26 +133,11 @@ function md5_of(path: string) -> string {
 }
 
 function main() -> i32 {
-    let _root: string = gate_enter()
+    let root: string = gate_enter()
     gate_mkdir("compiler/build")
 
-    # --- pick the gen0 emitter ---------------------------------------------
-    let mut boot: string = env("FLOWC_BOOTSTRAP")
-    if s_len(boot) == 0 {
-        let cands: ptr<ProcStrs> = s_words("compiler/build/stage_a_driver_flow_self compiler/build/stage_a_driver_flow compiler/build/stage_a_driver compiler/build/flowc_bootstrap")
-        let mut i: i32 = 0
-        while i < sl_len(cands) and s_len(boot) == 0 {
-            if is_exec(sl_get(cands, i)) {
-                boot = sl_get(cands, i)
-            }
-            i = i + 1
-        }
-    }
-    if s_len(boot) == 0 {
-        errln("self_host_full: no Stage-A driver in compiler/build")
-        errln("  run ./flow tool compiler/scripts/roundtrip.flow first (or set FLOWC_BOOTSTRAP)")
-        cli_exit(1)
-    }
+    # --- gen0: the checked-in bootstrap C, rebuilt when stale ---------------
+    let boot: string = gl_flowc_cached("FLOWC_BOOTSTRAP", root)
     outln("=== gen0 emitter: " + boot + " ===")
 
     # --- gen1 --------------------------------------------------------------
