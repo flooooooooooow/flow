@@ -3570,6 +3570,8 @@ int32_t flowc_type_id_builtin_kind(uint8_t* src, int32_t start, int32_t end);
 uint64_t flowc_type_family_id(AstArena arena, uint8_t* src, int32_t ty);
 uint64_t flowc_type_schema_id(AstArena arena, uint8_t* src, int32_t ty);
 int32_t flowc_type_transport_safe(AstArena arena, uint8_t* src, int32_t ty);
+int32_t tid_transport_blocker(AstArena arena, uint8_t* src, int32_t ty, int32_t depth);
+int32_t flowc_type_transport_blocker(AstArena arena, uint8_t* src, int32_t ty);
 uint64_t flowc_type_id_fnv_lit(const char* lit);
 int32_t flowc_type_id_hash_selftest();
 int32_t tid_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit) {
@@ -4116,6 +4118,59 @@ uint64_t flowc_type_schema_id(AstArena arena, uint8_t* src, int32_t ty) {
 
 int32_t flowc_type_transport_safe(AstArena arena, uint8_t* src, int32_t ty) {
   return tid_transport_at(arena, src, ty, 0);
+}
+
+int32_t tid_transport_blocker(AstArena arena, uint8_t* src, int32_t ty, int32_t depth) {
+  if (tid_transport_at(arena, src, ty, depth) == 1) {
+  return (0 - 1);
+}
+  if (depth >= TID_MAX_DEPTH || ty == AST_NONE || ty < 0 || ty >= (arena).len) {
+  return ty;
+}
+  if (((arena).nodes[ty]).kind != AST_TYPE) {
+  return ty;
+}
+  int32_t ns = ((arena).nodes[ty]).name_start;
+  int32_t ne = ((arena).nodes[ty]).name_end;
+  if (tid_is_array(arena, src, ty) == 1 && ((arena).nodes[ty]).ival > 0) {
+  int32_t inner_b = tid_transport_blocker(arena, src, ((arena).nodes[ty]).a, (depth + 1));
+  if (inner_b >= 0) {
+  return inner_b;
+}
+  return ty;
+}
+  if (((arena).nodes[ty]).a != AST_NONE) {
+  return ty;
+}
+  int32_t st = tid_find_kind(arena, src, ns, ne, AST_STRUCT);
+  if (st != AST_NONE) {
+  int32_t field = ((arena).nodes[st]).a;
+  while (field != AST_NONE) {
+  if (((arena).nodes[field]).kind == AST_FIELD) {
+  int32_t fb = tid_transport_blocker(arena, src, ((arena).nodes[field]).a, (depth + 1));
+  if (fb >= 0) {
+  if (fb < (arena).len && ((arena).nodes[fb]).kind == AST_FIELD) {
+  return fb;
+}
+  return field;
+}
+}
+  field = ((arena).nodes[field]).next;
+}
+  return ty;
+}
+  int32_t al = tid_find_kind(arena, src, ns, ne, AST_TYPE_ALIAS);
+  if (al != AST_NONE && ((arena).nodes[al]).a != AST_NONE) {
+  int32_t ab = tid_transport_blocker(arena, src, ((arena).nodes[al]).a, (depth + 1));
+  if (ab >= 0) {
+  return ab;
+}
+}
+  return ty;
+}
+
+int32_t flowc_type_transport_blocker(AstArena arena, uint8_t* src, int32_t ty) {
+  return tid_transport_blocker(arena, src, ty, 0);
 }
 
 uint64_t flowc_type_id_fnv_lit(const char* lit) {
@@ -81106,7 +81161,7 @@ void sem_collect_types(Sem* c) {
   if (k == DK_ALIAS) {
   int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
   int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
-  { __typeof__(tys->base[alias_t]) __flowc_st3079 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3079; }
+  { __typeof__(tys->base[alias_t]) __flowc_st3082 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3082; }
   int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
   sem_scope_define_global(c, s2);
   int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
@@ -81198,7 +81253,7 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
 }
-  { __typeof__(tys->ret[f]) __flowc_st3522 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3522; }
+  { __typeof__(tys->ret[f]) __flowc_st3525 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3525; }
   i = 0;
   for (; i < (sem_fi_neffects(c, fi)); i = i + 1) {
   sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
@@ -83488,7 +83543,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st14037 = sem_static_length(c, e); tys->size[sp] = __flowc_st14037; }
+  { __typeof__(tys->size[sp]) __flowc_st14040 = sem_static_length(c, e); tys->size[sp] = __flowc_st14040; }
   return sp;
 }
 
@@ -83562,14 +83617,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st14386 = sem_iv_new(); c->return_sink = __flowc_st14386; }
+  { __typeof__(c->return_sink) __flowc_st14389 = sem_iv_new(); c->return_sink = __flowc_st14389; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st14416 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14416; }
+  { __typeof__(tys->ret[f]) __flowc_st14419 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14419; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st14425 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14425; }
+  { __typeof__(tys->ret[f]) __flowc_st14428 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14428; }
 }
   return f;
 }
@@ -84922,16 +84977,16 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st20243 = sem_sv_new(); c->local_storage = __flowc_st20243; }
-  { __typeof__(c->span_origin) __flowc_st20247 = sem_sm_new(); c->span_origin = __flowc_st20247; }
-  { __typeof__(c->current_return_type) __flowc_st20256 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st20256; }
+  { __typeof__(c->local_storage) __flowc_st20246 = sem_sv_new(); c->local_storage = __flowc_st20246; }
+  { __typeof__(c->span_origin) __flowc_st20250 = sem_sm_new(); c->span_origin = __flowc_st20250; }
+  { __typeof__(c->current_return_type) __flowc_st20259 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st20259; }
   i = 0;
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
   sem_define_var(c, sem_fi_param_name(c, fi, i), pt, 0);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st20299 = sem_iv_new(); c->return_sink = __flowc_st20299; }
+  { __typeof__(c->return_sink) __flowc_st20302 = sem_iv_new(); c->return_sink = __flowc_st20302; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
@@ -85008,6 +85063,23 @@ void sem_check_static(Sem* c, int32_t d) {
   if (sem_s_eq(aname, "lifetime") == 0) {
   sem_err(c, __flowc_str_concatn(5, "Attribute '@", aname, "' is not allowed on module static '", name, "'; only '@lifetime(...)' is"));
 }
+}
+}
+  if (sem_static_domain(c, name) == FLOWC_RT_DOM_PERSISTENT) {
+  int32_t decl_ty = sem_na(c, node);
+  int32_t blocker = flowc_type_transport_blocker(c->ar, c->src, decl_ty);
+  if (blocker >= 0) {
+  const char* what = "its type";
+  int32_t ty_node = blocker;
+  if (blocker != decl_ty) {
+  what = "its element type";
+}
+  if (sem_nk(c, blocker) == AST_FIELD) {
+  what = __flowc_str_concatn(3, "field '", sem_nname(c, blocker), "'");
+  ty_node = sem_na(c, blocker);
+}
+  const char* ty_text = sem_s_strip(sem_s_span(c->src, ((c->ar).nodes[ty_node]).start, ((c->ar).nodes[ty_node]).end));
+  sem_err(c, __flowc_str_concatn(7, "persistent static '", name, "' must hold a TransportSafe value, but ", what, " is `", ty_text, "`, which refers to process memory and does not survive a restart"));
 }
 }
   int32_t pt = sem_pt_of_ast(c, sem_na(c, node));
