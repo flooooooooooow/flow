@@ -3762,14 +3762,26 @@ function sem_record_rt_safe_binding(c: ptr<Sem>, expr: i32, actual: i32, expecte
     if sem_function_type_has_effect(c, expected, "rt_safe") == false {
         return
     }
-    if sem_function_type_has_effect(c, actual, "rt_safe") {
+    # A cast to an rt_safe function type is not itself proof. Peel casts and
+    # inspect the callable that existed before the contract was asserted.
+    let mut source_expr: i32 = expr
+    let mut source_actual: i32 = actual
+    let mut depth: i32 = 0
+    while source_expr >= 0 and sem_nk(c, source_expr) == AST_CAST and depth < 8 {
+        source_expr = sem_na(c, source_expr)
+        source_actual = sem_infer_type_quiet(c, source_expr)
+        depth = depth + 1
+    }
+    if source_actual >= 0 and sem_function_type_has_effect(c, source_actual, "rt_safe") {
         return
     }
-    if actual < 0 or sem_tkind(c, actual) != TK_FUNCTION {
+    if source_actual < 0 or sem_tkind(c, source_actual) != TK_FUNCTION {
+        sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
+        sem_sv_push(c.rt_binding_fn, "<anonymous function>")
         return
     }
-    if expr >= 0 and sem_nk(c, expr) == AST_IDENT {
-        let name: string = sem_nname(c, expr)
+    if source_expr >= 0 and sem_nk(c, source_expr) == AST_IDENT {
+        let name: string = sem_nname(c, source_expr)
         let sym: i32 = sem_lookup(c, name)
         if sym >= 0 and sem_sym_kind(c, sym) == SK_FUNCTION {
             sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
@@ -3777,8 +3789,8 @@ function sem_record_rt_safe_binding(c: ptr<Sem>, expr: i32, actual: i32, expecte
             return
         }
     }
-    if expr >= 0 and sem_nk(c, expr) == AST_FN {
-        let cname: string = sem_closure_name_of(c, expr)
+    if source_expr >= 0 and sem_nk(c, source_expr) == AST_FN {
+        let cname: string = sem_closure_name_of(c, source_expr)
         if cname as ptr<u8> != null {
             sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
             sem_sv_push(c.rt_binding_fn, cname)
@@ -3826,6 +3838,13 @@ function sem_check_var_decl(c: ptr<Sem>, s: i32) -> i32 {
         }
         if sem_tkind(c, expected) != TK_SPAN and c.current_function_name as ptr<u8> != null {
             sem_sv_add(c.local_storage, name)
+        }
+        # A local rt_safe function value without an initializer has a
+        # contract but no callable provenance. Without definite-assignment
+        # analysis, invoking it would trust unproved metadata.
+        if sem_tkind(c, expected) == TK_FUNCTION and
+           sem_function_type_has_effect(c, expected, "rt_safe") {
+            sem_err(c, "RT-safety violation: local rt_safe callable '" + name + "' requires a proven initializer")
         }
         sem_define_var(c, name, expected, is_mut)
         return expected
