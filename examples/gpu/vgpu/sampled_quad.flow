@@ -1,0 +1,50 @@
+# P1 sampled textured geometry emitted from real Flow GPU descriptor types.
+# The browser demo executes this WGSL with the WebGPU host; no handwritten
+# replacement shader is used.
+import "stdlib/gpu_stage_codegen.flow"
+
+function main() -> i32 {
+    let sampled: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 1, height: 1, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 36, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 64, height: 36, layers: 1, samples: 4,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let target: GpuRenderTargets = GpuRenderTargets {
+        color: color, depth: depth, has_depth: true
+    }
+    let sampler: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_NEAREST,
+        mag_filter: GPU_FILTER_NEAREST,
+        address_u: GPU_ADDRESS_CLAMP,
+        address_v: GPU_ADDRESS_CLAMP,
+        address_w: GPU_ADDRESS_CLAMP
+    }
+    let varying: GpuVarying = GpuVarying {
+        location: 0, scalar: GPU_SCALAR_F32,
+        components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    let pipeline: GpuSampledPipeline = GpuSampledPipeline {
+        texture: sampled, sampler: sampler, targets: target, varying: varying
+    }
+    if not gpu_sampled_pipeline_valid(pipeline) { return 1 }
+    let wgsl: string = gpu_emit_wgsl_sampled(pipeline)
+    let metal: string = gpu_emit_metal_sampled(pipeline)
+    if wgsl == "" or metal == "" { return 2 }
+    println("FLOW_SAMPLED_WGSL_BEGIN")
+    println(wgsl)
+    println("FLOW_SAMPLED_WGSL_END")
+    println("FLOW_SAMPLED_METAL_BEGIN")
+    println(metal)
+    println("FLOW_SAMPLED_METAL_END")
+    return 0
+}

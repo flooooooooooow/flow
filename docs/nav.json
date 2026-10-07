@@ -737,6 +737,10 @@
           "path": "library/gpu-memory.md"
         },
         {
+          "label": "GPU Resource Types",
+          "path": "library/gpu-resource-types.md"
+        },
+        {
           "label": "Tiny Pointers",
           "path": "library/tiny-pointers.md"
         },

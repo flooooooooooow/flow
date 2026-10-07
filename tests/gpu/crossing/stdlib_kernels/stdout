@@ -5,6 +5,7 @@ Flow @gpu -> WGSL: lib/stdlib/gpu_kernels.flow
   wrote site/wasm-crossings/gpu-gate/webgpu-host.js
   wrote site/wasm-crossings/gpu-gate/gpu-kernel-chain.mjs
   wrote site/wasm-crossings/gpu-gate/gpu-graph-host.mjs
+  wrote site/wasm-crossings/gpu-gate/gpu-sampled-draw.mjs
   wrote site/wasm-crossings/gpu-gate/crossing.css
   wrote site/wasm-crossings/gpu-gate/index.html
 
