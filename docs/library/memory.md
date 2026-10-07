@@ -30,37 +30,25 @@ The libc layer exposes `malloc`, `calloc`, `realloc`, and `free`. Typed helpers 
 
 ## Allocation failure and integer overflow
 
-Heap allocators, typed allocations and both arenas **reject non-positive
-requests**, invalid element counts and byte-count arithmetic beyond signed
-64-bit limits. These helpers return `null` rather than calling libc with
-negative sizes or wrapping `count * sizeof(T)`. `align_up` returns `-1`
-when the alignment is not a positive power of two, the size is negative,
-or the rounded result would overflow `i64`.
+Heap allocators, typed allocations and both arenas reject non-positive
+requests, invalid element counts and byte counts that overflow `i64`.
+They return `null` and never call libc with a negative size or a wrapped
+`count * sizeof(T)`. `align_up` returns `-1` when the alignment is not a
+positive power of two, the size is negative, or the rounded size would
+overflow `i64`.
 
-The real-time frame allocator uses checked subtraction
-(`rounded_bytes <= capacity - offset`) after validating that
-`0 <= offset <= capacity`. It never computes `offset + rounded_bytes`
-until both have been checked. Rejected allocations do not alter the
-arena offset, frame high-water mark or frame count, and cannot return
-a pointer before the arena slab. Checking and returning null are
-allocation-free and suitable for callback paths.
+The frame allocator checks `0 <= offset <= capacity` and then
+`rounded_bytes <= capacity - offset`, so it never computes an
+overflowing `offset + rounded_bytes`. A rejected allocation leaves the
+arena offset, the frame high-water mark and the frame count unchanged.
+The checks do not allocate, so they are safe on callback paths.
 
-`grow_zeroed` also requires `old_size >= 0`; if the pointer is null,
-`old_size` must be zero so a newly allocated region cannot skip
-initialization. A failed `realloc` leaves the original pointer
-owned by the caller (standard libc semantics).
+`grow_uninit(p, 0)` and `grow_zeroed(p, old, 0)` return `null` and leave
+`p` owned by the caller. `grow_zeroed` also requires `old_size >= 0`, and
+`old_size == 0` when `p` is null, so a new region cannot skip zeroing. A
+failed `realloc` leaves the original pointer owned by the caller.
 
-Run the overflow/bounds fixture locally:
-
-```sh
-./flow run tests/lang/test_memory_bounds.flow
-```
-
-The fixture verifies overflow rejection, unchanged offsets, valid
-32-byte arena exhaustion, reset reuse, and frame high-water accounting.
-This **does not by itself establish #740**: source-site allocation
-attribution and proven stack/arena promotion need independent
-instrumentation and benchmarks.
+`tests/lang/test_memory_bounds.flow` covers these cases.
 
 ## Arena allocator
 
