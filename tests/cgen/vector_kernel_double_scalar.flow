@@ -1,0 +1,65 @@
+# An f32 vector kernel rounds its scalar to float once, but the scalar
+# statement it replaces computes `x * 0.1` and `x * a` (a: f64) in double,
+# and the tail elements still run that statement. The lanes and the tail
+# disagreed in the last bit for equal inputs, so these loops keep the
+# scalar form (#729).
+#
+# main runs each loop over five equal values: four lanes and one tail
+# element. 1.00000012 * 0.1 rounds to 0x1.99999ep-4 with a float 0.1 and
+# to 0x1.99999cp-4 with the double one. Exit 0 when every index agrees.
+
+function scale_inexact(y: span<mut f32>) {
+    for i in 0 to y.len {
+        y[i] = y[i] * 0.1
+    }
+}
+
+function scale_by_f64(y: span<mut f32>, a: f64) {
+    for i in 0 to y.len {
+        y[i] = y[i] * a
+    }
+}
+
+function axpy_literal(y: span<mut f32>, x: span<f32>) {
+    for i in 0 to y.len {
+        y[i] = y[i] + 0.1 * x[i]
+    }
+}
+
+function same_everywhere(ys: span<f32>) -> bool {
+    for i in 0 to ys.len {
+        if ys[i] != ys[0] {
+            return false
+        }
+    }
+    return true
+}
+
+function main() -> i32 {
+    let v: f32 = 1.00000012
+    let mut vals: array<f32, 5>
+    let mut other: array<f32, 5>
+    for i in 0 to 5 {
+        vals[i] = v
+        other[i] = v
+    }
+    scale_inexact(vals)
+    if not same_everywhere(vals) {
+        return 1
+    }
+    for i in 0 to 5 {
+        vals[i] = v
+    }
+    scale_by_f64(vals, 0.1)
+    if not same_everywhere(vals) {
+        return 2
+    }
+    for i in 0 to 5 {
+        vals[i] = v
+    }
+    axpy_literal(vals, other)
+    if not same_everywhere(vals) {
+        return 3
+    }
+    return 0
+}

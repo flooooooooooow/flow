@@ -1,0 +1,8 @@
+flags --no-checks
+# No four-lane f32 kernel with a double k: each loop stays the scalar form,
+# and every index of a loop over equal inputs gets the same value.
+- flowc_v4f32 __flowc_vk = { (float)(0.1)
+- flowc_v4f32 __flowc_vk = { (float)(a)
++ y.data[i] = (y.data[i] * 0.1);
++ y.data[i] = (y.data[i] * a);
+exit 0

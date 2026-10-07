@@ -1,0 +1,5 @@
+flags --no-checks
+# Scale by an f32 name or by a literal an f32 holds exactly keeps the kernel.
++ flowc_v4f32 __flowc_vk = { (float)(0.5)
++ flowc_v4f32 __flowc_vk = { (float)(a)
+exit 0
