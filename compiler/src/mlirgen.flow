@@ -10359,6 +10359,174 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
     }
 }
 
+
+function mlg_expr_uses_name(m: ptr<Mlg>, id: i32, ns: i32, ne: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    let k: i32 = mlg_kind(m, id)
+    if k == AST_IDENT {
+        if mlg_span_eq(m, mlg_ns(m, id), mlg_ne(m, id), ns, ne) == 1 {
+            return 1
+        }
+        return 0
+    }
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_STRING or k == AST_ARRAY_LIT or k == AST_VECTOR_LIT {
+        return 0
+    }
+    if k == AST_BINOP or k == AST_ASSIGN {
+        if mlg_expr_uses_name(m, m[0].arena.nodes[id].a, ns, ne) == 1 { return 1 }
+        return mlg_expr_uses_name(m, m[0].arena.nodes[id].b, ns, ne)
+    }
+    if k == AST_CALL {
+        if mlg_expr_uses_name(m, m[0].arena.nodes[id].a, ns, ne) == 1 { return 1 }
+        let mut arg: i32 = m[0].arena.nodes[id].b
+        while arg != AST_NONE {
+            if mlg_expr_uses_name(m, m[0].arena.nodes[arg].a, ns, ne) == 1 { return 1 }
+            arg = m[0].arena.nodes[arg].next
+        }
+        return 0
+    }
+    if k == AST_STRUCT_LIT {
+        if mlg_expr_uses_name(m, m[0].arena.nodes[id].c, ns, ne) == 1 { return 1 }
+        let mut f: i32 = m[0].arena.nodes[id].a
+        while f != AST_NONE {
+            if mlg_expr_uses_name(m, m[0].arena.nodes[f].a, ns, ne) == 1 { return 1 }
+            f = m[0].arena.nodes[f].next
+        }
+        return 0
+    }
+    if k == AST_UNARY or k == AST_CAST or k == AST_FIELD_ACCESS {
+        return mlg_expr_uses_name(m, m[0].arena.nodes[id].a, ns, ne)
+    }
+    return 0
+}
+
+function mlg_rupdate_values_use_name(m: ptr<Mlg>, lit: i32, ns: i32, ne: i32) -> i32 {
+    if lit == AST_NONE {
+        return 0
+    }
+    let mut f: i32 = m[0].arena.nodes[lit].a
+    while f != AST_NONE {
+        if mlg_expr_uses_name(m, m[0].arena.nodes[f].a, ns, ne) == 1 {
+            return 1
+        }
+        f = m[0].arena.nodes[f].next
+    }
+    return 0
+}
+
+# `return Name { ..base, f: v }` with a local base: insert the listed fields
+# into the base value and return it, with no copy through memory (#696).
+# A record update reaches the emitter as an AST_STRUCT_LIT whose c holds the
+# base; AST_RECORD_UPDATE is only the parser's marker.
+function mlg_try_rupdate_return(m: ptr<Mlg>, st: i32, ret_expr: i32) -> i32 {
+    if mlg_kind(m, ret_expr) != AST_STRUCT_LIT or m[0].arena.nodes[ret_expr].c == AST_NONE {
+        return 0
+    }
+    if m[0].ndf > 0 or m[0].lam_len > 0 {
+        return 0
+    }
+    let base: i32 = m[0].arena.nodes[ret_expr].c
+    if base == AST_NONE or mlg_kind(m, base) != AST_IDENT {
+        return 0
+    }
+    let bns: i32 = mlg_ns(m, base)
+    let bne: i32 = mlg_ne(m, base)
+
+    let decl: i32 = mlg_find_local(m, bns, bne)
+    if decl < 0 {
+        return 0
+    }
+    if mlg_rupdate_values_use_name(m, ret_expr, bns, bne) == 1 {
+        return 0
+    }
+
+    let bk: i32 = m[0].l_mt[decl]
+    if mlg_is_struct_mt(bk) == 0 or bk != m[0].ret_mt {
+        return 0
+    }
+    let sid0: i32 = bk - MT_STRUCT
+    let st0: i32 = m[0].st_node[sid0]
+    # Every listed field must exist before anything is emitted.
+    let mut chk: i32 = m[0].arena.nodes[ret_expr].a
+    while chk != AST_NONE {
+        let mut seen: i32 = 0
+        let mut q: i32 = m[0].arena.nodes[st0].a
+        while q != AST_NONE {
+            if mlg_span_eq(m, mlg_ns(m, q), mlg_ne(m, q), mlg_ns(m, chk), mlg_ne(m, chk)) == 1 {
+                seen = 1
+            }
+            q = m[0].arena.nodes[q].next
+        }
+        if seen == 0 {
+            return 0
+        }
+        chk = m[0].arena.nodes[chk].next
+    }
+    # A struct local is alloca-backed off wasm32, and a field store such as
+    # `p.x = a` writes the alloca without updating the SSA value. Read the
+    # current value from storage.
+    let mut base_val: i32 = m[0].l_ssa[decl]
+    if m[0].l_alloca[decl] != V_NONE {
+        base_val = mlg_load(m, m[0].l_alloca[decl], bk)
+    }
+
+    let mut f: i32 = m[0].arena.nodes[ret_expr].a
+    while f != AST_NONE {
+        let fns: i32 = mlg_ns(m, f)
+        let fne: i32 = mlg_ne(m, f)
+        let v: i32 = mlg_emit_expr(m, m[0].arena.nodes[f].a)
+        if m[0].err != 0 { return 0 }
+        let vt: i32 = mlg_val_mt(m, v, m[0].arena.nodes[f].a)
+
+        let sid: i32 = bk - MT_STRUCT
+        let st_id: i32 = m[0].st_node[sid]
+
+        let mut f_idx: i32 = 0
+        let mut fp: i32 = m[0].arena.nodes[st_id].a
+        let mut found: i32 = 0
+        while fp != AST_NONE {
+            if mlg_span_eq(m, mlg_ns(m, fp), mlg_ne(m, fp), fns, fne) == 1 {
+                found = 1
+                break
+            }
+            f_idx = f_idx + 1
+            fp = m[0].arena.nodes[fp].next
+        }
+
+        let ft: i32 = m[0].arena.nodes[fp].a
+        let fmt: i32 = mlg_ft_to_mt(m, ft, st_id)
+        let v_cast: i32 = mlg_cast(m, v, vt, fmt)
+
+        let ev: i32 = mlg_new_val(m, bk)
+        mlg_line(m)
+        mlg_v(m, ev)
+        mlg_s(m, " = llvm.insertvalue ")
+        mlg_v(m, v_cast)
+        mlg_s(m, ", ")
+        mlg_v(m, base_val)
+        mlg_s(m, "[")
+        mlg_i(m, f_idx)
+        mlg_s(m, "] : ")
+        mlg_put_type(m, bk)
+        mlg_nl(m)
+
+        base_val = ev
+        f = m[0].arena.nodes[f].next
+    }
+
+    mlg_paste_return_defers(m)
+    mlg_line(m)
+    mlg_s(m, "func.return ")
+    mlg_v(m, base_val)
+    mlg_s(m, " : ")
+    mlg_put_type(m, bk)
+    mlg_nl(m)
+
+    return 1
+}
+
 function mlg_emit_return(m: ptr<Mlg>, st: i32) {
     let e: i32 = m[0].arena.nodes[st].a
     # Python's parser reads `return void` as a bare return.
@@ -10366,6 +10534,7 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
     if e != AST_NONE and mlg_kind(m, e) == AST_IDENT {
         is_void = mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "void")
     }
+
     if e == AST_NONE or is_void == 1 {
         mlg_paste_return_defers(m)
         mlg_line(m)
@@ -10373,6 +10542,12 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
         mlg_nl(m)
         return
     }
+    if e != AST_NONE {
+        if mlg_try_rupdate_return(m, st, e) == 1 {
+            return
+        }
+    }
+
     let rt: i32 = m[0].ret_mt
     if mlg_kind(m, e) == AST_STRING {
         let k: i32 = mlg_intern_src(m, e, 0)

@@ -1,0 +1,31 @@
+# MLIR: `return Name { ..base, field: v }` of a local base (#696). The
+# returned value is built by inserting the listed fields into the base, with
+# no copy through memory. A field the function stored before the return
+# must survive: `p.x = a` writes the alloca-backed local, and the return
+# must read that write.
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function bumped(a: i32) -> Point {
+    let mut p: Point = Point { x: 1, y: 2 }
+    p.x = a
+    return Point { ..p, y: 5 }
+}
+
+function shifted(a: i32) -> Point {
+    let p: Point = Point { x: a, y: a + 1 }
+    return Point { ..p, x: 0 }
+}
+
+function main() -> i32 {
+    let b: Point = bumped(7)
+    let s: Point = shifted(3)
+    println(b.x)
+    println(b.y)
+    println(s.x)
+    println(s.y)
+    return 0
+}
