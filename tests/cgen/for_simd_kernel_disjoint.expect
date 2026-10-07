@@ -1,0 +1,5 @@
+# Proven-disjoint locals and in-place updates use the vector kernels.
++ #if FLOWC_HAS_V128
++ __flowc_vy = __flowc_vx * __flowc_vk;
++ __flowc_vy = __flowc_vy + __flowc_vk * __flowc_vx;
+exit 0

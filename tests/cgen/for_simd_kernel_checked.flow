@@ -1,0 +1,19 @@
+# With FLOWC_CHECKS the kernels would load and store whole lanes past the
+# per-index bounds tests, so the checked scalar loop stays (#739).
+
+function dot(a: ptr<f32>, b: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + a[i] * b[i]
+    }
+    return s
+}
+
+function main() -> i32 {
+    let a: [f32; 4] = [1.0, 2.0, 3.0, 4.0]
+    let b: [f32; 4] = [1.0, 1.0, 1.0, 1.0]
+    if dot(&a[0], &b[0], 4) != 10.0 {
+        return 1
+    }
+    return 0
+}
