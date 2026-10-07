@@ -1023,7 +1023,24 @@ function flowc_cgen_fn_sret_abi(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     if flowc_cgen_fn_name_shared(arena, src, fn) == 1 {
         return 0
     }
+    # Dual operator sugar (#161) emits `add(` / `sub(` / `mul(` / `div(` /
+    # `neg(` by name, outside the call paths that pass a destination.
+    if flowc_cgen_fn_is_op_sugar_name(arena, src, fn) == 1 {
+        return 0
+    }
     return 1
+}
+
+# 1 when `fn` is named like a Dual operator-sugar target.
+function flowc_cgen_fn_is_op_sugar_name(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    let s: i32 = arena.nodes[fn].name_start
+    let e: i32 = arena.nodes[fn].name_end
+    if flowc_cgen_span_is(src, s, e, "add") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "sub") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "mul") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "div") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "neg") == 1 { return 1 }
+    return 0
 }
 
 # 1 when another function node in this module has the same name as `fn`.
@@ -7216,6 +7233,12 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_puts(w, "; if (!__flowc_try.is_ok) {\n")
         flowc_cgen_emit_defers_to(w, arena, src, 0)
+        # A pointer-ABI sret function returns void: store the error through
+        # the hidden destination (#732).
+        if w[0].sret == 1 {
+            flowc_cgen_puts(w, "  *__flowc_sret = __flowc_try; return; } __flowc_try.value; })")
+            return
+        }
         flowc_cgen_puts(w, "  return __flowc_try; } __flowc_try.value; })")
         return
     }
