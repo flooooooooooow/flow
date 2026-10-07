@@ -5,7 +5,11 @@
 # diagnostics.
 #
 #   ./flow tool compiler/scripts/selfcompile_audit.flow
-#   FLOWC_AUDIT_BIN=compiler/build/flowc_bootstrap ./flow tool compiler/scripts/selfcompile_audit.flow
+#   FLOWC_AUDIT_BIN=path/to/flowc ./flow tool compiler/scripts/selfcompile_audit.flow
+#
+# The compiler is FLOWC_AUDIT_BIN, else compiler/build/flowc_bootstrap,
+# rebuilt from compiler/bootstrap/flowc_stage_a.c when it is missing or
+# older. A driver that roundtrip.flow left in compiler/build is not used.
 
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/gate_lib.flow"
@@ -228,7 +232,7 @@ function audit_all(drv: string, err_flag: string, srcs: ptr<ProcStrs>, jobs: i32
 function main() -> i32 {
     let args: ptr<ProcStrs> = proc_args()
     let _self: string = gl_enter_root()
-    let _root: string = gate_enter()
+    let root: string = gate_enter()
     gate_mkdir("compiler/build/audit")
     if s_eq(sl_get(args, 0), "--worker") {
         return worker(args)
@@ -243,20 +247,9 @@ function main() -> i32 {
         err_flag = "-ferror-limit=0"
     }
 
-    let mut drv: string = env("FLOWC_AUDIT_BIN")
-    if s_len(drv) == 0 {
-        let cands: ptr<ProcStrs> = s_words("compiler/build/stage_a_driver_flow_self compiler/build/stage_a_driver_flow_g2 compiler/build/stage_a_driver_flow compiler/build/flowc_bootstrap")
-        let mut i: i32 = 0
-        while i < sl_len(cands) and s_len(drv) == 0 {
-            if is_exec(sl_get(cands, i)) {
-                drv = sl_get(cands, i)
-            }
-            i = i + 1
-        }
-    }
-    if s_len(drv) == 0 {
-        gate_fail("selfcompile_audit: no flowc driver — run bootstrap_from_c.sh first")
-    }
+    # The checked-in compiler: FLOWC_AUDIT_BIN, else flowc_bootstrap rebuilt
+    # when older than the bootstrap C.
+    let drv: string = gl_flowc_cached("FLOWC_AUDIT_BIN", root)
     outln("=== self-compile audit via " + drv + " ===")
 
     let files: ptr<ProcStrs> = glob_sorted("compiler/src", ".flow")

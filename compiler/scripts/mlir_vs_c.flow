@@ -327,19 +327,7 @@ function main() -> i32 {
         return 2
     }
 
-    let mut flowc: string = env("FLOWC_BIN")
-    if s_empty(flowc) {
-        mkdir_p_or_exit("compiler/build")
-        flowc = root + "/compiler/build/flowc_bootstrap"
-        if not is_exec(flowc) or newer("compiler/bootstrap/flowc_stage_a.c", flowc) {
-            let tmp: string = flowc + ".tmp." + s_itoa(pid())
-            check(gl_build_flowc(tmp, true, false))
-            let _m: bool = move_file(tmp, flowc)
-        }
-    }
-    if not is_abs(flowc) {
-        flowc = root + "/" + flowc
-    }
+    let flowc: string = gl_flowc_cached("FLOWC_BIN", root)
     env_set("FLOWC_BIN", flowc)
 
     mkdir_p_or_exit(root + "/build")

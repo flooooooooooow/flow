@@ -802,16 +802,26 @@ export function gl_flowc_emit_bin() -> string {
     return bin
 }
 
-# compiler/build/flowc_bootstrap when FLOWC_BIN is unset, rebuilt only when
-# it is missing or older than the bootstrap C; an absolute path. Stops the
-# program with cc's status when the build fails.
+# The flowc a script runs: the binary named by the environment variable
+# `var` when it is set, else compiler/build/flowc_bootstrap, rebuilt only
+# when it is missing or older than the bootstrap C; an absolute path. It
+# never picks up another binary left in compiler/build (the roundtrip.flow
+# drivers): those are not checked against the bootstrap C. The build goes
+# to a temporary file that is then renamed, so gates running at the same
+# time never run a half-written binary. Stops the program with cc's status
+# when the build fails.
 export function gl_flowc_cached(var: string, root: string) -> string {
     let mut bin: string = env(var)
     if s_len(bin) == 0 {
         mkdir_p_or_exit("compiler/build")
         bin = root + "/compiler/build/flowc_bootstrap"
         if not is_exec(bin) or newer("compiler/bootstrap/flowc_stage_a.c", bin) {
-            check(gl_build_flowc(bin, true, false))
+            let tmp: string = bin + ".tmp." + s_itoa(pid())
+            check(gl_build_flowc(tmp, true, false))
+            if not move_file(tmp, bin) {
+                errln("cannot move " + tmp + " to " + bin)
+                cli_exit(1)
+            }
         }
     }
     if not is_abs(bin) {

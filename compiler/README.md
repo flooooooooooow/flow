@@ -50,7 +50,11 @@ gen0 is always the checked-in bootstrap C, built to
 ```
 
 The archive carries the binary, the bootstrap C, a `build.sh` that rebuilds it
-with `cc`, a LICENSE, and two examples. Released on `flowc-v*` tags by
+with `cc`, a LICENSE, and two examples. The binary is
+`compiler/build/flowc_bootstrap`, rebuilt when it is older than the bootstrap
+C (`FLOWC_BOOTSTRAP=<path>` picks another), shipped as `bin/flowc-core` behind
+the `bin/flowc <in.flow> <out.c>` wrapper. `selfcompile_audit.flow` uses the
+same binary unless `FLOWC_AUDIT_BIN` is set. Released on `flowc-v*` tags by
 [`.github/workflows/flowc-release.yml`](../.github/workflows/flowc-release.yml).
 
 ## How to run
