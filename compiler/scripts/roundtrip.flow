@@ -238,7 +238,12 @@ function main() -> i32 {
 
     # Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
     run_case(host, "stage_a_infer_struct", 42)
-    if not has("compiler/build/stage_a_infer_struct.c", "Pair p = make_pair(20, 22);") {
+    # A single-module struct return writes through a hidden destination
+    # (#732), so the typed let is `Pair p;` then `make_pair(&p, ...)`.
+    let infer_c: string = "compiler/build/stage_a_infer_struct.c"
+    let value_ret: bool = has(infer_c, "Pair p = make_pair(20, 22);")
+    let sret: bool = has(infer_c, "  Pair p;") and has(infer_c, "make_pair(&p, 20, 22);")
+    if not value_ret and not sret {
         errln("FAIL stage_a_infer_struct: inferred let should be typed Pair")
         show_matches("compiler/build/stage_a_infer_struct.c", "make_pair(20")
         cli_exit(1)
