@@ -25,6 +25,9 @@ do not treat stored timings from another machine as a regression.
 | Hash / map | `runtime/hashmap` | open-addressed insert + lookup |
 | Sorting / search | `runtime/sorting` | heapsort + binary search |
 | Reductions | `runtime/numerical` | sum / min / max / sum-of-squares |
+| FFI scalar call | `runtime/ffi_scalar` | 20000 noinline scalar calls (#737) |
+| FFI batched pointer | `runtime/ffi_batch` | 64 calls over 4096 `i64`s (#737) |
+| FFI buffer handoff | `runtime/ffi_buffer` | zero-copy borrow, same sum (#737) |
 
 Each runtime workload has three subjects when the files exist:
 
@@ -59,7 +62,7 @@ stays on its own row.
 ```
 
 `--eval-tax` prints `ok`, `tax` (>1.05) or `no_native` per row. It is a
-classifier, not a CI gate.
+classifier. CI does not gate on it.
 
 ## Complexity
 
@@ -74,8 +77,8 @@ These are the expected bounds for the stdlib and harness copies:
 | Binary search | O(log n) |
 | Reductions | O(n) |
 
-`hashmap_string_i32` still has no insert/get. That is a remaining gap, not
-hidden inside a suite mean.
+`hashmap_string_i32` still has no insert/get. That gap is
+listed here so a suite mean cannot hide it.
 
 ## Promoted hot primitives
 
@@ -95,9 +98,9 @@ The #740 memory profiler is enabled only on the memory suite so a runtime
 
 - `hashmap_string_i32` create/len only; no insert/get.
 - No CPython twin for `runtime_hashmap` (new `.py` files are refused).
-- `runtime_structs` is a coverage row, not a tax row.
+- `runtime_structs` is a coverage row. It has no tax verdict.
 - `runtime_string_concat` still heaps every `+` chain; matching C can keep
   the 36-byte result on the stack. That headroom needs a compiler
-  short-string / stack-concat slice, not a suite average.
+  short-string / stack-concat slice.
 - Any other measured `tax` on a promoted row should become its own child
   issue rather than being folded into a headline geometric mean.

@@ -28,5 +28,8 @@ Runtime twins (required by `./flow tool bench_harness --check-runtime-natives`):
 | `cross_harness/runtime/hashmap` | open-addressed insert + lookup |
 | `cross_harness/runtime/sorting` | heapsort + binary search |
 | `cross_harness/runtime/numerical` | sum / min / max / sum-of-squares |
+| `cross_harness/runtime/ffi_scalar` | 20000 noinline scalar calls |
+| `cross_harness/runtime/ffi_batch` | 64 batched pointer calls over 4096 `i64`s |
+| `cross_harness/runtime/ffi_buffer` | the same sum through a pointer and length |
 
 See [runtime primitive attribution](../../../docs/project/runtime-primitive-attribution.md).
