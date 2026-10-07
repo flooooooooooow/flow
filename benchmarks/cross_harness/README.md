@@ -1,45 +1,29 @@
 # Cross-dimensional Flow vs CPython benchmark cases
 
-The harness `./flow tool bench_harness` automatically discovers matching
-`.flow` and `.py` subjects in the following tree:
+`./flow tool bench_harness` discovers matching subjects in two trees:
 
-- `benchmarks/cross_harness/<suite>/<case>/` — Flow subject
-- `benchmarks/baselines/python/cross_harness/<suite>/<case>/` — Python twin
+- `benchmarks/cross_harness/<suite>/<case>/`: the Flow subject
+- `benchmarks/baselines/python/cross_harness/<suite>/<case>/`: the Python twin
 
-## JSON parsing versus scanning (#747)
+## JSON parsing and key scanning (#747)
 
-Two intentionally distinct, matched workloads exist:
-
-| Workload ID | Flow implementation | CPython implementation | Semantics |
+| Workload | Flow | CPython | What it does |
 |---|---|---|---|
-| `cold_json_parse` | Repository JSON arena parser, `json_get`, `json_is_int`, `json_free` | `json.loads`, dict/list traversal, strict `type(value) is int` | **Full JSON grammar**, parse 1,000 complete documents, sum four integer fields, reject malformed JSON |
-| `cold_json_key_scan` | Byte-oriented key-search loop | `str.find` key-search loop | **Substring search only**, 10,000 scans for four occurrences of a known key; no JSON validation |
+| `cold_json_parse` | `json_parse`, `json_get`, `json_is_int` and `json_free` from `scripts/tools/lib/json.flow` | `json.loads` and a strict `type(value) is int` check | Parses the full document 1,000 times, sums four integer fields, then checks that a malformed document is rejected |
+| `cold_json_key_scan` | byte loop | `str.find` loop | Finds `"count":` 10,000 times and reads the digits after it, with no JSON validation |
 
-The distinction matters: searching for `"count":` does not implement
-JSON (quoted strings, escaped keys, nested structures, whitespace,
-negative/fractional numbers, or malformed documents). The earlier
-`cold_json_parse` workload measured only the fast key search in both
-languages. That source has been **preserved** and explicitly relabelled
-`json_key_scan`, so previous measurements can still be interpreted
-correctly; new parser results cannot be compared to previous scanner
-results as if their semantics were unchanged.
+Before #747 the workload named `cold_json_parse` was the key scan. Its two
+programs are kept byte for byte as `cold_json_key_scan`, so older numbers
+still have a home. Parser timings from this change do not compare with
+scanner timings from before it.
 
-Both true parser subjects use the same JSON literal and verify the same
-result (1,600,000). The Flow parser releases its per-document arena after
-each iteration, just as CPython releases each temporary parsed document
-through ordinary reference counting. The malformed-input rejection check
-is included after the measured steady-state loop; its behavior is
-validated, not timed in isolation.
+Both parser subjects use the same JSON text and check the same total
+(1,600,000). The Flow subject frees each parsed document with `json_free`
+inside the loop, as CPython frees each temporary document by reference
+counting. The malformed-input check runs once after the timed loop.
 
 ```sh
-./flow tool tests/bench_harness/run.flow
 ./flow run tests/lang/json_parser_arena.flow
+./flow run benchmarks/cross_harness/cold/json_parse/json_parse.flow
 ./flow tool bench_harness --smoke --out benchmark-schema.json
 ```
-
-**Status:** These are newly authored workload definitions and regression
-tests, not published platform performance measurements. Before using their
-timings for #747, run them locally, confirm matching outputs/error behavior,
-check parser allocations and memory retention, and inspect generated C.
-The broader #747 one-shot file transformation, buffering and end-to-end
-accuracy criteria remain open.
