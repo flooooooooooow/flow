@@ -1,93 +1,224 @@
-# Build a Debian package for Flow.
-# This tool creates a .deb package from the current repository state.
+# Reproducible, local-only Debian package from an exact committed Flow tree
+# (#652). Never installs, publishes, tags or modifies the source checkout.
+#
+#   ./flow tool build_deb [--rev COMMIT] [--out DIR]
+#
+# Stages `git archive` of COMMIT (default HEAD) under usr/lib/flow with
+# usr/bin symlinks, stamps every file with SOURCE_DATE_EPOCH (default: the
+# commit time), and builds flow_VERSION-1_all.deb with
+# `dpkg-deb --root-owner-group -Zgzip` into DIR (default dist/deb). Two
+# builds of one commit give the same bytes. Writes SHA256SUMS.deb.txt and
+# deb-provenance.txt beside the package.
+#
+# Exit codes: 0 built, 1 the commit or a stage failed, 2 bad arguments or host.
 
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_argc, proc_argv }
 import "tools/flow_cli/sys.flow"
-import std.process { ProcCmd, proc_arg, proc_cwd, proc_stdout, proc_stderr, PROC_INHERIT }
+import "tools/build_deb/linux_pkg.flow"
 
-function repo_root() -> string {
-    return proc_getenv("FLOW_REPO_ROOT")
+function usage() {
+    errln("usage: ./flow tool build_deb [--rev COMMIT] [--out DIR]")
+}
+
+# Run, and exit with its status when it fails (`set -e`).
+function must(c: ptr<ProcCmd>) {
+    let rc: i32 = run(c)
+    if rc != 0 {
+        cli_exit(rc)
+    }
+}
+
+function cp_a(src: string, dest_dir: string) {
+    let c: ptr<ProcCmd> = cmd(sl_of3("cp", "-a", src))
+    proc_arg(c, dest_dir + "/")
+    must(c)
+}
+
+function make_symlink(target: string, at: string) {
+    let c: ptr<ProcCmd> = cmd(sl_of3("ln", "-s", target))
+    proc_arg(c, at)
+    must(c)
 }
 
 function main() -> i32 {
-    let root: string = repo_root()
-    let script_dir: string = root + "/packaging/deb"
-    
-    let build_dir: string = mktemp_dir_default()
-    if s_len(build_dir) == 0 {
-        outln("Error: failed to create temporary build directory")
-        return 1
-    }
-    
-    outln("Building Debian package for Flow...")
-    
-    let dirs: ptr<ProcStrs> = sl_of3("compiler", "lib", "runtime")
-    sl_push(dirs, "tools")
-    sl_push(dirs, "scripts")
-    sl_push(dirs, "registry")
-    sl_push(dirs, "flow")
-    sl_push(dirs, "flow.toml")
-    sl_push(dirs, "VERSION")
-    
-    let mut i: i32 = 0
-    while i < sl_len(dirs) {
-        let dir: string = sl_get(dirs, i)
-        let src_path: string = root + "/" + dir
-        let dest_path: string = build_dir + "/" + dir
-        
-        if exists(src_path) {
-            let c: ptr<ProcCmd> = cmd(sl_of3("cp", "-r", src_path))
-            proc_arg(c, build_dir)
-            let r: ptr<ProcResult> = run_result(c)
-            if r.exit_code != 0 {
-                outln("Error: failed to copy " + dir + "/ directory")
-                rm_rf(build_dir)
-                return 1
+    let mut rev: string = "HEAD"
+    let mut out_dir: string = "dist/deb"
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        let a: string = proc_argv(i)
+        if s_eq(a, "--rev") or s_eq(a, "--out") {
+            if i + 1 >= proc_argc() {
+                usage()
+                return 2
             }
-        }
-        
-        i = i + 1
-    }
-    
-    let debian_src: string = script_dir + "/debian"
-    let c_debian: ptr<ProcCmd> = cmd(sl_of3("cp", "-r", debian_src))
-    proc_arg(c_debian, build_dir)
-    let r_debian: ptr<ProcResult> = run_result(c_debian)
-    if r_debian.exit_code != 0 {
-        outln("Error: failed to copy debian/ directory")
-        rm_rf(build_dir)
-        return 1
-    }
-    
-    let c: ptr<ProcCmd> = cmd(sl_of3("dpkg-buildpackage", "-us", "-uc"))
-    proc_arg(c, "-b")
-    proc_cwd(c, build_dir)
-    proc_stdout(c, PROC_INHERIT)
-    proc_stderr(c, PROC_INHERIT)
-    
-    let r: ptr<ProcResult> = run_result(c)
-    
-    if r.exit_code == 0 {
-        let parent_dir: string = path_dirname(build_dir)
-        let files: ptr<ProcStrs> = list_dir(parent_dir)
-        let mut found: bool = false
-        let mut j: i32 = 0
-        while j < sl_len(files) {
-            let file: string = sl_get(files, j)
-            if s_starts(file, "flow_") and s_ends(file, ".deb") {
-                outln("Successfully built package: " + parent_dir + "/" + file)
-                found = true
+            if s_eq(a, "--rev") {
+                rev = proc_argv(i + 1)
+            } else {
+                out_dir = proc_argv(i + 1)
             }
-            j = j + 1
+            i = i + 2
+        } elif s_eq(a, "-h") or s_eq(a, "--help") {
+            usage()
+            return 0
+        } else {
+            usage()
+            return 2
         }
-        if not found {
-            outln("Debian package build script structure validated.")
-        }
-    } else {
-        outln("Error: dpkg-buildpackage failed with exit code " + s_itoa(r.exit_code))
-        rm_rf(build_dir)
-        return r.exit_code
     }
-    
-    rm_rf(build_dir)
+    if not s_eq(uname_s(), "Linux") {
+        errln("Debian packaging requires Linux")
+        return 2
+    }
+    let tools: ptr<ProcStrs> = sl_of3("git", "tar", "dpkg-deb")
+    sl_push(tools, "sha256sum")
+    sl_push(tools, "touch")
+    sl_push(tools, "find")
+    sl_push(tools, "cp")
+    sl_push(tools, "ln")
+    lp_require_tools(tools)
+
+    let repo: string = proc_getenv("FLOW_REPO_ROOT")
+    let rp: ptr<ProcCmd> = cmd(sl_of3("git", "-C", repo))
+    proc_arg(rp, "rev-parse")
+    proc_arg(rp, "--verify")
+    proc_arg(rp, rev + "^{commit}")
+    let commit: string = capture(rp)
+    if last_status() != 0 {
+        cli_exit(1)
+    }
+    out_dir = lp_abs_path(out_dir)
+    let tmp: string = mktemp_dir_default()
+    if s_len(tmp) == 0 {
+        lp_fail("cannot create a temporary directory", 1)
+    }
+    on_exit_remove(tmp)
+    let src: string = tmp + "/source"
+    let pkg: string = tmp + "/package"
+    let lib: string = pkg + "/usr/lib/flow"
+    mkdir_p_or_exit(src)
+    mkdir_p_or_exit(pkg + "/DEBIAN")
+    mkdir_p_or_exit(lib)
+    mkdir_p_or_exit(pkg + "/usr/bin")
+    mkdir_p_or_exit(out_dir)
+
+    let tarball: string = tmp + "/source.tar"
+    let ga: ptr<ProcCmd> = cmd(sl_of3("git", "-C", repo))
+    proc_arg(ga, "archive")
+    proc_arg(ga, "--format=tar")
+    proc_arg(ga, "-o")
+    proc_arg(ga, tarball)
+    proc_arg(ga, commit)
+    must(ga)
+    let ex: ptr<ProcCmd> = cmd(sl_of3("tar", "-xf", tarball))
+    proc_arg(ex, "-C")
+    proc_arg(ex, src)
+    must(ex)
+    rm_f(tarball)
+
+    let version_file: string = src + "/VERSION"
+    if not nonempty(version_file) {
+        lp_fail("commit lacks VERSION: " + commit, 1)
+    }
+    let vtext: string = read_text(version_file)
+    let mut version: string = vtext
+    let nl: i32 = s_find_byte(vtext, 10, 0)
+    if nl >= 0 {
+        version = s_slice(vtext, 0, nl)
+    }
+    if not lp_is_version(version) {
+        lp_fail("invalid Debian upstream version: " + version, 1)
+    }
+
+    let required: ptr<ProcStrs> = sl_of3("flow", "flow-lsp", "compiler")
+    sl_push(required, "lib")
+    sl_push(required, "runtime")
+    sl_push(required, "tools")
+    sl_push(required, "scripts")
+    sl_push(required, "registry")
+    sl_push(required, "flow.toml")
+    sl_push(required, "VERSION")
+    let mut k: i32 = 0
+    while k < sl_len(required) {
+        let entry: string = sl_get(required, k)
+        if not exists(src + "/" + entry) {
+            lp_fail("missing source entry: " + entry, 1)
+        }
+        cp_a(src + "/" + entry, lib)
+        k = k + 1
+    }
+    let optional: ptr<ProcStrs> = sl_of3("examples", "src", "pyproject.toml")
+    sl_push(optional, "requirements.txt")
+    k = 0
+    while k < sl_len(optional) {
+        let entry: string = sl_get(optional, k)
+        if exists(src + "/" + entry) {
+            cp_a(src + "/" + entry, lib)
+        }
+        k = k + 1
+    }
+    let _m1: bool = set_mode(lib + "/flow", 493)
+    let _m2: bool = set_mode(lib + "/flow-lsp", 493)
+    make_symlink("../lib/flow/flow", pkg + "/usr/bin/flow")
+    make_symlink("../lib/flow/flow-lsp", pkg + "/usr/bin/flow-lsp")
+
+    let mut control: string = "Package: flow\n"
+    control = control + "Version: " + version + "-1\n"
+    control = control + "Section: devel\n"
+    control = control + "Priority: optional\n"
+    control = control + "Architecture: all\n"
+    control = control + "Maintainer: Flow Language Team <team@flow-lang.org>\n"
+    control = control + "Depends: gcc | clang, libc6-dev\n"
+    control = control + "Homepage: https://github.com/flooooooooooow/flow\n"
+    control = control + "Description: Flow programming language compiler and runtime\n"
+    control = control + " Flow is a statically typed compiled language with algebraic effects.\n"
+    if not write_text(pkg + "/DEBIAN/control", control) {
+        lp_fail("cannot write DEBIAN/control", 1)
+    }
+
+    let mut epoch: string = env("SOURCE_DATE_EPOCH")
+    if s_len(epoch) == 0 {
+        let ct: ptr<ProcCmd> = cmd(sl_of3("git", "-C", repo))
+        proc_arg(ct, "show")
+        proc_arg(ct, "-s")
+        proc_arg(ct, "--format=%ct")
+        proc_arg(ct, commit)
+        epoch = capture(ct)
+    }
+    if not s_is_digits(epoch) {
+        lp_fail("invalid SOURCE_DATE_EPOCH", 2)
+    }
+    let touch: ptr<ProcCmd> = cmd(sl_of3("find", pkg, "-exec"))
+    proc_arg(touch, "touch")
+    proc_arg(touch, "-h")
+    proc_arg(touch, "-d")
+    proc_arg(touch, "@" + epoch)
+    proc_arg(touch, "{}")
+    proc_arg(touch, "+")
+    cmd_env(touch, "SOURCE_DATE_EPOCH", epoch)
+    cmd_env(touch, "TZ", "UTC")
+    cmd_env(touch, "LC_ALL", "C")
+    must(touch)
+
+    let filename: string = "flow_" + version + "-1_all.deb"
+    let deb: string = out_dir + "/" + filename
+    let b: ptr<ProcCmd> = cmd(sl_of3("dpkg-deb", "--root-owner-group", "--build"))
+    proc_arg(b, "-Zgzip")
+    proc_arg(b, pkg)
+    proc_arg(b, deb)
+    cmd_env(b, "SOURCE_DATE_EPOCH", epoch)
+    cmd_env(b, "TZ", "UTC")
+    cmd_env(b, "LC_ALL", "C")
+    must(b)
+    let digest: string = lp_sha256(deb)
+    if not write_text(out_dir + "/SHA256SUMS.deb.txt", digest + "  " + filename + "\n") {
+        lp_fail("cannot write SHA256SUMS.deb.txt", 1)
+    }
+    let prov: string = "source-commit: " + commit + "\nsource-version: " + version + "\npublished: false\n"
+    if not write_text(out_dir + "/deb-provenance.txt", prov) {
+        lp_fail("cannot write deb-provenance.txt", 1)
+    }
+    outln("Wrote " + deb)
+    outln("Wrote " + out_dir + "/SHA256SUMS.deb.txt (local package, not a published release)")
+    cli_exit(0)
     return 0
 }

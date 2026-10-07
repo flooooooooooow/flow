@@ -1,0 +1,168 @@
+# @module tools.build_deb.linux_pkg
+# @means  Shared checks for the Linux release tools: qualify_linux_archive,
+#         qualify_deb and build_deb (#652). Digests, version strings,
+#         paths and the smoke test that compiles and runs the release's
+#         Fibonacci program. External commands go through std.process via
+#         tools/flow_cli/sys.flow, with no shell in between.
+
+import "tools/flow_cli/sys.flow"
+
+function lp_is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+function lp_is_lower_hex(c: i32) -> bool {
+    return lp_is_digit(c) or (c >= 97 and c <= 102)
+}
+
+function lp_is_alnum(c: i32) -> bool {
+    return lp_is_digit(c) or (c >= 97 and c <= 122) or (c >= 65 and c <= 90)
+}
+
+# ^[0-9a-f]{64}$
+export function lp_is_sha256(s: string) -> bool {
+    if s_len(s) != 64 {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < 64 {
+        if not lp_is_lower_hex(s_byte(s, i)) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Length of a [0-9]+ run starting at `i`.
+function lp_digits_at(s: string, i: i32) -> i32 {
+    let mut j: i32 = i
+    while j < s_len(s) and lp_is_digit(s_byte(s, j)) {
+        j = j + 1
+    }
+    return j - i
+}
+
+# Index just past [0-9]+\.[0-9]+\.[0-9]+ starting at `i`, or -1.
+function lp_semver_end(s: string, i: i32) -> i32 {
+    let mut p: i32 = i
+    let mut part: i32 = 0
+    while part < 3 {
+        let n: i32 = lp_digits_at(s, p)
+        if n == 0 {
+            return -1
+        }
+        p = p + n
+        if part < 2 {
+            if p >= s_len(s) or s_byte(s, p) != 46 {
+                return -1
+            }
+            p = p + 1
+        }
+        part = part + 1
+    }
+    return p
+}
+
+# ^[0-9]+\.[0-9]+\.[0-9]+$
+export function lp_is_version(s: string) -> bool {
+    return lp_semver_end(s, 0) == s_len(s)
+}
+
+# ^flow-[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$
+export function lp_is_archive_root(s: string) -> bool {
+    if not s_starts(s, "flow-") {
+        return false
+    }
+    let p: i32 = lp_semver_end(s, 5)
+    if p < 0 {
+        return false
+    }
+    if p == s_len(s) {
+        return true
+    }
+    if s_byte(s, p) != 45 or p + 1 >= s_len(s) {
+        return false
+    }
+    let mut i: i32 = p + 1
+    while i < s_len(s) {
+        let c: i32 = s_byte(s, i)
+        if not (lp_is_alnum(c) or c == 46 or c == 45) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# `realpath -m`: an absolute, normalised path that need not exist.
+export function lp_abs_path(p: string) -> string {
+    if is_abs(p) {
+        return path_norm_abs(p)
+    }
+    return path_norm_abs(cwd_physical() + "/" + p)
+}
+
+# Exit 2 with "missing TOOL" unless every named command is on PATH.
+export function lp_require_tools(names: ptr<ProcStrs>) {
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        if not have(sl_get(names, i)) {
+            errln("missing " + sl_get(names, i))
+            cli_exit(2)
+        }
+        i = i + 1
+    }
+}
+
+# Print `msg` to stderr and exit with `code`, removing temporary trees.
+export function lp_fail(msg: string, code: i32) {
+    errln(msg)
+    cli_exit(code)
+}
+
+# The SHA-256 of a file, as `sha256sum FILE | cut -d" " -f1` prints it.
+export function lp_sha256(path: string) -> string {
+    let text: string = capture(cmd(sl_of2("sha256sum", path)))
+    let sp: i32 = s_find_byte(text, 32, 0)
+    if sp < 0 {
+        return text
+    }
+    return s_slice(text, 0, sp)
+}
+
+# `uname -sm`
+export function lp_platform() -> string {
+    return uname_s() + " " + uname_m()
+}
+
+# Run `./flow version` and `FLOW_HOST=flowc ./flow compile` on the release's
+# Fibonacci program inside `root`, then run the binary and require exit 55.
+# `missing_fixture`, `no_binary` and `bad_exit` are the caller's messages;
+# `bad_exit` is followed by the code and "; expected 55".
+export function lp_fibonacci_smoke(root: string, missing_fixture: string, no_binary: string, bad_exit: string) {
+    let v: ptr<ProcCmd> = cmd(sl_of1("./flow"))
+    proc_arg(v, "version")
+    cmd_cwd(v, root)
+    let vrc: i32 = run(v)
+    if vrc != 0 {
+        cli_exit(vrc)
+    }
+    if not is_file(root + "/examples/basics/fibonacci.flow") {
+        lp_fail(missing_fixture, 1)
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "compile", "examples/basics/fibonacci.flow"))
+    cmd_env(c, "FLOW_HOST", "flowc")
+    cmd_cwd(c, root)
+    let crc: i32 = run(c)
+    if crc != 0 {
+        cli_exit(crc)
+    }
+    if not is_exec(root + "/build/fibonacci") {
+        lp_fail(no_binary, 1)
+    }
+    let rc: i32 = run(cmd(sl_of1(root + "/build/fibonacci")))
+    if rc != 55 {
+        lp_fail(bad_exit + s_itoa(rc) + "; expected 55", 1)
+    }
+}

@@ -102,10 +102,10 @@ Tracking: #647 and the Flow 1.0 stabilisation programme #653.
 
 Linux x86-64 release acceptance also requires an exact artifact integrity and
 unpack/compile/run check using
-`bash packaging/linux/qualify-release.sh --archive FILE --sha256 DIGEST`.
+`./flow tool qualify_linux_archive --archive FILE --sha256 DIGEST`.
 The checksum must come from the real artifact being promoted, not from a
 moving branch or another release. For current-tree Debian packaging use
-`bash packaging/deb/build.sh --rev COMMIT` followed by
-`bash packaging/linux/qualify-deb.sh --package FILE --sha256 DIGEST`.
-These local scripts do not claim Linux arm64 qualification or external APT
+`./flow tool build_deb --rev COMMIT` followed by
+`./flow tool qualify_deb --package FILE --sha256 DIGEST`.
+These local tools do not claim Linux arm64 qualification or external APT
 publication and do not replace the macOS Homebrew acceptance criteria.

@@ -35,10 +35,10 @@ This is a repository-local flake specification. It is not a claim that Flow has 
 `packaging/deb/` contains Debian metadata for building a package from the current checkout:
 
 ```bash
-bash packaging/deb/build.sh --rev HEAD --out dist/deb
+./flow tool build_deb --rev HEAD --out dist/deb
 ```
 
-The script prints the path of the generated `.deb` and records its actual SHA-256. This repository does not currently advertise an APT repository.
+The tool prints the path of the generated `.deb` and records its actual SHA-256. This repository does not currently advertise an APT repository.
 
 ## Deferred channels
 
@@ -51,12 +51,12 @@ External package-manager documentation should be promoted to the published secti
 ## Linux release acceptance (local-only)
 
 On an x86-64 Linux machine, use the published asset and its actual SHA-256 (from
-GitHub's release asset or `SHA256SUMS.txt`). The qualification script rejects a
+GitHub's release asset or `SHA256SUMS.txt`). The qualification tool rejects a
 missing or wrong digest, unpacks to a disposable directory, runs `flow version`,
 compiles the bundled Fibonacci sample and checks its exit status (55).
 
 ```bash
-bash packaging/linux/qualify-release.sh \
+./flow tool qualify_linux_archive \
   --archive dist/flow-v1.0.1.tar.gz \
   --sha256 deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b
 ```
@@ -71,11 +71,11 @@ source checkout. Passing evidence is written to
 Build from one pinned commit, without a network connection or system install:
 
 ```bash
-bash packaging/deb/build.sh --rev HEAD --out dist/deb
+./flow tool build_deb --rev HEAD --out dist/deb
 cat dist/deb/SHA256SUMS.deb.txt
 ```
 
-The script uses `git archive`, `SOURCE_DATE_EPOCH`, fixed ownership and gzip
+The tool uses `git archive`, `SOURCE_DATE_EPOCH`, fixed ownership and gzip
 compression to create `flow_VERSION-1_all.deb`. The package installs the
 source-based compiler/runtime under `/usr/lib/flow`, with command symlinks in
 `/usr/bin`. It never publishes or installs anything. **HEAD is a development
@@ -84,7 +84,7 @@ example**; use a frozen release commit when qualifying a release.
 For a local install/execution check without root, pass the computed hash:
 
 ```bash
-bash packaging/linux/qualify-deb.sh \
+./flow tool qualify_deb \
   --package dist/deb/flow_2.0.0-1_all.deb \
   --sha256 "$(awk '$2 == "flow_2.0.0-1_all.deb" { print $1 }' dist/deb/SHA256SUMS.deb.txt)"
 ```

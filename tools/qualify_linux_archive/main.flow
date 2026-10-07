@@ -1,0 +1,163 @@
+# Verify an exact published Flow source archive on Linux, locally (#652).
+#
+#   ./flow tool qualify_linux_archive --archive flow-vX.Y.Z.tar.gz \
+#       --sha256 PUBLISHED_DIGEST [--out DIR]
+#
+# Checks the archive's SHA-256 before reading it, rejects absolute paths,
+# traversal and more than one source root, unpacks it into a temporary
+# directory, boots the delivered `flow` CLI, compiles
+# examples/basics/fibonacci.flow with FLOW_HOST=flowc and requires exit 55.
+# The record goes to DIR/qualification-linux.txt (default
+# build/linux-qualification) and is never published.
+#
+# Exit codes: 0 pass, 1 the archive failed a check, 2 bad arguments or host.
+
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_argc, proc_argv }
+import "tools/flow_cli/sys.flow"
+import "tools/build_deb/linux_pkg.flow"
+
+function usage() {
+    errln("usage: ./flow tool qualify_linux_archive --archive flow-vX.Y.Z.tar.gz --sha256 PUBLISHED_DIGEST [--out DIR]")
+}
+
+# An archive member is safe when it is relative and has no `..` segment.
+function unsafe_member(e: string) -> bool {
+    if s_len(e) == 0 or s_starts(e, "/") or s_starts(e, "../") {
+        return true
+    }
+    return s_contains(e, "/../") or s_ends(e, "/..")
+}
+
+function first_segment(e: string) -> string {
+    let slash: i32 = s_find_byte(e, 47, 0)
+    if slash < 0 {
+        return e
+    }
+    return s_slice(e, 0, slash)
+}
+
+function main() -> i32 {
+    let mut archive: string = ""
+    let mut expected: string = ""
+    let mut out_dir: string = "build/linux-qualification"
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        let a: string = proc_argv(i)
+        if s_eq(a, "--archive") or s_eq(a, "--sha256") or s_eq(a, "--out") {
+            if i + 1 >= proc_argc() {
+                usage()
+                return 2
+            }
+            let v: string = proc_argv(i + 1)
+            if s_eq(a, "--archive") {
+                archive = v
+            } elif s_eq(a, "--sha256") {
+                expected = v
+            } else {
+                out_dir = v
+            }
+            i = i + 2
+        } elif s_eq(a, "-h") or s_eq(a, "--help") {
+            usage()
+            return 0
+        } else {
+            usage()
+            return 2
+        }
+    }
+
+    if not s_eq(uname_s(), "Linux") {
+        errln("Linux host required")
+        return 2
+    }
+    if not is_file(archive) or not lp_is_sha256(expected) {
+        usage()
+        return 2
+    }
+    let tools: ptr<ProcStrs> = sl_of3("sha256sum", "tar", "cc")
+    lp_require_tools(tools)
+    archive = abs_file_physical(archive)
+    out_dir = lp_abs_path(out_dir)
+    let actual: string = lp_sha256(archive)
+    if not s_eq(actual, expected) {
+        lp_fail("SHA-256 mismatch: actual " + actual + ", expected " + expected, 1)
+    }
+
+    # Reject absolute paths, traversal and archives spanning several roots.
+    let listing: string = capture_raw(cmd(sl_of3("tar", "-tzf", archive)))
+    if last_status() != 0 {
+        cli_exit(last_status())
+    }
+    let entries: ptr<ProcStrs> = s_lines(listing)
+    let mut prefix: string = ""
+    let mut k: i32 = 0
+    while k < sl_len(entries) {
+        let entry: string = sl_get(entries, k)
+        if unsafe_member(entry) {
+            lp_fail("unsafe archive member: " + entry, 1)
+        }
+        let head: string = first_segment(entry)
+        if not lp_is_archive_root(head) {
+            lp_fail("unexpected archive prefix: " + head, 1)
+        }
+        if s_len(prefix) == 0 {
+            prefix = head
+        }
+        if not s_eq(head, prefix) {
+            lp_fail("multiple archive roots", 1)
+        }
+        k = k + 1
+    }
+    if s_len(prefix) == 0 {
+        lp_fail("empty source archive", 1)
+    }
+
+    let tmp: string = mktemp_dir_default()
+    if s_len(tmp) == 0 {
+        lp_fail("cannot create a temporary directory", 1)
+    }
+    on_exit_remove(tmp)
+    let x: ptr<ProcCmd> = cmd(sl_of3("tar", "-xzf", archive))
+    proc_arg(x, "-C")
+    proc_arg(x, tmp)
+    let xrc: i32 = run(x)
+    if xrc != 0 {
+        cli_exit(xrc)
+    }
+    let root: string = tmp + "/" + prefix
+    if not is_file(root + "/flow") or not is_dir(root + "/compiler") or not is_dir(root + "/lib") or not is_dir(root + "/runtime") {
+        lp_fail("incomplete Flow source archive", 1)
+    }
+    if not is_file(root + "/examples/basics/fibonacci.flow") {
+        lp_fail("missing release smoke-test program", 1)
+    }
+    let _m: bool = set_mode(root + "/flow", 493)
+    lp_fibonacci_smoke(root, "missing release smoke-test program", "compiler did not emit build/fibonacci", "packaged fibonacci exit code ")
+
+    mkdir_p_or_exit(out_dir)
+    let cc_line: string = first_line(capture(cmd(sl_of2("cc", "--version"))))
+    let mut rec: string = "status: PASS\n"
+    rec = rec + "published: false\n"
+    rec = rec + "archive: " + path_basename(archive) + "\n"
+    rec = rec + "sha256: " + actual + "\n"
+    rec = rec + "source-root: " + prefix + "\n"
+    rec = rec + "platform: " + lp_platform() + "\n"
+    rec = rec + "cc: " + cc_line + "\n"
+    rec = rec + "test: flow version; flow compile; fibonacci exit=55\n"
+    let record: string = out_dir + "/qualification-linux.txt"
+    if not write_text(record, rec) {
+        lp_fail("cannot write " + record, 1)
+    }
+    outln("PASS: Linux archive qualification (" + actual + ")")
+    outln("Record: " + record)
+    cli_exit(0)
+    return 0
+}
+
+function first_line(s: string) -> string {
+    let nl: i32 = s_find_byte(s, 10, 0)
+    if nl < 0 {
+        return s
+    }
+    return s_slice(s, 0, nl)
+}

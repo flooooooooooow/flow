@@ -712,7 +712,8 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if ft_eq(mode, "full") and artifacts_only == false {
         let os: string = capture_cmd(rp_argv2("uname", "-s"))
         if ft_eq(os, "Linux") {
-            let linux: ptr<StrList> = rp_argv3("bash", "packaging/linux/qualify-release.sh", "--archive")
+            let linux: ptr<StrList> = rp_argv3("./flow", "tool", "qualify_linux_archive")
+            ft_list_push(linux, "--archive")
             ft_list_push(linux, tarball)
             ft_list_push(linux, "--sha256")
             ft_list_push(linux, tar_sha)

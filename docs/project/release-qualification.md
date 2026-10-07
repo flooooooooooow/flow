@@ -60,9 +60,9 @@ that `VERSION`. Without `--artifacts-only`, the gates run on the checkout, so
    `published: false` and `tagged: false`.
 
 On Linux, `--mode full` additionally invokes the checksum-gated
-`packaging/linux/qualify-release.sh` against the newly created tarball,
+`./flow tool qualify_linux_archive` against the newly created tarball,
 and records its clean unpack / compile / execute evidence under `--out/linux/`.
-The hash used here is computed from those archive bytes, not guessed.
+The hash used here is computed from those archive bytes.
 
 `--artifacts-only` skips the version/changelog tool gates and still writes the
 archives and record. `--mode full` also runs the expensive gates used by
@@ -155,7 +155,7 @@ from the corresponding published GitHub Release. Never use the SHA-256 from a
 prior tag for a new candidate.
 
 ```bash
-bash packaging/linux/qualify-release.sh --archive /path/to/flow-vVERSION.tar.gz --sha256 ACTUAL_SHA256
+./flow tool qualify_linux_archive --archive /path/to/flow-vVERSION.tar.gz --sha256 ACTUAL_SHA256
 ```
 
 This checks the hash *before extraction*, rejects unsafe/archive-mismatched
@@ -168,12 +168,12 @@ For Debian/Ubuntu, build a separate local `.deb` from the *frozen* source
 commit and verify it without root:
 
 ```bash
-bash packaging/deb/build.sh --rev QUALIFIED_COMMIT --out dist/deb
+./flow tool build_deb --rev QUALIFIED_COMMIT --out dist/deb
 cat dist/deb/SHA256SUMS.deb.txt
-bash packaging/linux/qualify-deb.sh --package /path/to/flow_VERSION-1_all.deb --sha256 ACTUAL_DEB_SHA256
+./flow tool qualify_deb --package /path/to/flow_VERSION-1_all.deb --sha256 ACTUAL_DEB_SHA256
 ```
 
-Both Linux scripts require a real locally available artifact; they never
+Both Linux qualification tools require a real locally available artifact; they never
 invent digests or create an APT repository. `packaging/README.md` records the
 Nix smoke command and the distinction between tested local specs and public
 package-manager publication. Linux arm64 remains a Tier 2 candidate pending

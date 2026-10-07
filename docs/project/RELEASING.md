@@ -93,17 +93,17 @@ On Linux x86-64, verify the **exact released** source tarball and its published
 digest before proceeding with candidate promotion:
 
 ```bash
-bash packaging/linux/qualify-release.sh \
+./flow tool qualify_linux_archive \
   --archive /path/to/flow-vVERSION.tar.gz --sha256 ACTUAL_PUBLISHED_SHA256
 ```
 
-The script extracts into a fresh temporary directory, checks `flow version`,
+The tool extracts into a fresh temporary directory, checks `flow version`,
 compiles/runs the packaged Fibonacci sample, and writes a Linux qualification
 record. For a Debian development package made from a frozen commit:
 
 ```bash
-bash packaging/deb/build.sh --rev QUALIFIED_COMMIT --out dist/deb
-bash packaging/linux/qualify-deb.sh \
+./flow tool build_deb --rev QUALIFIED_COMMIT --out dist/deb
+./flow tool qualify_deb \
   --package /path/to/flow_VERSION-1_all.deb --sha256 ACTUAL_DEB_SHA256
 ```
 
