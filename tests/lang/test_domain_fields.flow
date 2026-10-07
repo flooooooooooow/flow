@@ -72,6 +72,16 @@ function fill_shorter_field() -> i32 {
     return 0
 }
 
+@lifetime(callback)
+function return_cleared_composite() -> Holder {
+    let scratch: array<i32, 2> = [8, 9]
+    let mut h: Holder = Holder { view: &scratch }
+    # Replacing the composite with a null-only value must clear the old
+    # nested borrow provenance; returning h is then safe.
+    h = Holder { view: null }
+    return h
+}
+
 function main() -> i32 {
     let a: i32 = fill_local()
     if a != 0 {
@@ -88,6 +98,10 @@ function main() -> i32 {
     let d: i32 = fill_shorter_field()
     if d != 0 {
         return d
+    }
+    let h: Holder = return_cleared_composite()
+    if h.view != null {
+        return 6
     }
     return 0
 }
