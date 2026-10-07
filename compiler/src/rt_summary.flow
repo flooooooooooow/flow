@@ -38,6 +38,7 @@ extern {
     function fread(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
     function fwrite(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
     function mkdir(path: string, mode: i32) -> i32
+    function chmod(path: string, mode: i32) -> i32
 }
 
 export const FLOWC_RT_SUM: i32 = 36
@@ -775,24 +776,116 @@ export function flowc_rt_refines(new_bits: i32, new_dom: i32, old_bits: i32, old
     return 0
 }
 
+# Return the next entry boundary, or len when either terminating NUL is
+# missing. Never manufacture len+1/len+2 from a truncated cache buffer.
 function rt_entry_next(buf: ptr<u8>, len: i32, p: i32) -> i32 {
+    if buf == null or p < 0 or p >= len {
+        return len
+    }
     let mut i: i32 = p
     while i < len and buf[i] != 0 {
         i = i + 1
+    }
+    if i >= len {
+        return len
     }
     i = i + 1
     while i < len and buf[i] != 0 {
         i = i + 1
     }
+    if i >= len {
+        return len
+    }
     return i + 1
+}
+
+function rt_is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+# Validate the serialized effect-table framing before any cache row is
+# consulted. RT rows additionally require "bits|domain|provenance" with
+# finite known bit/domain ranges. Other effect rows share the same
+# kind/name/value NUL framing and are left semantically to effects.flow.
+export function flowc_rt_summary_buffer_valid(buf: ptr<u8>, len: i32) -> i32 {
+    if buf == null or len <= 0 {
+        return 0
+    }
+    let mut p: i32 = 0
+    while p < len {
+        let kind: i32 = buf[p] as i32
+        let ns: i32 = p + 1
+        if ns >= len {
+            return 0
+        }
+        let mut ne: i32 = ns
+        while ne < len and buf[ne] != 0 {
+            ne = ne + 1
+        }
+        if ne >= len or ne == ns {
+            return 0
+        }
+        let vs: i32 = ne + 1
+        if vs >= len {
+            return 0
+        }
+        let mut ve: i32 = vs
+        while ve < len and buf[ve] != 0 {
+            ve = ve + 1
+        }
+        if ve >= len {
+            return 0
+        }
+        if kind == FLOWC_RT_SUM {
+            let mut q: i32 = vs
+            let mut bits: i32 = 0
+            let mut ndig: i32 = 0
+            while q < ve and rt_is_digit(buf[q] as i32) == 1 {
+                if bits > 1000 { return 0 }
+                bits = bits * 10 + ((buf[q] as i32) - 48)
+                ndig = ndig + 1
+                q = q + 1
+            }
+            if ndig == 0 or q >= ve or buf[q] != 124 or bits < 0 or bits > 31 {
+                return 0
+            }
+            q = q + 1
+            let mut dom: i32 = 0
+            ndig = 0
+            while q < ve and rt_is_digit(buf[q] as i32) == 1 {
+                if dom > 100 { return 0 }
+                dom = dom * 10 + ((buf[q] as i32) - 48)
+                ndig = ndig + 1
+                q = q + 1
+            }
+            if ndig == 0 or q >= ve or buf[q] != 124 or
+               dom < FLOWC_RT_DOM_CALLBACK or dom > FLOWC_RT_DOM_NONE {
+                return 0
+            }
+        }
+        let next: i32 = rt_entry_next(buf, len, p)
+        if next <= p or next > len {
+            return 0
+        }
+        p = next
+    }
+    if p != len {
+        return 0
+    }
+    return 1
 }
 
 # 1 when every `$` name in `old` is still present in `new` and refined.
 export function flowc_rt_summaries_refine(new_buf: ptr<u8>, new_len: i32, old_buf: ptr<u8>, old_len: i32) -> i32 {
-    if old_buf == null or old_len <= 0 {
-        return 1
+    # An empty/truncated prior snapshot proves nothing. Returning true here
+    # used to let a zero-length cache file suppress all imported RT checks.
+    if old_buf == null or old_len <= 0 or
+       flowc_rt_summary_buffer_valid(old_buf, old_len) == 0 {
+        return 0
     }
-    if new_buf == null {
+    if new_buf == null or new_len <= 0 or
+       flowc_rt_summary_buffer_valid(new_buf, new_len) == 0 {
         return 0
     }
     let mut p: i32 = 0
@@ -918,13 +1011,35 @@ function rt_mkdir_p(path: ptr<u8>, n: i32) {
         }
         i = i + 1
     }
-    let _m2: i32 = mkdir(path as string, 493)
+    # The final RT-summary directory is compiler-trusted state: keep it
+    # owner-only even when an older version created it permissively.
+    let _m2: i32 = mkdir(path as string, 448)
+    let _p2: i32 = chmod(path as string, 448)
+}
+
+function rt_cache_key_valid(key: string) -> i32 {
+    if key as ptr<u8> == null or strlen(key) != 16 {
+        return 0
+    }
+    let p: ptr<u8> = key
+    let mut i: i32 = 0
+    while i < 16 {
+        let c: i32 = p[i] as i32
+        let digit: i32 = rt_is_digit(c)
+        let lower_hex: i32 = (c >= 97 and c <= 102) as i32
+        if digit == 0 and lower_hex == 0 {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
 }
 
 # Store a summary snapshot under `key` (caller-chosen identity, e.g. a
 # source hash). Returns 0 on success.
 export function flowc_rt_cache_store(key: string, buf: ptr<u8>, len: i32) -> i32 {
-    if key as ptr<u8> == null or buf == null or len < 0 {
+    if rt_cache_key_valid(key) == 0 or buf == null or len <= 0 or
+       flowc_rt_summary_buffer_valid(buf, len) == 0 {
         return 0 - 1
     }
     let dir: ptr<u8> = malloc(512)
@@ -970,7 +1085,7 @@ export function flowc_rt_cache_store(key: string, buf: ptr<u8>, len: i32) -> i32
 
 # Load a snapshot previously stored under `key`. Returns byte length, or -1.
 export function flowc_rt_cache_load(key: string, buf: ptr<u8>, cap: i32) -> i32 {
-    if key as ptr<u8> == null or buf == null or cap <= 0 {
+    if rt_cache_key_valid(key) == 0 or buf == null or cap <= 0 {
         return 0 - 1
     }
     let dir: ptr<u8> = malloc(512)
@@ -1021,6 +1136,9 @@ export function flowc_rt_cache_load(key: string, buf: ptr<u8>, cap: i32) -> i32 
         }
     }
     let _c: i32 = fclose(fp)
+    if n <= 0 or flowc_rt_summary_buffer_valid(buf, n) == 0 {
+        return 0 - 1
+    }
     return n
 }
 
