@@ -2,8 +2,8 @@
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
 
-void run_classifier(
-    int input, int output, size_t count
+void run_mnist_postprocess(
+    int logits, int probs, int n, size_t count
 ) {
     @autoreleasepool {
         // Get default Metal device
@@ -14,7 +14,7 @@ void run_classifier(
         }
 
         // Load shader library
-        NSString* shaderPath = @"@ROOT@/build/gpu/classifier.metal";
+        NSString* shaderPath = @"@ROOT@/build/gpu/mnist_postprocess.metal";
         NSError* error = nil;
         NSString* shaderSource = [NSString stringWithContentsOfFile:shaderPath encoding:NSUTF8StringEncoding error:&error];
         id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
@@ -23,7 +23,7 @@ void run_classifier(
             return;
         }
 
-        id<MTLFunction> kernel = [library newFunctionWithName:@"classifier"];
+        id<MTLFunction> kernel = [library newFunctionWithName:@"mnist_postprocess"];
         id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:kernel error:&error];
 
         // Create command queue
@@ -32,8 +32,9 @@ void run_classifier(
         id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
         [encoder setComputePipelineState:pipeline];
 
-        [encoder setBytes:&input length:sizeof(input) atIndex:0];
-        [encoder setBytes:&output length:sizeof(output) atIndex:1];
+        [encoder setBytes:&logits length:sizeof(logits) atIndex:0];
+        [encoder setBytes:&probs length:sizeof(probs) atIndex:1];
+        [encoder setBytes:&n length:sizeof(n) atIndex:2];
 
         // Dispatch threads
         MTLSize gridSize = MTLSizeMake(count, 1, 1);
@@ -45,6 +46,5 @@ void run_classifier(
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
 
-        memcpy(output, buffer1.contents, count * sizeof(float));
     }
 }
