@@ -34,27 +34,73 @@ static unsigned long long flow_mem_alloc_count = 0ULL;
 static unsigned long long flow_mem_alloc_bytes = 0ULL;
 static unsigned long long flow_mem_temp_bytes = 0ULL;
 static unsigned long long flow_mem_copy_bytes = 0ULL;
+static unsigned long long flow_mem_stack_bytes = 0ULL;
+static unsigned long long flow_mem_arena_bytes = 0ULL;
 static long long flow_mem_live_bytes = 0;
 static long long flow_mem_peak_live = 0;
-#define FLOW_MEM_MAP 1024
+#define FLOW_MEM_SITE_HEAP 0
+#define FLOW_MEM_SITE_TEMP 1
+#define FLOW_MEM_SITE_CONCAT 2
+#define FLOW_MEM_SITE_SORT 3
+#define FLOW_MEM_SITE_ARRAY 4
+#define FLOW_MEM_SITE_COPY 5
+#define FLOW_MEM_SITE_STACK 6
+#define FLOW_MEM_SITE_ARENA 7
+#define FLOW_MEM_NSITE 8
+static unsigned long long flow_mem_site_bytes[FLOW_MEM_NSITE];
+static unsigned long long flow_mem_site_count[FLOW_MEM_NSITE];
+static const char* flow_mem_site_nm[FLOW_MEM_NSITE] = {
+  "heap", "temp", "concat", "sort", "array", "copy", "stack", "arena"
+};
+#define FLOW_MEM_MAP 4096
 static void* flow_mem_ptrs[FLOW_MEM_MAP];
 static size_t flow_mem_sz[FLOW_MEM_MAP];
+static unsigned char flow_mem_st[FLOW_MEM_MAP];
+static unsigned long long flow_mem_map_used = 0ULL;
+static unsigned long long flow_mem_map_overflow = 0ULL;
+static inline unsigned flow_mem_hash(void* p) {
+  unsigned long long x = (unsigned long long)(uintptr_t)p;
+  x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;
+  return (unsigned)x & (FLOW_MEM_MAP - 1);
+}
 static inline void flow_mem_map_put(void* p, size_t n) {
-  int i; if (!flow_mem_profile_on || p == 0) return;
-  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == 0) { flow_mem_ptrs[i] = p; flow_mem_sz[i] = n; return; } }
+  unsigned h, i; if (!flow_mem_profile_on || p == 0) return;
+  h = flow_mem_hash(p);
+  for (i = 0; i < FLOW_MEM_MAP; i++) {
+    unsigned k = (h + i) & (FLOW_MEM_MAP - 1);
+    if (flow_mem_st[k] != 1) {
+      flow_mem_ptrs[k] = p; flow_mem_sz[k] = n; flow_mem_st[k] = 1;
+      flow_mem_map_used++; return;
+    }
+  }
+  flow_mem_map_overflow++;
 }
 static inline size_t flow_mem_map_take(void* p) {
-  int i; if (!flow_mem_profile_on || p == 0) return 0;
-  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == p) { size_t n = flow_mem_sz[i]; flow_mem_ptrs[i] = 0; return n; } }
+  unsigned h, i; if (!flow_mem_profile_on || p == 0) return 0;
+  h = flow_mem_hash(p);
+  for (i = 0; i < FLOW_MEM_MAP; i++) {
+    unsigned k = (h + i) & (FLOW_MEM_MAP - 1);
+    if (flow_mem_st[k] == 0) return 0;
+    if (flow_mem_st[k] == 1 && flow_mem_ptrs[k] == p) {
+      size_t n = flow_mem_sz[k]; flow_mem_ptrs[k] = 0; flow_mem_st[k] = 2;
+      if (flow_mem_map_used) flow_mem_map_used--; return n;
+    }
+  }
   return 0;
 }
 static void flow_mem_profile_init(void);
+static inline void flow_mem_note_site(int site, size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on || site < 0 || site >= FLOW_MEM_NSITE) return;
+  flow_mem_site_count[site]++; flow_mem_site_bytes[site] += (unsigned long long)n;
+}
 static inline void flow_mem_note_alloc(size_t n) {
   if (!flow_mem_inited) flow_mem_profile_init();
   if (!flow_mem_profile_on) return;
   flow_mem_alloc_count++; flow_mem_alloc_bytes += (unsigned long long)n;
   flow_mem_live_bytes += (long long)n;
   if (flow_mem_live_bytes > flow_mem_peak_live) flow_mem_peak_live = flow_mem_live_bytes;
+  flow_mem_note_site(FLOW_MEM_SITE_HEAP, n);
 }
 static inline void flow_mem_note_free(size_t n) {
   if (!flow_mem_profile_on) return;
@@ -64,11 +110,31 @@ static inline void flow_mem_note_temp(size_t n) {
   if (!flow_mem_inited) flow_mem_profile_init();
   if (!flow_mem_profile_on) return;
   flow_mem_temp_bytes += (unsigned long long)n;
+  flow_mem_note_site(FLOW_MEM_SITE_TEMP, n);
 }
 static inline void flow_mem_note_copy(size_t n) {
   if (!flow_mem_inited) flow_mem_profile_init();
   if (!flow_mem_profile_on) return;
   flow_mem_copy_bytes += (unsigned long long)n;
+  flow_mem_note_site(FLOW_MEM_SITE_COPY, n);
+}
+static inline void flow_mem_note_copy_site(int site, size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on) return;
+  flow_mem_copy_bytes += (unsigned long long)n;
+  flow_mem_note_site(site, n);
+}
+static inline void flow_mem_note_stack(size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on) return;
+  flow_mem_stack_bytes += (unsigned long long)n;
+  flow_mem_note_site(FLOW_MEM_SITE_STACK, n);
+}
+static inline void flow_mem_note_arena(size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on) return;
+  flow_mem_arena_bytes += (unsigned long long)n;
+  flow_mem_note_site(FLOW_MEM_SITE_ARENA, n);
 }
 static inline void* flow_mem_malloc(size_t n) {
   void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;
@@ -84,11 +150,15 @@ static inline void* flow_mem_realloc(void* p, size_t n) {
 static inline void flow_mem_free(void* p) {
   size_t n; if (p == 0) return; n = flow_mem_map_take(p); if (n) flow_mem_note_free(n); free(p);
 }
+static inline void* flow_mem_memcpy_site(void* d, const void* s, size_t n, int site) {
+  flow_mem_note_copy_site(site, n); return memcpy(d, s, n);
+}
 static inline void* flow_mem_memcpy(void* d, const void* s, size_t n) {
-  flow_mem_note_copy(n); return memcpy(d, s, n);
+  return flow_mem_memcpy_site(d, s, n, FLOW_MEM_SITE_COPY);
 }
 static void flow_mem_report(void) {
-  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb;
+  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb; int si;
+  unsigned long long promo;
   if (!flow_mem_profile_on) return;
   peak_rss_kb = 0; if (getrusage(0, &ru) == 0) {
 #if defined(__APPLE__)
@@ -97,6 +167,7 @@ static void flow_mem_report(void) {
     peak_rss_kb = (long long)ru.ru_maxrss;
 #endif
   }
+  promo = flow_mem_stack_bytes + flow_mem_arena_bytes;
   path = getenv("FLOW_MEM_PROFILE_OUT"); fp = stderr;
   if (path != 0 && path[0] != 0) { FILE* out = fopen(path, "w"); if (out) fp = out; }
   fprintf(fp, "\n=== Flow memory profile (#740) ===\n");
@@ -106,8 +177,15 @@ static void flow_mem_report(void) {
   fprintf(fp, "peak RSS (kB)         : %lld\n", peak_rss_kb);
   fprintf(fp, "temp lifetime bytes   : %llu\n", flow_mem_temp_bytes);
   fprintf(fp, "copy volume (bytes)   : %llu\n", flow_mem_copy_bytes);
-  fprintf(fp, "stack/arena promotion : (deferred, needs #669)\n");
-  fprintf(fp, "copy volume by site   : (deferred, needs #669)\n");
+  fprintf(fp, "stack/arena promotion : %llu\n", promo);
+  fprintf(fp, "  stack bytes         : %llu\n", flow_mem_stack_bytes);
+  fprintf(fp, "  arena bytes         : %llu\n", flow_mem_arena_bytes);
+  fprintf(fp, "live map used         : %llu / %d\n", flow_mem_map_used, FLOW_MEM_MAP);
+  fprintf(fp, "live map overflow     : %llu\n", flow_mem_map_overflow);
+  fprintf(fp, "copy volume by site   :\n");
+  for (si = 0; si < FLOW_MEM_NSITE; si++) {
+    fprintf(fp, "  %-6s : %llu bytes in %llu events\n", flow_mem_site_nm[si], flow_mem_site_bytes[si], flow_mem_site_count[si]);
+  }
   fprintf(fp, "==================================\n");
   fprintf(fp, "allocations: %llu\n", flow_mem_alloc_count);
   fprintf(fp, "heap_bytes: %llu\n", flow_mem_alloc_bytes);
@@ -115,6 +193,19 @@ static void flow_mem_report(void) {
   fprintf(fp, "peak_rss_kb: %lld\n", peak_rss_kb);
   fprintf(fp, "temp_bytes: %llu\n", flow_mem_temp_bytes);
   fprintf(fp, "copies: %llu\n", flow_mem_copy_bytes);
+  fprintf(fp, "stack_bytes: %llu\n", flow_mem_stack_bytes);
+  fprintf(fp, "arena_bytes: %llu\n", flow_mem_arena_bytes);
+  fprintf(fp, "promotion_bytes: %llu\n", promo);
+  fprintf(fp, "live_map_used: %llu\n", flow_mem_map_used);
+  fprintf(fp, "live_map_overflow: %llu\n", flow_mem_map_overflow);
+  fprintf(fp, "site_heap: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_HEAP]);
+  fprintf(fp, "site_temp: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_TEMP]);
+  fprintf(fp, "site_concat: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_CONCAT]);
+  fprintf(fp, "site_sort: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_SORT]);
+  fprintf(fp, "site_array: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_ARRAY]);
+  fprintf(fp, "site_copy: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_COPY]);
+  fprintf(fp, "site_stack: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_STACK]);
+  fprintf(fp, "site_arena: %llu\n", flow_mem_site_bytes[FLOW_MEM_SITE_ARENA]);
   if (fp != stderr) fclose(fp);
 }
 static void flow_mem_profile_init(void) {
@@ -131,7 +222,7 @@ static inline const char* __flowc_str_concat(const char* a, const char* b) {
   la = strlen(a); lb = strlen(b);
   r = (char*)flow_mem_malloc(la + lb + 1);
   if (r == 0) { return ""; }
-  flow_mem_note_temp(la + lb + 1); flow_mem_note_copy(la + lb);
+  flow_mem_note_temp(la + lb + 1); flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, la + lb);
   memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;
   return r;
 }
@@ -143,7 +234,7 @@ __attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {
   va_end(ap);
   r = (char*)flow_mem_malloc(total + 1);
   if (r == 0) { return ""; }
-  flow_mem_note_temp(total + 1); flow_mem_note_copy(total);
+  flow_mem_note_temp(total + 1); flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, total);
   off = 0;
   va_start(ap, n);
   for (i = 0; i < n; i++) {
@@ -291,9 +382,9 @@ static int flowc_cmp_i32(const void* a, const void* b) { int32_t x = *(const int
 static int flowc_cmp_u8(const void* a, const void* b) { uint8_t x = *(const uint8_t*)a; uint8_t y = *(const uint8_t*)b; return (x > y) - (x < y); }
 static int flowc_cmp_f64(const void* a, const void* b) { double x = *(const double*)a; double y = *(const double*)b; int xu = (x != x), yu = (y != y); if (xu && yu) { union { double d; uint64_t u; } ux, uy; ux.d = x; uy.d = y; return (ux.u < uy.u) - (ux.u > uy.u); } if (xu) { union { double d; uint64_t u; } ux; ux.d = x; return (ux.u >> 63) ? -1 : 1; } if (yu) { union { double d; uint64_t u; } uy; uy.d = y; return (uy.u >> 63) ? 1 : -1; } if (x == y) { union { double d; uint64_t u; } ux, uy; ux.d = x; uy.d = y; return (ux.u < uy.u) - (ux.u > uy.u); } return (x > y) - (x < y); }
 static int flowc_cmp_f32(const void* a, const void* b) { float x = *(const float*)a; float y = *(const float*)b; if (x != x) return 1; if (y != y) return -1; return (x > y) - (x < y); }
-static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; memcpy(tmp, (char*)a + i * sz, sz); memcpy((char*)a + i * sz, (char*)a + j * sz, sz); memcpy((char*)a + j * sz, tmp, sz); i++; j--; } } return 0; }
+static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; flow_mem_note_stack(sizeof(tmp)); flow_mem_memcpy_site(tmp, (char*)a + i * sz, sz, FLOW_MEM_SITE_SORT); flow_mem_memcpy_site((char*)a + i * sz, (char*)a + j * sz, sz, FLOW_MEM_SITE_SORT); flow_mem_memcpy_site((char*)a + j * sz, tmp, sz, FLOW_MEM_SITE_SORT); i++; j--; } } return 0; }
 static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { for (int32_t i = 0; i < n; i++) { if (a[i] == target) return i; } return -1; }
-static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } flow_mem_free(tmp); return 0; }
+static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); flow_mem_note_site(FLOW_MEM_SITE_SORT, (size_t)sz); for (int32_t i = 1; i < n; i++) { flow_mem_memcpy_site(tmp, base + i * sz, sz, FLOW_MEM_SITE_SORT); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { flow_mem_memcpy_site(base + j * sz, base + (j-1) * sz, sz, FLOW_MEM_SITE_SORT); j--; } else break; } flow_mem_memcpy_site(base + j * sz, tmp, sz, FLOW_MEM_SITE_SORT); } flow_mem_free(tmp); return 0; }
 #endif
 
 typedef struct Token {
@@ -684,43 +775,81 @@ int32_t flowc_lex_ident_eq(uint8_t* src, int32_t start, int32_t end, uint8_t* li
 
 int32_t flowc_lex_classify_keyword(uint8_t* src, int32_t start, int32_t end) {
   uint8_t let_kw[3] = { 108, 101, 116 };
+  flow_mem_note_stack(sizeof(let_kw));
   uint8_t fn_kw[8] = { 102, 117, 110, 99, 116, 105, 111, 110 };
+  flow_mem_note_stack(sizeof(fn_kw));
   uint8_t ret_kw[6] = { 114, 101, 116, 117, 114, 110 };
+  flow_mem_note_stack(sizeof(ret_kw));
   uint8_t if_kw[2] = { 105, 102 };
+  flow_mem_note_stack(sizeof(if_kw));
   uint8_t else_kw[4] = { 101, 108, 115, 101 };
+  flow_mem_note_stack(sizeof(else_kw));
   uint8_t elif_kw[4] = { 101, 108, 105, 102 };
+  flow_mem_note_stack(sizeof(elif_kw));
   uint8_t while_kw[5] = { 119, 104, 105, 108, 101 };
+  flow_mem_note_stack(sizeof(while_kw));
   uint8_t for_kw[3] = { 102, 111, 114 };
+  flow_mem_note_stack(sizeof(for_kw));
   uint8_t in_kw[2] = { 105, 110 };
+  flow_mem_note_stack(sizeof(in_kw));
   uint8_t to_kw[2] = { 116, 111 };
+  flow_mem_note_stack(sizeof(to_kw));
   uint8_t struct_kw[6] = { 115, 116, 114, 117, 99, 116 };
+  flow_mem_note_stack(sizeof(struct_kw));
   uint8_t mut_kw[3] = { 109, 117, 116 };
+  flow_mem_note_stack(sizeof(mut_kw));
   uint8_t extern_kw[6] = { 101, 120, 116, 101, 114, 110 };
+  flow_mem_note_stack(sizeof(extern_kw));
   uint8_t true_kw[4] = { 116, 114, 117, 101 };
+  flow_mem_note_stack(sizeof(true_kw));
   uint8_t false_kw[5] = { 102, 97, 108, 115, 101 };
+  flow_mem_note_stack(sizeof(false_kw));
   uint8_t null_kw[4] = { 110, 117, 108, 108 };
+  flow_mem_note_stack(sizeof(null_kw));
   uint8_t import_kw[6] = { 105, 109, 112, 111, 114, 116 };
+  flow_mem_note_stack(sizeof(import_kw));
   uint8_t export_kw[6] = { 101, 120, 112, 111, 114, 116 };
+  flow_mem_note_stack(sizeof(export_kw));
   uint8_t break_kw[5] = { 98, 114, 101, 97, 107 };
+  flow_mem_note_stack(sizeof(break_kw));
   uint8_t continue_kw[8] = { 99, 111, 110, 116, 105, 110, 117, 101 };
+  flow_mem_note_stack(sizeof(continue_kw));
   uint8_t const_kw[5] = { 99, 111, 110, 115, 116 };
+  flow_mem_note_stack(sizeof(const_kw));
   uint8_t as_kw[2] = { 97, 115 };
+  flow_mem_note_stack(sizeof(as_kw));
   uint8_t and_kw[3] = { 97, 110, 100 };
+  flow_mem_note_stack(sizeof(and_kw));
   uint8_t or_kw[2] = { 111, 114 };
+  flow_mem_note_stack(sizeof(or_kw));
   uint8_t match_kw[5] = { 109, 97, 116, 99, 104 };
+  flow_mem_note_stack(sizeof(match_kw));
   uint8_t type_kw[4] = { 116, 121, 112, 101 };
+  flow_mem_note_stack(sizeof(type_kw));
   uint8_t effect_kw[6] = { 101, 102, 102, 101, 99, 116 };
+  flow_mem_note_stack(sizeof(effect_kw));
   uint8_t cap_kw[10] = { 99, 97, 112, 97, 98, 105, 108, 105, 116, 121 };
+  flow_mem_note_stack(sizeof(cap_kw));
   uint8_t not_kw[3] = { 110, 111, 116 };
+  flow_mem_note_stack(sizeof(not_kw));
   uint8_t defer_kw[5] = { 100, 101, 102, 101, 114 };
+  flow_mem_note_stack(sizeof(defer_kw));
   uint8_t enum_kw[4] = { 101, 110, 117, 109 };
+  flow_mem_note_stack(sizeof(enum_kw));
   uint8_t trait_kw[5] = { 116, 114, 97, 105, 116 };
+  flow_mem_note_stack(sizeof(trait_kw));
   uint8_t impl_kw[4] = { 105, 109, 112, 108 };
+  flow_mem_note_stack(sizeof(impl_kw));
   uint8_t test_kw[4] = { 116, 101, 115, 116 };
+  flow_mem_note_stack(sizeof(test_kw));
   uint8_t parallel_kw[8] = { 112, 97, 114, 97, 108, 108, 101, 108 };
+  flow_mem_note_stack(sizeof(parallel_kw));
   uint8_t dbg_kw[3] = { 100, 98, 103 };
+  flow_mem_note_stack(sizeof(dbg_kw));
   uint8_t expect_kw[6] = { 101, 120, 112, 101, 99, 116 };
+  flow_mem_note_stack(sizeof(expect_kw));
   uint8_t default_kw[7] = { 100, 101, 102, 97, 117, 108, 116 };
+  flow_mem_note_stack(sizeof(default_kw));
   uint8_t* p = (uint8_t*)(let_kw);
   if (flowc_lex_ident_eq(src, start, end, p, 3) == 1) {
   return KW_LET;
@@ -2171,6 +2300,7 @@ void flowc_plan_puts(PlanText* t, const char* s) {
 
 void flowc_plan_put_i64(PlanText* t, int64_t v) {
   uint8_t buf[32] = {  };
+  flow_mem_note_stack(sizeof(buf));
   int32_t _n = snprintf((&buf[0]), 32, "%lld", v);
   flowc_plan_puts(t, (const char*)((&buf[0])));
 }
@@ -2641,6 +2771,7 @@ PlanChoice flowc_plan_select(PlanFacts f0, const char* location, const char* det
   (f).order = FLOWC_PLAN_ORDER_UNKNOWN;
 }
   int32_t plans[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(plans));
   int32_t count = 0;
   if ((f).search == 1) {
   plans[0] = FLOWC_PLAN_LINEAR_SCAN;
@@ -2657,8 +2788,11 @@ PlanChoice flowc_plan_select(PlanFacts f0, const char* location, const char* det
 }
 }
   const char* rejected[8] = {  };
+  flow_mem_note_stack(sizeof(rejected));
   int32_t over[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(over));
   double costs[8] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  flow_mem_note_stack(sizeof(costs));
   int32_t viable = 0;
   int32_t over_budget = 0;
   int32_t best = (0 - 1);
@@ -3695,6 +3829,7 @@ uint64_t tid_h_i32(uint64_t h, int32_t value) {
   return tid_h_byte(h, 48);
 }
   uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   int32_t n = 0;
   int32_t v = value;
   while (v > 0) {
@@ -4109,7 +4244,9 @@ uint64_t flowc_type_family_id(AstArena arena, uint8_t* src, int32_t ty) {
 
 uint64_t flowc_type_schema_id(AstArena arena, uint8_t* src, int32_t ty) {
   int32_t starts[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(starts));
   int32_t ends[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(ends));
   uint64_t h = tid_h_lit(tid_h_init(), "v1;sch;");
   return tid_hash_schema_at(h, arena, src, ty, (&starts[0]), (&ends[0]), 0, 0, 1);
 }
@@ -4833,8 +4970,11 @@ void ri_collect_refs(AstArena arena, uint8_t* src, int32_t fn, int32_t expr, int
 
 Region ri_derived_region(AstArena arena, uint8_t* src, int32_t fn, int32_t expr, int32_t fresh_id, int32_t depth) {
   int32_t kinds[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(kinds));
   int32_t idents[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(idents));
   int32_t n[1] = { 0 };
+  flow_mem_note_stack(sizeof(n));
   ri_collect_refs(arena, src, fn, expr, depth, (&kinds[0]), (&idents[0]), (&n[0]));
   if (n[0] == 99 || n[0] > 1) {
   return ri_unknown();
@@ -6638,6 +6778,7 @@ FlowcClaimPath flowc_claim_path_parse(const char* text) {
   uint8_t* p = (uint8_t*)(law);
   int32_t n = (int32_t)(strlen(law));
   uint8_t buf[64] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(buf));
   int32_t i = 0;
   int32_t w = 0;
   while (i < n && w < 63) {
@@ -7299,6 +7440,7 @@ const char* flowc_replace_eq(const char* s) {
   i = (i + 2);
 } else {
   uint8_t buf[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(buf));
   buf[0] = p[i];
   out = mp_str_append(out, (const char*)(buf));
   i = (i + 1);
@@ -7470,6 +7612,7 @@ const char* escape_underscores(const char* s) {
   out = mp_str_append(out, "\\_");
 } else {
   uint8_t buf[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(buf));
   buf[0] = p[i];
   out = mp_str_append(out, (const char*)(buf));
 }
@@ -7507,6 +7650,7 @@ const char* mp_substr(const char* s, int32_t start, int32_t end) {
 
 const char* mp_append_char(const char* s, int32_t c) {
   uint8_t buf[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(buf));
   buf[0] = (uint8_t)(c);
   buf[1] = 0;
   return mp_str_append(s, (const char*)(buf));
@@ -8506,6 +8650,7 @@ const char* flowc_svg_escape(const char* text) {
   result = str_append(result, "&gt;");
 } else {
   uint8_t buf[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(buf));
   buf[0] = c;
   result = str_append(result, (const char*)(buf));
 }
@@ -16245,6 +16390,7 @@ const char* sem_s_itoa(int64_t v) {
   n = (0 - n);
 }
   uint8_t tmp[24] = { [0 ... (24) - 1] = (0) };
+  flow_mem_note_stack(sizeof(tmp));
   int32_t k = 0;
   while (n > 0) {
   tmp[k] = (uint8_t)((48 + (n % 10)));
@@ -32608,6 +32754,7 @@ int32_t type_name_append_i32(uint8_t* out, int32_t cap, int32_t off, int32_t val
   return type_name_append_byte(out, cap, off, 48);
 }
   uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   int32_t n = 0;
   int32_t v = value;
   while (v > 0) {
@@ -41996,6 +42143,7 @@ void flowc_jsgen_put_i32(JsgenBuf* w, int32_t val) {
   return;
 }
   uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   int32_t n = 0;
   while (v > 0) {
   digits[n] = ((v % 10) + 48);
@@ -42590,6 +42738,8 @@ static const int32_t LC_ABORT = 64;
 static const int32_t LC_EXIT = 128;
 #undef LC_FREE
 static const int32_t LC_FREE = 256;
+#undef LC_MEMPROF
+static const int32_t LC_MEMPROF = 512;
 #undef HP_CONCAT
 static const int32_t HP_CONCAT = 1;
 #undef HP_STREQ
@@ -42737,6 +42887,8 @@ int32_t mlg_same_params(Mlg* m, int32_t f, int32_t g);
 void mlg_put_fn_sym(Mlg* m, int32_t k);
 int32_t mlg_fn_entry_of(Mlg* m, int32_t f);
 void mlg_lc_use(Mlg* m, int32_t b);
+void mlg_mem_use(Mlg* m);
+int32_t mlg_put_mem_callee(Mlg* m, int32_t ns, int32_t ne);
 void mlg_hp_use(Mlg* m, int32_t b);
 void mlg_emit_memcpy(Mlg* m, int32_t dst, int32_t src, int32_t n);
 int32_t mlg_is_ui_state(Mlg* m, int32_t e);
@@ -43184,6 +43336,8 @@ int32_t mlg_off_cpu(Mlg* m, int32_t item);
 void mlg_emit_decls(Mlg* m, int32_t root);
 int32_t mlg_lc_declared(Mlg* m, const char* name);
 const char* mlg_szs(Mlg* m);
+void mlg_put_mem_profile(Mlg* m);
+void mlg_put_mem_printf(Mlg* m, int32_t k, const char* gname);
 void mlg_put_lc_decls(Mlg* m);
 void mlg_put_str_of(Mlg* m, const char* name, const char* arg_t, const char* fmt, const char* cap);
 void mlg_put_helpers(Mlg* m);
@@ -43312,6 +43466,7 @@ void mlg_i64(Mlg* m, int64_t val) {
   return;
 }
   uint8_t digits[24] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   int32_t n = 0;
   while (v > 0) {
   digits[n] = (uint8_t)(((v % 10) + 48));
@@ -44906,10 +45061,61 @@ void mlg_lc_use(Mlg* m, int32_t b) {
   (m[0]).lc_need = ((m[0]).lc_need | b);
 }
 
+void mlg_mem_use(Mlg* m) {
+  if (((m[0]).lc_need & LC_MEMPROF) == 0) {
+  mlg_intern_lit(m, "\"FLOW_MEM_PROFILE\"");
+  mlg_intern_lit(m, "\"\\n=== Flow memory profile (#740) ===\\n\"");
+  mlg_intern_lit(m, "\"allocations: %llu\\n\"");
+  mlg_intern_lit(m, "\"heap_bytes: %llu\\n\"");
+  mlg_intern_lit(m, "\"peak_live_heap: %lld\\n\"");
+  mlg_intern_lit(m, "\"temp_bytes: %llu\\n\"");
+  mlg_intern_lit(m, "\"copies: %llu\\n\"");
+  mlg_intern_lit(m, "\"stack_bytes: %llu\\n\"");
+  mlg_intern_lit(m, "\"arena_bytes: %llu\\n\"");
+  mlg_intern_lit(m, "\"promotion_bytes: %llu\\n\"");
+  mlg_intern_lit(m, "\"live_map_overflow: %llu\\n\"");
+  mlg_intern_lit(m, "\"site_concat: %llu\\n\"");
+}
+  mlg_lc_use(m, (((LC_MEMPROF | LC_MALLOC) | LC_MEMCPY) | LC_FREE));
+}
+
+int32_t mlg_put_mem_callee(Mlg* m, int32_t ns, int32_t ne) {
+  if (mlg_span_is(m, ns, ne, "malloc") == 1) {
+  mlg_mem_use(m);
+  mlg_lc_use(m, LC_MALLOC);
+  mlg_s(m, "flow_mem_malloc");
+  return 1;
+}
+  if (mlg_span_is(m, ns, ne, "calloc") == 1) {
+  mlg_mem_use(m);
+  mlg_s(m, "flow_mem_calloc");
+  return 1;
+}
+  if (mlg_span_is(m, ns, ne, "realloc") == 1) {
+  mlg_mem_use(m);
+  mlg_s(m, "flow_mem_realloc");
+  return 1;
+}
+  if (mlg_span_is(m, ns, ne, "free") == 1) {
+  mlg_mem_use(m);
+  mlg_lc_use(m, LC_FREE);
+  mlg_s(m, "flow_mem_free");
+  return 1;
+}
+  if (mlg_span_is(m, ns, ne, "memcpy") == 1) {
+  mlg_mem_use(m);
+  mlg_lc_use(m, LC_MEMCPY);
+  mlg_s(m, "flow_mem_memcpy");
+  return 1;
+}
+  return 0;
+}
+
 void mlg_hp_use(Mlg* m, int32_t b) {
   (m[0]).hp_need = ((m[0]).hp_need | b);
   if (b == HP_CONCAT) {
   mlg_lc_use(m, ((LC_STRLEN | LC_MALLOC) | LC_MEMCPY));
+  mlg_mem_use(m);
   mlg_intern_lit(m, "\"\"");
 }
   if (b == HP_STREQ) {
@@ -44929,14 +45135,17 @@ void mlg_hp_use(Mlg* m, int32_t b) {
 }
   if (b == HP_STR_I64) {
   mlg_lc_use(m, (LC_MALLOC | LC_SNPRINTF));
+  mlg_mem_use(m);
   mlg_intern_lit(m, "\"%lld\"");
 }
   if (b == HP_STR_U64) {
   mlg_lc_use(m, (LC_MALLOC | LC_SNPRINTF));
+  mlg_mem_use(m);
   mlg_intern_lit(m, "\"%llu\"");
 }
   if (b == HP_STR_F64) {
   mlg_lc_use(m, (LC_MALLOC | LC_SNPRINTF));
+  mlg_mem_use(m);
   mlg_intern_lit(m, "\"%f\"");
 }
 }
@@ -44957,7 +45166,8 @@ void mlg_emit_memcpy(Mlg* m, int32_t dst, int32_t src, int32_t n) {
   int32_t r = mlg_new_val(m, MT_PTR);
   mlg_line(m);
   mlg_v(m, r);
-  mlg_s(m, " = func.call @memcpy(");
+  mlg_mem_use(m);
+  mlg_s(m, " = func.call @flow_mem_memcpy(");
   mlg_v(m, dst);
   mlg_s(m, ", ");
   mlg_v(m, src);
@@ -45562,7 +45772,7 @@ int32_t mlg_emit_vector_lit(Mlg* m, int32_t e) {
   int32_t x = (((m[0]).arena).nodes[e]).a;
   int32_t i = 0;
   while (x != AST_NONE) {
-  { __typeof__(vals[i]) __flowc_st11463 = mlg_emit_expr(m, x); vals[i] = __flowc_st11463; }
+  { __typeof__(vals[i]) __flowc_st11668 = mlg_emit_expr(m, x); vals[i] = __flowc_st11668; }
   i = (i + 1);
   x = (((m[0]).arena).nodes[x]).next;
 }
@@ -45799,6 +46009,7 @@ int32_t mlg_expr_mt(Mlg* m, int32_t e) {
   if (k >= 0) {
   if (mlg_call_is_libc(m, e, k) == 1) {
   int32_t kpts[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(kpts));
   int32_t knp = 0;
   return mlg_libc_sig(m, mlg_ns(m, e), mlg_ne(m, e), (&kpts[0]), (&knp));
 }
@@ -45814,6 +46025,7 @@ int32_t mlg_expr_mt(Mlg* m, int32_t e) {
   return MT_F32;
 }
   int32_t lpts[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(lpts));
   int32_t lnp = 0;
   int32_t lrt = mlg_libc_sig(m, mlg_ns(m, e), mlg_ne(m, e), (&lpts[0]), (&lnp));
   if (lrt != MT_NONE) {
@@ -46927,7 +47139,9 @@ int32_t mlg_emit_printf_call(Mlg* m, int32_t e) {
   return V_NONE;
 }
   int32_t vals[32] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(vals));
   int32_t tys[32] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tys));
   int32_t a = (((m[0]).arena).nodes[fmt]).next;
   int32_t i = 0;
   while (a != AST_NONE) {
@@ -47194,6 +47408,7 @@ int32_t mlg_libc_mode(Mlg* m, int32_t k) {
 }
   int32_t f = (m[0]).fn_node[k];
   int32_t pts[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(pts));
   int32_t np = 0;
   if (mlg_libc_sig(m, mlg_ns(m, f), mlg_ne(m, f), (&pts[0]), (&np)) == MT_NONE) {
   return 0;
@@ -47295,7 +47510,9 @@ int32_t mlg_emit_sizeof(Mlg* m, int32_t t) {
 
 void mlg_put_u64_hex(Mlg* m, uint64_t val) {
   uint8_t hex[16] = { 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102 };
+  flow_mem_note_stack(sizeof(hex));
   uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   uint64_t v = val;
   int32_t n = 0;
   if (v == 0) {
@@ -47429,6 +47646,7 @@ int32_t mlg_emit_unknown_call(Mlg* m, int32_t e, int32_t want_value) {
   return V_NONE;
 }
   int32_t pts[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(pts));
   int32_t np = 0;
   int32_t rt = MT_NONE;
   int32_t u = mlg_uk_find(m, ns, ne);
@@ -47488,6 +47706,7 @@ int32_t mlg_emit_unknown_call(Mlg* m, int32_t e, int32_t want_value) {
   return V_NONE;
 }
   int32_t vals[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(vals));
   int32_t j = 0;
   for (; j < (nargs); j = j + 1) {
   int32_t an1 = mlg_chain_at(m, args, j);
@@ -47514,7 +47733,9 @@ int32_t mlg_emit_unknown_call(Mlg* m, int32_t e, int32_t want_value) {
   mlg_s(m, " = ");
 }
   mlg_s(m, "func.call @");
+  if (mlg_put_mem_callee(m, ns, ne) == 0) {
   mlg_span(m, ns, ne);
+}
   mlg_s(m, "(");
   int32_t w2 = 0;
   for (; w2 < (nargs); w2 = w2 + 1) {
@@ -47708,7 +47929,7 @@ int32_t mlg_emit_array_ctor(Mlg* m, int32_t e) {
   int32_t i = 0;
   int32_t an = args;
   for (; i < (nargs); i = i + 1) {
-  { __typeof__(vals[i]) __flowc_st21492 = mlg_emit_expr(m, an); vals[i] = __flowc_st21492; }
+  { __typeof__(vals[i]) __flowc_st21705 = mlg_emit_expr(m, an); vals[i] = __flowc_st21705; }
   an = (((m[0]).arena).nodes[an]).next;
 }
   if ((m[0]).err != 0) {
@@ -47914,9 +48135,9 @@ int32_t mlg_method_call_node0(Mlg* m, int32_t e) {
   int32_t k = mlg_find_fn_join(m, mlg_ns(m, cap), mlg_ne(m, cap), ns, ne);
   if (k >= 0) {
   int32_t f = (m[0]).fn_node[k];
-  { __typeof__((((m[0]).arena).nodes[t]).start) __flowc_st22699 = mlg_ns(m, f); (((m[0]).arena).nodes[t]).start = __flowc_st22699; }
-  { __typeof__((((m[0]).arena).nodes[t]).name_start) __flowc_st22711 = mlg_ns(m, f); (((m[0]).arena).nodes[t]).name_start = __flowc_st22711; }
-  { __typeof__((((m[0]).arena).nodes[t]).name_end) __flowc_st22723 = mlg_ne(m, f); (((m[0]).arena).nodes[t]).name_end = __flowc_st22723; }
+  { __typeof__((((m[0]).arena).nodes[t]).start) __flowc_st22912 = mlg_ns(m, f); (((m[0]).arena).nodes[t]).start = __flowc_st22912; }
+  { __typeof__((((m[0]).arena).nodes[t]).name_start) __flowc_st22924 = mlg_ns(m, f); (((m[0]).arena).nodes[t]).name_start = __flowc_st22924; }
+  { __typeof__((((m[0]).arena).nodes[t]).name_end) __flowc_st22936 = mlg_ne(m, f); (((m[0]).arena).nodes[t]).name_end = __flowc_st22936; }
   return t;
 }
 }
@@ -47928,9 +48149,9 @@ int32_t mlg_method_call_node0(Mlg* m, int32_t e) {
   int32_t k2 = mlg_find_fn_join(m, mlg_ns(m, d), mlg_ne(m, d), ns, ne);
   if (k2 >= 0) {
   int32_t f2 = (m[0]).fn_node[k2];
-  { __typeof__((((m[0]).arena).nodes[t]).start) __flowc_st22790 = mlg_ns(m, f2); (((m[0]).arena).nodes[t]).start = __flowc_st22790; }
-  { __typeof__((((m[0]).arena).nodes[t]).name_start) __flowc_st22802 = mlg_ns(m, f2); (((m[0]).arena).nodes[t]).name_start = __flowc_st22802; }
-  { __typeof__((((m[0]).arena).nodes[t]).name_end) __flowc_st22814 = mlg_ne(m, f2); (((m[0]).arena).nodes[t]).name_end = __flowc_st22814; }
+  { __typeof__((((m[0]).arena).nodes[t]).start) __flowc_st23003 = mlg_ns(m, f2); (((m[0]).arena).nodes[t]).start = __flowc_st23003; }
+  { __typeof__((((m[0]).arena).nodes[t]).name_start) __flowc_st23015 = mlg_ns(m, f2); (((m[0]).arena).nodes[t]).name_start = __flowc_st23015; }
+  { __typeof__((((m[0]).arena).nodes[t]).name_end) __flowc_st23027 = mlg_ne(m, f2); (((m[0]).arena).nodes[t]).name_end = __flowc_st23027; }
 }
 }
   return t;
@@ -48187,7 +48408,7 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   int32_t ai = 0;
   int32_t ap = (((m[0]).arena).nodes[e]).a;
   while (ap != AST_NONE) {
-  { __typeof__(avs[ai]) __flowc_st23830 = mlg_emit_expr(m, ap); avs[ai] = __flowc_st23830; }
+  { __typeof__(avs[ai]) __flowc_st24043 = mlg_emit_expr(m, ap); avs[ai] = __flowc_st24043; }
   ai = (ai + 1);
   ap = (((m[0]).arena).nodes[ap]).next;
 }
@@ -48461,7 +48682,9 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   return V_NONE;
 }
   int32_t vals[32] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(vals));
   int32_t exp[32] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(exp));
   int32_t i = 0;
   for (; i < (np); i = i + 1) {
   int32_t pn = mlg_chain_at(m, params, i);
@@ -48525,8 +48748,11 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
 }
 }
   int32_t cpb_src[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(cpb_src));
   int32_t cpb_tmp[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(cpb_tmp));
   int32_t cpb_bytes[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(cpb_bytes));
   int32_t ncpb = 0;
   int32_t c = 0;
   for (; c < (nmin); c = c + 1) {
@@ -48673,7 +48899,7 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   if ((m[0]).l_alloca[l] != V_NONE) {
   mlg_store(m, fresh, (m[0]).l_alloca[l], lt);
 } else {
-  { __typeof__((m[0]).l_alloca[l]) __flowc_st26342 = mlg_alloca_store(m, fresh, lt); (m[0]).l_alloca[l] = __flowc_st26342; }
+  { __typeof__((m[0]).l_alloca[l]) __flowc_st26555 = mlg_alloca_store(m, fresh, lt); (m[0]).l_alloca[l] = __flowc_st26555; }
 }
 }
 }
@@ -49251,7 +49477,7 @@ int32_t mlg_sort_cmp(Mlg* m, int32_t e, int32_t pa, int32_t pb, int32_t et, int3
   int32_t a = mlg_load(m, mlg_struct_gep(m, pa, sk, idx), fmt);
   int32_t b = mlg_load(m, mlg_struct_gep(m, pb, sk, idx), fmt);
   int32_t r = mlg_sort_ord(m, k, a, b, fmt, mlg_ft_unsigned(m, fty), mlg_ft_is_string(m, fty));
-  { __typeof__(vals[nk]) __flowc_st28880 = mlg_neg_if(m, r, desc); vals[nk] = __flowc_st28880; }
+  { __typeof__(vals[nk]) __flowc_st29093 = mlg_neg_if(m, r, desc); vals[nk] = __flowc_st29093; }
   nk = (nk + 1);
   k = (((m[0]).arena).nodes[k]).next;
 }
@@ -49276,7 +49502,7 @@ int32_t mlg_sort_site_n(Mlg* m, int32_t arr, int32_t* et, int32_t* eft) {
   return (0 - 1);
 }
   eft[0] = (((m[0]).arena).nodes[aft]).a;
-  { __typeof__(et[0]) __flowc_st29016 = mlg_ft_to_mt(m, eft[0], arr); et[0] = __flowc_st29016; }
+  { __typeof__(et[0]) __flowc_st29229 = mlg_ft_to_mt(m, eft[0], arr); et[0] = __flowc_st29229; }
   if (et[0] == MT_NONE) {
   return (0 - 1);
 }
@@ -49429,7 +49655,8 @@ void mlg_emit_msort(Mlg* m, int32_t e, int32_t base, int32_t n, int32_t et, int3
   int32_t buf = mlg_new_val(m, MT_PTR);
   mlg_line(m);
   mlg_v(m, buf);
-  mlg_s(m, " = func.call @malloc(");
+  mlg_mem_use(m);
+  mlg_s(m, " = func.call @flow_mem_malloc(");
   mlg_v(m, bytes);
   mlg_s(m, ") : (i64) -> !llvm.ptr");
   mlg_nl(m);
@@ -49447,8 +49674,8 @@ void mlg_emit_msort(Mlg* m, int32_t e, int32_t base, int32_t n, int32_t et, int3
   t[2] = MT_PTR;
   int32_t q = 0;
   for (; q < (3); q = q + 1) {
-  { __typeof__(r[q]) __flowc_st29804 = mlg_new_val(m, t[q]); r[q] = __flowc_st29804; }
-  { __typeof__(a[q]) __flowc_st29813 = mlg_new_val(m, t[q]); a[q] = __flowc_st29813; }
+  { __typeof__(r[q]) __flowc_st30020 = mlg_new_val(m, t[q]); r[q] = __flowc_st30020; }
+  { __typeof__(a[q]) __flowc_st30029 = mlg_new_val(m, t[q]); a[q] = __flowc_st30029; }
 }
   init[0] = c1;
   init[1] = base;
@@ -49459,7 +49686,7 @@ void mlg_emit_msort(Mlg* m, int32_t e, int32_t base, int32_t n, int32_t et, int3
   int32_t more = mlg_emit_cmpi(m, "slt", a[0], cn, MT_I64);
   q = 0;
   for (; q < (3); q = q + 1) {
-  { __typeof__(b[q]) __flowc_st29881 = mlg_new_val(m, t[q]); b[q] = __flowc_st29881; }
+  { __typeof__(b[q]) __flowc_st30097 = mlg_new_val(m, t[q]); b[q] = __flowc_st30097; }
 }
   mlg_while3_mid(m, more, a, tys, b, t);
   int32_t w1 = b[0];
@@ -49478,8 +49705,8 @@ void mlg_emit_msort(Mlg* m, int32_t e, int32_t base, int32_t n, int32_t et, int3
   q = 0;
   for (; q < (3); q = q + 1) {
   t2[q] = MT_I64;
-  { __typeof__(r2[q]) __flowc_st30000 = mlg_new_val(m, MT_I64); r2[q] = __flowc_st30000; }
-  { __typeof__(a2[q]) __flowc_st30007 = mlg_new_val(m, MT_I64); a2[q] = __flowc_st30007; }
+  { __typeof__(r2[q]) __flowc_st30216 = mlg_new_val(m, MT_I64); r2[q] = __flowc_st30216; }
+  { __typeof__(a2[q]) __flowc_st30223 = mlg_new_val(m, MT_I64); a2[q] = __flowc_st30223; }
 }
   init2[0] = lo;
   init2[1] = mid;
@@ -49490,7 +49717,7 @@ void mlg_emit_msort(Mlg* m, int32_t e, int32_t base, int32_t n, int32_t et, int3
   int32_t km = mlg_emit_cmpi(m, "slt", a2[2], hi, MT_I64);
   q = 0;
   for (; q < (3); q = q + 1) {
-  { __typeof__(b2[q]) __flowc_st30073 = mlg_new_val(m, MT_I64); b2[q] = __flowc_st30073; }
+  { __typeof__(b2[q]) __flowc_st30289 = mlg_new_val(m, MT_I64); b2[q] = __flowc_st30289; }
 }
   mlg_while3_mid(m, km, a2, tys2, b2, t2);
   int32_t i1 = b2[0];
@@ -49537,7 +49764,8 @@ void mlg_emit_msort(Mlg* m, int32_t e, int32_t base, int32_t n, int32_t et, int3
   mlg_close_region(m);
   mlg_close_region(m);
   mlg_line(m);
-  mlg_s(m, "func.call @free(");
+  mlg_mem_use(m);
+  mlg_s(m, "func.call @flow_mem_free(");
   mlg_v(m, buf);
   mlg_s(m, ") : (!llvm.ptr) -> ()");
   mlg_nl(m);
@@ -51608,19 +51836,19 @@ int32_t mlg_capture_info(Mlg* m, int32_t ns, int32_t ne, int32_t* mt, int32_t* f
   mt[0] = (m[0]).l_mt[l];
   ft[0] = (m[0]).l_ft[l];
   if (mlg_ft_is_fn(m, ft[0]) == 1) {
-  { __typeof__(mt[0]) __flowc_st39461 = mlg_clo_mt(m, AST_NONE); mt[0] = __flowc_st39461; }
+  { __typeof__(mt[0]) __flowc_st39680 = mlg_clo_mt(m, AST_NONE); mt[0] = __flowc_st39680; }
 }
   return 1;
 }
   int32_t ck = mlg_find_const(m, ns, ne);
   if (ck >= 0) {
-  { __typeof__(mt[0]) __flowc_st39483 = mlg_const_mt(m, ck); mt[0] = __flowc_st39483; }
+  { __typeof__(mt[0]) __flowc_st39702 = mlg_const_mt(m, ck); mt[0] = __flowc_st39702; }
   ft[0] = (((m[0]).arena).nodes[(m[0]).c_node[ck]]).a;
   return 1;
 }
   int32_t sk = mlg_find_static(m, ns, ne);
   if (sk >= 0) {
-  { __typeof__(mt[0]) __flowc_st39520 = mlg_static_mt(m, sk); mt[0] = __flowc_st39520; }
+  { __typeof__(mt[0]) __flowc_st39739 = mlg_static_mt(m, sk); mt[0] = __flowc_st39739; }
   if (mlg_static_llarr(m, sk) != MT_NONE) {
   mt[0] = MT_PTR;
 }
@@ -51938,7 +52166,9 @@ int32_t mlg_emit_fat_call(Mlg* m, int32_t e, int32_t l, int32_t want_value) {
   return V_NONE;
 }
   int32_t vals[32] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(vals));
   int32_t tys[32] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tys));
   int32_t an = args;
   int32_t pt = ptys;
   int32_t i = 0;
@@ -52085,9 +52315,10 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   mlg_nl(m);
   env = mlg_new_val(m, MT_PTR);
   mlg_lc_use(m, LC_MALLOC);
+  mlg_mem_use(m);
   mlg_line(m);
   mlg_v(m, env);
-  mlg_s(m, " = func.call @malloc(");
+  mlg_s(m, " = func.call @flow_mem_malloc(");
   mlg_v(m, sz);
   mlg_s(m, ") : (");
   mlg_s(m, szs);
@@ -52138,7 +52369,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   int32_t p = params;
   i = 0;
   while (p != AST_NONE) {
-  { __typeof__(pts[i]) __flowc_st41948 = mlg_lam_param_mt(m, p); pts[i] = __flowc_st41948; }
+  { __typeof__(pts[i]) __flowc_st42170 = mlg_lam_param_mt(m, p); pts[i] = __flowc_st42170; }
   if (pts[i] == MT_NONE) {
   return V_NONE;
 }
@@ -52184,7 +52415,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   (m[0]).inside_scf_for = 0;
   (m[0]).ret_mt = rt;
   (m[0]).ret_ft = (((m[0]).arena).nodes[f]).b;
-  { __typeof__((m[0]).env_val) __flowc_st42189 = mlg_new_val(m, MT_PTR); (m[0]).env_val = __flowc_st42189; }
+  { __typeof__((m[0]).env_val) __flowc_st42411 = mlg_new_val(m, MT_PTR); (m[0]).env_val = __flowc_st42411; }
   mlg_line(m);
   mlg_s(m, "func.func private @lambda_");
   mlg_i(m, lam_id);
@@ -52221,7 +52452,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   i = 0;
   while (p != AST_NONE) {
   (m[0]).at[i] = pts[i];
-  { __typeof__((m[0]).au[i]) __flowc_st42385 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).b); (m[0]).au[i] = __flowc_st42385; }
+  { __typeof__((m[0]).au[i]) __flowc_st42607 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).b); (m[0]).au[i] = __flowc_st42607; }
   (m[0]).a_llarr[i] = 0;
   mlg_add_local(m, mlg_ns(m, p), mlg_ne(m, p), pts[i], (((m[0]).arena).nodes[p]).b, ((0 - 1) - i));
   i = (i + 1);
@@ -52624,7 +52855,8 @@ int32_t mlg_emit_llarr_buf(Mlg* m, int32_t la) {
   mlg_nl(m);
   mlg_line(m);
   mlg_v(m, p);
-  mlg_s(m, " = func.call @malloc(");
+  mlg_mem_use(m);
+  mlg_s(m, " = func.call @flow_mem_malloc(");
   mlg_v(m, sz);
   mlg_s(m, ") : (");
   mlg_s(m, mlg_szs(m));
@@ -52643,6 +52875,22 @@ int32_t mlg_emit_llarr_buf(Mlg* m, int32_t la) {
   mlg_s(m, " x ");
   mlg_put_type(m, la);
   mlg_s(m, " : (i64) -> !llvm.ptr");
+  mlg_nl(m);
+  mlg_mem_use(m);
+  int32_t nb = mlg_new_val(m, MT_I64);
+  mlg_line(m);
+  mlg_v(m, nb);
+  mlg_s(m, " = arith.constant ");
+  mlg_i64(m, bytes);
+  mlg_s(m, " : ");
+  mlg_s(m, mlg_szs(m));
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "func.call @flow_mem_note_stack(");
+  mlg_v(m, nb);
+  mlg_s(m, ") : (");
+  mlg_s(m, mlg_szs(m));
+  mlg_s(m, ") -> ()");
   mlg_nl(m);
 }
   (m[0]).v_llarr[p] = la;
@@ -52746,7 +52994,7 @@ int32_t mlg_emit_memref_lit(Mlg* m, int32_t e, int32_t hint) {
   int32_t n = 0;
   int32_t el = (((m[0]).arena).nodes[e]).a;
   while (n < total && (m[0]).err == 0) {
-  { __typeof__(vals[n]) __flowc_st44695 = mlg_emit_expr(m, el); vals[n] = __flowc_st44695; }
+  { __typeof__(vals[n]) __flowc_st44982 = mlg_emit_expr(m, el); vals[n] = __flowc_st44982; }
   n = (n + 1);
   if (rep < 0) {
   el = (((m[0]).arena).nodes[el]).next;
@@ -52766,7 +53014,7 @@ int32_t mlg_emit_memref_lit(Mlg* m, int32_t e, int32_t hint) {
   while (i < n) {
   int32_t st = mlg_val_mt(m, vals[i], el);
   if (st != hint) {
-  { __typeof__(vals[i]) __flowc_st44790 = mlg_cast(m, vals[i], st, hint); vals[i] = __flowc_st44790; }
+  { __typeof__(vals[i]) __flowc_st45077 = mlg_cast(m, vals[i], st, hint); vals[i] = __flowc_st45077; }
 }
   i = (i + 1);
   if (rep < 0) {
@@ -52891,7 +53139,7 @@ int32_t mlg_emit_array_lit(Mlg* m, int32_t e, int32_t la) {
   int32_t n = 0;
   int32_t el = (((m[0]).arena).nodes[e]).a;
   while (n < total && (m[0]).err == 0) {
-  { __typeof__(vals[n]) __flowc_st45324 = mlg_emit_expr(m, el); vals[n] = __flowc_st45324; }
+  { __typeof__(vals[n]) __flowc_st45611 = mlg_emit_expr(m, el); vals[n] = __flowc_st45611; }
   n = (n + 1);
   if (rep < 0) {
   el = (((m[0]).arena).nodes[el]).next;
@@ -52918,7 +53166,7 @@ int32_t mlg_emit_array_lit(Mlg* m, int32_t e, int32_t la) {
   st = mlg_expr_mt(m, el);
 }
   if (st != store_t) {
-  { __typeof__(vals[i]) __flowc_st45460 = mlg_cast(m, vals[i], st, store_t); vals[i] = __flowc_st45460; }
+  { __typeof__(vals[i]) __flowc_st45747 = mlg_cast(m, vals[i], st, store_t); vals[i] = __flowc_st45747; }
 }
   i = (i + 1);
   if (rep < 0) {
@@ -53113,7 +53361,7 @@ int32_t mlg_lambda_fn_ft(Mlg* m, int32_t f) {
   (((m[0]).arena).nodes[t]).a = head;
   int32_t rt = (((m[0]).arena).nodes[f]).b;
   if (rt == AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[t]).b) __flowc_st46491 = mlg_named_ft(m, 1, "i32"); (((m[0]).arena).nodes[t]).b = __flowc_st46491; }
+  { __typeof__((((m[0]).arena).nodes[t]).b) __flowc_st46778 = mlg_named_ft(m, 1, "i32"); (((m[0]).arena).nodes[t]).b = __flowc_st46778; }
 } else {
   (((m[0]).arena).nodes[t]).b = rt;
 }
@@ -53216,7 +53464,7 @@ void mlg_emit_let(Mlg* m, int32_t st) {
   int32_t l = mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), vt, ty, v);
   int32_t is_mut = (((m[0]).arena).nodes[st]).ival;
   if (mlg_uses_alloca_storage(m, mt, is_mut) == 1) {
-  { __typeof__((m[0]).l_alloca[l]) __flowc_st46927 = mlg_alloca_store(m, v, mt); (m[0]).l_alloca[l] = __flowc_st46927; }
+  { __typeof__((m[0]).l_alloca[l]) __flowc_st47214 = mlg_alloca_store(m, v, mt); (m[0]).l_alloca[l] = __flowc_st47214; }
 }
   int32_t tag = mlg_vllarr(m, v);
   if (tag != 0) {
@@ -53485,7 +53733,8 @@ void mlg_emit_return(Mlg* m, int32_t st) {
   int32_t cpr = mlg_new_val(m, MT_PTR);
   mlg_line(m);
   mlg_v(m, cpr);
-  mlg_s(m, " = func.call @memcpy(");
+  mlg_mem_use(m);
+  mlg_s(m, " = func.call @flow_mem_memcpy(");
   mlg_v(m, hp);
   mlg_s(m, ", ");
   mlg_v(m, v);
@@ -53638,7 +53887,8 @@ void mlg_emit_assign(Mlg* m, int32_t st) {
   int32_t cp = mlg_new_val(m, MT_PTR);
   mlg_line(m);
   mlg_v(m, cp);
-  mlg_s(m, " = func.call @memcpy(");
+  mlg_mem_use(m);
+  mlg_s(m, " = func.call @flow_mem_memcpy(");
   mlg_v(m, (m[0]).l_ssa[l]);
   mlg_s(m, ", ");
   mlg_v(m, v);
@@ -54420,7 +54670,7 @@ void mlg_emit_scf_if_yield(Mlg* m, int32_t st, int32_t cv, int32_t* locs, int32_
   mlg_line(m);
   int32_t i = 0;
   for (; i < (nm); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st52406 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st52406; }
+  { __typeof__(res[i]) __flowc_st52699 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st52699; }
   if (i > 0) {
   mlg_s(m, ", ");
 }
@@ -54731,8 +54981,8 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
   return MP_WILD;
 }
   if (pk == 2) {
-  { __typeof__(ns[0]) __flowc_st53879 = mlg_ns(m, arm); ns[0] = __flowc_st53879; }
-  { __typeof__(ne[0]) __flowc_st53886 = mlg_ne(m, arm); ne[0] = __flowc_st53886; }
+  { __typeof__(ns[0]) __flowc_st54172 = mlg_ns(m, arm); ns[0] = __flowc_st54172; }
+  { __typeof__(ne[0]) __flowc_st54179 = mlg_ne(m, arm); ne[0] = __flowc_st54179; }
   if (mlg_enum_tag(m, ns[0], ne[0], (&vi)) >= 0) {
   return MP_CMP;
 }
@@ -54741,14 +54991,14 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
   if (pk == 0 || pk == 3 || pk == 4) {
   int32_t lit = (((m[0]).arena).nodes[arm]).a;
   if (mlg_kind(m, lit) == AST_IDENT) {
-  { __typeof__(ns[0]) __flowc_st53939 = mlg_ns(m, lit); ns[0] = __flowc_st53939; }
-  { __typeof__(ne[0]) __flowc_st53946 = mlg_ne(m, lit); ne[0] = __flowc_st53946; }
+  { __typeof__(ns[0]) __flowc_st54232 = mlg_ns(m, lit); ns[0] = __flowc_st54232; }
+  { __typeof__(ne[0]) __flowc_st54239 = mlg_ne(m, lit); ne[0] = __flowc_st54239; }
 }
   return MP_CMP;
 }
   if (pk == 5) {
-  { __typeof__(ns[0]) __flowc_st53962 = mlg_ns(m, arm); ns[0] = __flowc_st53962; }
-  { __typeof__(ne[0]) __flowc_st53969 = mlg_ne(m, arm); ne[0] = __flowc_st53969; }
+  { __typeof__(ns[0]) __flowc_st54255 = mlg_ns(m, arm); ns[0] = __flowc_st54255; }
+  { __typeof__(ne[0]) __flowc_st54262 = mlg_ne(m, arm); ne[0] = __flowc_st54262; }
   return MP_STRUCT;
 }
   if (pk == 6) {
@@ -54759,8 +55009,8 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
 }
   int32_t k = mlg_kind(m, p);
   if (k == AST_IDENT) {
-  { __typeof__(ns[0]) __flowc_st54004 = mlg_ns(m, p); ns[0] = __flowc_st54004; }
-  { __typeof__(ne[0]) __flowc_st54011 = mlg_ne(m, p); ne[0] = __flowc_st54011; }
+  { __typeof__(ns[0]) __flowc_st54297 = mlg_ns(m, p); ns[0] = __flowc_st54297; }
+  { __typeof__(ne[0]) __flowc_st54304 = mlg_ne(m, p); ne[0] = __flowc_st54304; }
   if ((ne[0] - ns[0]) == 1 && (m[0]).src[ns[0]] == 95) {
   return MP_WILD;
 }
@@ -54773,8 +55023,8 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
   return MP_CMP;
 }
   if (k == AST_CALL && mlg_struct_pat_ok(m, p) == 1) {
-  { __typeof__(ns[0]) __flowc_st54090 = mlg_ns(m, p); ns[0] = __flowc_st54090; }
-  { __typeof__(ne[0]) __flowc_st54097 = mlg_ne(m, p); ne[0] = __flowc_st54097; }
+  { __typeof__(ns[0]) __flowc_st54383 = mlg_ns(m, p); ns[0] = __flowc_st54383; }
+  { __typeof__(ne[0]) __flowc_st54390 = mlg_ne(m, p); ne[0] = __flowc_st54390; }
   return MP_STRUCT;
 }
   if (k == AST_UNARY && (((m[0]).arena).nodes[p]).ival == TOK_MINUS) {
@@ -54888,7 +55138,7 @@ int32_t mlg_emit_list_pattern(Mlg* m, int32_t arm, int32_t scrut, int32_t val, i
   return V_NONE;
 }
   int32_t l = mlg_add_local(m, mlg_ns(m, tmp), mlg_ne(m, tmp), val_t, mlg_expr_ft(m, scrut), val);
-  { __typeof__((m[0]).l_llarr[l]) __flowc_st54652 = mlg_vllarr(m, val); (m[0]).l_llarr[l] = __flowc_st54652; }
+  { __typeof__((m[0]).l_llarr[l]) __flowc_st54945 = mlg_vllarr(m, val); (m[0]).l_llarr[l] = __flowc_st54945; }
   uint8_t* digits = (uint8_t*)(flow_mem_malloc(16));
   int32_t* conds = (int32_t*)(mlg_alloc_i32(64));
   int32_t nconds = 0;
@@ -55113,8 +55363,8 @@ void mlg_emit_match(Mlg* m, int32_t st) {
   int32_t* next_l = (int32_t*)(mlg_alloc_i32(nc));
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(case_l[i]) __flowc_st55696 = mlg_new_label(m); case_l[i] = __flowc_st55696; }
-  { __typeof__(next_l[i]) __flowc_st55702 = mlg_new_label(m); next_l[i] = __flowc_st55702; }
+  { __typeof__(case_l[i]) __flowc_st55989 = mlg_new_label(m); case_l[i] = __flowc_st55989; }
+  { __typeof__(next_l[i]) __flowc_st55995 = mlg_new_label(m); next_l[i] = __flowc_st55995; }
 }
   int32_t end_l = mlg_new_label(m);
   int32_t arms_term = 1;
@@ -55870,11 +56120,11 @@ void mlg_emit_scf_for(Mlg* m, int32_t st, int32_t step_val) {
   mlg_line(m);
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(its[i]) __flowc_st59164 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); its[i] = __flowc_st59164; }
+  { __typeof__(its[i]) __flowc_st59457 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); its[i] = __flowc_st59457; }
 }
   i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st59193 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st59193; }
+  { __typeof__(res[i]) __flowc_st59486 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st59486; }
   if (i > 0) {
   mlg_s(m, ", ");
 }
@@ -56343,8 +56593,11 @@ void mlg_emit_scf_parallel(Mlg* m, int32_t st, int32_t step_val) {
   return;
 }
   int32_t bounds[2] = { lo, hi };
+  flow_mem_note_stack(sizeof(bounds));
   int32_t exprs[2] = { lo_e, hi_e };
+  flow_mem_note_stack(sizeof(exprs));
   int32_t idx[2] = { lo, hi };
+  flow_mem_note_stack(sizeof(idx));
   int32_t i = 0;
   for (; i < (2); i = i + 1) {
   int32_t t = mlg_val_mt(m, bounds[i], exprs[i]);
@@ -57148,7 +57401,7 @@ void mlg_emit_function(Mlg* m, int32_t f) {
 }
 }
   (m[0]).at[i] = pt;
-  { __typeof__((m[0]).au[i]) __flowc_st65106 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).a); (m[0]).au[i] = __flowc_st65106; }
+  { __typeof__((m[0]).au[i]) __flowc_st65399 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).a); (m[0]).au[i] = __flowc_st65399; }
   (m[0]).a_llarr[i] = 0;
   int32_t la = mlg_llarr_from_ft(m, (((m[0]).arena).nodes[p]).a, p);
   if (la != MT_NONE) {
@@ -57182,7 +57435,7 @@ void mlg_emit_function(Mlg* m, int32_t f) {
   int32_t c = mlg_materialize(m, ((0 - 1) - i), pt2);
   (m[0]).l_ssa[l] = c;
   if (mlg_st32(m) == 0) {
-  { __typeof__((m[0]).l_alloca[l]) __flowc_st65321 = mlg_alloca_store(m, c, pt2); (m[0]).l_alloca[l] = __flowc_st65321; }
+  { __typeof__((m[0]).l_alloca[l]) __flowc_st65614 = mlg_alloca_store(m, c, pt2); (m[0]).l_alloca[l] = __flowc_st65614; }
 }
 }
   i = (i + 1);
@@ -57905,8 +58158,8 @@ void mlg_add_enum(Mlg* m, int32_t d) {
   if (s == AST_NONE) {
   return;
 }
-  { __typeof__((((m[0]).arena).nodes[s]).name_start) __flowc_st68817 = mlg_ns(m, d); (((m[0]).arena).nodes[s]).name_start = __flowc_st68817; }
-  { __typeof__((((m[0]).arena).nodes[s]).name_end) __flowc_st68829 = mlg_ne(m, d); (((m[0]).arena).nodes[s]).name_end = __flowc_st68829; }
+  { __typeof__((((m[0]).arena).nodes[s]).name_start) __flowc_st69110 = mlg_ns(m, d); (((m[0]).arena).nodes[s]).name_start = __flowc_st69110; }
+  { __typeof__((((m[0]).arena).nodes[s]).name_end) __flowc_st69122 = mlg_ne(m, d); (((m[0]).arena).nodes[s]).name_end = __flowc_st69122; }
   uint8_t* tag_s = (uint8_t*)("tag");
   uint8_t* i32_s = (uint8_t*)("i32");
   int32_t tagn = mlg_xput(m, tag_s, 3);
@@ -59593,7 +59846,7 @@ int32_t mn_split_flat(Mlg* m, uint8_t* buf, int32_t n, int32_t* out, int32_t cap
   while (i <= n) {
   if (i == n || buf[i] == 95) {
   if (k < cap) {
-  { __typeof__(out[k]) __flowc_st76604 = mn_flat_buf(m, (buf + s), (i - s)); out[k] = __flowc_st76604; }
+  { __typeof__(out[k]) __flowc_st76897 = mn_flat_buf(m, (buf + s), (i - s)); out[k] = __flowc_st76897; }
 }
   k = (k + 1);
   s = (i + 1);
@@ -59730,7 +59983,7 @@ void mn_request_call(Mlg* m, Mono* mo, int32_t e) {
   int32_t np = (mo[0]).gf_ntp[i];
   int32_t sfx = ((s + gl) + 1);
   if (np == 1) {
-  { __typeof__(targs[0]) __flowc_st77305 = mn_flat(m, sfx, t); targs[0] = __flowc_st77305; }
+  { __typeof__(targs[0]) __flowc_st77598 = mn_flat(m, sfx, t); targs[0] = __flowc_st77598; }
   nt = 1;
   g = i;
   best_len = gl;
@@ -59837,7 +60090,7 @@ void mn_scan_expr(Mlg* m, Mono* mo, int32_t e) {
   if (parts >= np) {
   int32_t _r = mn_request(m, mo, 0, g, tmp, np);
 } else {
-  { __typeof__(tmp[0]) __flowc_st77841 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st77841; }
+  { __typeof__(tmp[0]) __flowc_st78134 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st78134; }
   int32_t _r2 = mn_request(m, mo, 0, g, tmp, 1);
 }
   mlg_free_i32(tmp);
@@ -60190,7 +60443,7 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
   return e;
 }
   int32_t c = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c]).a) __flowc_st79524 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c]).a = __flowc_st79524; }
+  { __typeof__((((m[0]).arena).nodes[c]).a) __flowc_st79817 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c]).a = __flowc_st79817; }
   int32_t s = mlg_ns(m, e);
   int32_t t = mlg_ne(m, e);
   int32_t* used = (int32_t*)(mlg_alloc_i32(16));
@@ -60241,7 +60494,7 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
   int32_t f = (((m[0]).arena).nodes[e]).a;
   while (f != AST_NONE) {
   int32_t fc = mn_copy(m, f);
-  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st79850 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st79850; }
+  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st80143 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st80143; }
   if (head == AST_NONE) {
   head = fc;
 } else {
@@ -60252,34 +60505,34 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
 }
   (((m[0]).arena).nodes[c2]).a = head;
   if ((((m[0]).arena).nodes[e]).c != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[c2]).c) __flowc_st79927 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c2]).c = __flowc_st79927; }
+  { __typeof__((((m[0]).arena).nodes[c2]).c) __flowc_st80220 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c2]).c = __flowc_st80220; }
 }
   mn_resolve_lit_name(m, mo, c2, tps, ntp, targs);
   return c2;
 }
   if (k == AST_BINOP || k == AST_INDEX) {
   int32_t c3 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c3]).a) __flowc_st79976 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c3]).a = __flowc_st79976; }
-  { __typeof__((((m[0]).arena).nodes[c3]).b) __flowc_st79999 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c3]).b = __flowc_st79999; }
+  { __typeof__((((m[0]).arena).nodes[c3]).a) __flowc_st80269 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c3]).a = __flowc_st80269; }
+  { __typeof__((((m[0]).arena).nodes[c3]).b) __flowc_st80292 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c3]).b = __flowc_st80292; }
   if (k == AST_INDEX && (((m[0]).arena).nodes[e]).ival != 0) {
-  { __typeof__((((m[0]).arena).nodes[c3]).c) __flowc_st80036 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c3]).c = __flowc_st80036; }
+  { __typeof__((((m[0]).arena).nodes[c3]).c) __flowc_st80329 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c3]).c = __flowc_st80329; }
 }
   return c3;
 }
   if (k == AST_UNARY || k == AST_FIELD_ACCESS) {
   int32_t c4 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c4]).a) __flowc_st80077 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c4]).a = __flowc_st80077; }
+  { __typeof__((((m[0]).arena).nodes[c4]).a) __flowc_st80370 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c4]).a = __flowc_st80370; }
   return c4;
 }
   if (k == AST_ARRAY_LIT) {
   int32_t c5 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c5]).a) __flowc_st80112 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c5]).a = __flowc_st80112; }
+  { __typeof__((((m[0]).arena).nodes[c5]).a) __flowc_st80405 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c5]).a = __flowc_st80405; }
   return c5;
 }
   if (k == AST_CAST) {
   int32_t c6 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c6]).a) __flowc_st80147 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c6]).a = __flowc_st80147; }
-  { __typeof__((((m[0]).arena).nodes[c6]).b) __flowc_st80170 = mn_subst_type(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c6]).b = __flowc_st80170; }
+  { __typeof__((((m[0]).arena).nodes[c6]).a) __flowc_st80440 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c6]).a = __flowc_st80440; }
+  { __typeof__((((m[0]).arena).nodes[c6]).b) __flowc_st80463 = mn_subst_type(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c6]).b = __flowc_st80463; }
   return c6;
 }
   return e;
@@ -60324,7 +60577,7 @@ void mn_resolve_lit_name(Mlg* m, Mono* mo, int32_t lit, int32_t* tps, int32_t nt
   int32_t n = np;
   int32_t parts = mn_split_flat(m, (((m[0]).src + us) + 1), ((t - us) - 1), tmp, 16);
   if (parts < np) {
-  { __typeof__(tmp[0]) __flowc_st80381 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st80381; }
+  { __typeof__(tmp[0]) __flowc_st80674 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st80674; }
   n = 1;
 }
   if (ntp > 0) {
@@ -60376,8 +60629,8 @@ int32_t mn_subst_stmt(Mlg* m, Mono* mo, int32_t st, int32_t* tps, int32_t ntp, i
   int32_t c = (((m[0]).arena).nodes[st]).c;
   if (k == AST_LET) {
   int32_t n = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n]).a) __flowc_st80677 = mn_subst_type(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n]).a = __flowc_st80677; }
-  { __typeof__((((m[0]).arena).nodes[n]).b) __flowc_st80693 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n]).b = __flowc_st80693; }
+  { __typeof__((((m[0]).arena).nodes[n]).a) __flowc_st80970 = mn_subst_type(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n]).a = __flowc_st80970; }
+  { __typeof__((((m[0]).arena).nodes[n]).b) __flowc_st80986 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n]).b = __flowc_st80986; }
   return n;
 }
   if (k == AST_RETURN || k == AST_EXPR_STMT) {
@@ -60388,40 +60641,40 @@ int32_t mn_subst_stmt(Mlg* m, Mono* mo, int32_t st, int32_t* tps, int32_t ntp, i
 }
 }
   int32_t n2 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n2]).a) __flowc_st80786 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n2]).a = __flowc_st80786; }
+  { __typeof__((((m[0]).arena).nodes[n2]).a) __flowc_st81079 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n2]).a = __flowc_st81079; }
   return n2;
 }
   if (k == AST_ASSIGN) {
   int32_t n3 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n3]).b) __flowc_st80814 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n3]).b = __flowc_st80814; }
+  { __typeof__((((m[0]).arena).nodes[n3]).b) __flowc_st81107 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n3]).b = __flowc_st81107; }
   if (mlg_kind(m, a) != AST_IDENT) {
-  { __typeof__((((m[0]).arena).nodes[n3]).a) __flowc_st80835 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n3]).a = __flowc_st80835; }
+  { __typeof__((((m[0]).arena).nodes[n3]).a) __flowc_st81128 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n3]).a = __flowc_st81128; }
 }
   return n3;
 }
   if (k == AST_IF) {
   int32_t n4 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n4]).a) __flowc_st80865 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n4]).a = __flowc_st80865; }
-  { __typeof__((((m[0]).arena).nodes[n4]).b) __flowc_st80881 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n4]).b = __flowc_st80881; }
-  { __typeof__((((m[0]).arena).nodes[n4]).c) __flowc_st80897 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n4]).c = __flowc_st80897; }
+  { __typeof__((((m[0]).arena).nodes[n4]).a) __flowc_st81158 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n4]).a = __flowc_st81158; }
+  { __typeof__((((m[0]).arena).nodes[n4]).b) __flowc_st81174 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n4]).b = __flowc_st81174; }
+  { __typeof__((((m[0]).arena).nodes[n4]).c) __flowc_st81190 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n4]).c = __flowc_st81190; }
   return n4;
 }
   if (k == AST_WHILE) {
   int32_t n5 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n5]).a) __flowc_st80925 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n5]).a = __flowc_st80925; }
-  { __typeof__((((m[0]).arena).nodes[n5]).b) __flowc_st80941 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n5]).b = __flowc_st80941; }
+  { __typeof__((((m[0]).arena).nodes[n5]).a) __flowc_st81218 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n5]).a = __flowc_st81218; }
+  { __typeof__((((m[0]).arena).nodes[n5]).b) __flowc_st81234 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n5]).b = __flowc_st81234; }
   return n5;
 }
   if (k == AST_FOR) {
   int32_t n6 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n6]).a) __flowc_st80969 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n6]).a = __flowc_st80969; }
-  { __typeof__((((m[0]).arena).nodes[n6]).b) __flowc_st80985 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n6]).b = __flowc_st80985; }
-  { __typeof__((((m[0]).arena).nodes[n6]).c) __flowc_st81001 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n6]).c = __flowc_st81001; }
+  { __typeof__((((m[0]).arena).nodes[n6]).a) __flowc_st81262 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n6]).a = __flowc_st81262; }
+  { __typeof__((((m[0]).arena).nodes[n6]).b) __flowc_st81278 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n6]).b = __flowc_st81278; }
+  { __typeof__((((m[0]).arena).nodes[n6]).c) __flowc_st81294 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n6]).c = __flowc_st81294; }
   return n6;
 }
   if (k == AST_UNARY && (((m[0]).arena).nodes[st]).ival == KW_EXPECT) {
   int32_t n7 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n7]).a) __flowc_st81040 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n7]).a = __flowc_st81040; }
+  { __typeof__((((m[0]).arena).nodes[n7]).a) __flowc_st81333 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n7]).a = __flowc_st81333; }
   return n7;
 }
   if (k == AST_BLOCK) {
@@ -60437,8 +60690,8 @@ void mn_gen_struct(Mlg* m, Mono* mo, int32_t r) {
   int32_t ntp = 0;
   int32_t x = (((m[0]).arena).nodes[d]).b;
   while (x != AST_NONE && ntp < 16) {
-  { __typeof__(tps[(2 * ntp)]) __flowc_st81119 = mlg_ns(m, x); tps[(2 * ntp)] = __flowc_st81119; }
-  { __typeof__(tps[((2 * ntp) + 1)]) __flowc_st81130 = mlg_ne(m, x); tps[((2 * ntp) + 1)] = __flowc_st81130; }
+  { __typeof__(tps[(2 * ntp)]) __flowc_st81412 = mlg_ns(m, x); tps[(2 * ntp)] = __flowc_st81412; }
+  { __typeof__(tps[((2 * ntp) + 1)]) __flowc_st81423 = mlg_ne(m, x); tps[((2 * ntp) + 1)] = __flowc_st81423; }
   ntp = (ntp + 1);
   x = (((m[0]).arena).nodes[x]).next;
 }
@@ -60452,7 +60705,7 @@ void mn_gen_struct(Mlg* m, Mono* mo, int32_t r) {
   int32_t f = (((m[0]).arena).nodes[d]).a;
   while (f != AST_NONE) {
   int32_t fc = mn_copy(m, f);
-  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st81253 = mn_subst_type(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st81253; }
+  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st81546 = mn_subst_type(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st81546; }
   if (head == AST_NONE) {
   head = fc;
 } else {
@@ -60502,7 +60755,7 @@ void mn_gen_fn(Mlg* m, Mono* mo, int32_t r) {
   int32_t p = (((m[0]).arena).nodes[d]).a;
   while (p != AST_NONE) {
   int32_t pc = mn_copy(m, p);
-  { __typeof__((((m[0]).arena).nodes[pc]).a) __flowc_st81588 = mn_subst_type(m, mo, (((m[0]).arena).nodes[p]).a, tps, ntp, targs); (((m[0]).arena).nodes[pc]).a = __flowc_st81588; }
+  { __typeof__((((m[0]).arena).nodes[pc]).a) __flowc_st81881 = mn_subst_type(m, mo, (((m[0]).arena).nodes[p]).a, tps, ntp, targs); (((m[0]).arena).nodes[pc]).a = __flowc_st81881; }
   if (head == AST_NONE) {
   head = pc;
 } else {
@@ -60512,8 +60765,8 @@ void mn_gen_fn(Mlg* m, Mono* mo, int32_t r) {
   p = (((m[0]).arena).nodes[p]).next;
 }
   (((m[0]).arena).nodes[nd]).a = head;
-  { __typeof__((((m[0]).arena).nodes[nd]).b) __flowc_st81655 = mn_subst_type(m, mo, (((m[0]).arena).nodes[d]).b, tps, ntp, targs); (((m[0]).arena).nodes[nd]).b = __flowc_st81655; }
-  { __typeof__((((m[0]).arena).nodes[nd]).c) __flowc_st81678 = mn_subst_block(m, mo, (((m[0]).arena).nodes[d]).c, tps, ntp, targs); (((m[0]).arena).nodes[nd]).c = __flowc_st81678; }
+  { __typeof__((((m[0]).arena).nodes[nd]).b) __flowc_st81948 = mn_subst_type(m, mo, (((m[0]).arena).nodes[d]).b, tps, ntp, targs); (((m[0]).arena).nodes[nd]).b = __flowc_st81948; }
+  { __typeof__((((m[0]).arena).nodes[nd]).c) __flowc_st81971 = mn_subst_block(m, mo, (((m[0]).arena).nodes[d]).c, tps, ntp, targs); (((m[0]).arena).nodes[nd]).c = __flowc_st81971; }
   if ((mo[0]).ngenf < MN_MAX) {
   (mo[0]).genf[(mo[0]).ngenf] = nd;
   (mo[0]).genf_req[(mo[0]).ngenf] = r;
@@ -60768,10 +61021,10 @@ void mn_rewrite_stmt(Mlg* m, Mono* mo, int32_t st) {
 void mn_rewrite_fn(Mlg* m, Mono* mo, int32_t d) {
   int32_t p = (((m[0]).arena).nodes[d]).a;
   while (p != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[p]).a) __flowc_st83013 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[p]).a); (((m[0]).arena).nodes[p]).a = __flowc_st83013; }
+  { __typeof__((((m[0]).arena).nodes[p]).a) __flowc_st83306 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[p]).a); (((m[0]).arena).nodes[p]).a = __flowc_st83306; }
   p = (((m[0]).arena).nodes[p]).next;
 }
-  { __typeof__((((m[0]).arena).nodes[d]).b) __flowc_st83045 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[d]).b); (((m[0]).arena).nodes[d]).b = __flowc_st83045; }
+  { __typeof__((((m[0]).arena).nodes[d]).b) __flowc_st83338 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[d]).b); (((m[0]).arena).nodes[d]).b = __flowc_st83338; }
   mn_rewrite_block(m, mo, (((m[0]).arena).nodes[d]).c);
 }
 
@@ -60876,7 +61129,7 @@ int32_t mlg_mono(Mlg* m, int32_t root) {
 }
   if (k == AST_FN) {
   if ((((m[0]).arena).nodes[d]).ival > 0 && (mo).ngf < MN_MAX) {
-  { __typeof__((mo).gf_ntp[(mo).ngf]) __flowc_st83735 = mn_read_fn_tps(m, d, ((mo).gf_tp + ((mo).ngf * 16))); (mo).gf_ntp[(mo).ngf] = __flowc_st83735; }
+  { __typeof__((mo).gf_ntp[(mo).ngf]) __flowc_st84028 = mn_read_fn_tps(m, d, ((mo).gf_tp + ((mo).ngf * 16))); (mo).gf_ntp[(mo).ngf] = __flowc_st84028; }
   (mo).gf[(mo).ngf] = d;
   (mo).ngf = ((mo).ngf + 1);
 } else {
@@ -60971,7 +61224,7 @@ int32_t mlg_mono(Mlg* m, int32_t root) {
   if (k4 == AST_STRUCT) {
   int32_t f2 = (((m[0]).arena).nodes[d4]).a;
   while (f2 != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[f2]).a) __flowc_st84365 = mn_rewrite_type(m, mo_p, (((m[0]).arena).nodes[f2]).a); (((m[0]).arena).nodes[f2]).a = __flowc_st84365; }
+  { __typeof__((((m[0]).arena).nodes[f2]).a) __flowc_st84658 = mn_rewrite_type(m, mo_p, (((m[0]).arena).nodes[f2]).a); (((m[0]).arena).nodes[f2]).a = __flowc_st84658; }
   f2 = (((m[0]).arena).nodes[f2]).next;
 }
 }
@@ -61001,6 +61254,7 @@ int32_t mfk_xname(Mlg* m, const char* prefix, int32_t n, int32_t* out_e) {
   k = (k + 1);
 }
   int32_t len[1] = { k };
+  flow_mem_note_stack(sizeof(len));
   mn_put_int(buf, (int32_t*)((&len[0])), n);
   int32_t s = mlg_xput(m, buf, len[0]);
   out_e[0] = (s + len[0]);
@@ -61049,12 +61303,12 @@ int32_t mfk_subst(Mlg* m, int32_t e, int32_t blk, int32_t repl) {
   if (k == AST_TYPE) {
   return e;
 }
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st84748 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).a, blk, repl); (((m[0]).arena).nodes[e]).a = __flowc_st84748; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st85041 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).a, blk, repl); (((m[0]).arena).nodes[e]).a = __flowc_st85041; }
   if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st84780 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).b, blk, repl); (((m[0]).arena).nodes[e]).b = __flowc_st84780; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st85073 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).b, blk, repl); (((m[0]).arena).nodes[e]).b = __flowc_st85073; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR || k == AST_STRUCT_LIT) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st84814 = mfk_subst(m, (((m[0]).arena).nodes[e]).c, blk, repl); (((m[0]).arena).nodes[e]).c = __flowc_st84814; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st85107 = mfk_subst(m, (((m[0]).arena).nodes[e]).c, blk, repl); (((m[0]).arena).nodes[e]).c = __flowc_st85107; }
 }
   return e;
 }
@@ -61065,7 +61319,7 @@ int32_t mfk_subst_chain(Mlg* m, int32_t head, int32_t blk, int32_t repl) {
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
   int32_t h2 = mfk_subst(m, head, blk, repl);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st84872 = mfk_subst_chain(m, nx, blk, repl); (((m[0]).arena).nodes[h2]).next = __flowc_st84872; }
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st85165 = mfk_subst_chain(m, nx, blk, repl); (((m[0]).arena).nodes[h2]).next = __flowc_st85165; }
   return h2;
 }
 
@@ -61100,7 +61354,7 @@ int32_t mfk_resolve_chain(Mlg* m, Fork* fk, int32_t head, int32_t can_hoist) {
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
   int32_t h2 = mfk_resolve(m, fk, head, can_hoist);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st85112 = mfk_resolve_chain(m, fk, nx, can_hoist); (((m[0]).arena).nodes[h2]).next = __flowc_st85112; }
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st85405 = mfk_resolve_chain(m, fk, nx, can_hoist); (((m[0]).arena).nodes[h2]).next = __flowc_st85405; }
   return h2;
 }
 
@@ -61130,7 +61384,7 @@ int32_t mfk_lower_fork(Mlg* m, Fork* fk, int32_t id, int32_t source) {
   while (f != AST_NONE) {
   int32_t nf = mn_copy(m, f);
   (((m[0]).arena).nodes[nf]).kind = AST_FIELD;
-  { __typeof__((((m[0]).arena).nodes[nf]).a) __flowc_st85331 = mfk_subst(m, (((m[0]).arena).nodes[f]).a, id, source); (((m[0]).arena).nodes[nf]).a = __flowc_st85331; }
+  { __typeof__((((m[0]).arena).nodes[nf]).a) __flowc_st85624 = mfk_subst(m, (((m[0]).arena).nodes[f]).a, id, source); (((m[0]).arena).nodes[nf]).a = __flowc_st85624; }
   if (head == AST_NONE) {
   head = nf;
 } else {
@@ -61249,7 +61503,7 @@ int32_t mfk_lower_choose(Mlg* m, Fork* fk, int32_t id, int32_t can_hoist) {
   int32_t a2 = (((m[0]).arena).nodes[id]).b;
   while (a2 != AST_NONE) {
   int32_t asg = mlg_new_node(m, AST_ASSIGN, (((m[0]).arena).nodes[a2]).start);
-  { __typeof__((((m[0]).arena).nodes[asg]).a) __flowc_st86142 = mfk_ident(m, tns, tne); (((m[0]).arena).nodes[asg]).a = __flowc_st86142; }
+  { __typeof__((((m[0]).arena).nodes[asg]).a) __flowc_st86435 = mfk_ident(m, tns, tne); (((m[0]).arena).nodes[asg]).a = __flowc_st86435; }
   (((m[0]).arena).nodes[asg]).b = (((m[0]).arena).nodes[a2]).b;
   int32_t blk = mlg_new_node(m, AST_BLOCK, (((m[0]).arena).nodes[a2]).start);
   (((m[0]).arena).nodes[blk]).a = asg;
@@ -61285,7 +61539,7 @@ int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist) {
   int32_t src0 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist);
   int32_t f = (((m[0]).arena).nodes[e]).b;
   while (f != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[f]).a) __flowc_st86400 = mfk_resolve(m, fk, (((m[0]).arena).nodes[f]).a, can_hoist); (((m[0]).arena).nodes[f]).a = __flowc_st86400; }
+  { __typeof__((((m[0]).arena).nodes[f]).a) __flowc_st86693 = mfk_resolve(m, fk, (((m[0]).arena).nodes[f]).a, can_hoist); (((m[0]).arena).nodes[f]).a = __flowc_st86693; }
   f = (((m[0]).arena).nodes[f]).next;
 }
   int32_t src = mfk_source(m, fk, src0, can_hoist);
@@ -61298,12 +61552,12 @@ int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist) {
   return e;
 }
   if (k == AST_CALL || k == AST_BINOP || k == AST_UNARY || k == AST_FIELD_ACCESS || k == AST_INDEX || k == AST_CAST || k == AST_STRUCT_LIT || k == AST_ARRAY_LIT || k == AST_IF_EXPR || k == AST_FIELD) {
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st86519 = mfk_resolve_chain(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist); (((m[0]).arena).nodes[e]).a = __flowc_st86519; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st86812 = mfk_resolve_chain(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist); (((m[0]).arena).nodes[e]).a = __flowc_st86812; }
   if (k == AST_BINOP || k == AST_INDEX || k == AST_IF_EXPR) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st86551 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).b, can_hoist); (((m[0]).arena).nodes[e]).b = __flowc_st86551; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st86844 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).b, can_hoist); (((m[0]).arena).nodes[e]).b = __flowc_st86844; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR || k == AST_STRUCT_LIT) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st86585 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).c, can_hoist); (((m[0]).arena).nodes[e]).c = __flowc_st86585; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st86878 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).c, can_hoist); (((m[0]).arena).nodes[e]).c = __flowc_st86878; }
 }
   return e;
 }
@@ -61340,19 +61594,19 @@ void mfk_block(Mlg* m, Fork* fk, int32_t blk) {
 void mfk_stmt(Mlg* m, Fork* fk, int32_t st) {
   int32_t k = mlg_kind(m, st);
   if (k == AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st86781 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st86781; }
+  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st87074 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st87074; }
   return;
 }
   if (k == AST_RETURN || k == AST_EXPR_STMT || k == AST_DEFER) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st86816 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st86816; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st87109 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st87109; }
   return;
 }
   if (k == AST_ASSIGN) {
-  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st86843 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st86843; }
+  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st87136 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st87136; }
   return;
 }
   if (k == AST_IF || k == AST_WHILE) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st86874 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st86874; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st87167 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st87167; }
   mfk_block(m, fk, (((m[0]).arena).nodes[st]).b);
   if (k == AST_IF) {
   mfk_block(m, fk, (((m[0]).arena).nodes[st]).c);
@@ -61360,13 +61614,13 @@ void mfk_stmt(Mlg* m, Fork* fk, int32_t st) {
   return;
 }
   if (k == AST_FOR) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st86930 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st86930; }
-  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st86951 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st86951; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st87223 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st87223; }
+  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st87244 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st87244; }
   mfk_block(m, fk, (((m[0]).arena).nodes[st]).c);
   return;
 }
   if (k == AST_MATCH) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st86990 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st86990; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st87283 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st87283; }
   int32_t arm = (((m[0]).arena).nodes[st]).b;
   while (arm != AST_NONE) {
   mfk_block(m, fk, (((m[0]).arena).nodes[arm]).b);
@@ -61566,7 +61820,7 @@ void mrs_intersect(int64_t* a, int64_t* b, int64_t* out) {
   return;
 }
   out[0] = value;
-  { __typeof__(out[1]) __flowc_st88004 = (mrs_floordiv((high - value), step) + 1); out[1] = __flowc_st88004; }
+  { __typeof__(out[1]) __flowc_st88297 = (mrs_floordiv((high - value), step) + 1); out[1] = __flowc_st88297; }
   out[2] = step;
 }
 
@@ -61584,7 +61838,7 @@ int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok) {
   int32_t n = 0;
   int32_t x = a;
   while (x != AST_NONE && n < 6) {
-  { __typeof__(vals[n]) __flowc_st88106 = mrs_lit(m, x, ok); vals[n] = __flowc_st88106; }
+  { __typeof__(vals[n]) __flowc_st88399 = mrs_lit(m, x, ok); vals[n] = __flowc_st88399; }
   n = (n + 1);
   x = (((m[0]).arena).nodes[x]).next;
 }
@@ -61783,17 +62037,17 @@ int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t swizzle, int32_t* vars, 
   (((m[0]).arena).nodes[ix]).a = fa;
   int32_t index = mao_expr(m, (((m[0]).arena).nodes[o]).b, st, swizzle, vars, extents, nv);
   int32_t extent = mao_var_extent(extents, vars, nv, m, (((m[0]).arena).nodes[o]).a);
-  { __typeof__((((m[0]).arena).nodes[ix]).b) __flowc_st89337 = mao_swizzle_index(m, index, swizzle, extent); (((m[0]).arena).nodes[ix]).b = __flowc_st89337; }
+  { __typeof__((((m[0]).arena).nodes[ix]).b) __flowc_st89630 = mao_swizzle_index(m, index, swizzle, extent); (((m[0]).arena).nodes[ix]).b = __flowc_st89630; }
   return ix;
 }
 }
 }
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st89369 = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[e]).a = __flowc_st89369; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st89662 = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[e]).a = __flowc_st89662; }
   if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st89404 = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[e]).b = __flowc_st89404; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st89697 = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[e]).b = __flowc_st89697; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st89437 = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[e]).c = __flowc_st89437; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st89730 = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[e]).c = __flowc_st89730; }
 }
   return e;
 }
@@ -61804,7 +62058,7 @@ int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t swizzle, int32_t* va
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
   int32_t h2 = mao_expr(m, head, st, swizzle, vars, extents, nv);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st89509 = mao_chain(m, nx, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[h2]).next = __flowc_st89509; }
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st89802 = mao_chain(m, nx, st, swizzle, vars, extents, nv); (((m[0]).arena).nodes[h2]).next = __flowc_st89802; }
   return h2;
 }
 
@@ -61971,15 +62225,15 @@ void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t pad, int32_t auto_pad, i
 } else {
   if (k == AST_IF || k == AST_WHILE || k == AST_FOR || k == AST_BLOCK || k == AST_HANDLE || k == AST_MATCH) {
   if (k == AST_IF || k == AST_WHILE) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90412 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90412; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90705 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90705; }
   mao_block(m, (((m[0]).arena).nodes[s]).b, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade);
   if (k == AST_IF) {
   mao_block(m, (((m[0]).arena).nodes[s]).c, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade);
 }
 }
   if (k == AST_FOR) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90490 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90490; }
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st90516 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st90516; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90783 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90783; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st90809 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st90809; }
   mao_block(m, (((m[0]).arena).nodes[s]).c, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade);
 }
   if (k == AST_BLOCK) {
@@ -61989,15 +62243,15 @@ void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t pad, int32_t auto_pad, i
   mao_block(m, (((m[0]).arena).nodes[s]).a, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade);
 }
   if (k == AST_MATCH) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90613 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90613; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90906 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90906; }
 }
 } else {
   if (k == AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st90645 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st90645; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st90938 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st90938; }
 } else {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90672 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90672; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st90965 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st90965; }
   if (k == AST_ASSIGN) {
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st90701 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st90701; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st90994 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, extents, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st90994; }
 }
 }
 }
@@ -62022,8 +62276,10 @@ void mlg_aosoa(Mlg* m, int32_t root) {
   int32_t* vars = (int32_t*)(mlg_alloc_i32(64));
   int32_t* extents = (int32_t*)(mlg_alloc_i32(64));
   int32_t nv[1] = { 0 };
+  flow_mem_note_stack(sizeof(nv));
   int32_t* made = (int32_t*)(mlg_alloc_i32(64));
   int32_t nmade[1] = { 0 };
+  flow_mem_note_stack(sizeof(nmade));
   int32_t pad = mlg_aosoa_pad();
   int32_t auto_pad = mlg_aosoa_auto_pad();
   int32_t swizzle = mlg_aosoa_swizzle();
@@ -62096,7 +62352,7 @@ void mlg_collect(Mlg* m, int32_t root) {
   (m[0]).ndropf = ((m[0]).ndropf + 1);
 }
   if (off_cpu == 2 && (m[0]).ngpuf < MLG_MAX_FNS) {
-  { __typeof__((m[0]).gpuf[(m[0]).ngpuf]) __flowc_st91191 = mlg_unwrap(m, item); (m[0]).gpuf[(m[0]).ngpuf] = __flowc_st91191; }
+  { __typeof__((m[0]).gpuf[(m[0]).ngpuf]) __flowc_st91484 = mlg_unwrap(m, item); (m[0]).gpuf[(m[0]).ngpuf] = __flowc_st91484; }
   (m[0]).ngpuf = ((m[0]).ngpuf + 1);
 }
   item = (((m[0]).arena).nodes[item]).next;
@@ -62564,7 +62820,7 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   mlg_s(m, "] : ");
   mlg_gpu_put_type(m, at);
   mlg_nl(m);
-  { __typeof__(t[0]) __flowc_st93175 = mlg_gpu_elem(m, at); t[0] = __flowc_st93175; }
+  { __typeof__(t[0]) __flowc_st93468 = mlg_gpu_elem(m, at); t[0] = __flowc_st93468; }
   return s3;
 }
   if (k == AST_BINOP) {
@@ -62774,11 +63030,11 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(its[i]) __flowc_st94112 = mlg_gpu_new(m); its[i] = __flowc_st94112; }
+  { __typeof__(its[i]) __flowc_st94405 = mlg_gpu_new(m); its[i] = __flowc_st94405; }
 }
   i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st94133 = mlg_gpu_new(m); res[i] = __flowc_st94133; }
+  { __typeof__(res[i]) __flowc_st94426 = mlg_gpu_new(m); res[i] = __flowc_st94426; }
 }
   mlg_line(m);
   if (nc > 0) {
@@ -63139,6 +63395,316 @@ const char* mlg_szs(Mlg* m) {
   return "i64";
 }
 
+void mlg_put_mem_profile(Mlg* m) {
+  if (((m[0]).lc_need & LC_MEMPROF) == 0) {
+  return;
+}
+  const char* sz = mlg_szs(m);
+  int32_t envk = mlg_intern_lit(m, "\"FLOW_MEM_PROFILE\"");
+  int32_t hdrk = mlg_intern_lit(m, "\"\\n=== Flow memory profile (#740) ===\\n\"");
+  int32_t k_alloc = mlg_intern_lit(m, "\"allocations: %llu\\n\"");
+  int32_t k_heap = mlg_intern_lit(m, "\"heap_bytes: %llu\\n\"");
+  int32_t k_peak = mlg_intern_lit(m, "\"peak_live_heap: %lld\\n\"");
+  int32_t k_temp = mlg_intern_lit(m, "\"temp_bytes: %llu\\n\"");
+  int32_t k_copy = mlg_intern_lit(m, "\"copies: %llu\\n\"");
+  int32_t k_stack = mlg_intern_lit(m, "\"stack_bytes: %llu\\n\"");
+  int32_t k_arena = mlg_intern_lit(m, "\"arena_bytes: %llu\\n\"");
+  int32_t k_promo = mlg_intern_lit(m, "\"promotion_bytes: %llu\\n\"");
+  int32_t k_ovf = mlg_intern_lit(m, "\"live_map_overflow: %llu\\n\"");
+  int32_t k_concat = mlg_intern_lit(m, "\"site_concat: %llu\\n\"");
+  mlg_s(m, "  func.func private @getenv(!llvm.ptr) -> !llvm.ptr\n");
+  mlg_s(m, "  func.func private @atexit(!llvm.ptr) -> i32\n");
+  if ((m[0]).needs_printf == 0) {
+  mlg_s(m, "  llvm.func @printf(!llvm.ptr, ...) -> i32\n");
+}
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_profile_on() {addr_space = 0 : i32} : i32 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i32) : i32\n    llvm.return %z : i32\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_inited() {addr_space = 0 : i32} : i32 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i32) : i32\n    llvm.return %z : i32\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_alloc_count() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_alloc_bytes() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_temp_bytes() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_copy_bytes() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_stack_bytes() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_arena_bytes() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_live_bytes() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_peak_live() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_site_concat() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_map_overflow() {addr_space = 0 : i32} : i64 {\n");
+  mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_ptrs() {addr_space = 0 : i32} : !llvm.array<256 x ptr> {\n");
+  mlg_s(m, "    %z = llvm.mlir.zero : !llvm.array<256 x ptr>\n    llvm.return %z : !llvm.array<256 x ptr>\n  }\n");
+  mlg_s(m, "  llvm.mlir.global internal @flow_mem_sz() {addr_space = 0 : i32} : !llvm.array<256 x i64> {\n");
+  mlg_s(m, "    %z = llvm.mlir.zero : !llvm.array<256 x i64>\n    llvm.return %z : !llvm.array<256 x i64>\n  }\n");
+  mlg_s(m, "  func.func private @flow_mem_profile_init() {\n");
+  mlg_s(m, "    %ip = llvm.mlir.addressof @flow_mem_inited : !llvm.ptr\n");
+  mlg_s(m, "    %iv = llvm.load %ip : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %done = arith.cmpi ne, %iv, %z32 : i32\n");
+  mlg_s(m, "    scf.if %done {\n      scf.yield\n    } else {\n");
+  mlg_s(m, "      %one32 = arith.constant 1 : i32\n");
+  mlg_s(m, "      llvm.store %one32, %ip : i32, !llvm.ptr\n");
+  mlg_s(m, "      %name = llvm.mlir.addressof @str_");
+  mlg_i(m, envk);
+  mlg_s(m, " : !llvm.ptr\n");
+  mlg_s(m, "      %e = func.call @getenv(%name) : (!llvm.ptr) -> !llvm.ptr\n");
+  mlg_s(m, "      %null = llvm.mlir.zero : !llvm.ptr\n");
+  mlg_s(m, "      %ok = llvm.icmp \"ne\" %e, %null : !llvm.ptr\n");
+  mlg_s(m, "      %on = scf.if %ok -> (i32) {\n");
+  mlg_s(m, "        %b = llvm.load %e : !llvm.ptr -> i8\n");
+  mlg_s(m, "        %z8 = arith.constant 0 : i8\n");
+  mlg_s(m, "        %nz = arith.cmpi ne, %b, %z8 : i8\n");
+  mlg_s(m, "        %c48 = arith.constant 48 : i8\n");
+  mlg_s(m, "        %is0 = arith.cmpi eq, %b, %c48 : i8\n");
+  mlg_s(m, "        %e1 = llvm.getelementptr %e[1] : (!llvm.ptr) -> !llvm.ptr, i8\n");
+  mlg_s(m, "        %b1 = llvm.load %e1 : !llvm.ptr -> i8\n");
+  mlg_s(m, "        %term = arith.cmpi eq, %b1, %z8 : i8\n");
+  mlg_s(m, "        %zeroish = arith.andi %is0, %term : i1\n");
+  mlg_s(m, "        %keep = arith.andi %nz, %zeroish : i1\n");
+  mlg_s(m, "        %not0 = arith.xori %keep, %nz : i1\n");
+  mlg_s(m, "        %sel = arith.select %not0, %one32, %z32 : i32\n");
+  mlg_s(m, "        scf.yield %sel : i32\n      } else {\n        scf.yield %z32 : i32\n      }\n");
+  mlg_s(m, "      %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "      llvm.store %on, %op : i32, !llvm.ptr\n");
+  mlg_s(m, "      %onb = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "      scf.if %onb {\n");
+  mlg_s(m, "        %rf = func.constant @flow_mem_report : () -> ()\n");
+  mlg_s(m, "        %rp = builtin.unrealized_conversion_cast %rf : () -> () to !llvm.ptr\n");
+  mlg_s(m, "        %ar = func.call @atexit(%rp) : (!llvm.ptr) -> i32\n");
+  mlg_s(m, "        scf.yield\n      }\n      scf.yield\n    }\n    func.return\n  }\n");
+  mlg_s(m, "  func.func private @flow_mem_note_alloc(%n: i64) {\n");
+  mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n");
+  mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "    scf.if %yes {\n");
+  mlg_s(m, "      %one = arith.constant 1 : i64\n");
+  mlg_s(m, "      %cp = llvm.mlir.addressof @flow_mem_alloc_count : !llvm.ptr\n");
+  mlg_s(m, "      %cv = llvm.load %cp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %cn = arith.addi %cv, %one : i64\n");
+  mlg_s(m, "      llvm.store %cn, %cp : i64, !llvm.ptr\n");
+  mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_alloc_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n");
+  mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n");
+  mlg_s(m, "      %lp = llvm.mlir.addressof @flow_mem_live_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %lv = llvm.load %lp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %ln = arith.addi %lv, %n : i64\n");
+  mlg_s(m, "      llvm.store %ln, %lp : i64, !llvm.ptr\n");
+  mlg_s(m, "      %pp = llvm.mlir.addressof @flow_mem_peak_live : !llvm.ptr\n");
+  mlg_s(m, "      %pv = llvm.load %pp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %gt = arith.cmpi sgt, %ln, %pv : i64\n");
+  mlg_s(m, "      %np = arith.select %gt, %ln, %pv : i64\n");
+  mlg_s(m, "      llvm.store %np, %pp : i64, !llvm.ptr\n");
+  mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n");
+  mlg_s(m, "  func.func private @flow_mem_note_copy(%n: i64) {\n");
+  mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n");
+  mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "    scf.if %yes {\n");
+  mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_copy_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n");
+  mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n");
+  mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n");
+  mlg_s(m, "  func.func private @flow_mem_note_temp(%n: i64) {\n");
+  mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n");
+  mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "    scf.if %yes {\n");
+  mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_temp_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n");
+  mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n");
+  mlg_s(m, "      %sp = llvm.mlir.addressof @flow_mem_site_concat : !llvm.ptr\n");
+  mlg_s(m, "      %sv = llvm.load %sp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %sn = arith.addi %sv, %n : i64\n");
+  mlg_s(m, "      llvm.store %sn, %sp : i64, !llvm.ptr\n");
+  mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n");
+  mlg_s(m, "  func.func private @flow_mem_note_stack(%n: ");
+  mlg_s(m, sz);
+  mlg_s(m, ") {\n");
+  mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n");
+  mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "    scf.if %yes {\n");
+  mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "      %nw = arith.extsi %n : i32 to i64\n");
+  mlg_s(m, "      %bn = arith.addi %bv, %nw : i64\n");
+} else {
+  mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n");
+}
+  mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n");
+  mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n");
+  mlg_s(m, "  func.func private @flow_mem_note_arena(%n: ");
+  mlg_s(m, sz);
+  mlg_s(m, ") {\n");
+  mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n");
+  mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "    scf.if %yes {\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "      %nw = arith.extsi %n : i32 to i64\n");
+  mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %bn = arith.addi %bv, %nw : i64\n");
+} else {
+  mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n");
+}
+  mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n");
+  mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n");
+  mlg_s(m, "  func.func @flow_mem_malloc(%n: ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr {\n");
+  mlg_s(m, "    %p = func.call @malloc(%n) : (");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n");
+  mlg_s(m, "    func.call @flow_mem_note_alloc(%nw) : (i64) -> ()\n");
+} else {
+  mlg_s(m, "    func.call @flow_mem_note_alloc(%n) : (i64) -> ()\n");
+}
+  mlg_s(m, "    func.return %p : !llvm.ptr\n  }\n");
+  if (mlg_lc_declared(m, "calloc") == 0) {
+  mlg_s(m, "  func.func private @calloc(");
+  mlg_s(m, sz);
+  mlg_s(m, ", ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr\n");
+}
+  if (mlg_lc_declared(m, "realloc") == 0) {
+  mlg_s(m, "  func.func private @realloc(!llvm.ptr, ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr\n");
+}
+  mlg_s(m, "  func.func @flow_mem_calloc(%c: ");
+  mlg_s(m, sz);
+  mlg_s(m, ", %s: ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr {\n");
+  mlg_s(m, "    %p = func.call @calloc(%c, %s) : (");
+  mlg_s(m, sz);
+  mlg_s(m, ", ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr\n");
+  mlg_s(m, "    %n = arith.muli %c, %s : ");
+  mlg_s(m, sz);
+  mlg_s(m, "\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n");
+  mlg_s(m, "    func.call @flow_mem_note_alloc(%nw) : (i64) -> ()\n");
+} else {
+  mlg_s(m, "    func.call @flow_mem_note_alloc(%n) : (i64) -> ()\n");
+}
+  mlg_s(m, "    func.return %p : !llvm.ptr\n  }\n");
+  mlg_s(m, "  func.func @flow_mem_realloc(%p: !llvm.ptr, %n: ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr {\n");
+  mlg_s(m, "    %q = func.call @realloc(%p, %n) : (!llvm.ptr, ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n");
+  mlg_s(m, "    func.call @flow_mem_note_alloc(%nw) : (i64) -> ()\n");
+} else {
+  mlg_s(m, "    func.call @flow_mem_note_alloc(%n) : (i64) -> ()\n");
+}
+  mlg_s(m, "    func.return %q : !llvm.ptr\n  }\n");
+  mlg_s(m, "  func.func @flow_mem_free(%p: !llvm.ptr) {\n");
+  mlg_s(m, "    func.call @free(%p) : (!llvm.ptr) -> ()\n");
+  mlg_s(m, "    func.return\n  }\n");
+  mlg_s(m, "  func.func @flow_mem_memcpy(%d: !llvm.ptr, %s: !llvm.ptr, %n: ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr {\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n");
+  mlg_s(m, "    func.call @flow_mem_note_copy(%nw) : (i64) -> ()\n");
+} else {
+  mlg_s(m, "    func.call @flow_mem_note_copy(%n) : (i64) -> ()\n");
+}
+  mlg_s(m, "    %r = func.call @memcpy(%d, %s, %n) : (!llvm.ptr, !llvm.ptr, ");
+  mlg_s(m, sz);
+  mlg_s(m, ") -> !llvm.ptr\n");
+  mlg_s(m, "    func.return %r : !llvm.ptr\n  }\n");
+  mlg_s(m, "  func.func @flow_mem_report() {\n");
+  mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n");
+  mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n");
+  mlg_s(m, "    %z32 = arith.constant 0 : i32\n");
+  mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n");
+  mlg_s(m, "    scf.if %yes {\n");
+  mlg_s(m, "      %hdr = llvm.mlir.addressof @str_");
+  mlg_i(m, hdrk);
+  mlg_s(m, " : !llvm.ptr\n");
+  mlg_s(m, "      %h = llvm.call @printf(%hdr) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32\n");
+  mlg_put_mem_printf(m, k_alloc, "flow_mem_alloc_count");
+  mlg_put_mem_printf(m, k_heap, "flow_mem_alloc_bytes");
+  mlg_put_mem_printf(m, k_peak, "flow_mem_peak_live");
+  mlg_put_mem_printf(m, k_temp, "flow_mem_temp_bytes");
+  mlg_put_mem_printf(m, k_copy, "flow_mem_copy_bytes");
+  mlg_put_mem_printf(m, k_stack, "flow_mem_stack_bytes");
+  mlg_put_mem_printf(m, k_arena, "flow_mem_arena_bytes");
+  mlg_s(m, "      %sp = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %sv = llvm.load %sp : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %ap = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr\n");
+  mlg_s(m, "      %av = llvm.load %ap : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %promo = arith.addi %sv, %av : i64\n");
+  mlg_s(m, "      %pf = llvm.mlir.addressof @str_");
+  mlg_i(m, k_promo);
+  mlg_s(m, " : !llvm.ptr\n");
+  mlg_s(m, "      %ph = llvm.call @printf(%pf, %promo) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32\n");
+  mlg_put_mem_printf(m, k_ovf, "flow_mem_map_overflow");
+  mlg_put_mem_printf(m, k_concat, "flow_mem_site_concat");
+  mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n");
+}
+
+void mlg_put_mem_printf(Mlg* m, int32_t k, const char* gname) {
+  mlg_s(m, "      %g_");
+  mlg_s(m, gname);
+  mlg_s(m, " = llvm.mlir.addressof @");
+  mlg_s(m, gname);
+  mlg_s(m, " : !llvm.ptr\n");
+  mlg_s(m, "      %v_");
+  mlg_s(m, gname);
+  mlg_s(m, " = llvm.load %g_");
+  mlg_s(m, gname);
+  mlg_s(m, " : !llvm.ptr -> i64\n");
+  mlg_s(m, "      %f_");
+  mlg_s(m, gname);
+  mlg_s(m, " = llvm.mlir.addressof @str_");
+  mlg_i(m, k);
+  mlg_s(m, " : !llvm.ptr\n");
+  mlg_s(m, "      %w_");
+  mlg_s(m, gname);
+  mlg_s(m, " = llvm.call @printf(%f_");
+  mlg_s(m, gname);
+  mlg_s(m, ", %v_");
+  mlg_s(m, gname);
+  mlg_s(m, ") vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32\n");
+}
+
 void mlg_put_lc_decls(Mlg* m) {
   const char* sz = mlg_szs(m);
   if (((m[0]).lc_need & LC_STRLEN) != 0 && mlg_lc_declared(m, "strlen") == 0) {
@@ -63199,7 +63765,7 @@ void mlg_put_str_of(Mlg* m, const char* name, const char* arg_t, const char* fmt
   mlg_s(m, cap);
   mlg_s(m, " : ");
   mlg_s(m, sz);
-  mlg_s(m, "\n    %r = func.call @malloc(%n) : (");
+  mlg_s(m, "\n    %r = func.call @flow_mem_malloc(%n) : (");
   mlg_s(m, sz);
   mlg_s(m, ") -> !llvm.ptr\n    %f = llvm.mlir.addressof @str_");
   mlg_i(m, mlg_intern_lit(m, fmt));
@@ -63234,15 +63800,21 @@ void mlg_put_helpers(Mlg* m) {
   mlg_s(m, sz);
   mlg_s(m, "\n    %n = arith.addi %s, %one : ");
   mlg_s(m, sz);
-  mlg_s(m, "\n    %r = func.call @malloc(%n) : (");
+  mlg_s(m, "\n    %r = func.call @flow_mem_malloc(%n) : (");
   mlg_s(m, sz);
-  mlg_s(m, ") -> !llvm.ptr\n    %c0 = func.call @memcpy(%r, %a, %la) : (!llvm.ptr, !llvm.ptr, ");
+  mlg_s(m, ") -> !llvm.ptr\n");
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "    %nt = arith.extsi %n : i32 to i64\n    func.call @flow_mem_note_temp(%nt) : (i64) -> ()\n");
+} else {
+  mlg_s(m, "    func.call @flow_mem_note_temp(%n) : (i64) -> ()\n");
+}
+  mlg_s(m, "    %c0 = func.call @flow_mem_memcpy(%r, %a, %la) : (!llvm.ptr, !llvm.ptr, ");
   mlg_s(m, sz);
   mlg_s(m, ") -> !llvm.ptr\n    %rb = llvm.getelementptr %r[%la] : (!llvm.ptr, ");
   mlg_s(m, sz);
   mlg_s(m, ") -> !llvm.ptr, i8\n    %lb1 = arith.addi %lb, %one : ");
   mlg_s(m, sz);
-  mlg_s(m, "\n    %c1 = func.call @memcpy(%rb, %b, %lb1) : (!llvm.ptr, !llvm.ptr, ");
+  mlg_s(m, "\n    %c1 = func.call @flow_mem_memcpy(%rb, %b, %lb1) : (!llvm.ptr, !llvm.ptr, ");
   mlg_s(m, sz);
   mlg_s(m, ") -> !llvm.ptr\n    func.return %r : !llvm.ptr\n  }\n");
 }
@@ -63442,6 +64014,7 @@ int32_t mlg_assemble(Mlg* m, uint8_t* body, int32_t body_len, uint8_t* dst, int3
   mlg_nl(m);
   mlg_put_lc_decls(m);
   mlg_put_uk_decls(m);
+  mlg_put_mem_profile(m);
   if ((m[0]).needs_printf == 1) {
   mlg_s(m, "  llvm.func @printf(!llvm.ptr, ...) -> i32");
   mlg_nl(m);
@@ -65109,7 +65682,9 @@ int32_t ss_literal_fact(SortSites* s, int32_t let_id) {
   return 0;
 }
   int64_t iv[1] = { 0 };
+  flow_mem_note_stack(sizeof(iv));
   double fv[1] = { 0.0 };
+  flow_mem_note_stack(sizeof(fv));
   int32_t all_int = 1;
   int32_t n = 0;
   e = (((s[0]).arena).nodes[init]).a;
@@ -65262,6 +65837,7 @@ int32_t flowc_overload_candidate_matches(AstArena arena, uint8_t* src, int32_t d
 }
   int32_t pty = ((arena).nodes[param]).a;
   uint8_t expected[128] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(expected));
   if (flowc_type_name_into(arena, src, pty, (&expected[0]), FLOWC_OVERLOAD_SELECT_TYPE_CAP) < 0) {
   return (0 - 1);
 }
@@ -65464,6 +66040,7 @@ int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first
 } else {
   int32_t has_ident_type = 0;
   uint8_t ident_name[128] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(ident_name));
   if (kind == AST_IDENT) {
   int32_t ident_ty = ident_type_nodes[i];
   if (ident_ty != AST_NONE) {
@@ -65892,6 +66469,8 @@ int32_t flowc_cgen_lambda_has_caps(CgenBuf* w, int32_t lam_id);
 int32_t flowc_cgen_library_mode();
 void flowc_cgen_emit_mem_profile(CgenBuf* w);
 int32_t flowc_cgen_emit_mem_name(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne);
+void flowc_cgen_emit_note_stack_ident(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne);
+void flowc_cgen_emit_note_stack_name(CgenBuf* w, const char* name);
 int32_t flowc_cgen_export_sep(int32_t c);
 int32_t flowc_cgen_export_name_end(uint8_t* list, int32_t s);
 int32_t flowc_cgen_export_same(uint8_t* list, int32_t a, int32_t b, int32_t n);
@@ -65993,6 +66572,7 @@ void flowc_cgen_put_i32(CgenBuf* w, int32_t val) {
   return;
 }
   uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   int32_t n = 0;
   while (v > 0) {
   digits[n] = ((v % 10) + 48);
@@ -66008,7 +66588,9 @@ void flowc_cgen_put_i32(CgenBuf* w, int32_t val) {
 
 void flowc_cgen_put_u64_hex(CgenBuf* w, uint64_t val) {
   uint8_t hex[16] = { 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102 };
+  flow_mem_note_stack(sizeof(hex));
   uint8_t digits[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(digits));
   uint64_t v = val;
   int32_t n = 0;
   if (v == 0) {
@@ -66762,6 +67344,7 @@ int32_t flowc_cgen_sig_put_array_fields(AstArena arena, uint8_t* src, uint8_t* b
   int32_t fs = ((arena).nodes[f]).name_start;
   int32_t fe = ((arena).nodes[f]).name_end;
   uint8_t digits[16] = {  };
+  flow_mem_note_stack(sizeof(digits));
   CgenBuf dw = flowc_cgen_buf_init((&digits[0]), 15);
   flowc_cgen_put_i32((&dw), ((arena).nodes[ft]).ival);
   if (((((n + (se - ss)) + (fe - fs)) + (dw).len) + 4) <= cap && (dw).err == 0) {
@@ -67268,7 +67851,7 @@ void flowc_cgen_emit_array_fill(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t el = ((arena).nodes[init]).a;
   int32_t idx = 0;
   while (el != AST_NONE) {
-  flowc_cgen_puts(w, "  memcpy(");
+  flowc_cgen_puts(w, "  flow_mem_memcpy_site(");
   flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne);
   flowc_cgen_putc(w, 91);
   flowc_cgen_put_i32(w, idx);
@@ -67278,19 +67861,19 @@ void flowc_cgen_emit_array_fill(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne);
   flowc_cgen_putc(w, 91);
   flowc_cgen_put_i32(w, idx);
-  flowc_cgen_puts(w, "]));\n");
+  flowc_cgen_puts(w, "]), FLOW_MEM_SITE_ARRAY);\n");
   idx = (idx + 1);
   el = ((arena).nodes[el]).next;
 }
   return;
 }
-  flowc_cgen_puts(w, "  memcpy(");
+  flowc_cgen_puts(w, "  flow_mem_memcpy_site(");
   flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne);
   flowc_cgen_puts(w, ", ");
   flowc_cgen_emit_expr(w, arena, src, init);
   flowc_cgen_puts(w, ", sizeof(");
   flowc_cgen_put_array_dest(w, src, dest_mode, ns, ne);
-  flowc_cgen_puts(w, "));\n");
+  flowc_cgen_puts(w, "), FLOW_MEM_SITE_ARRAY);\n");
 }
 
 int32_t flowc_cgen_array_lit_is_init(AstArena arena, uint8_t* src, int32_t ty, int32_t init) {
@@ -67889,6 +68472,7 @@ int32_t flowc_cgen_infer_arg_type(CgenBuf* w, AstArena arena, uint8_t* src, int3
   int32_t kind = ((arena).nodes[arg_id]).kind;
   if (kind == AST_INT) {
   uint8_t i32_name[4] = { 105, 51, 50, 0 };
+  flow_mem_note_stack(sizeof(i32_name));
   return flowc_cgen_find_type_by_name(arena, src, (&i32_name[0]));
 }
   if (kind == AST_CAST) {
@@ -68860,6 +69444,7 @@ int32_t flowc_cgen_is_concat_node(CgenBuf* w, AstArena arena, uint8_t* src, int3
 
 int32_t flowc_cgen_flatten_pure_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t* out, int32_t out_cap) {
   int32_t stack[64] = {  };
+  flow_mem_note_stack(sizeof(stack));
   int32_t sp = 1;
   stack[0] = id;
   int32_t n = 0;
@@ -69194,6 +69779,7 @@ void flowc_cgen_emit_concat_operand(CgenBuf* w, AstArena arena, uint8_t* src, in
 
 void flowc_cgen_emit_str_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   int32_t leaves[32] = {  };
+  flow_mem_note_stack(sizeof(leaves));
   int32_t n = flowc_cgen_flatten_pure_concat(w, arena, src, id, (&leaves[0]), 32);
   if (n > 2) {
   flowc_cgen_perf_remark(w, arena, src, id, "str_concatn", "pure-string chain joined in one allocation", 1);
@@ -69552,6 +70138,7 @@ int32_t flowc_cgen_call_user_libc(CgenBuf* w, AstArena arena, uint8_t* src, int3
   return 0;
 }
   uint8_t nm[128] = {  };
+  flow_mem_note_stack(sizeof(nm));
   int32_t q = 0;
   int32_t j = ((arena).nodes[k]).name_start;
   while (j < ((arena).nodes[k]).name_end && q < 127) {
@@ -70539,6 +71126,7 @@ void flowc_cgen_emit_pipe_block(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).c);
   flowc_cgen_puts(w, "; ");
   int32_t path_buf[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(path_buf));
   int32_t* path = (int32_t*)((&path_buf[0]));
   int32_t arm = items;
   int32_t first = 1;
@@ -70843,8 +71431,11 @@ const char* flowc_cgen_plan_elem_kind(uint8_t* src, int32_t s, int32_t e) {
   return "float";
 }
   int64_t lo[1] = { 0 };
+  flow_mem_note_stack(sizeof(lo));
   int64_t hi[1] = { 0 };
+  flow_mem_note_stack(sizeof(hi));
   int32_t hm[1] = { 0 };
+  flow_mem_note_stack(sizeof(hm));
   if (flowc_cgen_plan_int_range(src, s, e, (&lo[0]), (&hi[0]), (&hm[0])) == 1) {
   return "int";
 }
@@ -70855,6 +71446,7 @@ const char* flowc_cgen_plan_span_str(uint8_t* src, int32_t s, int32_t e) {
   PlanText t = flowc_plan_text_new();
   int32_t i = s;
   uint8_t buf[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(buf));
   for (; i < (e); i = i + 1) {
   buf[0] = src[i];
   flowc_plan_puts((&t), (const char*)((&buf[0])));
@@ -70957,8 +71549,11 @@ PlanFacts flowc_cgen_plan_facts(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   return f;
 }
   int64_t lo[1] = { 0 };
+  flow_mem_note_stack(sizeof(lo));
   int64_t hi[1] = { 0 };
+  flow_mem_note_stack(sizeof(hi));
   int32_t hm[1] = { 0 };
+  flow_mem_note_stack(sizeof(hm));
   int32_t typed = flowc_cgen_plan_int_range(src, es, ee, (&lo[0]), (&hi[0]), (&hm[0]));
   if ((w[0]).plan_has != NULL && (w[0]).plan_has[site] == 1) {
   (f).has_range = 1;
@@ -71059,6 +71654,7 @@ PlanChoice flowc_cgen_plan_choose(CgenBuf* w, AstArena arena, uint8_t* src, int3
   if (report != NULL) {
   int64_t _wr = write(2, (const char*)((rep).buf), (int64_t)((rep).len));
   uint8_t nb[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(nb));
   int32_t _sn = snprintf((&nb[0]), 16, "%d", index);
   int32_t _se = setenv("FLOWC_EXPLAIN_SITES", (const char*)((&nb[0])), 1);
 }
@@ -71098,6 +71694,7 @@ void flowc_cgen_sort_plan_comment(CgenBuf* w, PlanChoice choice) {
 
 void flowc_cgen_put_i64(CgenBuf* w, int64_t v) {
   uint8_t nb[32] = {  };
+  flow_mem_note_stack(sizeof(nb));
   int32_t _sn = snprintf((&nb[0]), 32, "%lld", v);
   flowc_cgen_puts(w, (const char*)((&nb[0])));
 }
@@ -71137,7 +71734,7 @@ void flowc_cgen_sort_body_bottom_up(CgenBuf* w, AstArena arena, uint8_t* src, in
   if (n > 0) {
   flowc_cgen_puts(w, "if (__flowc_sn > 1) { __typeof__(__flowc_sa[0]) __flowc_sb[");
   flowc_cgen_put_i32(w, n);
-  flowc_cgen_puts(w, "]; ");
+  flowc_cgen_puts(w, "]; flow_mem_note_stack(sizeof(__flowc_sb)); ");
 } else {
   flowc_cgen_puts(w, "if (__flowc_sn > 1) { __typeof__(__flowc_sa[0])* __flowc_sb = flow_mem_malloc(sizeof(__flowc_sa[0]) * (size_t)__flowc_sn); ");
 }
@@ -71157,7 +71754,7 @@ void flowc_cgen_sort_body_natural(CgenBuf* w, AstArena arena, uint8_t* src, int3
   flowc_cgen_put_i32(w, n);
   flowc_cgen_puts(w, "]; int32_t __flowc_sst[");
   flowc_cgen_put_i32(w, ((n / minrun) + 3));
-  flowc_cgen_puts(w, "]; int32_t __flowc_snr = 0; int32_t __flowc_si = 0; while (__flowc_si < __flowc_sn) { __flowc_sst[__flowc_snr++] = __flowc_si; int32_t __flowc_sj = __flowc_si + 1; if (__flowc_sj < __flowc_sn && (");
+  flowc_cgen_puts(w, "]; flow_mem_note_stack(sizeof(__flowc_sb) + sizeof(__flowc_sst)); int32_t __flowc_snr = 0; int32_t __flowc_si = 0; while (__flowc_si < __flowc_sn) { __flowc_sst[__flowc_snr++] = __flowc_si; int32_t __flowc_sj = __flowc_si + 1; if (__flowc_sj < __flowc_sn && (");
   flowc_cgen_sort_cmp(w, arena, src, id, "__flowc_sa[__flowc_sj]", "__flowc_sa[__flowc_si]");
   flowc_cgen_puts(w, ") < 0) { while (__flowc_sj < __flowc_sn && (");
   flowc_cgen_sort_cmp(w, arena, src, id, "__flowc_sa[__flowc_sj]", "__flowc_sa[__flowc_sj - 1]");
@@ -71175,6 +71772,7 @@ void flowc_cgen_sort_body_natural(CgenBuf* w, AstArena arena, uint8_t* src, int3
 void flowc_cgen_emit_sort_by(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   int32_t arr = ((arena).nodes[id]).a;
   int32_t eo[1] = { 0 };
+  flow_mem_note_stack(sizeof(eo));
   int32_t n = flowc_cgen_plan_array_n(w, arena, src, arr, (&eo[0]));
   flowc_cgen_puts(w, "({ __typeof__(&(");
   flowc_cgen_emit_expr(w, arena, src, arr);
@@ -71230,6 +71828,7 @@ int32_t flowc_cgen_emit_pipe_find(CgenBuf* w, AstArena arena, uint8_t* src, int3
 }
   int32_t target = ((arena).nodes[arr]).next;
   int32_t eo[1] = { 0 };
+  flow_mem_note_stack(sizeof(eo));
   int32_t n = flowc_cgen_plan_array_n(w, arena, src, arr, (&eo[0]));
   if (n <= 0 || target == AST_NONE) {
   return 0;
@@ -71462,10 +72061,12 @@ void flowc_cgen_emit_as_fat_named(CgenBuf* w, AstArena arena, uint8_t* src, int3
 
 void flowc_cgen_emit_as_fat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t expr, int32_t fty) {
   uint8_t fname[256] = {  };
+  flow_mem_note_stack(sizeof(fname));
   CgenBuf nw = flowc_cgen_buf_init((&fname[0]), 255);
   flowc_cgen_put_fat_name((&nw), arena, src, fty);
   fname[(nw).len] = 0;
   uint8_t fcast[512] = {  };
+  flow_mem_note_stack(sizeof(fcast));
   CgenBuf cw = flowc_cgen_buf_init((&fcast[0]), 511);
   flowc_cgen_put_fat_fn_cast((&cw), arena, src, fty);
   fcast[(cw).len] = 0;
@@ -72936,6 +73537,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   if (kind == AST_CALL) {
   int32_t espan[2] = {  };
+  flow_mem_note_stack(sizeof(espan));
   if (flowc_cgen_eff_call_effect(w, arena, src, id, (&espan[0])) == 1) {
   flowc_cgen_emit_eff_call(w, arena, src, id, espan[0], espan[1]);
   return;
@@ -73577,7 +74179,9 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   if (fn_id == AST_NONE) {
   uint8_t xfname[256] = {  };
+  flow_mem_note_stack(sizeof(xfname));
   uint8_t xfcast[512] = {  };
+  flow_mem_note_stack(sizeof(xfcast));
   if (flowc_cgen_sig_fat_param(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, param_idx, (&xfname[0]), 256, (&xfcast[0]), 512) == 1) {
   flowc_cgen_emit_as_fat_named(w, arena, src, arg, (const char*)((&xfname[0])), (const char*)((&xfcast[0])));
   arg = ((arena).nodes[arg]).next;
@@ -73613,6 +74217,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t aty = flowc_cgen_expr_type_node(w, arena, src, arg);
   if (aty != AST_NONE && aty >= 0 && ((arena).nodes[aty]).kind == AST_TYPE && ((arena).nodes[aty]).ival > 0 && flowc_cgen_ty_is_array(arena, src, aty) == 1) {
   uint8_t span_name[128] = {  };
+  flow_mem_note_stack(sizeof(span_name));
   CgenBuf sw = flowc_cgen_buf_init((&span_name[0]), 127);
   if (flowc_cgen_sig_span_param(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, param_idx, (&sw)) == 1 && (sw).err == 0) {
   flowc_cgen_puts(w, "((");
@@ -74190,6 +74795,7 @@ void flowc_cgen_emit_match_general(CgenBuf* w, AstArena arena, uint8_t* src, int
   int32_t scrut = ((arena).nodes[id]).a;
   int32_t tagsel = flowc_cgen_match_on_enum(w, arena, src, id);
   int32_t path_buf[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(path_buf));
   int32_t* path = (int32_t*)((&path_buf[0]));
   int32_t listy = 0;
   int32_t arm = ((arena).nodes[id]).b;
@@ -76077,6 +76683,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_puts(w, " = ");
   flowc_cgen_emit_expr(w, arena, src, init);
   flowc_cgen_puts(w, ";\n");
+  flowc_cgen_emit_note_stack_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   return;
 }
 }
@@ -76087,15 +76694,18 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_emit_array_dims(w, arena, src, ty);
   if (init == AST_NONE) {
   flowc_cgen_puts(w, ";\n");
+  flowc_cgen_emit_note_stack_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   return;
 }
   if (flowc_cgen_array_lit_is_init(arena, src, ty, init) == 1) {
   flowc_cgen_puts(w, " = ");
   flowc_cgen_emit_expr(w, arena, src, init);
   flowc_cgen_puts(w, ";\n");
+  flowc_cgen_emit_note_stack_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   return;
 }
   flowc_cgen_puts(w, ";\n");
+  flowc_cgen_emit_note_stack_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_emit_array_fill(w, arena, src, 0, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, init);
   return;
 } else {
@@ -76829,7 +77439,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (lhs != AST_NONE && ((arena).nodes[lhs]).kind == AST_IDENT) {
   int32_t ldecl = flowc_cgen_scoped_decl(w, arena, src, lhs);
   if (ldecl != AST_NONE && ((arena).nodes[ldecl]).kind == AST_LET && flowc_cgen_is_sized_array(arena, src, ((arena).nodes[ldecl]).a) == 1) {
-  flowc_cgen_puts(w, "memcpy(");
+  flowc_cgen_puts(w, "flow_mem_memcpy_site(");
   flowc_cgen_emit_expr(w, arena, src, lhs);
   flowc_cgen_puts(w, ", ");
   int32_t rhs = ((arena).nodes[id]).b;
@@ -76841,7 +77451,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   flowc_cgen_emit_expr(w, arena, src, rhs);
   flowc_cgen_puts(w, ", sizeof(");
   flowc_cgen_emit_expr(w, arena, src, lhs);
-  flowc_cgen_puts(w, "));\n");
+  flowc_cgen_puts(w, "), FLOW_MEM_SITE_ARRAY);\n");
   return;
 }
 }
@@ -77095,6 +77705,12 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   return 1;
 }
   if (flowc_cgen_span_is(src, ns, ne, "memcpy") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "flow_mem_note_arena") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "flow_mem_note_stack") == 1) {
   return 1;
 }
   if (flowc_cgen_span_is(src, ns, ne, "memset") == 1) {
@@ -78701,6 +79317,7 @@ int32_t flowc_cgen_static_handler(CgenBuf* w, AstArena arena, uint8_t* src, int3
 
 void flowc_cgen_emit_eff_call(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call, int32_t es, int32_t ee) {
   int32_t hspan[2] = {  };
+  flow_mem_note_stack(sizeof(hspan));
   if (flowc_cgen_static_handler(w, arena, src, es, ee, ((arena).nodes[call]).name_start, ((arena).nodes[call]).name_end, (&hspan[0])) == 1) {
   flowc_cgen_put_span(w, src, hspan[0], hspan[1]);
 } else {
@@ -78818,37 +79435,94 @@ void flowc_cgen_emit_mem_profile(CgenBuf* w) {
   flowc_cgen_puts(w, "static unsigned long long flow_mem_alloc_bytes = 0ULL;\n");
   flowc_cgen_puts(w, "static unsigned long long flow_mem_temp_bytes = 0ULL;\n");
   flowc_cgen_puts(w, "static unsigned long long flow_mem_copy_bytes = 0ULL;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_stack_bytes = 0ULL;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_arena_bytes = 0ULL;\n");
   flowc_cgen_puts(w, "static long long flow_mem_live_bytes = 0;\n");
   flowc_cgen_puts(w, "static long long flow_mem_peak_live = 0;\n");
-  flowc_cgen_puts(w, "#define FLOW_MEM_MAP 1024\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_HEAP 0\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_TEMP 1\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_CONCAT 2\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_SORT 3\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_ARRAY 4\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_COPY 5\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_STACK 6\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_SITE_ARENA 7\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_NSITE 8\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_site_bytes[FLOW_MEM_NSITE];\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_site_count[FLOW_MEM_NSITE];\n");
+  flowc_cgen_puts(w, "static const char* flow_mem_site_nm[FLOW_MEM_NSITE] = {\n");
+  flowc_cgen_puts(w, "  \"heap\", \"temp\", \"concat\", \"sort\", \"array\", \"copy\", \"stack\", \"arena\"\n};\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_MAP 4096\n");
   flowc_cgen_puts(w, "static void* flow_mem_ptrs[FLOW_MEM_MAP];\n");
   flowc_cgen_puts(w, "static size_t flow_mem_sz[FLOW_MEM_MAP];\n");
+  flowc_cgen_puts(w, "static unsigned char flow_mem_st[FLOW_MEM_MAP];\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_map_used = 0ULL;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_map_overflow = 0ULL;\n");
+  flowc_cgen_puts(w, "static inline unsigned flow_mem_hash(void* p) {\n");
+  flowc_cgen_puts(w, "  unsigned long long x = (unsigned long long)(uintptr_t)p;\n");
+  flowc_cgen_puts(w, "  x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;\n");
+  flowc_cgen_puts(w, "  return (unsigned)x & (FLOW_MEM_MAP - 1);\n}\n");
   flowc_cgen_puts(w, "static inline void flow_mem_map_put(void* p, size_t n) {\n");
-  flowc_cgen_puts(w, "  int i; if (!flow_mem_profile_on || p == 0) return;\n");
-  flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == 0) { flow_mem_ptrs[i] = p; flow_mem_sz[i] = n; return; } }\n");
-  flowc_cgen_puts(w, "}\n");
+  flowc_cgen_puts(w, "  unsigned h, i; if (!flow_mem_profile_on || p == 0) return;\n");
+  flowc_cgen_puts(w, "  h = flow_mem_hash(p);\n");
+  flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_MAP; i++) {\n");
+  flowc_cgen_puts(w, "    unsigned k = (h + i) & (FLOW_MEM_MAP - 1);\n");
+  flowc_cgen_puts(w, "    if (flow_mem_st[k] != 1) {\n");
+  flowc_cgen_puts(w, "      flow_mem_ptrs[k] = p; flow_mem_sz[k] = n; flow_mem_st[k] = 1;\n");
+  flowc_cgen_puts(w, "      flow_mem_map_used++; return;\n");
+  flowc_cgen_puts(w, "    }\n  }\n");
+  flowc_cgen_puts(w, "  flow_mem_map_overflow++;\n}\n");
   flowc_cgen_puts(w, "static inline size_t flow_mem_map_take(void* p) {\n");
-  flowc_cgen_puts(w, "  int i; if (!flow_mem_profile_on || p == 0) return 0;\n");
-  flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == p) { size_t n = flow_mem_sz[i]; flow_mem_ptrs[i] = 0; return n; } }\n");
+  flowc_cgen_puts(w, "  unsigned h, i; if (!flow_mem_profile_on || p == 0) return 0;\n");
+  flowc_cgen_puts(w, "  h = flow_mem_hash(p);\n");
+  flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_MAP; i++) {\n");
+  flowc_cgen_puts(w, "    unsigned k = (h + i) & (FLOW_MEM_MAP - 1);\n");
+  flowc_cgen_puts(w, "    if (flow_mem_st[k] == 0) return 0;\n");
+  flowc_cgen_puts(w, "    if (flow_mem_st[k] == 1 && flow_mem_ptrs[k] == p) {\n");
+  flowc_cgen_puts(w, "      size_t n = flow_mem_sz[k]; flow_mem_ptrs[k] = 0; flow_mem_st[k] = 2;\n");
+  flowc_cgen_puts(w, "      if (flow_mem_map_used) flow_mem_map_used--; return n;\n");
+  flowc_cgen_puts(w, "    }\n  }\n");
   flowc_cgen_puts(w, "  return 0;\n}\n");
   flowc_cgen_puts(w, "static void flow_mem_profile_init(void);\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_site(int site, size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on || site < 0 || site >= FLOW_MEM_NSITE) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_site_count[site]++; flow_mem_site_bytes[site] += (unsigned long long)n;\n}\n");
   flowc_cgen_puts(w, "static inline void flow_mem_note_alloc(size_t n) {\n");
   flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
   flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
   flowc_cgen_puts(w, "  flow_mem_alloc_count++; flow_mem_alloc_bytes += (unsigned long long)n;\n");
   flowc_cgen_puts(w, "  flow_mem_live_bytes += (long long)n;\n");
-  flowc_cgen_puts(w, "  if (flow_mem_live_bytes > flow_mem_peak_live) flow_mem_peak_live = flow_mem_live_bytes;\n}\n");
+  flowc_cgen_puts(w, "  if (flow_mem_live_bytes > flow_mem_peak_live) flow_mem_peak_live = flow_mem_live_bytes;\n");
+  flowc_cgen_puts(w, "  flow_mem_note_site(FLOW_MEM_SITE_HEAP, n);\n}\n");
   flowc_cgen_puts(w, "static inline void flow_mem_note_free(size_t n) {\n");
   flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
   flowc_cgen_puts(w, "  flow_mem_live_bytes -= (long long)n; if (flow_mem_live_bytes < 0) flow_mem_live_bytes = 0;\n}\n");
   flowc_cgen_puts(w, "static inline void flow_mem_note_temp(size_t n) {\n");
   flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
   flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
-  flowc_cgen_puts(w, "  flow_mem_temp_bytes += (unsigned long long)n;\n}\n");
+  flowc_cgen_puts(w, "  flow_mem_temp_bytes += (unsigned long long)n;\n");
+  flowc_cgen_puts(w, "  flow_mem_note_site(FLOW_MEM_SITE_TEMP, n);\n}\n");
   flowc_cgen_puts(w, "static inline void flow_mem_note_copy(size_t n) {\n");
   flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
   flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
-  flowc_cgen_puts(w, "  flow_mem_copy_bytes += (unsigned long long)n;\n}\n");
+  flowc_cgen_puts(w, "  flow_mem_copy_bytes += (unsigned long long)n;\n");
+  flowc_cgen_puts(w, "  flow_mem_note_site(FLOW_MEM_SITE_COPY, n);\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_copy_site(int site, size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_copy_bytes += (unsigned long long)n;\n");
+  flowc_cgen_puts(w, "  flow_mem_note_site(site, n);\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_stack(size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_stack_bytes += (unsigned long long)n;\n");
+  flowc_cgen_puts(w, "  flow_mem_note_site(FLOW_MEM_SITE_STACK, n);\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_arena(size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_arena_bytes += (unsigned long long)n;\n");
+  flowc_cgen_puts(w, "  flow_mem_note_site(FLOW_MEM_SITE_ARENA, n);\n}\n");
   flowc_cgen_puts(w, "static inline void* flow_mem_malloc(size_t n) {\n");
   flowc_cgen_puts(w, "  void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;\n}\n");
   flowc_cgen_puts(w, "static inline void* flow_mem_calloc(size_t c, size_t s) {\n");
@@ -78859,10 +79533,13 @@ void flowc_cgen_emit_mem_profile(CgenBuf* w) {
   flowc_cgen_puts(w, "  else if (old) flow_mem_map_put(p, old); return q;\n}\n");
   flowc_cgen_puts(w, "static inline void flow_mem_free(void* p) {\n");
   flowc_cgen_puts(w, "  size_t n; if (p == 0) return; n = flow_mem_map_take(p); if (n) flow_mem_note_free(n); free(p);\n}\n");
+  flowc_cgen_puts(w, "static inline void* flow_mem_memcpy_site(void* d, const void* s, size_t n, int site) {\n");
+  flowc_cgen_puts(w, "  flow_mem_note_copy_site(site, n); return memcpy(d, s, n);\n}\n");
   flowc_cgen_puts(w, "static inline void* flow_mem_memcpy(void* d, const void* s, size_t n) {\n");
-  flowc_cgen_puts(w, "  flow_mem_note_copy(n); return memcpy(d, s, n);\n}\n");
+  flowc_cgen_puts(w, "  return flow_mem_memcpy_site(d, s, n, FLOW_MEM_SITE_COPY);\n}\n");
   flowc_cgen_puts(w, "static void flow_mem_report(void) {\n");
-  flowc_cgen_puts(w, "  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb;\n");
+  flowc_cgen_puts(w, "  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb; int si;\n");
+  flowc_cgen_puts(w, "  unsigned long long promo;\n");
   flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
   flowc_cgen_puts(w, "  peak_rss_kb = 0; if (getrusage(0, &ru) == 0) {\n");
   flowc_cgen_puts(w, "#if defined(__APPLE__)\n");
@@ -78870,6 +79547,7 @@ void flowc_cgen_emit_mem_profile(CgenBuf* w) {
   flowc_cgen_puts(w, "#else\n");
   flowc_cgen_puts(w, "    peak_rss_kb = (long long)ru.ru_maxrss;\n");
   flowc_cgen_puts(w, "#endif\n  }\n");
+  flowc_cgen_puts(w, "  promo = flow_mem_stack_bytes + flow_mem_arena_bytes;\n");
   flowc_cgen_puts(w, "  path = getenv(\"FLOW_MEM_PROFILE_OUT\"); fp = stderr;\n");
   flowc_cgen_puts(w, "  if (path != 0 && path[0] != 0) { FILE* out = fopen(path, \"w\"); if (out) fp = out; }\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"\\n=== Flow memory profile (#740) ===\\n\");\n");
@@ -78879,8 +79557,15 @@ void flowc_cgen_emit_mem_profile(CgenBuf* w) {
   flowc_cgen_puts(w, "  fprintf(fp, \"peak RSS (kB)         : %lld\\n\", peak_rss_kb);\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"temp lifetime bytes   : %llu\\n\", flow_mem_temp_bytes);\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"copy volume (bytes)   : %llu\\n\", flow_mem_copy_bytes);\n");
-  flowc_cgen_puts(w, "  fprintf(fp, \"stack/arena promotion : (deferred, needs #669)\\n\");\n");
-  flowc_cgen_puts(w, "  fprintf(fp, \"copy volume by site   : (deferred, needs #669)\\n\");\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"stack/arena promotion : %llu\\n\", promo);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"  stack bytes         : %llu\\n\", flow_mem_stack_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"  arena bytes         : %llu\\n\", flow_mem_arena_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"live map used         : %llu / %d\\n\", flow_mem_map_used, FLOW_MEM_MAP);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"live map overflow     : %llu\\n\", flow_mem_map_overflow);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"copy volume by site   :\\n\");\n");
+  flowc_cgen_puts(w, "  for (si = 0; si < FLOW_MEM_NSITE; si++) {\n");
+  flowc_cgen_puts(w, "    fprintf(fp, \"  %-6s : %llu bytes in %llu events\\n\", flow_mem_site_nm[si], flow_mem_site_bytes[si], flow_mem_site_count[si]);\n");
+  flowc_cgen_puts(w, "  }\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"==================================\\n\");\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"allocations: %llu\\n\", flow_mem_alloc_count);\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"heap_bytes: %llu\\n\", flow_mem_alloc_bytes);\n");
@@ -78888,6 +79573,19 @@ void flowc_cgen_emit_mem_profile(CgenBuf* w) {
   flowc_cgen_puts(w, "  fprintf(fp, \"peak_rss_kb: %lld\\n\", peak_rss_kb);\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"temp_bytes: %llu\\n\", flow_mem_temp_bytes);\n");
   flowc_cgen_puts(w, "  fprintf(fp, \"copies: %llu\\n\", flow_mem_copy_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"stack_bytes: %llu\\n\", flow_mem_stack_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"arena_bytes: %llu\\n\", flow_mem_arena_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"promotion_bytes: %llu\\n\", promo);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"live_map_used: %llu\\n\", flow_mem_map_used);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"live_map_overflow: %llu\\n\", flow_mem_map_overflow);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_heap: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_HEAP]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_temp: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_TEMP]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_concat: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_CONCAT]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_sort: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_SORT]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_array: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_ARRAY]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_copy: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_COPY]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_stack: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_STACK]);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"site_arena: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_ARENA]);\n");
   flowc_cgen_puts(w, "  if (fp != stderr) fclose(fp);\n}\n");
   flowc_cgen_puts(w, "static void flow_mem_profile_init(void) {\n");
   flowc_cgen_puts(w, "  const char* e; if (flow_mem_inited) return; flow_mem_inited = 1;\n");
@@ -78919,6 +79617,18 @@ int32_t flowc_cgen_emit_mem_name(CgenBuf* w, uint8_t* src, int32_t ns, int32_t n
   return 1;
 }
   return 0;
+}
+
+void flowc_cgen_emit_note_stack_ident(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne) {
+  flowc_cgen_puts(w, "  flow_mem_note_stack(sizeof(");
+  flowc_cgen_put_ident(w, src, ns, ne);
+  flowc_cgen_puts(w, "));\n");
+}
+
+void flowc_cgen_emit_note_stack_name(CgenBuf* w, const char* name) {
+  flowc_cgen_puts(w, "  flow_mem_note_stack(sizeof(");
+  flowc_cgen_puts(w, name);
+  flowc_cgen_puts(w, "));\n");
 }
 
 int32_t flowc_cgen_export_sep(int32_t c) {
@@ -79239,19 +79949,27 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   (w).fiber_main = flowc_eff_has_fiber_cap(eff_buf, (w).eff_len);
 }
   uint8_t cembed_name_buf[4096] = {  };
+  flow_mem_note_stack(sizeof(cembed_name_buf));
   int32_t cembed_off_arr[32] = {  };
+  flow_mem_note_stack(sizeof(cembed_off_arr));
   int32_t cembed_len_arr[32] = {  };
+  flow_mem_note_stack(sizeof(cembed_len_arr));
   (w).cembed_names = (&cembed_name_buf[0]);
   (w).cembed_offs = (&cembed_off_arr[0]);
   (w).cembed_lens = (&cembed_len_arr[0]);
   int32_t cap_start_arr[64] = {  };
+  flow_mem_note_stack(sizeof(cap_start_arr));
   int32_t cap_end_arr[64] = {  };
+  flow_mem_note_stack(sizeof(cap_end_arr));
   (w).cap_starts = (&cap_start_arr[0]);
   (w).cap_ends = (&cap_end_arr[0]);
   (w).cap_count = 0;
   int32_t lam_cap_lambda_arr[256] = {  };
+  flow_mem_note_stack(sizeof(lam_cap_lambda_arr));
   int32_t lam_cap_start_arr[256] = {  };
+  flow_mem_note_stack(sizeof(lam_cap_start_arr));
   int32_t lam_cap_end_arr[256] = {  };
+  flow_mem_note_stack(sizeof(lam_cap_end_arr));
   (w).lambda_cap_lambda = (&lam_cap_lambda_arr[0]);
   (w).lambda_cap_start = (&lam_cap_start_arr[0]);
   (w).lambda_cap_end = (&lam_cap_end_arr[0]);
@@ -79323,7 +80041,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "  la = strlen(a); lb = strlen(b);\n");
   flowc_cgen_puts((&w), "  r = (char*)flow_mem_malloc(la + lb + 1);\n");
   flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
-  flowc_cgen_puts((&w), "  flow_mem_note_temp(la + lb + 1); flow_mem_note_copy(la + lb);\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(la + lb + 1); flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, la + lb);\n");
   flowc_cgen_puts((&w), "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n");
   flowc_cgen_puts((&w), "  return r;\n");
   flowc_cgen_puts((&w), "}\n");
@@ -79335,7 +80053,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "  va_end(ap);\n");
   flowc_cgen_puts((&w), "  r = (char*)flow_mem_malloc(total + 1);\n");
   flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
-  flowc_cgen_puts((&w), "  flow_mem_note_temp(total + 1); flow_mem_note_copy(total);\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(total + 1); flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, total);\n");
   flowc_cgen_puts((&w), "  off = 0;\n");
   flowc_cgen_puts((&w), "  va_start(ap, n);\n");
   flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) {\n");
@@ -79466,9 +80184,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "static int flowc_cmp_u8(const void* a, const void* b) { uint8_t x = *(const uint8_t*)a; uint8_t y = *(const uint8_t*)b; return (x > y) - (x < y); }\n");
   flowc_cgen_puts((&w), "static int flowc_cmp_f64(const void* a, const void* b) { double x = *(const double*)a; double y = *(const double*)b; int xu = (x != x), yu = (y != y); if (xu && yu) { union { double d; uint64_t u; } ux, uy; ux.d = x; uy.d = y; return (ux.u < uy.u) - (ux.u > uy.u); } if (xu) { union { double d; uint64_t u; } ux; ux.d = x; return (ux.u >> 63) ? -1 : 1; } if (yu) { union { double d; uint64_t u; } uy; uy.d = y; return (uy.u >> 63) ? 1 : -1; } if (x == y) { union { double d; uint64_t u; } ux, uy; ux.d = x; uy.d = y; return (ux.u < uy.u) - (ux.u > uy.u); } return (x > y) - (x < y); }\n");
   flowc_cgen_puts((&w), "static int flowc_cmp_f32(const void* a, const void* b) { float x = *(const float*)a; float y = *(const float*)b; if (x != x) return 1; if (y != y) return -1; return (x > y) - (x < y); }\n");
-  flowc_cgen_puts((&w), "static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; memcpy(tmp, (char*)a + i * sz, sz); memcpy((char*)a + i * sz, (char*)a + j * sz, sz); memcpy((char*)a + j * sz, tmp, sz); i++; j--; } } return 0; }\n");
+  flowc_cgen_puts((&w), "static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; flow_mem_note_stack(sizeof(tmp)); flow_mem_memcpy_site(tmp, (char*)a + i * sz, sz, FLOW_MEM_SITE_SORT); flow_mem_memcpy_site((char*)a + i * sz, (char*)a + j * sz, sz, FLOW_MEM_SITE_SORT); flow_mem_memcpy_site((char*)a + j * sz, tmp, sz, FLOW_MEM_SITE_SORT); i++; j--; } } return 0; }\n");
   flowc_cgen_puts((&w), "static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { for (int32_t i = 0; i < n; i++) { if (a[i] == target) return i; } return -1; }\n");
-  flowc_cgen_puts((&w), "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } flow_mem_free(tmp); return 0; }\n");
+  flowc_cgen_puts((&w), "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); flow_mem_note_site(FLOW_MEM_SITE_SORT, (size_t)sz); for (int32_t i = 1; i < n; i++) { flow_mem_memcpy_site(tmp, base + i * sz, sz, FLOW_MEM_SITE_SORT); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { flow_mem_memcpy_site(base + j * sz, base + (j-1) * sz, sz, FLOW_MEM_SITE_SORT); j--; } else break; } flow_mem_memcpy_site(base + j * sz, tmp, sz, FLOW_MEM_SITE_SORT); } flow_mem_free(tmp); return 0; }\n");
   flowc_cgen_puts((&w), "#endif\n");
   flowc_cgen_putc((&w), 10);
 }
@@ -79487,7 +80205,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_emit_checks_prelude((&w));
 }
   int32_t param_span_buf[128] = {  };
+  flow_mem_note_stack(sizeof(param_span_buf));
   int32_t per_lam_buf[32] = {  };
+  flow_mem_note_stack(sizeof(per_lam_buf));
   int32_t li = 0;
   for (; li < ((arena).len); li = li + 1) {
   if (((arena).nodes[li]).kind == AST_FN) {
@@ -80139,8 +80859,11 @@ int32_t flowc_cgen_write_generic_ret(CgenBuf* w, AstArena arena, uint8_t* src, i
   return 0;
 }
   int32_t starts[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(starts));
   int32_t ends[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(ends));
   int32_t conc[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(conc));
   int32_t ntp = flowc_cgen_fn_tp_names(src, fn_id, arena, (&starts[0]), (&ends[0]));
   int32_t nconc = 0;
   int32_t ta = ((arena).nodes[call]).b;
@@ -80216,8 +80939,11 @@ void flowc_cgen_mono_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ns, in
   return;
 }
   int32_t tp_starts[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tp_starts));
   int32_t tp_ends[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tp_ends));
   int32_t tp_concrete[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tp_concrete));
   int32_t ntp_names = flowc_cgen_fn_tp_names(src, fn_id, arena, (&tp_starts[0]), (&tp_ends[0]));
   if (ntp_names != nconc) {
   return;
@@ -80239,6 +80965,7 @@ void flowc_cgen_mono_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ns, in
   for (; k < ((arena).len); k = k + 1) {
   if (((arena).nodes[k]).kind == AST_CALL && ((arena).nodes[k]).b != AST_NONE && ((arena).nodes[k]).start >= ((arena).nodes[fn_id]).start && ((arena).nodes[k]).start < ((arena).nodes[fn_id]).end) {
   int32_t inner[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(inner));
   int32_t ninner = 0;
   int32_t ok = 1;
   int32_t ta = ((arena).nodes[k]).b;
@@ -80294,10 +81021,14 @@ void flowc_cgen_mono_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ns, in
 
 void flowc_cgen_emit_mono(CgenBuf* w, AstArena arena, uint8_t* src, int32_t root) {
   int32_t emitted_hashes[256] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(emitted_hashes));
   int32_t emitted_count = 0;
   int32_t tp_starts[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tp_starts));
   int32_t tp_ends[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tp_ends));
   int32_t tp_concrete[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(tp_concrete));
   int32_t i = 0;
   for (; i < ((arena).len); i = i + 1) {
   int32_t kind = ((arena).nodes[i]).kind;
@@ -82340,6 +83071,7 @@ int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t 
 }
   if (e >= 0 && (sem_s_eq(op, "/") || sem_s_eq(op, "%"))) {
   int32_t ok[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok));
   int64_t v = sem_literal_int(c, sem_nb(c, e), 0, (int32_t*)((&ok[0])));
   if (ok[0] == 1 && v == 0 && sem_is_float(c, lt) == 0) {
   sem_err(c, "Division/modulo by zero is undefined (MISRA Rule 12.5 / CERT INT33-C)");
@@ -82347,6 +83079,7 @@ int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t 
 }
   if (e >= 0 && (sem_s_eq(op, "<<") || sem_s_eq(op, ">>"))) {
   int32_t ok2[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok2));
   int64_t amount = sem_literal_int(c, sem_nb(c, e), 0, (int32_t*)((&ok2[0])));
   int32_t width = sem_integer_bit_width(c, lt);
   if (width > 0 && width < 32) {
@@ -82359,6 +83092,7 @@ int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t 
 }
   if (sem_s_eq(op, "<<")) {
   int32_t ok3[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok3));
   int64_t lhs = sem_literal_int(c, sem_na(c, e), 0, (int32_t*)((&ok3[0])));
   if (ok3[0] == 1 && lhs < 0) {
   sem_err(c, "Left shift of a negative value is undefined (MISRA Rule 12.2 / CERT INT34-C)");
@@ -82757,7 +83491,9 @@ int32_t sem_static_length(Sem* c, int32_t e) {
 }
   if (sem_is_slice(c, e)) {
   int32_t ok[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok));
   int32_t ok2[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok2));
   int64_t lo = sem_literal_int(c, sem_nb(c, e), 1, (int32_t*)((&ok[0])));
   int64_t hi = sem_literal_int(c, sem_ncc(c, e), 1, (int32_t*)((&ok2[0])));
   if (ok[0] == 0 || ok2[0] == 0) {
@@ -83593,6 +84329,7 @@ int32_t sem_array_lit_len(Sem* c, int32_t e) {
   int32_t rep = sem_nb(c, e);
   if (rep != AST_NONE) {
   int32_t ok[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok));
   int64_t n = sem_literal_int(c, rep, 1, (int32_t*)((&ok[0])));
   if (ok[0] == 1) {
   return (int32_t)(n);
@@ -84314,6 +85051,7 @@ int32_t sem_check_for_stmt(Sem* c, int32_t s) {
   if (step > 0) {
   sem_check_expression(c, step);
   int32_t ok[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok));
   int64_t v = sem_literal_int(c, step, 1, (int32_t*)((&ok[0])));
   if (ok[0] == 1 && v == 0) {
   sem_err(c, "for range step must not be zero");
@@ -84701,6 +85439,7 @@ bool sem_literal_value_of(Sem* c, int32_t lit, SemIntVec* ints, SemIntVec* bools
 }
   if (sem_nk(c, lit) == AST_INT) {
   int32_t ok[1] = { 0 };
+  flow_mem_note_stack(sizeof(ok));
   int64_t v = sem_literal_int(c, lit, 0, (int32_t*)((&ok[0])));
   if (ok[0] == 1 && ints != NULL) {
   sem_iv_push(ints, (int32_t)(v));
@@ -87505,6 +88244,7 @@ void flowc_tc_eff_check_row_call(TcCtx* ctx, AstArena arena, int32_t call) {
   int32_t ns = ((arena).nodes[call]).name_start;
   int32_t ne = ((arena).nodes[call]).name_end;
   uint8_t names[1024] = {  };
+  flow_mem_note_stack(sizeof(names));
   int32_t nlen = 0;
   int32_t count = 0;
   int32_t off = flowc_eff_find((ctx[0]).eff, (ctx[0]).eff_len, FLOWC_EFF_ROW, src, ns, ne, (0 - 1), (0 - 1));
@@ -87905,6 +88645,7 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   int32_t nargs = flowc_ast_chain_len(arena, ((arena).nodes[id]).a);
   flowc_tc_rt_consult_call(ctx, arena, id);
   int32_t espan[2] = {  };
+  flow_mem_note_stack(sizeof(espan));
   if ((ctx[0]).sem_on == 1) {
   int32_t sarg = ((arena).nodes[id]).a;
   while (sarg != AST_NONE) {
@@ -90284,6 +91025,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 
 int32_t flowc_typecheck_ex(AstArena arena, int32_t root, uint8_t* src, const char* path) {
   int32_t fatal[1] = { 0 };
+  flow_mem_note_stack(sizeof(fatal));
   return flowc_typecheck_fatal(arena, root, src, path, (int32_t*)((&fatal[0])));
 }
 
@@ -91890,6 +92632,7 @@ int32_t flowc_resolve_toml_declares(uint8_t* toml, int32_t n, const char* table,
   uint8_t* tp = (uint8_t*)(table);
   int32_t tn = (int32_t)(strlen(table));
   int32_t span[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(span));
   int32_t in_table = 0;
   int32_t pos = 0;
   while (pos < n) {
@@ -91960,6 +92703,7 @@ int32_t flowc_resolve_toml_string_value(uint8_t* toml, int32_t n, const char* ta
   uint8_t* tp = (uint8_t*)(table);
   int32_t tn = (int32_t)(strlen(table));
   int32_t span[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(span));
   int32_t in_table = 0;
   int32_t pos = 0;
   while (pos < n) {
@@ -92448,6 +93192,7 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const
 }
   src[nsrc] = 0;
   uint8_t mod_dir_buf[1024] = { 0 };
+  flow_mem_note_stack(sizeof(mod_dir_buf));
   int32_t mod_dlen = flowc_resolve_dirname(path, (uint8_t*)((&mod_dir_buf[0])), 1024);
   const char* mod_search = search_dir;
   if (mod_dlen > 0) {
@@ -92635,6 +93380,7 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
   void* fp = (void*)(flowc_io_fopen(cache_file, "rb"));
   if (fp != NULL) {
   int32_t header[5] = { 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(header));
   if (flowc_io_fread((uint8_t*)((&header[0])), 4, 5, fp) == 5) {
   if (header[0] == FLOWC_AST_CACHE_MAGIC && header[1] == FLOWC_AST_CACHE_SCHEMA && header[2] == FLOWC_AST_NODE_SIZE) {
   int32_t ast_len = header[3];
@@ -92661,6 +93407,7 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
   void* fpo = (void*)(flowc_io_fopen(cache_file, "wb"));
   if (fpo != NULL) {
   int32_t header_out[5] = { FLOWC_AST_CACHE_MAGIC, FLOWC_AST_CACHE_SCHEMA, FLOWC_AST_NODE_SIZE, ((p[0]).arena).len, root };
+  flow_mem_note_stack(sizeof(header_out));
   int32_t _w1 = flowc_io_fwrite((uint8_t*)((&header_out[0])), 4, 5, fpo);
   int32_t _w2 = flowc_io_fwrite((uint8_t*)(((p[0]).arena).nodes), FLOWC_AST_NODE_SIZE, ((p[0]).arena).len, fpo);
   int32_t _c2 = flowc_io_fclose(fpo);
@@ -93141,6 +93888,7 @@ bool flowc_resolve_strict() {
 
 int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
   int32_t fatal[1] = { 0 };
+  flow_mem_note_stack(sizeof(fatal));
   return flowc_bundle_typecheck_fatal(entry_path, search_dir, (int32_t*)((&fatal[0])));
 }
 
@@ -93268,6 +94016,7 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   ctx_fatal = (ctx).fatal;
   int64_t t_sem = flowc_prof_span_begin();
   int32_t sc[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(sc));
   if (flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, (int32_t*)((&sc[0]))) != 0) {
   ctx_fatal = (ctx_fatal + 1);
   total_err = (total_err + 1);
@@ -94182,6 +94931,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   (mb).starts[(mb).norder] = (mb).all_len;
   if (typecheck == 1) {
   int32_t tc_fatal[1] = { 0 };
+  flow_mem_note_stack(sizeof(tc_fatal));
   int32_t tc_errs = mb_typecheck(b, (int32_t*)((&tc_fatal[0])));
   int32_t lenient_ok = ((tc_fatal[0] == 0 && mb_env_is("FLOWC_LENIENT", "1") == 1) ? (1) : (0));
   if (tc_errs > 0 && lenient_ok == 1) {
@@ -94550,6 +95300,7 @@ int32_t flowc_emit_body() {
 }
   if (flowc_want_typecheck() == 1) {
   int32_t bfatal[1] = { 0 };
+  flow_mem_note_stack(sizeof(bfatal));
   int32_t tc_errs = flowc_bundle_typecheck_fatal(in_path, search_dir, (int32_t*)((&bfatal[0])));
   if (tc_errs > 0 && flowc_tc_lenient_ok(tc_errs, bfatal[0]) == 0) {
   puts("flowc emit: bundle typecheck failed");
@@ -94629,6 +95380,7 @@ int32_t flowc_emit_body() {
   if (flowc_want_typecheck() == 1) {
   int64_t t_tc = flowc_prof_span_begin();
   int32_t sem[2] = { 0, 0 };
+  flow_mem_note_stack(sizeof(sem));
   bool sem_done = 0;
   if (flowc_ast_count_kind((p).arena, AST_IMPORT) > 0) {
   sem_done = flowc_semcheck_imports(getenv("FLOWC_IN"), (int32_t*)((&sem[0]))) == 0;
@@ -94642,6 +95394,7 @@ int32_t flowc_emit_body() {
   flowc_fuse_pipelines((&(p).arena), src);
 }
   int32_t sfatal[1] = { 0 };
+  flow_mem_note_stack(sizeof(sfatal));
   int32_t tc_errs = (flowc_typecheck_fatal_sem((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sfatal[0])), 1) + sem[0]);
   sfatal[0] = (sfatal[0] + sem[1]);
   flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_tc);
@@ -94853,6 +95606,7 @@ int32_t expect_kind(int32_t kind, int32_t want) {
 
 int32_t test_lexer_smoke() {
   uint8_t a[15] = { 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 52, 50 };
+  flow_mem_note_stack(sizeof(a));
   uint8_t* restrict ap = (uint8_t*)(a);
   Lexer la = flowc_lexer_new(ap, 15);
   Token t0 = flowc_lexer_next((&la));
@@ -94883,6 +95637,7 @@ int32_t test_lexer_smoke() {
 
 int32_t test_parse_core() {
   uint8_t src[220] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 115, 58, 32, 105, 51, 50, 32, 61, 32, 97, 32, 43, 32, 98, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 115, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 97, 100, 100, 40, 50, 48, 44, 32, 50, 50, 41, 10, 32, 32, 105, 102, 32, 120, 32, 61, 61, 32, 52, 50, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 32, 32, 125, 32, 101, 108, 115, 101, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 32, 32, 125, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 220 && sp[len] != 0) {
@@ -94937,6 +95692,7 @@ int32_t test_parse_core() {
 
 int32_t test_parse_for() {
   uint8_t src[80] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 102, 111, 114, 32, 105, 32, 105, 110, 32, 48, 32, 116, 111, 32, 49, 48, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 105, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 80 && sp[len] != 0) {
@@ -94967,6 +95723,7 @@ int32_t test_parse_for() {
 
 int32_t test_parse_struct() {
   uint8_t src[80] = { 115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116, 32, 123, 10, 32, 32, 120, 58, 32, 105, 51, 50, 44, 10, 32, 32, 121, 58, 32, 105, 51, 50, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 111, 114, 105, 103, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 80 && sp[len] != 0) {
@@ -95002,6 +95759,7 @@ int32_t test_parse_struct() {
 
 int32_t test_parse_extern() {
   uint8_t src[88] = { 101, 120, 116, 101, 114, 110, 32, 123, 10, 32, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 112, 117, 116, 115, 40, 115, 58, 32, 115, 116, 114, 105, 110, 103, 41, 32, 45, 62, 32, 105, 51, 50, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 88 && sp[len] != 0) {
@@ -95032,6 +95790,7 @@ int32_t test_parse_extern() {
 
 int32_t test_parse_import_export() {
   uint8_t src[200] = { 105, 109, 112, 111, 114, 116, 32, 46, 116, 111, 107, 101, 110, 32, 123, 32, 84, 79, 75, 95, 69, 79, 70, 32, 125, 10, 105, 109, 112, 111, 114, 116, 32, 112, 107, 103, 46, 109, 111, 100, 32, 123, 32, 97, 44, 32, 98, 32, 125, 10, 105, 109, 112, 111, 114, 116, 32, 34, 112, 97, 116, 104, 46, 102, 108, 111, 119, 34, 10, 101, 120, 112, 111, 114, 116, 32, 102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 97, 32, 125, 10, 101, 120, 112, 111, 114, 116, 32, 115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120, 58, 32, 105, 51, 50, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 200 && sp[len] != 0) {
@@ -95093,6 +95852,7 @@ int32_t test_parse_import_export() {
 
 int32_t test_parse_export_bare() {
   uint8_t src[48] = { 101, 120, 112, 111, 114, 116, 32, 97, 44, 32, 98, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 48, 128);
   int32_t root = flowc_parse_program((&p));
@@ -95134,6 +95894,7 @@ int32_t test_parse_export_bare() {
 
 int32_t test_cgen_for() {
   uint8_t src[80] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 102, 111, 114, 32, 105, 32, 105, 110, 32, 48, 32, 116, 111, 32, 49, 48, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 105, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 80 && sp[len] != 0) {
@@ -95191,6 +95952,7 @@ int32_t test_cgen_for() {
 
 int32_t test_cgen_logic() {
   uint8_t src[128] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 97, 58, 32, 105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 97, 32, 38, 38, 32, 98, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 103, 40, 120, 58, 32, 105, 51, 50, 44, 32, 121, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 32, 61, 61, 32, 49, 32, 124, 124, 32, 121, 32, 61, 61, 32, 50, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 128 && sp[len] != 0) {
@@ -95239,6 +96001,7 @@ int32_t test_cgen_logic() {
 
 int32_t test_cgen_string() {
   uint8_t src[64] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 115, 58, 32, 115, 116, 114, 105, 110, 103, 32, 61, 32, 34, 104, 105, 34, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 64 && sp[len] != 0) {
@@ -95284,6 +96047,7 @@ int32_t test_cgen_string() {
 
 int32_t test_cgen_emit() {
   uint8_t src[220] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 115, 58, 32, 105, 51, 50, 32, 61, 32, 97, 32, 43, 32, 98, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 115, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 97, 100, 100, 40, 50, 48, 44, 32, 50, 50, 41, 10, 32, 32, 105, 102, 32, 120, 32, 61, 61, 32, 52, 50, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 32, 32, 125, 32, 101, 108, 115, 101, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 32, 32, 125, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 220 && sp[len] != 0) {
@@ -95338,6 +96102,15 @@ int32_t test_cgen_emit() {
   ok = 0;
 }
   if (flowc_bytes_contains(bp, n, "FLOW_MEM_PROFILE") == 0) {
+  ok = 0;
+}
+  if (flowc_bytes_contains(bp, n, "flow_mem_note_stack") == 0) {
+  ok = 0;
+}
+  if (flowc_bytes_contains(bp, n, "FLOW_MEM_NSITE") == 0) {
+  ok = 0;
+}
+  if (flowc_bytes_contains(bp, n, "live_map_overflow") == 0) {
   ok = 0;
 }
   if (n > 0 && n < cap) {
@@ -95439,6 +96212,7 @@ int32_t test_parse_fixture_file() {
 
 int32_t test_parse_ptr_array_types() {
   uint8_t src[64] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 112, 58, 32, 112, 116, 114, 60, 105, 51, 50, 62, 44, 32, 97, 58, 32, 97, 114, 114, 97, 121, 60, 105, 51, 50, 44, 32, 52, 62, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 64, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95474,6 +96248,7 @@ int32_t test_parse_ptr_array_types() {
 
 int32_t test_parse_field_index() {
   uint8_t src[74] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 112, 46, 120, 10, 32, 32, 108, 101, 116, 32, 121, 58, 32, 105, 51, 50, 32, 61, 32, 97, 91, 48, 93, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 121, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 74, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95500,6 +96275,7 @@ int32_t test_parse_field_index() {
 
 int32_t test_parse_struct_lit() {
   uint8_t src[73] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 112, 58, 32, 80, 111, 105, 110, 116, 32, 61, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120, 58, 32, 49, 44, 32, 121, 58, 32, 50, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 73, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95521,6 +96297,7 @@ int32_t test_parse_struct_lit() {
 
 int32_t test_parse_break_continue() {
   uint8_t kw[14] = { 98, 114, 101, 97, 107, 32, 99, 111, 110, 116, 105, 110, 117, 101 };
+  flow_mem_note_stack(sizeof(kw));
   uint8_t* restrict kp = (uint8_t*)(kw);
   Lexer la = flowc_lexer_new(kp, 14);
   Token t0 = flowc_lexer_next((&la));
@@ -95539,6 +96316,7 @@ int32_t test_parse_break_continue() {
   ok = 0;
 }
   uint8_t src[74] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 119, 104, 105, 108, 101, 32, 49, 32, 123, 10, 32, 32, 32, 32, 98, 114, 101, 97, 107, 10, 32, 32, 32, 32, 99, 111, 110, 116, 105, 110, 117, 101, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 74, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95564,6 +96342,7 @@ int32_t test_parse_break_continue() {
 
 int32_t test_parse_string_lit() {
   uint8_t src[58] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 115, 58, 32, 115, 116, 114, 105, 110, 103, 32, 61, 32, 34, 104, 105, 34, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 58, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95585,6 +96364,7 @@ int32_t test_parse_string_lit() {
 
 int32_t test_parse_const() {
   uint8_t kw[5] = { 99, 111, 110, 115, 116 };
+  flow_mem_note_stack(sizeof(kw));
   uint8_t* restrict kp = (uint8_t*)(kw);
   Lexer la = flowc_lexer_new(kp, 5);
   Token t0 = flowc_lexer_next((&la));
@@ -95596,6 +96376,7 @@ int32_t test_parse_const() {
   ok = 0;
 }
   uint8_t src[78] = { 99, 111, 110, 115, 116, 32, 88, 58, 32, 105, 51, 50, 32, 61, 32, 52, 50, 10, 101, 120, 112, 111, 114, 116, 32, 99, 111, 110, 115, 116, 32, 89, 58, 32, 105, 51, 50, 32, 61, 32, 55, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 78, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95627,6 +96408,7 @@ int32_t test_parse_const() {
 
 int32_t test_cgen_const() {
   uint8_t src[85] = { 101, 120, 112, 111, 114, 116, 32, 99, 111, 110, 115, 116, 32, 78, 58, 32, 105, 51, 50, 32, 61, 32, 55, 10, 99, 111, 110, 115, 116, 32, 77, 58, 32, 105, 51, 50, 32, 61, 32, 53, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 78, 32, 43, 32, 77, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 85, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95680,6 +96462,7 @@ int32_t test_cgen_const() {
 
 int32_t test_cgen_struct() {
   uint8_t src[136] = { 115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116, 32, 123, 10, 32, 32, 32, 32, 120, 58, 32, 105, 51, 50, 44, 10, 32, 32, 32, 32, 121, 58, 32, 105, 51, 50, 10, 125, 10, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 112, 58, 32, 80, 111, 105, 110, 116, 32, 61, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120, 58, 32, 50, 48, 44, 32, 121, 58, 32, 50, 50, 32, 125, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 112, 46, 120, 32, 43, 32, 112, 46, 121, 10, 125, 10, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 136 && sp[len] != 0) {
@@ -95740,6 +96523,7 @@ int32_t test_cgen_struct() {
 
 int32_t test_cgen_ptr() {
   uint8_t src[51] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 112, 58, 32, 112, 116, 114, 60, 105, 51, 50, 62, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 112, 91, 48, 93, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 51, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95784,6 +96568,7 @@ int32_t test_cgen_ptr() {
 
 int32_t test_parse_cast() {
   uint8_t kw[2] = { 97, 115 };
+  flow_mem_note_stack(sizeof(kw));
   uint8_t* restrict kp = (uint8_t*)(kw);
   Lexer la = flowc_lexer_new(kp, 2);
   Token t0 = flowc_lexer_next((&la));
@@ -95795,6 +96580,7 @@ int32_t test_parse_cast() {
   ok = 0;
 }
   uint8_t src[72] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 49, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 40, 120, 32, 97, 115, 32, 105, 54, 52, 41, 32, 97, 115, 32, 105, 51, 50, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 72, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95815,6 +96601,7 @@ int32_t test_parse_cast() {
 
 int32_t test_parse_index_assign() {
   uint8_t src[173] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 48, 10, 32, 32, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 121, 58, 32, 105, 51, 50, 32, 61, 32, 48, 10, 32, 32, 32, 32, 108, 101, 116, 32, 112, 58, 32, 112, 116, 114, 60, 105, 51, 50, 62, 32, 61, 32, 38, 120, 10, 32, 32, 32, 32, 108, 101, 116, 32, 113, 58, 32, 112, 116, 114, 60, 105, 51, 50, 62, 32, 61, 32, 38, 121, 10, 32, 32, 32, 32, 112, 91, 48, 93, 32, 61, 32, 52, 48, 10, 32, 32, 32, 32, 113, 91, 48, 93, 32, 61, 32, 50, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 112, 91, 48, 93, 32, 43, 32, 113, 91, 48, 93, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 173, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95841,6 +96628,7 @@ int32_t test_parse_index_assign() {
 
 int32_t test_cgen_cast() {
   uint8_t src[101] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 52, 48, 10, 32, 32, 32, 32, 108, 101, 116, 32, 121, 58, 32, 105, 54, 52, 32, 61, 32, 40, 120, 32, 97, 115, 32, 105, 54, 52, 41, 32, 43, 32, 50, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 40, 121, 32, 97, 115, 32, 105, 51, 50, 41, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 101, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95885,6 +96673,7 @@ int32_t test_cgen_cast() {
 
 int32_t test_cgen_void() {
   uint8_t src[66] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 103, 40, 41, 32, 45, 62, 32, 118, 111, 105, 100, 32, 123, 10, 125, 10, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   Parser p = flowc_parser_new(sp, 66, 256);
   int32_t root = flowc_parse_program((&p));
@@ -95926,6 +96715,7 @@ int32_t test_cgen_void() {
 
 int32_t test_jsgen_emit() {
   uint8_t src[220] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 115, 58, 32, 105, 51, 50, 32, 61, 32, 97, 32, 43, 32, 98, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 115, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 97, 100, 100, 40, 50, 48, 44, 32, 50, 50, 41, 10, 32, 32, 105, 102, 32, 120, 32, 61, 61, 32, 52, 50, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 32, 32, 125, 32, 101, 108, 115, 101, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 32, 32, 125, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 220 && sp[len] != 0) {
@@ -95989,6 +96779,7 @@ int32_t test_jsgen_emit() {
 
 int32_t test_typecheck_ok() {
   uint8_t src[144] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 32, 105, 51, 50, 44, 32, 98, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 115, 58, 32, 105, 51, 50, 32, 61, 32, 97, 32, 43, 32, 98, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 115, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 97, 100, 100, 40, 50, 48, 44, 32, 50, 50, 41, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 125, 10, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 144 && sp[len] != 0) {
@@ -96014,6 +96805,7 @@ int32_t test_typecheck_ok() {
 
 int32_t test_typecheck_bad() {
   uint8_t src[176] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 48, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 49, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 110, 111, 112, 101, 40, 41, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 121, 10, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 103, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 34, 104, 105, 34, 32, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 176 && sp[len] != 0) {
@@ -96039,6 +96831,7 @@ int32_t test_typecheck_bad() {
 
 int32_t test_typecheck_arity_void() {
   uint8_t src[176] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 104, 40, 97, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 97, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 118, 40, 41, 32, 45, 62, 32, 118, 111, 105, 100, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 49, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 119, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 122, 58, 32, 105, 51, 50, 32, 61, 32, 104, 40, 41, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 122, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 176 && sp[len] != 0) {
@@ -96064,6 +96857,7 @@ int32_t test_typecheck_arity_void() {
 
 int32_t test_typecheck_dup_let() {
   uint8_t src[80] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 49, 10, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 50, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 80 && sp[len] != 0) {
@@ -96089,6 +96883,7 @@ int32_t test_typecheck_dup_let() {
 
 int32_t test_typecheck_dup_const() {
   uint8_t src[80] = { 99, 111, 110, 115, 116, 32, 65, 58, 32, 105, 51, 50, 32, 61, 32, 49, 10, 99, 111, 110, 115, 116, 32, 65, 58, 32, 105, 51, 50, 32, 61, 32, 50, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 32, 114, 101, 116, 117, 114, 110, 32, 65, 32, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 80 && sp[len] != 0) {
@@ -96114,6 +96909,7 @@ int32_t test_typecheck_dup_const() {
 
 int32_t test_typecheck_assign_unknown() {
   uint8_t src[48] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 121, 32, 61, 32, 49, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 48 && sp[len] != 0) {
@@ -96139,6 +96935,7 @@ int32_t test_typecheck_assign_unknown() {
 
 int32_t test_typecheck_break_outside() {
   uint8_t src[48] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 98, 114, 101, 97, 107, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 48 && sp[len] != 0) {
@@ -96164,6 +96961,7 @@ int32_t test_typecheck_break_outside() {
 
 int32_t test_typecheck_bad_field() {
   uint8_t src[112] = { 115, 116, 114, 117, 99, 116, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120, 58, 32, 105, 51, 50, 44, 32, 121, 58, 32, 105, 51, 50, 32, 125, 10, 102, 117, 110, 99, 116, 105, 111, 110, 32, 109, 97, 105, 110, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 112, 58, 32, 80, 111, 105, 110, 116, 32, 61, 32, 80, 111, 105, 110, 116, 32, 123, 32, 120, 58, 32, 49, 44, 32, 121, 58, 32, 50, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 112, 46, 122, 10, 125, 10, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 112 && sp[len] != 0) {
@@ -96189,6 +96987,7 @@ int32_t test_typecheck_bad_field() {
 
 int32_t test_resolve_sibling() {
   uint8_t span[6] = { 46, 116, 111, 107, 101, 110 };
+  flow_mem_note_stack(sizeof(span));
   uint8_t* sp = (uint8_t*)(span);
   uint8_t* out = (uint8_t*)(flow_mem_malloc(256));
   if (out == NULL) {
@@ -96379,6 +97178,7 @@ int32_t test_bundle_emit() {
 
 int32_t test_fmt_emit() {
   uint8_t src[64] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 97, 100, 100, 40, 97, 58, 105, 51, 50, 44, 98, 58, 105, 51, 50, 41, 45, 62, 105, 51, 50, 123, 10, 108, 101, 116, 32, 120, 58, 105, 51, 50, 61, 97, 43, 98, 10, 114, 101, 116, 117, 114, 110, 32, 120, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 64 && sp[len] != 0) {
@@ -96442,6 +97242,7 @@ int32_t test_fmt_emit() {
 
 int32_t test_parse_match() {
   uint8_t src[144] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 114, 58, 32, 105, 51, 50, 32, 61, 32, 48, 10, 32, 32, 109, 97, 116, 99, 104, 32, 118, 32, 123, 10, 32, 32, 32, 32, 49, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32, 61, 32, 49, 48, 10, 32, 32, 32, 32, 125, 10, 32, 32, 32, 32, 110, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32, 61, 32, 110, 32, 43, 32, 49, 10, 32, 32, 32, 32, 125, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 114, 10, 125, 10, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 144 && sp[len] != 0) {
@@ -96477,6 +97278,7 @@ int32_t test_parse_match() {
 
 int32_t test_cgen_match() {
   uint8_t src[144] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 108, 101, 116, 32, 109, 117, 116, 32, 114, 58, 32, 105, 51, 50, 32, 61, 32, 48, 10, 32, 32, 109, 97, 116, 99, 104, 32, 118, 32, 123, 10, 32, 32, 32, 32, 49, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32, 61, 32, 49, 48, 10, 32, 32, 32, 32, 125, 10, 32, 32, 32, 32, 110, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 32, 61, 32, 110, 32, 43, 32, 49, 10, 32, 32, 32, 32, 125, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 114, 10, 125, 10, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 144 && sp[len] != 0) {
@@ -96531,6 +97333,7 @@ int32_t test_cgen_match() {
 
 int32_t test_parse_elif() {
   uint8_t src[128] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 105, 102, 32, 118, 32, 60, 32, 48, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 49, 10, 32, 32, 125, 32, 101, 108, 105, 102, 32, 118, 32, 61, 61, 32, 48, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 50, 10, 32, 32, 125, 32, 101, 108, 115, 101, 32, 123, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 51, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 128 && sp[len] != 0) {
@@ -96566,6 +97369,7 @@ int32_t test_parse_elif() {
 
 int32_t test_typecheck_match_catchall() {
   uint8_t src[128] = { 102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 40, 118, 58, 32, 105, 51, 50, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 109, 97, 116, 99, 104, 32, 118, 32, 123, 10, 32, 32, 32, 32, 95, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 49, 10, 32, 32, 32, 32, 125, 10, 32, 32, 32, 32, 50, 32, 61, 62, 32, 123, 10, 32, 32, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 50, 10, 32, 32, 32, 32, 125, 10, 32, 32, 125, 10, 32, 32, 114, 101, 116, 117, 114, 110, 32, 48, 10, 125, 10, 0, 0, 0, 0, 0, 0, 0 };
+  flow_mem_note_stack(sizeof(src));
   uint8_t* restrict sp = (uint8_t*)(src);
   int32_t len = 0;
   while (len < 128 && sp[len] != 0) {
