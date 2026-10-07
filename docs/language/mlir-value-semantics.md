@@ -25,19 +25,18 @@ A counted loop that rebinds a tensor therefore carries the value as an
 destination-passing form One-Shot Bufferization needs to avoid a heap
 allocation on every iteration.
 
-```flow ignore="tensor_f32 is MLIR-only; compiled by compiler/fixtures/mlir_opt/tensor_hot_loop.flow"
-extern {
-    function tensor_add(a: tensor_f32, b: tensor_f32) -> tensor_f32
-}
-
+```flow ignore="tensor_f32 is MLIR-only; tests/mlir_commands (mlir_tensor_hot_loop) compiles the fixture" from="compiler/fixtures/mlir_opt/tensor_hot_loop.flow"
 function accumulate(a: tensor_f32, b: tensor_f32, n: i32) -> tensor_f32 {
     let mut acc: tensor_f32 = a
-    for i in 0 to n {
+    for i in 0 to n step 1 {
         acc = tensor_add(acc, b)
     }
     return acc
 }
 ```
+
+`tensor_add` is an extern declared in that fixture,
+`compiler/fixtures/mlir_opt/tensor_hot_loop.flow`.
 
 ## Function boundaries
 

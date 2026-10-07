@@ -1,0 +1,7 @@
+function twice(x: weird_t) -> weird_t {
+    return x
+}
+
+function other() -> i32 {
+    return 1
+}

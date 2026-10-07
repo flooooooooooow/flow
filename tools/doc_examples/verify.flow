@@ -856,6 +856,17 @@ function dump_rungs(env: ptr<Env>, b: ptr<Blk>, pre: string, code: string, nmode
 export function verify(env: ptr<Env>, b: ptr<Blk>, ctx: ptr<PageCtx>) -> ptr<Res> {
     let ign: string = blk_opt(b, "ignore")
     if ign as ptr<u8> != null {
+        # `ignore="reason" from="path"`: the block cannot compile on the C
+        # harness (an MLIR-only type, say) but is copied verbatim from a
+        # repository file that a gate compiles. It counts as verified while
+        # the copy matches; once the page and the file drift it does not.
+        if blk_opt(b, "from") as ptr<u8> != null {
+            let drift: string = from_mismatch(env, b)
+            if drift as ptr<u8> != null {
+                return res_new(b, "unverified", null as string, drift, "from")
+            }
+            return res_new(b, "verified", "from", ign, "from")
+        }
         return res_new(b, "ignored", null as string, ign, "")
     }
     let err: ptr<string> = malloc(8) as ptr<string>
