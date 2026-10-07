@@ -486,11 +486,44 @@ function main() -> i32 {
     }
     errln("corpus_parity: " + s_itoa(total) + " files, hosts: " + hosts + ", jobs: " + s_itoa(jobs) + ", timeout: " + s_itoa(secs) + "s")
 
+    # Against the recorded goldens, a file with no Python row is reported
+    # as nogolden whatever flowc does with it, so it is not built or run.
+    # It still gets a row, and the report is the same as when it was built.
+    let mut build: ptr<ProcStrs> = files
+    let skipped: ptr<ProcStrs> = sl_new()
+    if not live_python and is_file(GOLDEN) {
+        let recorded: ptr<ProcStrs> = gl_file_lines(GOLDEN)
+        let paths: ptr<ProcStrs> = sl_new()
+        let mut g: i32 = 0
+        while g < sl_len(recorded) {
+            sl_push(paths, gl_field(sl_get(recorded, g), 0))
+            g = g + 1
+        }
+        let have: ptr<GlMap> = gl_set_of(paths)
+        build = sl_new()
+        let mut f: i32 = 0
+        while f < sl_len(files) {
+            if gl_map_has(have, sl_get(files, f)) {
+                sl_push(build, sl_get(files, f))
+            } else {
+                sl_push(skipped, sl_get(files, f))
+            }
+            f = f + 1
+        }
+        errln("corpus_parity: " + s_itoa(sl_len(skipped)) + " files have no Python golden and are not built")
+    }
+
     let wargs: ptr<ProcStrs> = sl_of3("--worker", work, s_itoa(secs))
     sl_push(wargs, hosts)
-    cl_run_workers(files, jobs, work, wargs)
+    cl_run_workers(build, jobs, work, wargs)
 
     let flowc_rows: ptr<ProcStrs> = host_results(work, "flowc")
+    let mut sk: i32 = 0
+    while sk < sl_len(skipped) {
+        sl_push(flowc_rows, sl_get(skipped, sk) + "\tskip\t-\t-\t-\tnot built: no Python golden")
+        sk = sk + 1
+    }
+    gl_sort(flowc_rows)
     cl_report_left_behind("corpus_parity", before)
     let mut reference: ptr<ProcStrs> = sl_new()
     if live_python {
