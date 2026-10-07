@@ -10,7 +10,7 @@
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/gate_lib.flow"
 import "tools/flow_cli/flowc_build.flow"
-import std.process { ProcCmd, ProcStrs, proc_arg }
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_args }
 
 # "file:12:3: message" -> "message" (sed -E 's/^[^:]+:[0-9]+:[0-9]+: //').
 function strip_location(line: string) -> string {
@@ -95,9 +95,144 @@ extern {
     function strcmp(a: string, b: string) -> i32
 }
 
+# Audit one module: emit it with `drv`, then check the C with cc. The lines
+# to print for it; they start with "PASS " or "FAIL ".
+function audit_one(drv: string, err_flag: string, src: string) -> string {
+    let name: string = path_stem(src, ".flow")
+    let c_out: string = "compiler/build/audit/" + name + ".c"
+    let log: string = "compiler/build/audit/" + name + ".log"
+    rm_f(c_out)
+    # driver.flow binaries take argv; a binary built from main.flow
+    # reads FLOWC_IN / FLOWC_OUT. Both are passed so either works.
+    let em: ptr<ProcCmd> = cmd(sl_of3(drv, src, c_out))
+    cmd_env(em, "FLOWC_BUNDLE", "1")
+    cmd_env(em, "FLOWC_DIR", "compiler/src")
+    cmd_env(em, "FLOWC_IN", src)
+    cmd_env(em, "FLOWC_OUT", c_out)
+    if run_to_file(em, log, true) != 0 {
+        return "FAIL " + name + ": flowc could not emit\n" + tail_text(read_text(log), 5)
+    }
+    if not nonempty(c_out) {
+        # A driver that exits 0 without writing anything used to surface
+        # three steps later as "clang: no input files".
+        return "FAIL " + name + ": flowc exited 0 but wrote no C to " + c_out + "\n" + tail_text(read_text(log), 5)
+    }
+    let sc: ptr<ProcCmd> = cmd(sl_of3("cc", "-fsyntax-only", err_flag))
+    proc_arg(sc, c_out)
+    let lines: ptr<ProcStrs> = s_lines(capture_merged(sc))
+    let errs_found: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_contains(sl_get(lines, i), "error:") {
+            sl_push(errs_found, strip_location(sl_get(lines, i)))
+        }
+        i = i + 1
+    }
+    if sl_len(errs_found) != 0 {
+        return "FAIL " + name + ": " + s_itoa(sl_len(errs_found)) + " C errors\n" + top_errors(errs_found)
+    }
+    let size: string = s_itoa(s_len(read_text(c_out)))
+    return "PASS " + pad_right(name, 14) + " " + pad_left(size, 8) + " bytes of C, 0 diagnostics\n"
+}
+
+# Where a worker leaves the report for module `src`.
+function result_path(src: string) -> string {
+    return "compiler/build/audit/" + path_stem(src, ".flow") + ".result"
+}
+
+# Worker: `--worker DRV ERR_FLAG LIST` audits each module named in LIST and
+# writes its report next to the C.
+function worker(args: ptr<ProcStrs>) -> i32 {
+    let drv: string = sl_get(args, 1)
+    let err_flag: string = sl_get(args, 2)
+    let srcs: ptr<ProcStrs> = gl_file_lines(sl_get(args, 3))
+    let mut i: i32 = 0
+    while i < sl_len(srcs) {
+        let src: string = sl_get(srcs, i)
+        let _w: bool = write_text(result_path(src), audit_one(drv, err_flag, src))
+        i = i + 1
+    }
+    return 0
+}
+
+# Parallel audits: FLOW_GATE_JOBS, else half the CPUs, as the other gates.
+function audit_jobs() -> i32 {
+    let forced: i32 = s_atoi(env("FLOW_GATE_JOBS"), 0)
+    if forced > 0 {
+        return forced
+    }
+    let j: i32 = gl_ncpu() / 2
+    if j < 1 {
+        return 1
+    }
+    return j
+}
+
+# The report of every module in `srcs`, in order. With more than one job,
+# the modules are dealt round-robin to worker processes (this program with
+# --worker) and the reports are read back in the original order, so the
+# output does not depend on the job count.
+function audit_all(drv: string, err_flag: string, srcs: ptr<ProcStrs>, jobs: i32) -> ptr<ProcStrs> {
+    let reports: ptr<ProcStrs> = sl_new()
+    if jobs <= 1 or s_len(gl_self()) == 0 {
+        let mut f: i32 = 0
+        while f < sl_len(srcs) {
+            sl_push(reports, audit_one(drv, err_flag, sl_get(srcs, f)))
+            f = f + 1
+        }
+        return reports
+    }
+    let chunks: ptr<ProcStrs> = sl_new()
+    let mut c: i32 = 0
+    while c < jobs {
+        sl_push(chunks, "")
+        c = c + 1
+    }
+    let mut i: i32 = 0
+    while i < sl_len(srcs) {
+        rm_f(result_path(sl_get(srcs, i)))
+        let k: i32 = i % jobs
+        chunks.items[k] = chunks.items[k] + sl_get(srcs, i) + "\n"
+        i = i + 1
+    }
+    let pids: ptr<ProcStrs> = sl_new()
+    let mut w: i32 = 0
+    while w < jobs {
+        if s_len(sl_get(chunks, w)) > 0 {
+            let list: string = "compiler/build/audit/chunk." + s_itoa(w)
+            let _ok: bool = write_text(list, sl_get(chunks, w))
+            let argv: ptr<ProcStrs> = sl_of3(gl_self(), "--worker", drv)
+            sl_push2(argv, err_flag, list)
+            sl_push(pids, s_itoa(gl_spawn(argv)))
+        }
+        w = w + 1
+    }
+    let mut p: i32 = 0
+    while p < sl_len(pids) {
+        let _s: i32 = gl_wait(s_atoi(sl_get(pids, p), -1))
+        p = p + 1
+    }
+    let mut r: i32 = 0
+    while r < sl_len(srcs) {
+        let rp: string = result_path(sl_get(srcs, r))
+        if is_file(rp) {
+            sl_push(reports, read_text(rp))
+        } else {
+            sl_push(reports, "FAIL " + path_stem(sl_get(srcs, r), ".flow") + ": the audit worker wrote no report\n")
+        }
+        r = r + 1
+    }
+    return reports
+}
+
 function main() -> i32 {
+    let args: ptr<ProcStrs> = proc_args()
+    let _self: string = gl_enter_root()
     let _root: string = gate_enter()
     gate_mkdir("compiler/build/audit")
+    if s_eq(sl_get(args, 0), "--worker") {
+        return worker(args)
+    }
 
     # GCC and clang spell "no cap on reported errors" differently. CI runs
     # on Ubuntu, where cc is GCC.
@@ -124,54 +259,23 @@ function main() -> i32 {
     }
     outln("=== self-compile audit via " + drv + " ===")
 
-    let mut failed: bool = false
     let files: ptr<ProcStrs> = glob_sorted("compiler/src", ".flow")
+    let srcs: ptr<ProcStrs> = sl_new()
     let mut f: i32 = 0
     while f < sl_len(files) {
-        let src: string = "compiler/src/" + path_basename(sl_get(files, f))
-        let name: string = path_stem(src, ".flow")
-        let c_out: string = "compiler/build/audit/" + name + ".c"
-        let log: string = "compiler/build/audit/" + name + ".log"
-        rm_f(c_out)
-        # driver.flow binaries take argv; a binary built from main.flow
-        # reads FLOWC_IN / FLOWC_OUT. Both are passed so either works.
-        let em: ptr<ProcCmd> = cmd(sl_of3(drv, src, c_out))
-        cmd_env(em, "FLOWC_BUNDLE", "1")
-        cmd_env(em, "FLOWC_DIR", "compiler/src")
-        cmd_env(em, "FLOWC_IN", src)
-        cmd_env(em, "FLOWC_OUT", c_out)
-        if run_to_file(em, log, true) != 0 {
-            outln("FAIL " + name + ": flowc could not emit")
-            out(tail_text(read_text(log), 5))
-            failed = true
-        } elif not nonempty(c_out) {
-            # A driver that exits 0 without writing anything used to surface
-            # three steps later as "clang: no input files".
-            outln("FAIL " + name + ": flowc exited 0 but wrote no C to " + c_out)
-            out(tail_text(read_text(log), 5))
-            failed = true
-        } else {
-            let sc: ptr<ProcCmd> = cmd(sl_of3("cc", "-fsyntax-only", err_flag))
-            proc_arg(sc, c_out)
-            let lines: ptr<ProcStrs> = s_lines(capture_merged(sc))
-            let errs_found: ptr<ProcStrs> = sl_new()
-            let mut i: i32 = 0
-            while i < sl_len(lines) {
-                if s_contains(sl_get(lines, i), "error:") {
-                    sl_push(errs_found, strip_location(sl_get(lines, i)))
-                }
-                i = i + 1
-            }
-            if sl_len(errs_found) != 0 {
-                outln("FAIL " + name + ": " + s_itoa(sl_len(errs_found)) + " C errors")
-                out(top_errors(errs_found))
-                failed = true
-            } else {
-                let size: string = s_itoa(s_len(read_text(c_out)))
-                outln("PASS " + pad_right(name, 14) + " " + pad_left(size, 8) + " bytes of C, 0 diagnostics")
-            }
-        }
+        sl_push(srcs, "compiler/src/" + path_basename(sl_get(files, f)))
         f = f + 1
+    }
+    let reports: ptr<ProcStrs> = audit_all(drv, err_flag, srcs, audit_jobs())
+    let mut failed: bool = false
+    let mut r: i32 = 0
+    while r < sl_len(reports) {
+        let rep: string = sl_get(reports, r)
+        out(rep)
+        if not s_starts(rep, "PASS ") {
+            failed = true
+        }
+        r = r + 1
     }
 
     if failed {

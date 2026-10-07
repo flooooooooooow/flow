@@ -51,7 +51,16 @@ runs:
         if [ "${{ inputs.shellcheck }}" = "true" ]; then
           packages+=(shellcheck)
         fi
-        if [ "${#packages[@]}" -gt 0 ]; then
+        # When the cached .debs above installed every package, apt-get update
+        # and install have nothing to do; skipping them saves the index
+        # download. Anything not fully installed goes through apt as before.
+        missing=0
+        for p in "${packages[@]}"; do
+          if [ "$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null)" != "install ok installed" ]; then
+            missing=1
+          fi
+        done
+        if [ "$missing" = "1" ]; then
           sudo apt-get update -qq || sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends "${packages[@]}" || sudo apt-get install -y --no-install-recommends "${packages[@]}"
         fi

@@ -38,36 +38,49 @@ on:
   # (#816).
   pull_request:
     branches: [main, master]
+  # The merge queue tests each batch on a temporary branch before it lands
+  # on main. Every gated job runs for a batch (see the `changes` job), so
+  # every required check reports on it.
+  merge_group:
+    types: [checks_requested]
 
+# A new push to a pull request cancels the run on its previous head. Pushes
+# to main and merge queue batches are grouped by commit, so each one gets a
+# complete run.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
   pull-requests: read
 
 jobs:
+  # Path flags that gate the jobs below. A merge queue batch can hold several
+  # pull requests, and its diff base is the queue head rather than the
+  # branch each one was written against, so on merge_group every flag is
+  # true and the batch runs every job.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      src: ${{ steps.filter.outputs.src }}
-      compiler: ${{ steps.filter.outputs.compiler }}
-      docs: ${{ steps.filter.outputs.docs }}
-      tests: ${{ steps.filter.outputs.tests }}
-      examples: ${{ steps.filter.outputs.examples }}
-      libs: ${{ steps.filter.outputs.libs }}
-      runtime: ${{ steps.filter.outputs.runtime }}
-      workflow: ${{ steps.filter.outputs.workflow }}
-      plugins: ${{ steps.filter.outputs.plugins }}
-      tools: ${{ steps.filter.outputs.tools }}
-      deps: ${{ steps.filter.outputs.deps }}
+      src: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.src }}
+      compiler: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.compiler }}
+      docs: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.docs }}
+      tests: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.tests }}
+      examples: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.examples }}
+      libs: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.libs }}
+      runtime: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.runtime }}
+      workflow: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.workflow }}
+      plugins: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.plugins }}
+      tools: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.tools }}
+      deps: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
+        if: github.event_name != 'merge_group'
         with:
           filters: |
             src:
@@ -108,6 +121,30 @@ jobs:
               - 'requirements.lock'
               - 'requirements.txt'
 
+  # Almost every job runs ./flow, which first builds flowc from the 2.7 MB
+  # bootstrap C (cc -O2), the flow CLI, and a second flowc for `flow tool`:
+  # about 35 seconds each time. .github/actions/flow-bin-cache restores the
+  # three binaries, keyed on the content of everything they are built from.
+  # This job is the only one that saves that cache, from a clean build of
+  # this commit, and nothing waits for it: on a miss the other jobs build
+  # their own copy as before.
+  build-cache:
+    name: Build cache (flowc and flow CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: bin
+        uses: ./.github/actions/flow-bin-cache
+      - name: Build flowc, the flow CLI and the tool flowc
+        if: steps.bin.outputs.cache-hit != 'true'
+        run: ./flow tool --path python_ratchet
+      - name: Save the build cache
+        if: steps.bin.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.bin.outputs.paths }}
+          key: ${{ steps.bin.outputs.key }}
+
   # Manifests, docs headers and the CLI banner all mirror VERSION.
   # They have drifted before: 0.11.0 nearly shipped with the canonical file still
   # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
@@ -120,6 +157,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - run: ./flow tool sync_version --check
 
   # New code is written in Flow. Fails when a new .py file appears or tracked
@@ -131,6 +169,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - run: ./flow tool python_ratchet
 
   # The same rule for shell. Fails when a new shell script appears or the
@@ -142,6 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - run: ./flow tool shell_ratchet
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
@@ -154,6 +194,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - run: ./flow tool doc_links
       - run: ./flow tool script_refs
       - run: ./flow tool tool_layout
@@ -177,6 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - run: ./flow tool doc_coverage
 
   # Documented examples are compiled. A ratchet, not a wall: the examples that
@@ -192,6 +234,7 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - name: Compile every ```flow block in the documentation
         run: ./flow tool doc_examples --check-ledger
 
@@ -204,6 +247,7 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       # Separate from the compile gate because it takes about two minutes,
       # and because it answers a different question: compiling proves an
       # example is well-formed, running proves it works. A `defer` freeing
@@ -259,6 +303,7 @@ jobs:
       needs.changes.outputs.runtime == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - uses: ./.github/actions/install-toolchain
         with:
@@ -282,8 +327,14 @@ jobs:
     if: |
       needs.changes.outputs.compiler == 'true' ||
       needs.changes.outputs.workflow == 'true'
+    env:
+      # The runner has four CPUs. selfcompile_audit (inside the roundtrip)
+      # and parity_proofs default to half of them; both print their results
+      # in input order, whatever the job count.
+      FLOW_GATE_JOBS: '4'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       # No Python: the compiler host is flowc built from compiler/src by the
       # bootstrap binary (compiler/scripts/flowc_host.flow), and the per-module
@@ -338,6 +389,8 @@ jobs:
   # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
   # three consecutive generations of flowc must agree byte for byte.
   # Deliberately no setup-python step. That is the point of this job.
+  # The goldens and the MLIR checks that used to follow in this job run in
+  # flowc-goldens and flowc-mlir below, in parallel with it.
   flowc-selfhost:
     name: flowc self-host (no Python)
     runs-on: ubuntu-latest
@@ -345,8 +398,13 @@ jobs:
     if: |
       needs.changes.outputs.compiler == 'true' ||
       needs.changes.outputs.workflow == 'true'
+    env:
+      # selfcompile_audit audits four modules at a time on the four-CPU
+      # runner and prints them in input order.
+      FLOW_GATE_JOBS: '4'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - name: Build flowc from the checked-in bootstrap C
         run: |
@@ -358,65 +416,6 @@ jobs:
 
       - name: Three consecutive generation fixed-points
         run: ./flow tool compiler/scripts/self_host_full.flow
-
-      - name: C output goldens (tests/cgen)
-        run: ./flow tool tests/cgen/run.flow
-
-      - name: flow check goldens (tests/check)
-        run: ./flow tool tests/check/run.flow
-
-      - name: flow python generator goldens (tests/pywheel)
-        run: ./flow tool tests/pywheel/run.flow
-
-      - name: Project test runner parity (flow test)
-        run: ./flow tool compiler/scripts/parity_project_test.flow
-
-      - name: Debug adapter parity (flow dap)
-        run: ./flow tool compiler/scripts/parity_dap.flow
-
-      - name: FIR-G goldens (flow fir-g)
-        run: ./flow tool tests/fir/run.flow
-
-      - name: flow run --json goldens (tools/run)
-        run: ./flow tool tests/flow_run/run.flow
-
-      - name: Package command goldens (init, publish, build, clean)
-        run: ./flow tool scripts/check_pkg_commands.flow
-
-      - name: Package dependency goldens (install, sync, add, search, info)
-        run: ./flow tool scripts/check_pkg_parity.flow
-
-      - name: GPU shader goldens (flow gpu)
-        run: ./flow tool tests/gpu/run.flow
-
-      - name: GPU and shader crossing pages
-        run: ./flow tool tests/gpu/crossing.flow
-
-      - uses: ./.github/actions/install-toolchain
-        with:
-          mlir: 'true'
-
-      # The MLIR emitter (compiler/src/mlirgen.flow) against the goldens
-      # recorded from the Python generator, with python stubbed out: the
-      # fixtures must emit the same MLIR and, lowered with mlir-opt, print
-      # the same output; recorded corpus programs must not regress.
-      - name: MLIR emitter parity against goldens (no Python)
-        run: |
-          mkdir -p /tmp/nopy-mlir
-          printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy-mlir/python3
-          cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
-          chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
-          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./flow tool compiler/scripts/parity_mlir.flow
-          # --backend=mlir on the flowc host needs no Python either.
-          PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
-            ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
-
-      # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
-      # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
-      # compile-audio --mlir against the goldens recorded from the Python
-      # MLIR stack; the runner stubs python itself.
-      - name: MLIR command goldens (no Python)
-        run: timeout 20m ./flow tool tests/mlir_commands/run.flow
 
       - name: Compile and run a Flow program (FLOW_HOST=flowc)
         env:
@@ -464,6 +463,91 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Goldens for the compiler's outputs and the commands built on it. Each
+  # runner builds what it needs from a clean checkout, so they need nothing
+  # from the self-host job and run beside it.
+  flowc-goldens:
+    name: flowc goldens (no Python)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
+
+      - name: C output goldens (tests/cgen)
+        run: ./flow tool tests/cgen/run.flow
+
+      - name: flow check goldens (tests/check)
+        run: ./flow tool tests/check/run.flow
+
+      - name: flow python generator goldens (tests/pywheel)
+        run: ./flow tool tests/pywheel/run.flow
+
+      - name: Project test runner parity (flow test)
+        run: ./flow tool compiler/scripts/parity_project_test.flow
+
+      - name: Debug adapter parity (flow dap)
+        run: ./flow tool compiler/scripts/parity_dap.flow
+
+      - name: FIR-G goldens (flow fir-g)
+        run: ./flow tool tests/fir/run.flow
+
+      - name: flow run --json goldens (tools/run)
+        run: ./flow tool tests/flow_run/run.flow
+
+      - name: Package command goldens (init, publish, build, clean)
+        run: ./flow tool scripts/check_pkg_commands.flow
+
+      - name: Package dependency goldens (install, sync, add, search, info)
+        run: ./flow tool scripts/check_pkg_parity.flow
+
+      - name: GPU shader goldens (flow gpu)
+        run: ./flow tool tests/gpu/run.flow
+
+      - name: GPU and shader crossing pages
+        run: ./flow tool tests/gpu/crossing.flow
+
+  # The MLIR emitter and the MLIR commands, with LLVM/MLIR 22.
+  flowc-mlir:
+    name: flowc MLIR goldens (no Python)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
+
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+
+      # The MLIR emitter (compiler/src/mlirgen.flow) against the goldens
+      # recorded from the Python generator, with python stubbed out: the
+      # fixtures must emit the same MLIR and, lowered with mlir-opt, print
+      # the same output; recorded corpus programs must not regress.
+      - name: MLIR emitter parity against goldens (no Python)
+        run: |
+          mkdir -p /tmp/nopy-mlir
+          printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy-mlir/python3
+          cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
+          chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
+          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./flow tool compiler/scripts/parity_mlir.flow
+          # --backend=mlir on the flowc host needs no Python either.
+          PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
+            ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
+
+      # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
+      # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
+      # compile-audio --mlir against the goldens recorded from the Python
+      # MLIR stack; the runner stubs python itself.
+      - name: MLIR command goldens (no Python)
+        run: timeout 20m ./flow tool tests/mlir_commands/run.flow
+
   # Host tools written in Flow (flow repl) run their stdin transcripts with
   # python and python3 removed from PATH, so a Python fallback cannot hide.
   # The same job runs tests/scripts, the Flow tests that replaced the pytest
@@ -481,9 +565,11 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       # The runners are Flow programs (tests/tools/run.flow and the ones it
-      # starts), built by `./flow tool`.
+      # starts), built by `./flow tool`. The cc-only bootstrap and its smoke
+      # test are the self-host job's; here ./flow builds what it needs.
       - name: Tool transcripts without Python
         run: |
           mkdir -p /tmp/nopy
@@ -492,7 +578,6 @@ jobs:
           chmod +x /tmp/nopy/python3 /tmp/nopy/python
           export PATH="/tmp/nopy:$PATH"
           chmod +x ./flow compiler/scripts/*.sh
-          ./compiler/scripts/bootstrap_from_c.sh
           ./flow tool tests/tools/run.flow
 
       # Checks print SKIP when mlir-opt or emcc is missing, as on this runner.
@@ -527,6 +612,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - name: Parse every tracked .flow file with flowc
         run: |
@@ -548,6 +634,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - name: Build flowc from the bootstrap C
         run: ./flow tool compiler/scripts/ensure_flowc.flow
       - name: parity_lowering
@@ -581,6 +668,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
       - name: corpus_parity --check
         run: timeout 45m ./flow tool compiler/scripts/corpus_parity.flow --check
 
@@ -603,6 +691,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - uses: ./.github/actions/install-toolchain
 
@@ -625,6 +714,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - uses: ./.github/actions/install-toolchain
 
@@ -641,6 +731,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - name: Download Stage-A flowc driver
         uses: actions/download-artifact@v4
@@ -683,6 +774,7 @@ jobs:
       needs.changes.outputs.tests == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - name: Stable conformance corpus
         run: ./flow tool tests/conformance/run.flow
@@ -696,6 +788,7 @@ jobs:
       needs.changes.outputs.tests == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - name: Build flowc from the bootstrap C
         run: ./flow tool compiler/scripts/ensure_flowc.flow
@@ -729,6 +822,7 @@ jobs:
       needs.changes.outputs.examples == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - uses: ./.github/actions/setup-python
 
@@ -772,6 +866,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/flow-bin-cache
 
       - uses: ./.github/actions/setup-python
 
@@ -793,6 +888,8 @@ jobs:
       - flow-tier2
       - flowc-bootstrap
       - flowc-selfhost
+      - flowc-goldens
+      - flowc-mlir
       - flowc-compile
       - lang-tests
       - runtime-tests
@@ -860,6 +957,8 @@ jobs:
           add flow-tier2        '${{ needs.flow-tier2.result }}'        "$tier_req"
           add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'    "$compiler_req"
           add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'     "$compiler_req"
+          add flowc-goldens     '${{ needs.flowc-goldens.result }}'      "$compiler_req"
+          add flowc-mlir        '${{ needs.flowc-mlir.result }}'         "$compiler_req"
           add flowc-compile     '${{ needs.flowc-compile.result }}'      "$compiler_req"
           add lang-tests        '${{ needs.lang-tests.result }}'        "$suite_req"
           add runtime-tests     '${{ needs.runtime-tests.result }}'     "$suite_req"
