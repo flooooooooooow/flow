@@ -66,14 +66,7 @@ function main() -> i32 {
     let args: ptr<ProcStrs> = proc_args()
     let mode: string = sl_get(args, 0)
 
-    let mut flowc: string = env("FLOWC")
-    if s_empty(flowc) {
-        mkdir_p_or_exit("compiler/build")
-        flowc = "compiler/build/flowc_bootstrap"
-        if not is_exec(flowc) or newer("compiler/bootstrap/flowc_stage_a.c", flowc) {
-            check(gl_build_flowc(flowc, true, false))
-        }
-    }
+    let flowc: string = gl_flowc_cached("FLOWC", root)
 
     let all: ptr<ProcStrs> = gl_git_ls("*.flow")
     gl_sort_locale(all)

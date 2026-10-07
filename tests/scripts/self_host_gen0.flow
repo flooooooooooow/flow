@@ -1,40 +1,51 @@
-# compiler/scripts/self_host_full.flow must take gen0 from the checked-in
-# bootstrap C, rebuilt when the binary is stale.
+# The scripts that run "the flowc" must take it from the checked-in
+# bootstrap C, rebuilt when the binary is stale: self_host_full.flow (gen0),
+# selfcompile_audit.flow and package_flowc.flow.
 #
-# Before the fix it took the first executable among the roundtrip.flow
+# Before the fix each took the first executable among the roundtrip.flow
 # drivers (compiler/build/stage_a_driver_flow_self and friends) and
 # compiler/build/flowc_bootstrap, without checking either against
 # compiler/bootstrap/flowc_stage_a.c. After #1363 a flowc_bootstrap left
 # over from an earlier bootstrap C made gen1.c != gen2.c locally (a missing
 # vector_size preamble and moved TOK_* constants), while CI, building from
-# a clean checkout, passed.
+# a clean checkout, passed. The audit then checked, and the package
+# shipped, whatever stale binary was lying in compiler/build.
 #
-# Each check runs the real self_host_full program against a scratch root
-# (FLOW_REPO_ROOT) whose "compiler" is a small C program. In bundle mode it
-# copies compiler/bootstrap/flowc_stage_a.c to FLOWC_OUT, so the fixed point
-# holds exactly when gen0 is built from that file. A stale binary is the
-# same program built with -DSTALE: it appends a comment, so gen1.c differs
-# from gen2.c, as in the real failure.
+# Each check runs the real script against a scratch root (FLOW_REPO_ROOT)
+# whose "compiler" is a small C program. In bundle mode it copies
+# compiler/bootstrap/flowc_stage_a.c to FLOWC_OUT, so the output is right
+# exactly when the binary is built from that file. A stale binary is the
+# same program built with -DSTALE (it appends a comment, so gen1.c differs
+# from gen2.c, as in the real failure) or -DBROKEN (it appends an #error,
+# so the C it writes does not compile).
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
 import std.process { ProcCmd, ProcStrs }
 
-const FAKE_FLOWC: string = "#include <stdio.h>\n#include <stdlib.h>\nstatic int copy(const char *dst, const char *extra) {\n  FILE *in = fopen(\"compiler/bootstrap/flowc_stage_a.c\", \"rb\");\n  FILE *out = fopen(dst, \"wb\");\n  int c;\n  if (!in || !out) return 1;\n  while ((c = fgetc(in)) != EOF) fputc(c, out);\n  if (extra) fputs(extra, out);\n  fclose(in);\n  fclose(out);\n  return 0;\n}\nint main(void) {\n  const char *in = getenv(\"FLOWC_IN\");\n  const char *out = getenv(\"FLOWC_OUT\");\n  FILE *f;\n  if (!in) { puts(\"flowc: PASS\"); return 0; }\n  if (!out) return 2;\n  if (getenv(\"FLOWC_BUNDLE\")) {\n#ifdef STALE\n    return copy(out, \"/* stale */\\n\");\n#else\n    return copy(out, 0);\n#endif\n  }\n  f = fopen(out, \"wb\");\n  if (!f) return 3;\n  fputs(\"int main(void) { return 45; }\\n\", f);\n  fclose(f);\n  return 0;\n}\n"
+const FAKE_FLOWC: string = "#include <stdio.h>\n#include <stdlib.h>\nstatic int copy(const char *dst, const char *extra) {\n  FILE *in = fopen(\"compiler/bootstrap/flowc_stage_a.c\", \"rb\");\n  FILE *out = fopen(dst, \"wb\");\n  int c;\n  if (!in || !out) return 1;\n  while ((c = fgetc(in)) != EOF) fputc(c, out);\n  if (extra) fputs(extra, out);\n  fclose(in);\n  fclose(out);\n  return 0;\n}\nint main(void) {\n  const char *in = getenv(\"FLOWC_IN\");\n  const char *out = getenv(\"FLOWC_OUT\");\n  FILE *f;\n  if (!in) { puts(\"flowc: PASS\"); return 0; }\n  if (!out) return 2;\n  if (getenv(\"FLOWC_BUNDLE\")) {\n#if defined(STALE)\n    return copy(out, \"/* stale */\\n\");\n#elif defined(BROKEN)\n    return copy(out, \"#error stale flowc\\n\");\n#else\n    return copy(out, 0);\n#endif\n  }\n  f = fopen(out, \"wb\");\n  if (!f) return 3;\n  fputs(\"int main(void) { return 45; }\\n\", f);\n  fclose(f);\n  return 0;\n}\n"
 
-# A scratch repository root holding the fake bootstrap C.
+const VERSION: string = "v0.0.0-gen0"
+
+# A scratch repository root holding the fake bootstrap C, one compiler/src
+# module for the audit, and what package_flowc copies.
 function make_root() -> string {
     let root: string = t_tmp() + "/repo"
     let _b: bool = mkdir_p(root + "/compiler/build")
     let _s: bool = mkdir_p(root + "/compiler/bootstrap")
     let _w: bool = write_text(root + "/compiler/bootstrap/flowc_stage_a.c", FAKE_FLOWC)
+    let _d: bool = mkdir_p(root + "/compiler/src")
+    let _m: bool = write_text(root + "/compiler/src/main.flow", "function main() -> i32 {\n    return 0\n}\n")
+    let _f: bool = mkdir_p(root + "/compiler/fixtures")
+    let _x: bool = write_text(root + "/compiler/fixtures/stage_a_sum.flow", "function main() -> i32 {\n    return 45\n}\n")
+    let _v: bool = write_text(root + "/VERSION", VERSION + "\n")
     return root
 }
 
-# Build the stale variant of the fake compiler at root/rel, dated 2000 so it
-# is older than the bootstrap C.
-function make_stale(root: string, rel: string) -> bool {
-    let argv: ptr<ProcStrs> = sl_of3("cc", "-DSTALE", "-o")
+# Build the fake compiler with `def` (-DSTALE or -DBROKEN) at root/rel,
+# dated 2000 so it is older than the bootstrap C.
+function make_stale(root: string, rel: string, def: string) -> bool {
+    let argv: ptr<ProcStrs> = sl_of3("cc", def, "-o")
     sl_push2(argv, root + "/" + rel, root + "/compiler/bootstrap/flowc_stage_a.c")
     if t_sh(argv) != 0 {
         return false
@@ -44,24 +55,29 @@ function make_stale(root: string, rel: string) -> bool {
     return t_sh(touch) == 0
 }
 
-# Run self_host_full against `root`; `boot` sets FLOWC_BOOTSTRAP when nonempty.
-function run_gate(root: string, boot: string) -> i32 {
+# Run compiler/scripts/<script>.flow against `root`; `var` is set to `val`
+# when `val` is nonempty.
+function run_script(script: string, root: string, var: string, val: string) -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "--path")
-    sl_push(argv, "compiler/scripts/self_host_full.flow")
+    sl_push(argv, "compiler/scripts/" + script + ".flow")
     let bin: string = capture(cmd(argv))
     if s_len(bin) == 0 {
-        outln("cannot build compiler/scripts/self_host_full.flow")
+        outln("cannot build compiler/scripts/" + script + ".flow")
         return -1
     }
     let c: ptr<ProcCmd> = cmd(sl_of1(bin))
     cmd_env(c, "FLOW_REPO_ROOT", root)
-    if s_len(boot) > 0 {
-        cmd_env(c, "FLOWC_BOOTSTRAP", boot)
+    if s_len(val) > 0 {
+        cmd_env(c, var, val)
     }
     let rc: i32 = t_run(c)
     t_cat(t_out())
     t_cat(t_err())
     return rc
+}
+
+function run_gate(root: string, boot: string) -> i32 {
+    return run_script("self_host_full", root, "FLOWC_BOOTSTRAP", boot)
 }
 
 # A flowc_bootstrap built from an earlier bootstrap C is rebuilt, and the
@@ -72,7 +88,7 @@ function check_stale_bootstrap_is_rebuilt() -> i32 {
         return need
     }
     let root: string = make_root()
-    if not make_stale(root, "compiler/build/flowc_bootstrap") {
+    if not make_stale(root, "compiler/build/flowc_bootstrap", "-DSTALE") {
         return T_FAIL
     }
     if run_gate(root, "") != 0 {
@@ -91,7 +107,7 @@ function check_roundtrip_driver_is_ignored() -> i32 {
         return need
     }
     let root: string = make_root()
-    if not make_stale(root, "compiler/build/stage_a_driver_flow_self") {
+    if not make_stale(root, "compiler/build/stage_a_driver_flow_self", "-DSTALE") {
         return T_FAIL
     }
     if run_gate(root, "") != 0 {
@@ -115,7 +131,7 @@ function check_stale_gen0_fails_fixed_point() -> i32 {
         return need
     }
     let root: string = make_root()
-    if not make_stale(root, "stale_flowc") {
+    if not make_stale(root, "stale_flowc", "-DSTALE") {
         return T_FAIL
     }
     if run_gate(root, root + "/stale_flowc") == 0 {
@@ -128,8 +144,158 @@ function check_stale_gen0_fails_fixed_point() -> i32 {
     return T_PASS
 }
 
+# selfcompile_audit against `root` passes and names the rebuilt
+# flowc_bootstrap.
+function audit_uses_fresh_bootstrap(root: string) -> i32 {
+    if run_script("selfcompile_audit", root, "FLOWC_AUDIT_BIN", "") != 0 {
+        return T_FAIL
+    }
+    let log: string = read_text(t_out())
+    if not a_contains(log, "self-compile audit via " + root + "/compiler/build/flowc_bootstrap") {
+        return T_FAIL
+    }
+    if not a_contains(log, "ALL PASS selfcompile_audit") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# The audit rebuilds a stale flowc_bootstrap.
+function check_audit_stale_bootstrap_is_rebuilt() -> i32 {
+    let need: i32 = t_need("cc touch")
+    if need != T_PASS {
+        return need
+    }
+    let root: string = make_root()
+    if not make_stale(root, "compiler/build/flowc_bootstrap", "-DBROKEN") {
+        return T_FAIL
+    }
+    return audit_uses_fresh_bootstrap(root)
+}
+
+# The audit does not run a driver that roundtrip.flow left behind.
+function check_audit_roundtrip_driver_is_ignored() -> i32 {
+    let need: i32 = t_need("cc touch")
+    if need != T_PASS {
+        return need
+    }
+    let root: string = make_root()
+    if not make_stale(root, "compiler/build/stage_a_driver_flow_self", "-DBROKEN") {
+        return T_FAIL
+    }
+    return audit_uses_fresh_bootstrap(root)
+}
+
+# FLOWC_AUDIT_BIN still picks the binary, and the audit fails on a flowc
+# whose C does not compile.
+function check_audit_override_is_kept() -> i32 {
+    let need: i32 = t_need("cc touch")
+    if need != T_PASS {
+        return need
+    }
+    let root: string = make_root()
+    if not make_stale(root, "stale_flowc", "-DBROKEN") {
+        return T_FAIL
+    }
+    if run_script("selfcompile_audit", root, "FLOWC_AUDIT_BIN", root + "/stale_flowc") == 0 {
+        outln("selfcompile_audit passed with a broken flowc")
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "self-compile audit via " + root + "/stale_flowc") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "FAIL main: 1 C errors") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Run package_flowc against `root`, unpack the archive it names and run the
+# packaged bin/flowc in bundle mode from `root`. The C it wrote, or "" when
+# a step failed.
+function packaged_output(root: string, var: string, val: string) -> string {
+    if run_script("package_flowc", root, var, val) != 0 {
+        return ""
+    }
+    let archive: string = s_chomp_all(read_text(root + "/dist/flowc-latest.txt"))
+    let base: string = path_basename(archive)
+    if s_len(base) <= 7 {
+        return ""
+    }
+    let name: string = s_slice(base, 0, s_len(base) - 7)
+    let unpack: string = t_tmp() + "/unpack"
+    let _u: bool = mkdir_p(unpack)
+    let tar: ptr<ProcStrs> = sl_of3("tar", "-xzf", root + "/" + archive)
+    sl_push2(tar, "-C", unpack)
+    if t_sh(tar) != 0 {
+        return ""
+    }
+    let out_c: string = t_tmp() + "/packaged.c"
+    let c: ptr<ProcCmd> = cmd(sl_of1(unpack + "/" + name + "/bin/flowc"))
+    cmd_cwd(c, root)
+    cmd_env(c, "FLOWC_BUNDLE", "1")
+    cmd_env(c, "FLOWC_IN", "compiler/fixtures/stage_a_sum.flow")
+    cmd_env(c, "FLOWC_OUT", out_c)
+    if t_run(c) != 0 {
+        t_cat(t_err())
+        return ""
+    }
+    return read_text(out_c)
+}
+
+# The package ships a flowc rebuilt from a stale flowc_bootstrap.
+function check_package_stale_bootstrap_is_rebuilt() -> i32 {
+    let need: i32 = t_need("cc touch tar shasum")
+    if need != T_PASS {
+        return need
+    }
+    let root: string = make_root()
+    if not make_stale(root, "compiler/build/flowc_bootstrap", "-DSTALE") {
+        return T_FAIL
+    }
+    if not a_eq(packaged_output(root, "FLOWC_BOOTSTRAP", ""), FAKE_FLOWC, "packaged flowc output") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# The package does not ship a driver that roundtrip.flow left behind.
+function check_package_roundtrip_driver_is_ignored() -> i32 {
+    let need: i32 = t_need("cc touch tar shasum")
+    if need != T_PASS {
+        return need
+    }
+    let root: string = make_root()
+    if not make_stale(root, "compiler/build/stage_a_driver_flow_self", "-DSTALE") {
+        return T_FAIL
+    }
+    if not a_eq(packaged_output(root, "FLOWC_BOOTSTRAP", ""), FAKE_FLOWC, "packaged flowc output") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# FLOWC_BOOTSTRAP picks the packaged binary, and the check above can tell a
+# stale one.
+function check_package_override_is_kept() -> i32 {
+    let need: i32 = t_need("cc touch tar shasum")
+    if need != T_PASS {
+        return need
+    }
+    let root: string = make_root()
+    if not make_stale(root, "stale_flowc", "-DSTALE") {
+        return T_FAIL
+    }
+    let got: string = packaged_output(root, "FLOWC_BOOTSTRAP", root + "/stale_flowc")
+    if not a_eq(got, FAKE_FLOWC + "/* stale */\n", "packaged flowc output") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     env_unset("FLOWC_BOOTSTRAP")
+    env_unset("FLOWC_AUDIT_BIN")
     t_begin("self_host_gen0")
     t_start()
     t_end("stale_bootstrap_is_rebuilt", check_stale_bootstrap_is_rebuilt())
@@ -137,6 +303,18 @@ function main() -> i32 {
     t_end("roundtrip_driver_is_ignored", check_roundtrip_driver_is_ignored())
     t_start()
     t_end("stale_gen0_fails_fixed_point", check_stale_gen0_fails_fixed_point())
+    t_start()
+    t_end("audit_stale_bootstrap_is_rebuilt", check_audit_stale_bootstrap_is_rebuilt())
+    t_start()
+    t_end("audit_roundtrip_driver_is_ignored", check_audit_roundtrip_driver_is_ignored())
+    t_start()
+    t_end("audit_override_is_kept", check_audit_override_is_kept())
+    t_start()
+    t_end("package_stale_bootstrap_is_rebuilt", check_package_stale_bootstrap_is_rebuilt())
+    t_start()
+    t_end("package_roundtrip_driver_is_ignored", check_package_roundtrip_driver_is_ignored())
+    t_start()
+    t_end("package_override_is_kept", check_package_override_is_kept())
     t_done()
     return 0
 }

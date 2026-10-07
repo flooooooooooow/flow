@@ -1,9 +1,13 @@
-# Package a distributable flowc: the Stage-A driver binary, the bootstrap C
-# it was built from, and a build script that needs nothing but a C
+# Package a distributable flowc: the compiler built from the bootstrap C,
+# that bootstrap C, and a build script that needs nothing but a C
 # compiler.
 #
 #   ./flow tool compiler/scripts/package_flowc.flow     # dist/flowc-<ver>-<os>-<arch>.tar.gz
 #   FLOWC_VERSION=v0.9.0 ./flow tool compiler/scripts/package_flowc.flow
+#
+# The binary is FLOWC_BOOTSTRAP when set, else compiler/build/flowc_bootstrap,
+# rebuilt when it is missing or older than compiler/bootstrap/flowc_stage_a.c.
+# A driver that roundtrip.flow left in compiler/build is not shipped.
 #
 # The tarball is self-contained: its `./build.sh` rebuilds the compiler
 # from the bootstrap C on any platform with a C compiler. The shipped
@@ -42,17 +46,25 @@ function chmod_x(p: string) {
     let _m: bool = set_mode(p, pkg_mode(p) | (73 & (4095 - pkg_umask())))
 }
 
-# The first executable driver, preferring a self-hosted one; "" if none.
-function pick_driver() -> string {
-    let cands: ptr<ProcStrs> = s_words("compiler/build/stage_a_driver_flow_self compiler/build/stage_a_driver_flow_g2 compiler/build/stage_a_driver_flow compiler/build/flowc_bootstrap")
-    let mut i: i32 = 0
-    while i < sl_len(cands) {
-        if is_exec(sl_get(cands, i)) {
-            return sl_get(cands, i)
-        }
-        i = i + 1
-    }
-    return ""
+# bin/flowc: the public `flowc <in.flow> <out.c>` interface in front of
+# bin/flowc-core, the compiler built from the bootstrap C, which reads
+# FLOWC_IN and FLOWC_OUT.
+function wrapper_script() -> string {
+    let mut s: string = "#!/usr/bin/env sh\n"
+    s = s + "set -e\n"
+    s = s + "ROOT=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\"\n"
+    s = s + "if [ \"$#\" -eq 2 ]; then\n"
+    s = s + "    FLOWC_IN=\"$1\"\n"
+    s = s + "    FLOWC_OUT=\"$2\"\n"
+    s = s + "    export FLOWC_IN FLOWC_OUT\n"
+    s = s + "    exec \"$ROOT/bin/flowc-core\"\n"
+    s = s + "fi\n"
+    s = s + "if [ \"$#\" -eq 0 ] && [ -n \"${FLOWC_IN:-}\" ] && [ -n \"${FLOWC_OUT:-}\" ]; then\n"
+    s = s + "    exec \"$ROOT/bin/flowc-core\"\n"
+    s = s + "fi\n"
+    s = s + "echo \"usage: flowc <in.flow> <out.c>\" >&2\n"
+    s = s + "exit 2\n"
+    return s
 }
 
 # The package's build.sh: rebuild flowc with nothing but a C compiler and
@@ -68,20 +80,7 @@ function build_script() -> string {
     s = s + "CC_BIN=\"${CC:-cc}\"\n"
     s = s + "\"$CC_BIN\" ${CFLAGS:--O2} -o \"$ROOT/bin/flowc-core\" \"$ROOT/bootstrap/flowc_stage_a.c\" -lm\n"
     s = s + "cat >\"$ROOT/bin/flowc\" <<'WRAPPER'\n"
-    s = s + "#!/usr/bin/env sh\n"
-    s = s + "set -e\n"
-    s = s + "ROOT=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\"\n"
-    s = s + "if [ \"$#\" -eq 2 ]; then\n"
-    s = s + "    FLOWC_IN=\"$1\"\n"
-    s = s + "    FLOWC_OUT=\"$2\"\n"
-    s = s + "    export FLOWC_IN FLOWC_OUT\n"
-    s = s + "    exec \"$ROOT/bin/flowc-core\"\n"
-    s = s + "fi\n"
-    s = s + "if [ \"$#\" -eq 0 ] && [ -n \"${FLOWC_IN:-}\" ] && [ -n \"${FLOWC_OUT:-}\" ]; then\n"
-    s = s + "    exec \"$ROOT/bin/flowc-core\"\n"
-    s = s + "fi\n"
-    s = s + "echo \"usage: flowc <in.flow> <out.c>\" >&2\n"
-    s = s + "exit 2\n"
+    s = s + wrapper_script()
     s = s + "WRAPPER\n"
     s = s + "chmod +x \"$ROOT/bin/flowc\"\n"
     s = s + "echo \"built bin/flowc\"\n"
@@ -110,7 +109,7 @@ function readme(version: string, os: string, arch: string) -> string {
     s = s + "    ./build.sh\n"
     s = s + "\n"
     s = s + "The rebuild keeps the same `bin/flowc <in.flow> <out.c>` interface as the\n"
-    s = s + "prebuilt driver. Internally, the rebuilt bootstrap executable uses\n"
+    s = s + "prebuilt binary. Internally, the bootstrap executable `bin/flowc-core` uses\n"
     s = s + "`FLOWC_IN`/`FLOWC_OUT`; `bin/flowc` is a small POSIX wrapper that adapts\n"
     s = s + "the public CLI to that bootstrap interface.\n"
     s = s + "\n"
@@ -127,7 +126,7 @@ function readme(version: string, os: string, arch: string) -> string {
 }
 
 function main() -> i32 {
-    let _root: string = gate_enter()
+    let root: string = gate_enter()
 
     let mut version: string = env("FLOWC_VERSION")
     if s_len(version) == 0 {
@@ -148,20 +147,18 @@ function main() -> i32 {
     gate_mkdir(stage + "/examples")
     gate_mkdir(dist)
 
-    # The binary: a self-hosted driver when there is one, else build from
-    # the bootstrap C.
-    if s_len(pick_driver()) == 0 {
-        let b: ptr<ProcCmd> = cmd(sl_of1("./compiler/scripts/bootstrap_from_c.sh"))
-        cmd_quiet_out(b)
-        check(run(b))
-    }
-    let driver: string = pick_driver()
-    if s_len(driver) == 0 {
-        cli_exit(1)
-    }
+    # The binary: FLOWC_BOOTSTRAP, else compiler/build/flowc_bootstrap,
+    # rebuilt when it is missing or older than the bootstrap C. It ships as
+    # bin/flowc-core behind the bin/flowc wrapper, the layout build.sh
+    # produces.
+    let driver: string = gl_flowc_cached("FLOWC_BOOTSTRAP", root)
     outln("packaging " + driver + " as " + name)
-    if not cp_file(driver, stage + "/bin/flowc") {
+    if not cp_file(driver, stage + "/bin/flowc-core") {
         gate_fail("package_flowc: cannot copy " + driver)
+    }
+    chmod_x(stage + "/bin/flowc-core")
+    if not write_text(stage + "/bin/flowc", wrapper_script()) {
+        gate_fail("package_flowc: cannot write " + stage + "/bin/flowc")
     }
     chmod_x(stage + "/bin/flowc")
 
