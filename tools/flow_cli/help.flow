@@ -10,7 +10,7 @@ export const FLOW_VERSION_LINE: string = "Flow 2.0.0"
 export function show_help() {
     outln("Flow Programming Language v2.0.0")
     outln("")
-    outln("Usage: flow [OPTION] <program.flow>")
+    outln("Usage: flow [OPTIONS] <program.flow>")
     outln("")
     outln("Options:")
     outln("  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety]")
