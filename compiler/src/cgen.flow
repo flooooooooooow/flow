@@ -38,8 +38,14 @@ import .effects {
 import .proof_lower { flowc_proof_erase }
 import .type_id {
     flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
-    flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
-    FLOWC_TID_TRANSPORT
+    flowc_type_transport_safe, flowc_type_schema_revision, flowc_type_member_count,
+    flowc_type_member_table, flowc_type_layout_native64, flowc_type_layout_wasm32,
+    flowc_type_sizeof_native64, flowc_type_sizeof_wasm32,
+    flowc_type_alignof_native64, flowc_type_alignof_wasm32,
+    FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA, FLOWC_TID_TRANSPORT,
+    FLOWC_TID_REVISION, FLOWC_TID_MEMBERS, FLOWC_TID_MEMBER_TABLE,
+    FLOWC_TID_LAYOUT_N64, FLOWC_TID_LAYOUT_W32, FLOWC_TID_SIZEOF_N64,
+    FLOWC_TID_SIZEOF_W32, FLOWC_TID_ALIGNOF_N64, FLOWC_TID_ALIGNOF_W32
 }
 import .noalias {
     flowc_noalias_param_restrict,
@@ -7609,15 +7615,21 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "))")
             return
         }
-        # Target-independent type identity: compile-time u64 / bool constants (#775).
+        # Target-independent type identity and dual-target layout (#775).
         if arena.nodes[id].b != AST_NONE {
             let tidk: i32 = flowc_type_id_builtin_kind(src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-            if tidk == FLOWC_TID_FAMILY or tidk == FLOWC_TID_SCHEMA {
+            if tidk == FLOWC_TID_FAMILY or tidk == FLOWC_TID_SCHEMA or tidk == FLOWC_TID_MEMBER_TABLE or tidk == FLOWC_TID_LAYOUT_N64 or tidk == FLOWC_TID_LAYOUT_W32 {
                 let mut key: u64 = 0
                 if tidk == FLOWC_TID_FAMILY {
                     key = flowc_type_family_id(arena, src, arena.nodes[id].b)
-                } else {
+                } elif tidk == FLOWC_TID_SCHEMA {
                     key = flowc_type_schema_id(arena, src, arena.nodes[id].b)
+                } elif tidk == FLOWC_TID_MEMBER_TABLE {
+                    key = flowc_type_member_table(arena, src, arena.nodes[id].b)
+                } elif tidk == FLOWC_TID_LAYOUT_N64 {
+                    key = flowc_type_layout_native64(arena, src, arena.nodes[id].b)
+                } else {
+                    key = flowc_type_layout_wasm32(arena, src, arena.nodes[id].b)
                 }
                 flowc_cgen_puts(w, "((uint64_t)0x")
                 flowc_cgen_put_u64_hex(w, key)
@@ -7630,6 +7642,30 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 } else {
                     flowc_cgen_puts(w, "0")
                 }
+                return
+            }
+            if tidk == FLOWC_TID_REVISION {
+                flowc_cgen_put_i32(w, flowc_type_schema_revision(arena, src, arena.nodes[id].b))
+                return
+            }
+            if tidk == FLOWC_TID_MEMBERS {
+                flowc_cgen_put_i32(w, flowc_type_member_count(arena, src, arena.nodes[id].b))
+                return
+            }
+            if tidk == FLOWC_TID_SIZEOF_N64 or tidk == FLOWC_TID_SIZEOF_W32 or tidk == FLOWC_TID_ALIGNOF_N64 or tidk == FLOWC_TID_ALIGNOF_W32 {
+                let mut sz: i64 = 0
+                if tidk == FLOWC_TID_SIZEOF_N64 {
+                    sz = flowc_type_sizeof_native64(arena, src, arena.nodes[id].b)
+                } elif tidk == FLOWC_TID_SIZEOF_W32 {
+                    sz = flowc_type_sizeof_wasm32(arena, src, arena.nodes[id].b)
+                } elif tidk == FLOWC_TID_ALIGNOF_N64 {
+                    sz = flowc_type_alignof_native64(arena, src, arena.nodes[id].b)
+                } else {
+                    sz = flowc_type_alignof_wasm32(arena, src, arena.nodes[id].b)
+                }
+                flowc_cgen_puts(w, "((int64_t)")
+                flowc_cgen_put_i32(w, sz as i32)
+                flowc_cgen_puts(w, ")")
                 return
             }
         }

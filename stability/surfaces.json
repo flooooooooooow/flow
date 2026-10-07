@@ -143,6 +143,14 @@
       "source": "docs/LANGUAGE_SPEC.md",
       "owner_issue": 647,
       "note": "Not a Tier-1 1.0 target."
+    },
+    {
+      "id": "type-reflection",
+      "kind": "language-domain",
+      "classification": "experimental",
+      "source": "docs/language/type-identity.md",
+      "owner_issue": 775,
+      "note": "@schema_revision(N), type_member_count<T>(), type_member_table<T>() and the native64/wasm32 type_sizeof_*, type_alignof_* and type_layout_* names. Public at Experimental stability by the 2026-10-07 decision (docs/project/Questions.md) so they can change before a 1.x review."
     }
   ]
 }
