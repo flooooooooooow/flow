@@ -3,6 +3,7 @@ name: bpfel backend
 
 on:
   push:
+    branches: [main]
     paths:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
