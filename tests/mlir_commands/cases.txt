@@ -25,6 +25,7 @@ mlir_merges mlir compiler/fixtures/mlir/merges.flow --lenient
 mlir_mlir_dep mlir compiler/fixtures/mlir/mlir_dep.flow --lenient
 mlir_print_logic mlir compiler/fixtures/mlir/print_logic.flow --lenient
 mlir_record_update mlir compiler/fixtures/mlir/record_update.flow --lenient
+mlir_record_update_return mlir compiler/fixtures/mlir/record_update_return.flow --lenient
 mlir_spans_data mlir compiler/fixtures/mlir/spans_data.flow --lenient
 mlir_structs mlir compiler/fixtures/mlir/structs.flow --lenient
 mlir_aosoa_padding aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-pad
