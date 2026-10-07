@@ -405,6 +405,98 @@ forms in new code. See `docs/language/dynamics-dsl.md` § Namespaces and
 
 ## Resolved Questions (Archive)
 
+### 2026-10-07: Flow 3.0 Structural Orchestration Algebra: syntax or library?
+
+**Context:** Issue #723 proposes syntax-native orchestration. PR #1393
+overloads `>>` by operand type: integer shift for integers, orchestration
+sequencing for other operands, and `>> { ... }` for fan-out. Its type
+check falls back to unknown, and its description claims parser and C
+lowering changes that the diff does not contain.
+
+**Answer:** Not accepted in this form. Overloading `>>` by operand type
+gives one symbol two meanings decided by inference, so a mistyped shift
+silently becomes orchestration. Orchestration starts as a library:
+`std.orchestrate` combinators (`seq`, `fanout`) with no new syntax.
+Syntax is decided later from real use. If syntax is added, it uses a
+dedicated operator or keyword, never `>>`. #1393 is closed; #723 stays
+open. See the
+[Flow 3.0 tracker](flow-3-0-feature-request-tracker.md#orchestration-library-first).
+
+**Resolved:** 2026-10-07, decided by the project owner.
+
+### 2026-10-07: Lifetime domains: `request` and `persistent` (Axiom §7)
+
+**Context:** [lifetime-domains.md](../language/lifetime-domains.md)
+listed `request` and `persistent` as unimplemented with no position in
+the domain order. PR #1369 (issue #679) adds them.
+
+**Answer:** Accepted. The lattice is
+`callback < frame < request < session < application < persistent`.
+`request` may allocate and is not `@rt_safe`. `persistent` is the
+outermost domain and outlives the process. Open follow-up: whether values
+stored in `persistent` must be TransportSafe (serialisable, with no
+references into process memory) is tracked in #1421.
+
+**Resolved:** 2026-10-07, decided by the project owner.
+
+### 2026-10-07: `@lifetime(D)` on struct fields and rule LD5
+
+**Context:** The 2026-08-06 entry covers `@lifetime(D)` on functions and
+module statics only. PR #1358 (issue #684) propagates domains through
+struct fields and collections, adds `@lifetime(D)` on a struct field as a
+contract, and adds rule LD5.
+
+**Answer:** Accepted. `@lifetime(D)` is allowed on struct fields as a
+contract, together with rule LD5. #1358 merges after #1369.
+
+**Resolved:** 2026-10-07, decided by the project owner.
+
+### 2026-10-07: Last-use moves without a `move` keyword or COW
+
+**Context:** Issue #696 asks for value semantics with compiler-inferred
+move defaults. PR #1354 recorded three options: conservative last-use
+lowering, a `move` expression with use-after-move errors, or inferred
+copy-on-write and implicit sharing.
+
+**Answer:** Option 1. There is no `move` keyword and no copy-on-write or
+implicit sharing. A move is inferred only at a proven last use of a
+uniquely owned function-scoped local or by-value parameter. Observable
+value semantics are unchanged: the move is a pure optimisation. #1354
+merges after #1367.
+
+**Resolved:** 2026-10-07, decided by the project owner.
+
+### 2026-10-07: Public type reflection API and its stability tier
+
+**Context:** Issue #775 asks for stable type identity and reflection for
+cross-target runtime schemas. PR #1365 adds the `@schema_revision(N)`
+attribute, `type_member_count<T>()`, `type_member_table<T>()` and the
+per-target `type_sizeof_*`, `type_alignof_*` and `type_layout_*` names for
+native64 and wasm32.
+
+**Answer:** Accepted. These names become public API at Experimental
+stability. They are registered as `experimental` in
+`stability/surfaces.json` so they can change before a 1.x review.
+
+**Resolved:** 2026-10-07, decided by the project owner.
+
+### 2026-10-07: Linux release qualification policy
+
+**Context:** Issue #652 needs a rule for what qualifies a Linux release
+and which run is the authority. PR #1399 adds source archive
+qualification and Debian packaging.
+
+**Answer:** Policy accepted. Qualification is local and checksum-gated.
+The `.deb` is reproducible, source-built from a pinned commit with
+`SOURCE_DATE_EPOCH` and root ownership. Hosted CI is not qualification
+authority. Linux arm64 is explicitly unqualified. Conditions before
+merge: the PR's three shell scripts become Flow tools that use
+`std.process`, with callers and docs pointing at `./flow tool ...`, and
+one real qualification run on Linux with the real flowc (on the CI VPS,
+runner `vps-linux`) is recorded in the PR.
+
+**Resolved:** 2026-10-07, decided by the project owner.
+
 ### 2026-07-28: Allow hyphens in `import` module paths / symbol lists?
 
 **Answer:** Implemented Option 1, plus one additional low-risk change
