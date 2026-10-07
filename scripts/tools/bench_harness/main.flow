@@ -165,7 +165,8 @@ function regression_status(old_os: string, old_cpu: string, new_os: string, new_
     if ft_eq(new_parity, "verified") == false {
         return "skipped_unresolved_correctness"
     }
-    if new_median == 0.0 or old_median == 0.0 {
+    # Zero, negative, and NaN timings are not benchmark measurements (#745).
+    if not (new_median > 0.0) or not (old_median > 0.0) {
         return "no_data"
     }
     if new_median <= old_median {
@@ -522,13 +523,11 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
         heap_bytes[k] = 0.0
         peak_live[k] = 0.0
         temp_bytes[k] = 0.0
-        if prof as ptr<u8> != null and ft_len(prof) > 0 {
-            let pa: f64 = counter(prof, "allocations")
-            let pc: f64 = counter(prof, "copies")
-            if pa > 0.0 or pc > 0.0 or counter(prof, "heap_bytes") > 0.0 {
-                allocs[k] = pa
-                copies[k] = pc
-            }
+        if memory and prof as ptr<u8> != null and ft_contains(prof, "=== Flow memory profile (#740) ===") {
+            # A valid zero is authoritative too: do not fall back to stdout
+            # instrumentation from an unrelated workload (#740).
+            allocs[k] = counter(prof, "allocations")
+            copies[k] = counter(prof, "copies")
             heap_bytes[k] = counter(prof, "heap_bytes")
             peak_live[k] = counter(prof, "peak_live_heap")
             temp_bytes[k] = counter(prof, "temp_bytes")

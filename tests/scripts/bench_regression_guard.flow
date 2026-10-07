@@ -1,0 +1,36 @@
+# Regression tests for benchmark comparison's invalid timing guard (#745).
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function run_compare(old_median: string, new_median: string, expected: string) -> i32 {
+    let before: string = t_tmp() + "/old.json"
+    let after: string = t_tmp() + "/new.json"
+    let header: string = "{\"os\": \"Linux\", \"cpu\": \"x86_64\", \"semantic_parity_status\": \"verified\", \"flow_metrics\": {\"median\": "
+    let _a: bool = write_text(before, header + old_median + "}}")
+    let _b: bool = write_text(after, header + new_median + "}}")
+    let args: ptr<ProcStrs> = sl_of3("./flow", "tool", "bench_harness")
+    sl_push(args, "--eval-regression")
+    sl_push(args, before)
+    sl_push(args, after)
+    if t_run_argv(args) != 0 {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), expected) {
+        t_cat(t_out())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("bench_regression_guard")
+    t_start()
+    t_end("negative_timing_is_no_data", run_compare("10.0", "-5.0", "no_data"))
+    t_start()
+    t_end("zero_timing_is_no_data", run_compare("10.0", "0.0", "no_data"))
+    t_start()
+    t_end("positive_regression_detected", run_compare("10.0", "12.0", "regression"))
+    t_done()
+    return 0
+}

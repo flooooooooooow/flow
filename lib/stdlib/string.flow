@@ -59,8 +59,10 @@ export function str_is_ascii_digit(c: u8) -> bool {
     return c >= 48 and c <= 57
 }
 
-# Exclusive end of the line starting at `start` (index of '\n', or length).
-# Does not allocate. `start` past the end yields the length.
+# Exclusive end of the line starting at `start`: the index of the first LF or
+# CR, or the length, without allocating.
+# `start` past the end yields the length. str_line_next skips CRLF as one
+# terminator.
 export function str_line_end(s: string, start: i32) -> i32 {
     let n: i32 = strlen(s) as i32
     if start < 0 or start >= n {
@@ -69,7 +71,7 @@ export function str_line_end(s: string, start: i32) -> i32 {
     let p: ptr<u8> = s as ptr<u8>
     let mut i: i32 = start
     while i < n {
-        if p[i] == 10 {
+        if p[i] == 10 or p[i] == 13 {
             return i
         }
         i = i + 1
@@ -78,13 +80,19 @@ export function str_line_end(s: string, start: i32) -> i32 {
 }
 
 # Start of the next line after a line that ended at `end`, or -1 if done.
-# A newline at `end` advances one byte; otherwise the scan is finished.
+# LF or CR advances one byte; CRLF advances two bytes.
 export function str_line_next(s: string, end: i32) -> i32 {
     let n: i32 = strlen(s) as i32
     if end < 0 or end >= n {
         return 0 - 1
     }
     let p: ptr<u8> = s as ptr<u8>
+    if p[end] == 13 {
+        if end + 1 < n and p[end + 1] == 10 {
+            return end + 2
+        }
+        return end + 1
+    }
     if p[end] == 10 {
         return end + 1
     }
