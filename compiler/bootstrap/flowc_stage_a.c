@@ -72095,12 +72095,19 @@ int32_t flowc_cgen_bounds_span_base(CgenBuf* w, AstArena arena, uint8_t* src, in
   if (flowc_cgen_checked_is_span(w, arena, src, base) == 0) {
   return AST_NONE;
 }
+  int32_t body = ((arena).nodes[id]).c;
+  if (flowc_cgen_name_rebound_in_node(arena, src, body, ((arena).nodes[base]).name_start, ((arena).nodes[base]).name_end) == 1) {
+  return AST_NONE;
+}
+  if (flowc_cgen_name_rebound_in_node(arena, src, body, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end) == 1) {
+  return AST_NONE;
+}
   return base;
 }
 
 int32_t flowc_cgen_name_rebound_in_node(AstArena arena, uint8_t* src, int32_t id, int32_t ns, int32_t ne) {
   __flowc_tail: ;
-  if (id == AST_NONE) {
+  if (id < 0 || id >= (arena).len) {
   return 0;
 }
   int32_t k = ((arena).nodes[id]).kind;
