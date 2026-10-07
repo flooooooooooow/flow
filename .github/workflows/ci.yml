@@ -38,9 +38,15 @@ on:
   # (#816).
   pull_request:
     branches: [main, master]
+  # The merge queue tests each batch on a temporary branch before it lands
+  # on main. Every gated job runs for a batch (see the `changes` job), so
+  # every required check reports on it.
+  merge_group:
+    types: [checks_requested]
 
 # A new push to a pull request cancels the run on its previous head. Pushes
-# to main are grouped by commit, so every merge commit gets a complete run.
+# to main and merge queue batches are grouped by commit, so each one gets a
+# complete run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -50,26 +56,31 @@ permissions:
   pull-requests: read
 
 jobs:
+  # Path flags that gate the jobs below. A merge queue batch can hold several
+  # pull requests, and its diff base is the queue head rather than the
+  # branch each one was written against, so on merge_group every flag is
+  # true and the batch runs every job.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      src: ${{ steps.filter.outputs.src }}
-      compiler: ${{ steps.filter.outputs.compiler }}
-      docs: ${{ steps.filter.outputs.docs }}
-      tests: ${{ steps.filter.outputs.tests }}
-      examples: ${{ steps.filter.outputs.examples }}
-      libs: ${{ steps.filter.outputs.libs }}
-      runtime: ${{ steps.filter.outputs.runtime }}
-      workflow: ${{ steps.filter.outputs.workflow }}
-      plugins: ${{ steps.filter.outputs.plugins }}
-      tools: ${{ steps.filter.outputs.tools }}
-      deps: ${{ steps.filter.outputs.deps }}
+      src: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.src }}
+      compiler: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.compiler }}
+      docs: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.docs }}
+      tests: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.tests }}
+      examples: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.examples }}
+      libs: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.libs }}
+      runtime: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.runtime }}
+      workflow: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.workflow }}
+      plugins: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.plugins }}
+      tools: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.tools }}
+      deps: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
+        if: github.event_name != 'merge_group'
         with:
           filters: |
             src:
