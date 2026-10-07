@@ -47,6 +47,21 @@ int flow_gpu_copy_d2d(void *dst_gpu, void *src_gpu, int64_t nbytes);
 /* Wait for outstanding GPU work issued by this runtime */
 void flow_gpu_sync(void);
 
+/* Shared count/capacity contract for f32 kernels.  The Metal shader takes
+ * a uint32_t count; reject truncation, signed multiplication overflow, and
+ * out-of-bounds dispatch before touching GPU resources.  Pure C for Linux
+ * regression tests; valid on C++ and Objective-C hosts as well.
+ */
+static inline int flow_gpu_f32_launch_fits(int64_t n,
+                                           int64_t out_bytes,
+                                           int64_t lhs_bytes,
+                                           int64_t rhs_bytes) {
+    return n > 0 && (uint64_t)n <= UINT32_MAX &&
+           out_bytes > 0 && lhs_bytes > 0 && rhs_bytes > 0 &&
+           n <= out_bytes / 4 && n <= lhs_bytes / 4 &&
+           n <= rhs_bytes / 4;
+}
+
 /* Elementwise f32 kernels over GpuBuffer handles (n floats).
  * Return 0 on success, -1 on error / unavailable.
  *
