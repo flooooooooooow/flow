@@ -1,0 +1,12 @@
+# Imported struct fields keep their string type in cgen (#1464).
+import "tests/fixtures/imported_string_field/smod.flow"
+
+function main() -> i32 {
+    let e: S = mk("1.0")
+    if e.w == "1.0" {
+        println("eq")
+        return 0
+    }
+    println("ne")
+    return 1
+}
