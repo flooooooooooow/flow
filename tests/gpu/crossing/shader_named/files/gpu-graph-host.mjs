@@ -92,6 +92,18 @@ const FULLSCREEN_VERT=`
  return vec4<f32>(points[v],0.0,1.0);
 }
 `;
+const STORAGE_ACCESS={1:"read-only",2:"write-only",3:"read-write"};
+// Explicit bind group layout for one pass, built from its typed bindings.
+function bindGroupLayout(device,p,ids) {
+    const visibility=p.kind===1?GPUShaderStage.COMPUTE:GPUShaderStage.FRAGMENT;
+    return device.createBindGroupLayout({label:"Flow "+p.name,entries:p.bindings.map(b=>{
+        const r=ids.get(b.resourceId);
+        if(r.kind===1)return {binding:b.slot,visibility,
+            buffer:{type:b.usage===1?"read-only-storage":"storage"}};
+        return {binding:b.slot,visibility,storageTexture:{
+            access:STORAGE_ACCESS[b.usage],format:FORMATS[r.format][0],viewDimension:"2d"}};
+    })});
+}
 function bindId(graph,b,iteration) {
     if(iteration%2===0||b.pingpongId<0)return b.resourceId;
     const pp=graph.pingpongs.find(p=>p.id===b.pingpongId);
@@ -155,17 +167,23 @@ export async function runFlowWebGpuGraph(device,graph,{width=64,height=64,initia
                 {bytesPerRow:r.width*FORMATS[r.format][1],rowsPerImage:r.height},
                 {width:r.width,height:r.height,depthOrArrayLayers:1});
         }
-        const pipelines=[];
+        const pipelines=[],layouts=[];
         for(const p of graph.passes) {
+            // The layout comes from the graph bindings, so a binding the
+            // shader does not read still has a slot; an "auto" layout would
+            // drop it and fail createBindGroup.
+            const bgl=bindGroupLayout(device,p,ids);
+            layouts.push(bgl);
+            const layout=device.createPipelineLayout({bindGroupLayouts:[bgl]});
             // WGSL requires-directives must precede all declarations.
             const mod=await compiled(device,
                 p.wgsl+(p.kind===2?FULLSCREEN_VERT:""),p.name);
             if(p.kind===1) {
                 pipelines.push(await device.createComputePipelineAsync({
-                    layout:"auto",compute:{module:mod,entryPoint:p.name}
+                    layout,compute:{module:mod,entryPoint:p.name}
                 }));
             } else {
-                const spec={layout:"auto",
+                const spec={layout,
                     vertex:{module:mod,entryPoint:"flow_graph_vertex"},
                     fragment:{module:mod,entryPoint:p.name,
                               targets:[{format:"rgba8unorm"}]},
@@ -201,7 +219,7 @@ export async function runFlowWebGpuGraph(device,graph,{width=64,height=64,initia
                         ?{buffer:obj}:obj.createView()});
                 }
                 const group=device.createBindGroup({
-                    layout:pipeline.getBindGroupLayout(0),entries
+                    layout:layouts[index],entries
                 });
                 if(p.kind===1) {
                     const pass=cmd.beginComputePass();

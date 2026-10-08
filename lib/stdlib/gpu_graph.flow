@@ -998,8 +998,9 @@ function fluid_size() -> i32 {
     return 64
 }
 
-# vgpu interactive-fluid family: advect, curl, vorticity, divergence,
-# pressure (Jacobi ping-pong), project, advect-dye, display.
+# vgpu interactive-fluid family: splat velocity and dye, advect, curl,
+# vorticity, divergence, pressure (Jacobi ping-pong), project,
+# advect-dye, display.
 export function gpu_graph_vgpu_fluid() -> GpuGraph {
     let mut g: GpuGraph = gpu_graph_new()
     let gp: ptr<GpuGraph> = &g
@@ -1018,6 +1019,18 @@ export function gpu_graph_vgpu_fluid() -> GpuGraph {
 
     let wg: GpuDim3 = gpu_dim3(8, 8, 1)
     let grid: GpuDim3 = gpu_dim3(n, n, 1)
+
+    # Force and dye injection, the graph's stand-in for vgpu's pointer
+    # splats: a fixed jet adds velocity and colour every frame, so the
+    # display is not black from zeroed resources. Each pair swaps an even
+    # number of times per frame, so the next frame reads the latest side.
+    let splat_v: i32 = gpu_graph_add_compute(gp, "splat_velocity", wg, grid, 0, 0)
+    let _bs0: i32 = gpu_graph_bind_pingpong(gp, splat_v, vel_pp, 0, 1)
+    let _ss0: i32 = gpu_graph_pingpong_swap(gp, vel_pp)
+
+    let splat_d: i32 = gpu_graph_add_compute(gp, "splat_dye", wg, grid, 0, 0)
+    let _bs1: i32 = gpu_graph_bind_pingpong(gp, splat_d, dye_pp, 0, 1)
+    let _ss1: i32 = gpu_graph_pingpong_swap(gp, dye_pp)
 
     let advect: i32 = gpu_graph_add_compute(gp, "advect_velocity", wg, grid, 0, 0)
     let _b0: i32 = gpu_graph_bind_pingpong(gp, advect, vel_pp, 0, 1)

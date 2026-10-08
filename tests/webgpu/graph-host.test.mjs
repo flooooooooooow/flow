@@ -7,6 +7,7 @@ import {runFlowWebGpuGraph} from "../../wasm/crossing_assets/gpu-graph-host.mjs"
 globalThis.GPUBufferUsage={STORAGE:1,COPY_DST:2,COPY_SRC:4,MAP_READ:8};
 globalThis.GPUTextureUsage={STORAGE_BINDING:1,TEXTURE_BINDING:2,COPY_SRC:4,COPY_DST:8,RENDER_ATTACHMENT:16};
 globalThis.GPUMapMode={READ:1};
+globalThis.GPUShaderStage={VERTEX:1,FRAGMENT:2,COMPUTE:4};
 
 function fake({supported=true,compilerErrors=[]}={}){
     // Read/write storage textures are a WGSL *language* feature on navigator.gpu,
@@ -17,7 +18,7 @@ function fake({supported=true,compilerErrors=[]}={}){
             supported ? ["readonly_and_readwrite_storage_textures"] : []
         )}}
     });
-    const stats={resources:[],groups:[],dispatches:[],draws:0,submits:0};
+    const stats={resources:[],groups:[],dispatches:[],draws:0,submits:0,layouts:[],pipelines:[]};
     function buffer(d){
         const b={
             raw:new Uint8Array(d.size),destroyed:false,
@@ -45,13 +46,24 @@ function fake({supported=true,compilerErrors=[]}={}){
             assert.ok(code.length);
             return {async getCompilationInfo(){return {messages:compilerErrors}}};
         },
-        async createComputePipelineAsync({compute}){
-            return {entry:compute.entryPoint,getBindGroupLayout(){return {}}};
+        createBindGroupLayout(d){
+            stats.layouts.push(d);
+            return {entries:d.entries};
         },
-        async createRenderPipelineAsync({fragment}){
-            return {entry:fragment.entryPoint,getBindGroupLayout(){return {}}};
+        createPipelineLayout({bindGroupLayouts}){
+            return {bindGroupLayouts};
         },
-        createBindGroup({entries}){
+        async createComputePipelineAsync({layout,compute}){
+            stats.pipelines.push({entry:compute.entryPoint,layout});
+            return {entry:compute.entryPoint,getBindGroupLayout(){return {entries:[]}}};
+        },
+        async createRenderPipelineAsync({layout,fragment}){
+            stats.pipelines.push({entry:fragment.entryPoint,layout});
+            return {entry:fragment.entryPoint,getBindGroupLayout(){return {entries:[]}}};
+        },
+        createBindGroup({layout,entries}){
+            // WebGPU rejects a bind group whose entry count differs from its layout.
+            assert.equal(entries.length,layout.entries.length);
             stats.groups.push(entries);
             return {entries};
         },
@@ -172,4 +184,15 @@ test("aliasing two binding slots to one resource is rejected",async()=>{
     const g=sample();
     g.passes[0].bindings[1].resourceId=0;
     await assert.rejects(runFlowWebGpuGraph(device,g),/same physical resource/);
+});
+test("every typed binding is in an explicit layout, read by the shader or not",async()=>{
+    const {device,stats}=fake();
+    await runFlowWebGpuGraph(device,sample(),{width:4,height:4});
+    // The display fragment never reads its texture. An "auto" layout drops
+    // that binding, and the bind group no longer matches it. The fluid
+    // display pass binds velocity that it does not read.
+    assert.ok(stats.pipelines.every(p=>p.layout!=="auto"));
+    assert.deepEqual(stats.layouts[1].entries,[{binding:0,visibility:GPUShaderStage.FRAGMENT,
+        storageTexture:{access:"read-only",format:"rgba8unorm",viewDimension:"2d"}}]);
+    assert.deepEqual(stats.layouts[0].entries.map(e=>e.buffer.type),["read-only-storage","storage"]);
 });

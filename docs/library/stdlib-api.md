@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**121** modules scanned.
+**123** modules scanned.
 
 ## Modules
 
@@ -1740,9 +1740,37 @@ Typed render/compute graph (issue #812)
 | `gpu_graph_emit_wgsl_pass` | `(g: GpuGraph, pass_id: i32) -> string` | Missing kernels fail *closed* rather than emitting a syntactically valid no-op and falsely counting it as a supported backend implementation. |
 | `gpu_graph_emit_metal_pass` | `(g: GpuGraph, pass_id: i32) -> string` | - |
 | `gpu_graph_same_source_both_backends` | `(g: GpuGraph) -> bool` | Same Flow graph lowers to both backends; used by the vgpu fluid and FFT-ocean families so Metal and WebGPU share one resource/pass layout. |
-| `gpu_graph_vgpu_fluid` | `() -> GpuGraph` | vgpu interactive-fluid family: advect, curl, vorticity, divergence, pressure (Jacobi ping-pong), project, advect-dye, display. |
+| `gpu_graph_vgpu_fluid` | `() -> GpuGraph` | vgpu interactive-fluid family: splat velocity and dye, advect, curl, vorticity, divergence, pressure (Jacobi ping-pong), project, advect-dye, display. |
 | `gpu_graph_vgpu_fft_ocean` | `() -> GpuGraph` | vgpu FFT-ocean family: Phillips spectrum, Stockham IFFT with workgroup memory/barriers, displacement, normals/foam, present. |
 | `gpu_graph_vgpu_fft_ocean_surface` | `() -> GpuGraph` | FFT-ocean surface family shares the compute graph and presents a grid. |
+
+### `gpu_graph_exec.flow`
+
+Native executor for the typed GPU render/compute graph (#812).  Runs a validated GpuGraph on the host GPU: Metal on macOS
+
+**Structs:** `GpuGraphExec`, `GpuGraphRun`
+
+**Constants:**
+
+- `GPU_GRAPH_EXEC_OK: i32`
+- `GPU_GRAPH_EXEC_ERR_UNAVAILABLE: i32`
+- `GPU_GRAPH_EXEC_ERR_INVALID: i32`
+- `GPU_GRAPH_EXEC_ERR_UNSUPPORTED: i32`
+- `GPU_GRAPH_EXEC_ERR_BACKEND: i32`
+- `GPU_GRAPH_EXEC_ERR_ARGUMENT: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_graph_resource_byte_size` | `(g: GpuGraph, resource_id: i32) -> i64` | Byte length of a resource's raw contents, the size an upload or a resource read must use: bytes for a buffer, width * height * texel bytes for a 2D texture. 0 for an unknown id. |
+| `gpu_graph_exec_available` | `() -> bool` | - |
+| `gpu_graph_exec_new` | `(g: ptr<GpuGraph>) -> GpuGraphExec` | Validate the graph, allocate its resources and compile its passes. On failure the result has a null handle and a nonzero code. |
+| `gpu_graph_exec_upload` | `(ex: ptr<GpuGraphExec>, resource_id: i32, src: ptr<void>, nbytes: i64) -> i32` | Replace a resource's contents with raw bytes in its layout (see gpu_graph_resource_byte_size). Returns a GPU_GRAPH_EXEC_* code. |
+| `gpu_graph_exec_read_resource` | `(ex: ptr<GpuGraphExec>, resource_id: i32, dst: ptr<void>, nbytes: i64) -> i32` | Copy a resource's current raw contents to dst. |
+| `gpu_graph_exec_run` | `(ex: ptr<GpuGraphExec>, width: i32, height: i32) -> GpuGraphRun` | Run every pass once (compute iterations included) and render a width x height frame. The pixels stay on the executor until gpu_graph_exec_readback copies them out. |
+| `gpu_graph_exec_readback` | `(ex: ptr<GpuGraphExec>, dst: ptr<u8>, nbytes: i64) -> i32` | Copy the last frame's rgba8unorm pixels, top row first. nbytes must be width * height * 4 of the last run. |
+| `gpu_graph_exec_free` | `(ex: ptr<GpuGraphExec>) -> void` | Release the device resources. The executor cannot be used afterwards. |
 
 ### `gpu_graph_export.flow`
 
@@ -1764,6 +1792,23 @@ GPU bodies for vgpu-derived storage pass graphs (#812). Emitted WGSL and Metal s
 |------|-----------|------|
 | `gpu_graph_body_wgsl` | `(name: string, a: string, b: string, c: string) -> string` | Supported kernels have executable shader bodies. Unknown kernels emit nothing. |
 | `gpu_graph_body_metal` | `(name: string, a: string, b: string, c: string) -> string` | Supported kernels have executable shader bodies. Unknown kernels emit nothing. |
+
+### `gpu_graph_reference.flow`
+
+CPU reference for the built-in GPU graph kernels (#812).  gpu_graph_reference_run evaluates a validated GpuGraph on the CPU with
+
+**Constants:**
+
+- `GPU_GRAPH_REF_OK: i32`
+- `GPU_GRAPH_REF_ERR_INVALID: i32`
+- `GPU_GRAPH_REF_ERR_KERNEL: i32`
+- `GPU_GRAPH_REF_ERR_ARGUMENT: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_graph_reference_run` | `(g: ptr<GpuGraph>, width: i32, height: i32, frames: i32, out: ptr<u8>) -> i32` | Run `frames` frames of the graph from zeroed resources and write the last render pass as width * height rgba8unorm pixels (top row first) to out. Returns a GPU_GRAPH_REF_* code. |
 
 ### `gpu_kernels.flow`
 

@@ -5,6 +5,12 @@
 
 # Supported kernels have executable shader bodies. Unknown kernels emit nothing.
 export function gpu_graph_body_wgsl(name: string, a: string, b: string, c: string) -> string {
+    if name == "splat_velocity" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let p=(vec2<f32>(xy)+vec2<f32>(0.5))/vec2<f32>(size)-vec2<f32>(0.25,0.5); let w=exp(-dot(p,p)/0.006); let v=textureLoad(" + a + ",xy); textureStore(" + b + ",xy,vec4<f32>(v.xy+vec2<f32>(220.0,50.0)*w,v.zw));"
+    }
+    if name == "splat_dye" {
+        return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let p=(vec2<f32>(xy)+vec2<f32>(0.5))/vec2<f32>(size)-vec2<f32>(0.25,0.5); let w=exp(-dot(p,p)/0.004); let d=textureLoad(" + a + ",xy); textureStore(" + b + ",xy,vec4<f32>(min(d.xyz+vec3<f32>(1.0,0.45,0.12)*w,vec3<f32>(1.0)),1.0));"
+    }
     if name == "advect_velocity" {
         return "let xy=vec2<i32>(id.xy); let size=vec2<i32>(textureDimensions(" + b + ")); if(any(xy>=size)){return;} let v=textureLoad(" + a + ",xy).xy; let prev=clamp(xy-vec2<i32>(round(v*0.016)),vec2<i32>(0),size-vec2<i32>(1)); textureStore(" + b + ",xy,textureLoad(" + a + ",prev));"
     }
@@ -58,6 +64,12 @@ export function gpu_graph_body_wgsl(name: string, a: string, b: string, c: strin
 
 # Supported kernels have executable shader bodies. Unknown kernels emit nothing.
 export function gpu_graph_body_metal(name: string, a: string, b: string, c: string) -> string {
+    if name == "splat_velocity" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; float2 p=(float2(xy)+0.5f)/float2(" + b + ".get_width()," + b + ".get_height())-float2(0.25f,0.5f); float w=exp(-dot(p,p)/0.006f); float4 v=" + a + ".read(xy); " + b + ".write(float4(v.xy+float2(220.0f,50.0f)*w,v.zw),xy);"
+    }
+    if name == "splat_dye" {
+        return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; float2 p=(float2(xy)+0.5f)/float2(" + b + ".get_width()," + b + ".get_height())-float2(0.25f,0.5f); float w=exp(-dot(p,p)/0.004f); float4 d=" + a + ".read(xy); " + b + ".write(float4(min(d.xyz+float3(1.0f,0.45f,0.12f)*w,float3(1.0f)),1.0f),xy);"
+    }
     if name == "advect_velocity" {
         return "uint2 xy=id.xy; if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return; float2 v=" + a + ".read(xy).xy; uint2 prev=uint2(clamp(float2(xy)-round(v*0.016f),float2(0.0),float2(" + b + ".get_width()-1," + b + ".get_height()-1))); " + b + ".write(" + a + ".read(prev),xy);"
     }

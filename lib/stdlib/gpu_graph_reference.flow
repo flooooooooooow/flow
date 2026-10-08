@@ -1,0 +1,465 @@
+# CPU reference for the built-in GPU graph kernels (#812).
+#
+# gpu_graph_reference_run evaluates a validated GpuGraph on the CPU with
+# the semantics the device executors use: passes in recorded order,
+# iterations that swap ping-pong sides, storage stores rounded to the
+# texture format (rgba16float to half precision, r32float keeps .x), and
+# a fullscreen render pass sampled at pixel centres into rgba8unorm. Each
+# kernel named in stdlib/gpu_graph_kernels.flow has a scalar twin here.
+#
+# It is the oracle the Metal and WebGPU readbacks are compared against.
+# Device math (exp, sin, cos) and the GPU's rounding differ in the last
+# bits, so compare with a tolerance, never exactly.
+import "stdlib/gpu_graph.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function expf(x: f32) -> f32
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+    function roundf(x: f32) -> f32
+    function rintf(x: f32) -> f32
+}
+
+export const GPU_GRAPH_REF_OK: i32 = 0
+export const GPU_GRAPH_REF_ERR_INVALID: i32 = 1
+export const GPU_GRAPH_REF_ERR_KERNEL: i32 = 2
+export const GPU_GRAPH_REF_ERR_ARGUMENT: i32 = 3
+
+struct RefV4 {
+    x: f32
+    y: f32
+    z: f32
+    w: f32
+}
+
+struct RefState {
+    g: ptr<GpuGraph>
+    data: ptr<ptr<f32>>
+    scratch: ptr<f32>
+    a: i32
+    b: i32
+    c: i32
+}
+
+function ref_v4(x: f32, y: f32, z: f32, w: f32) -> RefV4 {
+    return RefV4 { x: x, y: y, z: z, w: w }
+}
+
+function ref_imax(a: i32, b: i32) -> i32 {
+    if a > b { return a }
+    return b
+}
+
+function ref_imin(a: i32, b: i32) -> i32 {
+    if a < b { return a }
+    return b
+}
+
+function ref_fmin(a: f32, b: f32) -> f32 {
+    if a < b { return a }
+    return b
+}
+
+function ref_fclamp(x: f32, lo: f32, hi: f32) -> f32 {
+    if x < lo { return lo }
+    if x > hi { return hi }
+    return x
+}
+
+# Round an f32 to the nearest half-precision value (ties to even), the
+# rounding an rgba16float store applies.
+function ref_to_half(st: ptr<RefState>, x: f32) -> f32 {
+    st.scratch[0] = x
+    let bits: ptr<u32> = st.scratch as ptr<u32>
+    let u: u32 = bits[0]
+    let sign: u32 = u & 0x80000000
+    let ex: i32 = ((u >> 23) & 0xFF) as i32
+    if ex == 255 {
+        return x
+    }
+    let e: i32 = ex - 127
+    if e > 15 {
+        bits[0] = sign | 0x7F800000
+        return st.scratch[0]
+    }
+    if e < 0 - 14 {
+        # Half subnormal: a multiple of 2^-24.
+        let q: f32 = rintf(fabsf(x) * 16777216.0) / 16777216.0
+        if sign != 0 {
+            return 0.0 - q
+        }
+        return q
+    }
+    let mant: u32 = u & 0x7FFFFF
+    let mut m: u32 = mant >> 13
+    let rem: u32 = mant & 0x1FFF
+    let mut e2: i32 = e
+    if rem > 0x1000 or (rem == 0x1000 and (m & 1) == 1) {
+        m = m + 1
+        if m == 0x400 {
+            m = 0
+            e2 = e2 + 1
+            if e2 > 15 {
+                bits[0] = sign | 0x7F800000
+                return st.scratch[0]
+            }
+        }
+    }
+    bits[0] = sign | (((e2 + 127) as u32) << 23) | (m << 13)
+    return st.scratch[0]
+}
+
+function ref_res_of(st: ptr<RefState>, rid: i32) -> GpuGraphResource {
+    return st.g.resources[rid]
+}
+
+function ref_tex_load(st: ptr<RefState>, rid: i32, x: i32, y: i32) -> RefV4 {
+    let r: GpuGraphResource = ref_res_of(st, rid)
+    let d: ptr<f32> = st.data[r.physical]
+    let o: i32 = (y * r.width + x) * 4
+    return ref_v4(d[o], d[o + 1], d[o + 2], d[o + 3])
+}
+
+function ref_tex_store(st: ptr<RefState>, rid: i32, x: i32, y: i32, v: RefV4) {
+    let r: GpuGraphResource = ref_res_of(st, rid)
+    let d: ptr<f32> = st.data[r.physical]
+    let o: i32 = (y * r.width + x) * 4
+    if r.format == GPU_GRAPH_FMT_R32FLOAT {
+        d[o] = v.x
+        d[o + 1] = 0.0
+        d[o + 2] = 0.0
+        d[o + 3] = 1.0
+    } elif r.format == GPU_GRAPH_FMT_RG32FLOAT {
+        d[o] = v.x
+        d[o + 1] = v.y
+        d[o + 2] = 0.0
+        d[o + 3] = 1.0
+    } elif r.format == GPU_GRAPH_FMT_RGBA16FLOAT {
+        d[o] = ref_to_half(st, v.x)
+        d[o + 1] = ref_to_half(st, v.y)
+        d[o + 2] = ref_to_half(st, v.z)
+        d[o + 3] = ref_to_half(st, v.w)
+    } else {
+        d[o] = rintf(ref_fclamp(v.x, 0.0, 1.0) * 255.0) / 255.0
+        d[o + 1] = rintf(ref_fclamp(v.y, 0.0, 1.0) * 255.0) / 255.0
+        d[o + 2] = rintf(ref_fclamp(v.z, 0.0, 1.0) * 255.0) / 255.0
+        d[o + 3] = rintf(ref_fclamp(v.w, 0.0, 1.0) * 255.0) / 255.0
+    }
+}
+
+function ref_buf(st: ptr<RefState>, rid: i32) -> ptr<f32> {
+    return st.data[ref_res_of(st, rid).physical]
+}
+
+function ref_tex_w(st: ptr<RefState>, rid: i32) -> i32 {
+    return ref_res_of(st, rid).width
+}
+
+function ref_tex_h(st: ptr<RefState>, rid: i32) -> i32 {
+    return ref_res_of(st, rid).height
+}
+
+function ref_splat(st: ptr<RefState>, x: i32, y: i32, cx: f32, cy: f32, radius: f32) -> f32 {
+    let px: f32 = (x as f32 + 0.5) / (ref_tex_w(st, st.b) as f32) - cx
+    let py: f32 = (y as f32 + 0.5) / (ref_tex_h(st, st.b) as f32) - cy
+    return expf(0.0 - (px * px + py * py) / radius)
+}
+
+function ref_backtrace(v: f32, xy: i32, size: i32) -> i32 {
+    let p: f32 = ref_fclamp(xy as f32 - roundf(v * 0.016), 0.0, (size - 1) as f32)
+    return p as i32
+}
+
+# One compute invocation. Returns false for a kernel without a reference.
+function ref_kernel_at(st: ptr<RefState>, name: string, x: i32, y: i32) -> bool {
+    let a: i32 = st.a
+    let b: i32 = st.b
+    let c: i32 = st.c
+    if name == "initial_spectrum" or name == "spectrum" or name == "ifft_stage" or name == "ifft_columns" {
+        if x >= 64 or y >= 64 {
+            return true
+        }
+        let i: i32 = (y * 64 + x) * 2
+        if name == "initial_spectrum" {
+            let ad: ptr<f32> = ref_buf(st, a)
+            ad[i] = sinf(((x * 17 + y * 11) as f32) * 0.073)
+            ad[i + 1] = 0.0
+            return true
+        }
+        let src: ptr<f32> = ref_buf(st, a)
+        let dst: ptr<f32> = ref_buf(st, b)
+        if name == "spectrum" {
+            let re: f32 = src[i]
+            let im: f32 = src[i + 1]
+            let cs: f32 = cosf(0.15)
+            let sn: f32 = sinf(0.15)
+            dst[i] = re * cs - im * sn
+            dst[i + 1] = re * sn + im * cs
+            return true
+        }
+        let mut re: f32 = 0.0
+        let mut im: f32 = 0.0
+        let mut k: i32 = 0
+        while k < 64 {
+            let mut si: i32 = (y * 64 + k) * 2
+            let mut kk: i32 = k * x
+            if name == "ifft_columns" {
+                si = (k * 64 + x) * 2
+                kk = k * y
+            }
+            let phi: f32 = 6.28318530718 * (kk as f32) / 64.0
+            let cs: f32 = cosf(phi)
+            let sn: f32 = sinf(phi)
+            re = re + src[si] * cs - src[si + 1] * sn
+            im = im + src[si] * sn + src[si + 1] * cs
+            k = k + 1
+        }
+        dst[i] = re / 64.0
+        dst[i + 1] = im / 64.0
+        return true
+    }
+    if x >= ref_tex_w(st, b) or y >= ref_tex_h(st, b) {
+        return true
+    }
+    let w1: i32 = ref_tex_w(st, b) - 1
+    let h1: i32 = ref_tex_h(st, b) - 1
+    let lx: i32 = ref_imax(x - 1, 0)
+    let rx: i32 = ref_imin(x + 1, w1)
+    let uy: i32 = ref_imax(y - 1, 0)
+    let dy: i32 = ref_imin(y + 1, h1)
+    if name == "splat_velocity" {
+        let w: f32 = ref_splat(st, x, y, 0.25, 0.5, 0.006)
+        let v: RefV4 = ref_tex_load(st, a, x, y)
+        ref_tex_store(st, b, x, y, ref_v4(v.x + 220.0 * w, v.y + 50.0 * w, v.z, v.w))
+        return true
+    }
+    if name == "splat_dye" {
+        let w: f32 = ref_splat(st, x, y, 0.25, 0.5, 0.004)
+        let d: RefV4 = ref_tex_load(st, a, x, y)
+        ref_tex_store(st, b, x, y, ref_v4(ref_fmin(d.x + 1.0 * w, 1.0), ref_fmin(d.y + 0.45 * w, 1.0), ref_fmin(d.z + 0.12 * w, 1.0), 1.0))
+        return true
+    }
+    if name == "advect_velocity" or name == "advect_dye" {
+        let mut vel: i32 = a
+        if name == "advect_dye" {
+            vel = c
+        }
+        let v: RefV4 = ref_tex_load(st, vel, x, y)
+        let px: i32 = ref_backtrace(v.x, x, w1 + 1)
+        let py: i32 = ref_backtrace(v.y, y, h1 + 1)
+        ref_tex_store(st, b, x, y, ref_tex_load(st, a, px, py))
+        return true
+    }
+    if name == "curl" {
+        let cv: f32 = 0.5 * (ref_tex_load(st, a, rx, y).y - ref_tex_load(st, a, lx, y).y - ref_tex_load(st, a, x, uy).x + ref_tex_load(st, a, x, dy).x)
+        ref_tex_store(st, b, x, y, ref_v4(cv, 0.0, 0.0, 1.0))
+        return true
+    }
+    if name == "vorticity" {
+        let l: f32 = ref_tex_load(st, c, lx, y).x
+        let r: f32 = ref_tex_load(st, c, rx, y).x
+        let u: f32 = ref_tex_load(st, c, x, uy).x
+        let d: f32 = ref_tex_load(st, c, x, dy).x
+        let gx: f32 = fabsf(r) - fabsf(l)
+        let gy: f32 = fabsf(d) - fabsf(u)
+        let mut len: f32 = sqrtf(gx * gx + gy * gy)
+        if len < 0.00001 {
+            len = 0.00001
+        }
+        let cv: f32 = ref_tex_load(st, c, x, y).x
+        let fx: f32 = gy / len * cv * 0.016
+        let fy: f32 = (0.0 - gx) / len * cv * 0.016
+        let v: RefV4 = ref_tex_load(st, a, x, y)
+        ref_tex_store(st, b, x, y, ref_v4(v.x + fx, v.y + fy, v.z, v.w))
+        return true
+    }
+    if name == "divergence" {
+        let dv: f32 = 0.5 * (ref_tex_load(st, a, rx, y).x - ref_tex_load(st, a, lx, y).x + ref_tex_load(st, a, x, dy).y - ref_tex_load(st, a, x, uy).y)
+        ref_tex_store(st, b, x, y, ref_v4(dv, 0.0, 0.0, 1.0))
+        return true
+    }
+    if name == "pressure" {
+        let s: f32 = ref_tex_load(st, a, lx, y).x + ref_tex_load(st, a, rx, y).x + ref_tex_load(st, a, x, uy).x + ref_tex_load(st, a, x, dy).x
+        ref_tex_store(st, b, x, y, ref_v4((s - ref_tex_load(st, c, x, y).x) * 0.25, 0.0, 0.0, 1.0))
+        return true
+    }
+    if name == "project" {
+        let gx: f32 = 0.5 * (ref_tex_load(st, c, rx, y).x - ref_tex_load(st, c, lx, y).x)
+        let gy: f32 = 0.5 * (ref_tex_load(st, c, x, dy).x - ref_tex_load(st, c, x, uy).x)
+        let v: RefV4 = ref_tex_load(st, a, x, y)
+        ref_tex_store(st, b, x, y, ref_v4(v.x - gx, v.y - gy, v.z, v.w))
+        return true
+    }
+    if name == "ifft_finalize" {
+        let i: i32 = (y * 64 + x) * 2
+        let s: ptr<f32> = ref_buf(st, a)
+        let re: f32 = s[i]
+        let im: f32 = s[i + 1]
+        ref_tex_store(st, b, x, y, ref_v4(re, im, sqrtf(re * re + im * im), 1.0))
+        return true
+    }
+    if name == "normal_foam" {
+        let l: f32 = ref_tex_load(st, a, lx, y).z
+        let r: f32 = ref_tex_load(st, a, rx, y).z
+        let u: f32 = ref_tex_load(st, a, x, uy).z
+        let d: f32 = ref_tex_load(st, a, x, dy).z
+        let nx: f32 = l - r
+        let nz: f32 = u - d
+        let inv: f32 = 1.0 / sqrtf(nx * nx + 4.0 + nz * nz)
+        ref_tex_store(st, b, x, y, ref_v4(nx * inv * 0.5 + 0.5, 2.0 * inv * 0.5 + 0.5, nz * inv * 0.5 + 0.5, 1.0))
+        ref_tex_store(st, c, x, y, ref_v4(ref_fclamp(fabsf(r - l) + fabsf(d - u) - 0.2, 0.0, 1.0), 0.0, 0.0, 1.0))
+        return true
+    }
+    return false
+}
+
+# Fragment colour of the render pass at pixel (x, y).
+function ref_fragment_at(st: ptr<RefState>, name: string, x: i32, y: i32, out: ptr<RefV4>) -> bool {
+    if name == "display" {
+        if x >= ref_tex_w(st, st.b) or y >= ref_tex_h(st, st.b) {
+            out[0] = ref_v4(0.0, 0.0, 0.0, 1.0)
+        } else {
+            out[0] = ref_tex_load(st, st.b, x, y)
+        }
+        return true
+    }
+    if name == "present" or name == "surface" {
+        if x >= ref_tex_w(st, st.a) or y >= ref_tex_h(st, st.a) {
+            out[0] = ref_v4(0.0, 0.0, 0.0, 1.0)
+            return true
+        }
+        let d: RefV4 = ref_tex_load(st, st.a, x, y)
+        let n: RefV4 = ref_tex_load(st, st.b, x, y)
+        let fm: f32 = ref_tex_load(st, st.c, x, y).x
+        let h: f32 = fabsf(d.z)
+        out[0] = ref_v4(n.x * h + (1.0 - n.x * h) * fm, n.y * h + (1.0 - n.y * h) * fm, n.z * h + (1.0 - n.z * h) * fm, 1.0)
+        return true
+    }
+    return false
+}
+
+function ref_unorm8(x: f32) -> u8 {
+    return rintf(ref_fclamp(x, 0.0, 1.0) * 255.0) as i32 as u8
+}
+
+function ref_slot_resource(g: GpuGraph, p: GpuPass, slot: i32, iteration: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < p.binding_count {
+        let b: GpuBinding = p.bindings[i]
+        if b.slot == slot {
+            if iteration % 2 == 0 or b.pingpong_id < 0 {
+                return b.resource_id
+            }
+            let pp: GpuPingPong = g.pingpongs[b.pingpong_id]
+            if b.resource_id == pp.a {
+                return pp.b
+            }
+            return pp.a
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function ref_free_state(st: ptr<RefState>, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        if st.data[i] != null {
+            free(st.data[i] as ptr<void>)
+        }
+        i = i + 1
+    }
+    free(st.data as ptr<void>)
+    free(st.scratch as ptr<void>)
+}
+
+# Run `frames` frames of the graph from zeroed resources and write the
+# last render pass as width * height rgba8unorm pixels (top row first)
+# to out. Returns a GPU_GRAPH_REF_* code.
+export function gpu_graph_reference_run(g: ptr<GpuGraph>, width: i32, height: i32, frames: i32, out: ptr<u8>) -> i32 {
+    if out == null or width < 1 or height < 1 or width > 4096 or height > 4096 or frames < 1 {
+        return GPU_GRAPH_REF_ERR_ARGUMENT
+    }
+    let verr: GpuGraphError = gpu_graph_validate(g)
+    if verr.code != GPU_GRAPH_OK {
+        return GPU_GRAPH_REF_ERR_INVALID
+    }
+    let mut st: RefState = RefState {
+        g: g,
+        data: calloc(16, 8) as ptr<ptr<f32>>,
+        scratch: malloc(8) as ptr<f32>,
+        a: 0 - 1,
+        b: 0 - 1,
+        c: 0 - 1
+    }
+    let sp: ptr<RefState> = &st
+    let n: i32 = g.resource_count
+    let mut r: i32 = 0
+    while r < n {
+        let res: GpuGraphResource = g.resources[r]
+        if res.physical == res.id {
+            let mut count: i64 = (res.bytes / 4) as i64
+            if res.kind == GPU_RES_STORAGE_TEXTURE {
+                count = (res.width as i64) * (res.height as i64) * (res.depth as i64) * 4
+            }
+            st.data[r] = calloc(count, 4) as ptr<f32>
+        }
+        r = r + 1
+    }
+    let mut frame: i32 = 0
+    while frame < frames {
+        let mut pi: i32 = 0
+        while pi < g.pass_count {
+            let p: GpuPass = g.passes[pi]
+            let mut it: i32 = 0
+            while it < p.iterations {
+                st.a = ref_slot_resource(g[0], p, 0, it)
+                st.b = ref_slot_resource(g[0], p, 1, it)
+                st.c = ref_slot_resource(g[0], p, 2, it)
+                if p.kind == GPU_PASS_COMPUTE {
+                    let mut y: i32 = 0
+                    while y < p.dispatch.y {
+                        let mut x: i32 = 0
+                        while x < p.dispatch.x {
+                            if not ref_kernel_at(sp, p.name, x, y) {
+                                ref_free_state(sp, n)
+                                return GPU_GRAPH_REF_ERR_KERNEL
+                            }
+                            x = x + 1
+                        }
+                        y = y + 1
+                    }
+                } else {
+                    let mut col: RefV4 = ref_v4(0.0, 0.0, 0.0, 1.0)
+                    let mut y: i32 = 0
+                    while y < height {
+                        let mut x: i32 = 0
+                        while x < width {
+                            if not ref_fragment_at(sp, p.name, x, y, &col) {
+                                ref_free_state(sp, n)
+                                return GPU_GRAPH_REF_ERR_KERNEL
+                            }
+                            let o: i32 = (y * width + x) * 4
+                            out[o] = ref_unorm8(col.x)
+                            out[o + 1] = ref_unorm8(col.y)
+                            out[o + 2] = ref_unorm8(col.z)
+                            out[o + 3] = ref_unorm8(col.w)
+                            x = x + 1
+                        }
+                        y = y + 1
+                    }
+                }
+                it = it + 1
+            }
+            pi = pi + 1
+        }
+        frame = frame + 1
+    }
+    ref_free_state(sp, n)
+    return GPU_GRAPH_REF_OK
+}
