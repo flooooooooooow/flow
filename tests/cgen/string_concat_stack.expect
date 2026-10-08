@@ -1,0 +1,6 @@
+# local_join uses a bounded stack buffer; escaping_join keeps heap concat.
++ char __flowc_sbuf
++ const char* s = __flowc_sbuf
++ __flowc_str_concatn(3, a, b, c)
+- const char* s = __flowc_str_concatn(3, a, b, c);
+exit 0
