@@ -407,6 +407,23 @@ forms in new code. See `docs/language/dynamics-dsl.md` § Namespaces and
 
 ## Resolved Questions (Archive)
 
+### 2026-10-08: Is Flow 1.0.2 still released?
+
+**Context:** Issue #760 tracked a 1.0.2 patch release over Stable 1.x.
+`VERSION` on main is `2.0.0`, the newest release is `v1.0.1`, and no
+frozen 1.x maintenance commit exists to qualify. The Python compiler and
+the Python host that the 1.0.2 qualification notes relied on are deleted
+from main, so a release cut from main is not a 1.x patch. Issue #652
+listed 1.0.2 publication as its last acceptance box.
+
+**Answer:** 1.0.2 is superseded by 2.0. No 1.0.2 tag or release is
+made. #760 is closed, with each of its items mapped to the 2.0 work or
+to the pull request that delivered it. #652 is retargeted to the 2.0
+release: qualification, RC promotion and Homebrew apply to `v2.0.0`.
+
+**Resolved:** 2026-10-08, decided by the coordinator on the project
+owner's behalf.
+
 ### 2026-10-07: Flow 3.0 Structural Orchestration Algebra: syntax or library?
 
 **Context:** Issue #723 proposes syntax-native orchestration. PR #1393
