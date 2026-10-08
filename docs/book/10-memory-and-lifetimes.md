@@ -22,6 +22,13 @@ function copied_point() -> i32 {
 
 `p` and `q` are independent values. A pointer makes shared identity explicit.
 
+The compiler may treat a last use of a uniquely owned local or by-value
+parameter as a move and skip the intermediate copy of a record update
+(`Name { ..base, f: v }`). Observable results stay the same: the caller's
+binding is unchanged, and a later mention of the same name still sees the
+original fields. There is no `move` keyword. Rules:
+[value-semantics.md](../language/value-semantics.md).
+
 ## 10.2 Addresses and pointers
 
 ```flow

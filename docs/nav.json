@@ -581,6 +581,10 @@
           "path": "language/rt-summaries.md"
         },
         {
+          "label": "Value Semantics",
+          "path": "language/value-semantics.md"
+        },
+        {
           "label": "Effects Showcase",
           "path": "effects-showcase.md"
         },

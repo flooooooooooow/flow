@@ -1,0 +1,99 @@
+# Compiler-inferred last-use moves (#696).
+#
+# A last use of a uniquely owned local or by-value parameter is lowered as a
+# move: a record update writes the listed fields onto the dead base instead
+# of copying it into `__flowc_sl`. A later mention, a loop that can iterate
+# again, an update that reads the base, or taking the base's address keeps
+# the copy so value semantics stay intact. No `move` keyword is required.
+
+struct Point {
+    x: i32,
+    y: i32,
+    z: i32
+}
+
+function consume(p: Point) -> i32 {
+    return p.x + p.y + p.z
+}
+
+function bump_return(p: Point) -> Point {
+    return Point { ..p, x: 5 }
+}
+
+function shift_reads_base(p: Point) -> Point {
+    return Point { ..p, x: p.y }
+}
+
+function arg_last_use(p: Point) -> i32 {
+    return consume(Point { ..p, x: 9 })
+}
+
+function arg_used_after(p: Point) -> i32 {
+    let n: i32 = consume(Point { ..p, x: 8 })
+    return n + p.x
+}
+
+function branched_arg(p: Point, c: i32) -> i32 {
+    if c == 1 {
+        return consume(Point { ..p, x: 7 })
+    }
+    return p.x
+}
+
+function looped(p: Point, n: i32) -> i32 {
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < n {
+        s = s + consume(Point { ..p, x: i })
+        i = i + 1
+    }
+    return s + p.x
+}
+
+function addr_taken(p: Point) -> i32 {
+    let q: ptr<Point> = &p
+    let n: i32 = consume(Point { ..p, x: 4 })
+    return n + q[0].x
+}
+
+function keep_let(p: Point) -> i32 {
+    let q: Point = Point { ..p, x: 6 }
+    return p.x + q.x
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 1, y: 2, z: 3 }
+    let b: Point = bump_return(p)
+    if b.x != 5 or b.y != 2 or b.z != 3 {
+        return 1
+    }
+    let s: Point = shift_reads_base(p)
+    if s.x != 2 or s.y != 2 {
+        return 2
+    }
+    if arg_last_use(p) != 14 {
+        return 3
+    }
+    if arg_used_after(p) != 14 {
+        return 4
+    }
+    if branched_arg(p, 1) != 12 {
+        return 5
+    }
+    if branched_arg(p, 0) != 1 {
+        return 6
+    }
+    if looped(p, 3) != 19 {
+        return 7
+    }
+    if addr_taken(p) != 10 {
+        return 8
+    }
+    if keep_let(p) != 7 {
+        return 9
+    }
+    if p.x != 1 or p.y != 2 or p.z != 3 {
+        return 10
+    }
+    return 0
+}
