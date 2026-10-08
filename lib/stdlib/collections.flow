@@ -134,7 +134,7 @@ function hash_string(s: string) -> i32 {
 # inserted key alive and unchanged for the map's lifetime. Overwriting an
 # equal key keeps the original stored pointer.
 function hashmap_string_i32_insert_raw(m: HashMap_string_i32, key: string, value: i32) -> HashMap_string_i32 {
-    if m.capacity <= 0 or key as ptr<u8> == null {
+    if m.capacity <= 0 or m.buckets == null or key as ptr<u8> == null {
         return m
     }
     let start: i32 = hash_string(key) % m.capacity
@@ -196,7 +196,7 @@ function hashmap_string_i32_is_empty(m: HashMap_string_i32) -> bool {
 }
 
 function hashmap_string_i32_contains(m: HashMap_string_i32, key: string) -> bool {
-    if m.capacity <= 0 or key as ptr<u8> == null {
+    if m.capacity <= 0 or m.buckets == null or key as ptr<u8> == null {
         return false
     }
     let start: i32 = hash_string(key) % m.capacity
@@ -217,7 +217,7 @@ function hashmap_string_i32_contains(m: HashMap_string_i32, key: string) -> bool
 }
 
 function hashmap_string_i32_get(m: HashMap_string_i32, key: string, default_value: i32) -> i32 {
-    if m.capacity <= 0 or key as ptr<u8> == null {
+    if m.capacity <= 0 or m.buckets == null or key as ptr<u8> == null {
         return default_value
     }
     let start: i32 = hash_string(key) % m.capacity
