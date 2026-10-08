@@ -56,7 +56,7 @@ Tier-1 platforms are Linux x86-64 and macOS arm64 ([CHANGELOG](CHANGELOG.md)). `
 | `sizes` | `tiny`, `medium`, `large` |
 | `tiny` / `medium` / `large` | Stock programs: `examples/basics/hello_world.flow`, `examples/basics/fibonacci.flow`, `compiler/src/main.flow` |
 | `*_total_ms` | Warm compile-to-result (`emit` + `cc` + `run`) |
-| `top_fixed` / `top_scaling` | Phase that changes least / most with program size |
+| `top_fixed` / `top_scaling` | Stage (`cc`, `run` or a flowc phase, never the `total` or `emit` sums) that costs most on the tiny program / whose cost grows most per added source line from tiny to large |
 | `bottlenecks` | Every phase that is >10% of compile-to-result or of emit, with a follow-up issue |
 
 Fill both Tier-1 slots by running the same command on each host and keeping the JSON next to the source SHA. A Linux x86-64 row is produced wherever that is the build machine; the macOS arm64 slot is the same schema, other host.

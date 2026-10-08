@@ -304,6 +304,7 @@ function main() -> i32 {
     let totals: ptr<ProcStrs> = proc_strs_new()
     let emits: ptr<ProcStrs> = proc_strs_new()
     let ccs: ptr<ProcStrs> = proc_strs_new()
+    let runs: ptr<ProcStrs> = proc_strs_new()
     let parses: ptr<ProcStrs> = proc_strs_new()
     let tcs: ptr<ProcStrs> = proc_strs_new()
     let gens: ptr<ProcStrs> = proc_strs_new()
@@ -445,6 +446,7 @@ function main() -> i32 {
         proc_strs_push(totals, i64_str(total))
         proc_strs_push(emits, i64_str(emit_min))
         proc_strs_push(ccs, i64_str(cc_min))
+        proc_strs_push(runs, i64_str(run_min))
         proc_strs_push(parses, i64_str(phase_ms(warm_profile, "parse")))
         proc_strs_push(tcs, i64_str(phase_ms(warm_profile, "typecheck")))
         proc_strs_push(gens, i64_str(phase_ms(warm_profile, "codegen")))
@@ -456,20 +458,13 @@ function main() -> i32 {
     }
 
     if proc_strs_len(names) >= 1 {
-        print_summary(names, locs, totals, emits, ccs, parses, tcs, gens, startups, imports, monos, lows, caches)
+        print_summary(names, locs, totals, emits, ccs, runs, parses, tcs, gens, startups, imports, monos, lows, caches)
     }
     return rc
 }
 
 function s_to_i64(s: string) -> i64 {
     return s_atoi(s, 0) as i64
-}
-
-function abs_i64(v: i64) -> i64 {
-    if v < 0 {
-        return 0 - v
-    }
-    return v
 }
 
 function bottleneck_item(program: string, phase: string, ms: i64, total: i64, of: string) -> string {
@@ -515,6 +510,7 @@ function print_summary(
     totals: ptr<ProcStrs>,
     emits: ptr<ProcStrs>,
     ccs: ptr<ProcStrs>,
+    runs: ptr<ProcStrs>,
     parses: ptr<ProcStrs>,
     tcs: ptr<ProcStrs>,
     gens: ptr<ProcStrs>,
@@ -533,18 +529,18 @@ function print_summary(
         dloc = 1
     }
 
+    # Candidates are single stages. `total` and `emit` are sums of them and
+    # would always win both contests, which made the summary report "total"
+    # for both (#735).
     let keys: ptr<ProcStrs> = proc_strs_new()
     let tiny: ptr<ProcStrs> = proc_strs_new()
     let large: ptr<ProcStrs> = proc_strs_new()
-    proc_strs_push(keys, "total")
-    proc_strs_push(tiny, proc_strs_get(totals, 0))
-    proc_strs_push(large, proc_strs_get(totals, last))
-    proc_strs_push(keys, "emit")
-    proc_strs_push(tiny, proc_strs_get(emits, 0))
-    proc_strs_push(large, proc_strs_get(emits, last))
     proc_strs_push(keys, "cc")
     proc_strs_push(tiny, proc_strs_get(ccs, 0))
     proc_strs_push(large, proc_strs_get(ccs, last))
+    proc_strs_push(keys, "run")
+    proc_strs_push(tiny, proc_strs_get(runs, 0))
+    proc_strs_push(large, proc_strs_get(runs, last))
     proc_strs_push(keys, "parse")
     proc_strs_push(tiny, proc_strs_get(parses, 0))
     proc_strs_push(large, proc_strs_get(parses, last))
@@ -570,26 +566,22 @@ function print_summary(
     proc_strs_push(tiny, proc_strs_get(caches, 0))
     proc_strs_push(large, proc_strs_get(caches, last))
 
+    # top_fixed: the stage that costs most on the tiny program, which is
+    # paid whatever the program size. top_scaling: the stage whose cost
+    # grows most per added source line from the tiny to the large program.
     let mut top_fixed: string = "cc"
-    let mut top_scale: string = "emit"
-    let mut best_rel: i64 = 1000000
+    let mut top_scale: string = "cc"
+    let mut best_fixed: i64 = 0 - 1
     let mut best_delta: i64 = 0 - 1
     let mut k: i32 = 0
     while k < proc_strs_len(keys) {
         let a: i64 = s_to_i64(proc_strs_get(tiny, k))
         let b: i64 = s_to_i64(proc_strs_get(large, k))
+        if a >= 0 and a > best_fixed {
+            best_fixed = a
+            top_fixed = proc_strs_get(keys, k)
+        }
         if a >= 0 and b >= 0 {
-            let mut mx: i64 = b
-            if a > mx {
-                mx = a
-            }
-            if mx > 0 {
-                let rel: i64 = (abs_i64(b - a) * 1000) / mx
-                if rel < best_rel {
-                    best_rel = rel
-                    top_fixed = proc_strs_get(keys, k)
-                }
-            }
             let delta: i64 = (b - a) * 1000 / dloc
             if delta > best_delta {
                 best_delta = delta
