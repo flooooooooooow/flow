@@ -62,10 +62,9 @@ surface.
 `gpu_graph_pingpong_swap` flips the pair for later binds. Binding the
 same physical resource as both sides is rejected at construction.
 
-A Jacobi loop records its iteration count with `gpu_graph_set_iterations`,
-which the eventual device executor must implement by swapping ping-pong
-resources between iterations. Recording an iteration count is *not* itself
-an execution of those iterations.
+A Jacobi loop records its iteration count with `gpu_graph_set_iterations`.
+The executors run that many dispatches and bind the other side of each
+ping-pong pair on odd iterations.
 
 ## Hazard checks
 
@@ -92,6 +91,7 @@ later pass that reads or writes a physical resource a earlier pass wrote
 duplicated host wiring: `gpu_graph_has_dep` reads what validation
 recorded.
 
+
 ## Backends
 
 `gpu_graph_emit_wgsl_pass` and `gpu_graph_emit_metal_pass` emit one pass
@@ -99,48 +99,137 @@ from the same graph: storage bindings, workgroup size, stage input and the
 shader body. The bodies for the fluid and ocean passes live in
 `lib/stdlib/gpu_graph_kernels.flow`. An unknown kernel gives an empty
 result. `gpu_graph_same_source_both_backends` checks that every pass
-produces code for both backends. It does not run that code.
+produces code for both backends.
 
 The inverse transform is a direct DFT, O(n²) per row and column, written for
-correctness; a Stockham butterfly kernel would be faster. The spectrum is
-deterministic synthetic data. Still to build and verify: compiling the
-shaders with Metal, resource allocation, pass submission, ping-pong
-swapping across iterations, synchronization, readback and comparison with
-reference fluid and ocean output. `flow gpu test` does not execute graphs.
-The fluid and ocean examples validate the graph and print the generated
-shaders.
+correctness. A Stockham butterfly kernel would be faster. The spectrum is
+deterministic synthetic data.
+
+Two executors run the emitted code on a device: the native executor below
+(Metal) and the browser host (WebGPU). Both take the same graph, accept the
+same raw initial bytes per resource, and return the render pass as
+`rgba8unorm` pixels.
 
 ## vgpu families
 
 | Builder | Upstream | Passes |
 |---|---|---|
-| `gpu_graph_vgpu_fluid` | [fluid](https://vgpu.sh/examples/fluid) | advect, curl, vorticity, divergence, pressure×20, project, advect-dye, display |
+| `gpu_graph_vgpu_fluid` | [fluid](https://vgpu.sh/examples/fluid) | splat velocity, splat dye, advect, curl, vorticity, divergence, pressure×20, project, advect-dye, display |
 | `gpu_graph_vgpu_fft_ocean` | [fft-ocean](https://vgpu.sh/examples/fft-ocean) | deterministic spectrum, evolve, row/column inverse DFT, finalize, normals/foam, present |
 | `gpu_graph_vgpu_fft_ocean_surface` | [fft ocean surface](https://vgpu.sh/examples/fft-ocean-surface) | same compute graph, `surface` present pass |
+
+The two splat passes stand in for vgpu's pointer input. Every frame a fixed
+jet at (0.25, 0.5) adds velocity (220, 50) and orange dye with a Gaussian
+falloff, so a run from zeroed resources shows dye. Each ping-pong pair
+swaps an even number of times per frame, so the next frame reads the side
+the last one wrote.
 
 ```bash
 ./flow run examples/gpu/vgpu/fluid.flow
 ./flow run examples/gpu/vgpu/fft_ocean.flow
+./flow run examples/gpu/vgpu/graph_device.flow
 ```
 
-## Browser WebGPU graph execution (device path)
+## Native executor
 
-The graph now has a machine-readable Flow→WebGPU bridge:
+`stdlib/gpu_graph_exec.flow` runs a graph on the host GPU. On macOS the
+backend is `runtime/gpu_metal_graph.m`. On other hosts
+`gpu_graph_exec_new` returns `GPU_GRAPH_EXEC_ERR_UNAVAILABLE`.
 
-- `lib/stdlib/gpu_graph_export.flow` runs the graph validator, then
-  exports resource/physical-alias descriptors, ping-pong pairs, ordered
-  passes, dispatch dimensions, binding slots, iterations, dependencies
-  and **WGSL generated from the same Flow graph** as JSON.
-- `wasm/crossing_assets/gpu-graph-host.mjs` (mirrored under
-  `site/wasm-crossings/gpu/`) consumes that exported JSON, initializes
-  shared GPU resources, dispatches compute passes in order, swaps
-  ping-pong buffer/texture bindings for repeated iterations, renders
-  the fullscreen final stage, and returns an `rgba8unorm` readback.
-- Generated WGSL failing device compilation, missing storage-texture
-  features, invalid aliases, oversized dispatches, and unsupported
-  feedback/shared-memory passes are **errors**, never success verdicts.
+```flow
+import "stdlib/gpu_graph_exec.flow"
 
-Emit the two supported example graphs with Flow:
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+function main() -> i32 {
+    let mut g: GpuGraph = gpu_graph_vgpu_fluid()
+    let mut ex: GpuGraphExec = gpu_graph_exec_new(&g)
+    if ex.code != GPU_GRAPH_EXEC_OK {
+        println(ex.message)
+        return 0
+    }
+    let run: GpuGraphRun = gpu_graph_exec_run(&ex, 64, 64)
+    let px: ptr<u8> = malloc(64 * 64 * 4) as ptr<u8>
+    let rc: i32 = gpu_graph_exec_readback(&ex, px, 64 * 64 * 4)
+    println(run.execution)
+    println(run.compute_dispatches)
+    gpu_graph_exec_free(&ex)
+    return rc
+}
+```
+
+| Function | Does |
+|---|---|
+| `gpu_graph_exec_available()` | true when a native backend and a device exist |
+| `gpu_graph_exec_new(g)` | validates, allocates every physical resource zero-filled, compiles one pipeline per pass |
+| `gpu_graph_exec_upload(ex, id, src, n)` | replaces a resource with raw bytes in its layout |
+| `gpu_graph_exec_run(ex, w, h)` | runs every pass once and renders a `w`×`h` frame |
+| `gpu_graph_exec_readback(ex, dst, n)` | copies the last frame, `w * h * 4` bytes, top row first |
+| `gpu_graph_exec_read_resource(ex, id, dst, n)` | copies a resource's raw bytes |
+| `gpu_graph_resource_byte_size(g, id)` | the byte count an upload or read of `id` uses |
+| `gpu_graph_exec_free(ex)` | releases the device resources |
+
+Raw layouts match the WebGPU host's `initialResources`: `f32` for a
+storage buffer, and row-major texels for a 2D storage texture (4 bytes for
+`r32float` and `rgba8unorm`, 8 for `rg32float` and `rgba16float`).
+
+A run records every pass, in the order the graph lists them, into one
+command buffer. Validation only derives forward edges, so that order is a
+topological order of the dependencies. Compute passes share one concurrent
+compute encoder. A memory barrier goes before each dispatch that has a
+derived dependency on an earlier pass, and before every iteration after
+the first. Odd iterations bind the other side of each ping-pong pair. The
+render pass draws a fullscreen triangle into an `rgba8unorm` target, which
+is copied to a shared buffer before the command buffer is committed. The
+run waits for completion. `GpuGraphRun` reports dispatches, barriers,
+render passes, completed frames and GPU time, and `execution` is
+`"metal-device"`.
+
+Resources persist across runs, so a second `gpu_graph_exec_run` advances a
+simulation by one frame. Shaders compile with fast math off.
+
+The executor refuses, with `GPU_GRAPH_EXEC_ERR_UNSUPPORTED`, graphs it
+cannot run as written: feedback passes or the feedback hazard mode,
+workgroup memory, 1D or 3D textures, physical aliases, a pass without a
+Metal body, and graphs without exactly one render pass. An invalid graph
+gives `GPU_GRAPH_EXEC_ERR_INVALID`. Compilation, allocation and submission
+failures give `GPU_GRAPH_EXEC_ERR_BACKEND` with the Metal message. Bad ids,
+byte counts and sizes give `GPU_GRAPH_EXEC_ERR_ARGUMENT`.
+
+## CPU reference
+
+`stdlib/gpu_graph_reference.flow` evaluates the same graph on the CPU.
+`gpu_graph_reference_run(g, w, h, frames, out)` runs `frames` frames from
+zeroed resources with the executors' rules: recorded pass order, ping-pong
+iterations, stores rounded to the texture format (`rgba16float` to half
+precision, ties to even), and a render pass sampled at pixel centres. Each
+kernel in `gpu_graph_kernels.flow` has a scalar twin. A pass without one
+gives `GPU_GRAPH_REF_ERR_KERNEL`.
+
+It is the oracle for the device runs. Device `exp`, `sin` and `cos` differ
+from the C library in the last bits, so compare with a tolerance.
+
+## Browser WebGPU graph execution
+
+`lib/stdlib/gpu_graph_export.flow` validates the graph, then exports
+resource and alias descriptors, ping-pong pairs, ordered passes, dispatch
+dimensions, binding slots, iterations, dependencies and the WGSL generated
+from the same graph as JSON.
+
+`wasm/crossing_assets/gpu-graph-host.mjs` (mirrored under
+`site/wasm-crossings/gpu/`) consumes that JSON. It allocates the resources,
+builds an explicit bind group layout for each pass from its typed bindings,
+dispatches compute passes in order, swaps ping-pong bindings for repeated
+iterations, renders the fullscreen final stage and returns an `rgba8unorm`
+readback. The layout comes from the graph, so a binding the shader does
+not read keeps its slot. The fluid display pass binds velocity and reads
+only dye.
+
+Generated WGSL that fails device compilation, a missing storage-texture
+language feature, invalid aliases, oversized dispatches, and unsupported
+feedback or shared-memory passes are errors, never success verdicts.
 
 ```sh
 mkdir -p build
@@ -148,8 +237,7 @@ mkdir -p build
 ./flow run examples/gpu/vgpu/export_ocean_graph.flow > build/ocean-graph.json
 ```
 
-Execute in a browser supporting WebGPU, from a secure context and an HTTP
-server exposing the exported file and Flow host module:
+In a browser with WebGPU, from a secure context:
 
 ```js
 import { runFlowWebGpuGraph } from "./gpu-graph-host.mjs";
@@ -164,16 +252,46 @@ const run = await runFlowWebGpuGraph(device, graph, {width:64,height:64});
 console.log(run.execution, run.computeDispatches, run.rgba);
 ```
 
-The browser host contract has mock-device coverage:
+Chrome ships the `readonly_and_readwrite_storage_textures` language
+feature. Deno 2.7 accepts the shaders but does not advertise the feature,
+so a Deno run has to add it to `navigator.gpu.wgslLanguageFeatures` and
+drop the `requires` line from each pass first.
+
+The host contract has mock-device coverage:
+
 ```sh
 node --test tests/webgpu/graph-host.test.mjs
 ```
 
-**Qualification boundary:** This adds a *WebGPU execution* route, but
-live-adapter shader compilation and numerical/pixel agreement have **not**
-been established. Read-only storage textures may require a non-portable
-adapter feature. The ocean source uses a synthetic spectrum and direct
-separable inverse DFT; neither visual parity with vgpu nor an optimized
-FFT is established. A separate native Metal graph executor remains to be
-implemented, as do frozen upstream reference comparisons, backend-specific
-capability negotiation and real-device acceptance tests for #812.
+## Device results
+
+One frame at 64×64 from zeroed resources, compared per `rgba8unorm` channel
+with the CPU reference. Apple M4 Max, macOS, 2026-10-08.
+
+| Graph | Backend | Dispatches | Max error vs reference | Channels that differ | Max error vs Metal |
+|---|---|---|---|---|---|
+| fluid | Metal (native executor) | 28 | 1 | 15 | |
+| fluid | WebGPU, Chrome 154 headless | 28 | 1 | 15 | 0 |
+| fluid | WebGPU, Deno 2.7 with the feature shim | 28 | 1 | 15 | 0 |
+| fft_ocean | Metal | 6 | 1 | 1 | |
+| fft_ocean | WebGPU, Chrome 154 | 6 | 1 | 1 | 0 |
+| fft_ocean | WebGPU, Deno 2.7 | 6 | 1 | 1 | 0 |
+| fft_ocean_surface | Metal | 6 | 1 | 1 | |
+| fft_ocean_surface | WebGPU, Chrome 154 | 6 | 1 | 1 | 0 |
+| fft_ocean_surface | WebGPU, Deno 2.7 | 6 | 1 | 1 | 0 |
+
+`examples/gpu/vgpu/graph_device.flow` prints the Metal rows, with a
+tolerance of 2. `tests/runtime/test_gpu_graph_exec.flow` checks the same
+on any host with a Metal device.
+
+## Limits
+
+The reference is the Flow graph's own math. Captured vgpu.sh frames are no
+fixed target for these graphs: the upstream fluid is driven by pointer
+input, and the upstream ocean uses a random Phillips spectrum and an FFT.
+
+Advection is nearest-neighbour: it rounds a backtrace offset to a whole
+cell. A last-bit difference near a half-cell boundary moves a texel, and
+the error grows with frames. After 3 frames the fluid differs from the
+reference by up to 29 in a few channels, and after 10 frames by 255 in
+481 channels. Single frames agree within 1.

@@ -3,8 +3,8 @@
 # Interactive fluid as a typed render/compute graph: storage textures,
 # velocity/dye/pressure ping-pong, transient curl/divergence, Jacobi
 # pressure iterations, and a display pass. The same Flow graph emits
-# Metal and WGSL. Device dispatch is the P4 harness; this program
-# validates hazards and prints both backend modules.
+# Metal and WGSL. This program validates hazards and prints both backend
+# modules; graph_device.flow runs the graph on the GPU.
 
 import "stdlib/gpu_graph.flow"
 
@@ -26,12 +26,12 @@ function main() -> i32 {
     println(g.dep_count)
 
     println("--- wgsl advect_velocity ---")
-    println(gpu_graph_emit_wgsl_pass(g, 0))
+    println(gpu_graph_emit_wgsl_pass(g, 2))
     println("--- metal advect_velocity ---")
-    println(gpu_graph_emit_metal_pass(g, 0))
+    println(gpu_graph_emit_metal_pass(g, 2))
     println("--- wgsl display ---")
-    println(gpu_graph_emit_wgsl_pass(g, 7))
+    println(gpu_graph_emit_wgsl_pass(g, g.pass_count - 1))
     println("--- metal display ---")
-    println(gpu_graph_emit_metal_pass(g, 7))
+    println(gpu_graph_emit_metal_pass(g, g.pass_count - 1))
     return 0
 }

@@ -72,3 +72,71 @@ export function flow_gpu_mul_backward_a_f32(grad_a_gpu: ptr<void>, grad_out_gpu:
 export function flow_gpu_mul_backward_b_f32(grad_b_gpu: ptr<void>, grad_out_gpu: ptr<void>, a_gpu: ptr<void>, n: i64) -> i32 {
     return -1
 }
+
+# GPU graph executor (runtime/gpu_graph_exec.h). Metal provides it on
+# macOS. Here new() returns null, which stdlib/gpu_graph_exec.flow
+# reports as GPU_GRAPH_EXEC_ERR_UNAVAILABLE.
+@flow_api
+export function flow_gpu_graph_exec_new() -> ptr<void> {
+    return null
+}
+
+@flow_api
+export function flow_gpu_graph_exec_free(ex: ptr<void>) -> void {
+    return
+}
+
+@flow_api
+export function flow_gpu_graph_exec_error(ex: ptr<void>) -> string {
+    return "no GPU graph backend on this host"
+}
+
+@flow_api
+export function flow_gpu_graph_exec_add_buffer(ex: ptr<void>, physical: i32, bytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_add_texture(ex: ptr<void>, physical: i32, format: i32, width: i32, height: i32) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_add_pass(ex: ptr<void>, kind: i32, source: string, entry: string, wg_x: i32, wg_y: i32, wg_z: i32, grid_x: i32, grid_y: i32, grid_z: i32, iterations: i32, barrier_before: i32) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_bind(ex: ptr<void>, pass: i32, slot: i32, even_physical: i32, odd_physical: i32) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_upload(ex: ptr<void>, physical: i32, src: ptr<void>, nbytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_read_resource(ex: ptr<void>, physical: i32, dst: ptr<void>, nbytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_run(ex: ptr<void>, width: i32, height: i32) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_readback(ex: ptr<void>, dst: ptr<void>, nbytes: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_stat(ex: ptr<void>, which: i32) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_graph_exec_gpu_ms(ex: ptr<void>) -> f64 {
+    return 0.0
+}

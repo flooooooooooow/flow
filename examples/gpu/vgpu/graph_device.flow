@@ -1,0 +1,120 @@
+# Run the vgpu fluid, FFT-ocean and ocean-surface graphs on the native GPU
+# executor and compare each frame with the CPU reference (#812).
+#
+#   ./flow run examples/gpu/vgpu/graph_device.flow
+#
+# Prints one line per graph. A frame passes when no rgba8 channel differs
+# from the reference by more than 2. With FLOW_GPU_GRAPH_OUT=DIR set, it
+# also writes DIR/<graph>.metal.rgba and DIR/<graph>.reference.rgba (raw
+# 64x64 rgba8unorm bytes) for comparing a WebGPU readback of the same
+# graph. Without a Metal device it prints UNSUPPORTED and exits 0.
+
+import "stdlib/gpu_graph_exec.flow"
+import "stdlib/gpu_graph_reference.flow"
+import "stdlib/io.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+}
+
+const SIZE: i32 = 64
+const TOLERANCE: i32 = 2
+
+function itext(v: i32) -> string {
+    let buf: ptr<u8> = malloc(16) as ptr<u8>
+    let _n: i32 = snprintf(buf, 16, "%d", v)
+    return buf as string
+}
+
+function write_frame(dir: string, name: string, kind: string, px: ptr<u8>) -> bool {
+    if dir as ptr<u8> == null {
+        return true
+    }
+    return io_write_bytes(dir + "/" + name + "." + kind + ".rgba", px, (SIZE * SIZE * 4) as i64)
+}
+
+function lit_pixels(px: ptr<u8>) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < SIZE * SIZE {
+        if (px[i * 4] as i32) + (px[i * 4 + 1] as i32) + (px[i * 4 + 2] as i32) > 0 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function run_case(name: string, graph: GpuGraph, dir: string) -> i32 {
+    let mut g: GpuGraph = graph
+    let mut ex: GpuGraphExec = gpu_graph_exec_new(&g)
+    if ex.code != GPU_GRAPH_EXEC_OK {
+        println("CASE " + name + " [metal] FAIL reason=" + ex.message)
+        return 1
+    }
+    let r: GpuGraphRun = gpu_graph_exec_run(&ex, SIZE, SIZE)
+    let n: i64 = (SIZE * SIZE * 4) as i64
+    let got: ptr<u8> = malloc(n) as ptr<u8>
+    if r.code != GPU_GRAPH_EXEC_OK or gpu_graph_exec_readback(&ex, got, n) != GPU_GRAPH_EXEC_OK {
+        println("CASE " + name + " [metal] FAIL reason=" + ex.message)
+        gpu_graph_exec_free(&ex)
+        return 1
+    }
+    gpu_graph_exec_free(&ex)
+    let want: ptr<u8> = malloc(n) as ptr<u8>
+    if gpu_graph_reference_run(&g, SIZE, SIZE, 1, want) != GPU_GRAPH_REF_OK {
+        println("CASE " + name + " [metal] FAIL reason=reference")
+        return 1
+    }
+    let mut max_err: i32 = 0
+    let mut differing: i32 = 0
+    let mut i: i32 = 0
+    while i < SIZE * SIZE * 4 {
+        let mut d: i32 = (got[i] as i32) - (want[i] as i32)
+        if d < 0 {
+            d = 0 - d
+        }
+        if d > 0 {
+            differing = differing + 1
+        }
+        if d > max_err {
+            max_err = d
+        }
+        i = i + 1
+    }
+    let mut verdict: string = "TOLERANCE"
+    if max_err == 0 {
+        verdict = "EXACT"
+    }
+    if max_err > TOLERANCE {
+        verdict = "FAIL"
+    }
+    println("CASE " + name + " [metal] " + verdict + " w=64 h=64 maxError=" + itext(max_err) +
+        " differingChannels=" + itext(differing) + " litPixels=" + itext(lit_pixels(got)) +
+        " referenceLitPixels=" + itext(lit_pixels(want)) +
+        " dispatches=" + itext(r.compute_dispatches) + " barriers=" + itext(r.barriers) +
+        " execution=" + r.execution)
+    if not write_frame(dir, name, "metal", got) or not write_frame(dir, name, "reference", want) {
+        println("CASE " + name + " [metal] FAIL reason=write")
+        return 1
+    }
+    if max_err > TOLERANCE {
+        return 1
+    }
+    return 0
+}
+
+function main() -> i32 {
+    if not gpu_graph_exec_available() {
+        println("CASE graphs [metal] UNSUPPORTED reason=no-device")
+        return 0
+    }
+    let dir: string = getenv("FLOW_GPU_GRAPH_OUT")
+    let mut failed: i32 = 0
+    failed = failed + run_case("fluid", gpu_graph_vgpu_fluid(), dir)
+    failed = failed + run_case("fft_ocean", gpu_graph_vgpu_fft_ocean(), dir)
+    failed = failed + run_case("fft_ocean_surface", gpu_graph_vgpu_fft_ocean_surface(), dir)
+    return failed
+}

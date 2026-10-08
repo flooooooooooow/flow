@@ -37,6 +37,7 @@ See [docs/language/graphics.md](../docs/language/graphics.md).
 | File | Purpose |
 |------|---------|
 | `gpu_memory.h` / `gpu_metal.m` / `gpu_memory_stub.c` | First-class GPU/unified buffers (`stdlib/gpu_memory.flow`); Metal on Darwin, stub elsewhere; linked by `./flow run` |
+| `gpu_graph_exec.h` / `gpu_metal_graph.m` | Native executor for the typed render/compute graph (`stdlib/gpu_graph_exec.flow`); Metal on Darwin, `lib/runtime/gpu_memory_stub.flow` elsewhere |
 | `shader_view_metal.m` / `shader_host.c` | Fullscreen `shader fill` viewer for `./flow shader` |
 | `audio_*.c` / `audio_gpu_metal.m` | Audio I/O and Metal GPU audio helpers |
 | `flow_time.c` / `flow_sys_info.c` | Time / host info |

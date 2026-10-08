@@ -1,0 +1,380 @@
+# Native executor for the typed GPU render/compute graph (#812).
+#
+# Runs a validated GpuGraph on the host GPU: Metal on macOS
+# (runtime/gpu_metal_graph.m). Other hosts report
+# GPU_GRAPH_EXEC_ERR_UNAVAILABLE. The browser counterpart is
+# runFlowWebGpuGraph in wasm/crossing_assets/gpu-graph-host.mjs; both take
+# the same graph, the same raw initial bytes per resource id, and return
+# an rgba8unorm readback of the render pass.
+#
+# gpu_graph_exec_new allocates every physical resource once, zero-filled,
+# and compiles the Metal module that gpu_graph_emit_metal_pass emits for
+# each pass. Resources persist across runs, so calling gpu_graph_exec_run
+# again advances a simulation by one frame. A run encodes the passes in
+# recorded order, which validation proves is a topological order of the
+# derived dependencies, into one command buffer and waits for it.
+import "stdlib/gpu_graph.flow"
+
+extern {
+    function flow_gpu_graph_exec_new() -> ptr<void>
+    function flow_gpu_graph_exec_free(ex: ptr<void>) -> void
+    function flow_gpu_graph_exec_error(ex: ptr<void>) -> string
+    function flow_gpu_graph_exec_add_buffer(ex: ptr<void>, physical: i32, bytes: i64) -> i32
+    function flow_gpu_graph_exec_add_texture(ex: ptr<void>, physical: i32, format: i32, width: i32, height: i32) -> i32
+    function flow_gpu_graph_exec_add_pass(ex: ptr<void>, kind: i32, source: string, entry: string, wg_x: i32, wg_y: i32, wg_z: i32, grid_x: i32, grid_y: i32, grid_z: i32, iterations: i32, barrier_before: i32) -> i32
+    function flow_gpu_graph_exec_bind(ex: ptr<void>, pass: i32, slot: i32, even_physical: i32, odd_physical: i32) -> i32
+    function flow_gpu_graph_exec_upload(ex: ptr<void>, physical: i32, src: ptr<void>, nbytes: i64) -> i32
+    function flow_gpu_graph_exec_read_resource(ex: ptr<void>, physical: i32, dst: ptr<void>, nbytes: i64) -> i32
+    function flow_gpu_graph_exec_run(ex: ptr<void>, width: i32, height: i32) -> i32
+    function flow_gpu_graph_exec_readback(ex: ptr<void>, dst: ptr<void>, nbytes: i64) -> i32
+    function flow_gpu_graph_exec_stat(ex: ptr<void>, which: i32) -> i32
+    function flow_gpu_graph_exec_gpu_ms(ex: ptr<void>) -> f64
+}
+
+export const GPU_GRAPH_EXEC_OK: i32 = 0
+# No device, or a host without a native graph backend.
+export const GPU_GRAPH_EXEC_ERR_UNAVAILABLE: i32 = 1
+# gpu_graph_validate rejected the graph.
+export const GPU_GRAPH_EXEC_ERR_INVALID: i32 = 2
+# Valid graph that uses something the executor does not run: feedback
+# passes, workgroup memory, 1D/3D textures, no render pass or more than
+# one, or a pass without a Metal body.
+export const GPU_GRAPH_EXEC_ERR_UNSUPPORTED: i32 = 3
+# Shader compilation, allocation or command submission failed.
+export const GPU_GRAPH_EXEC_ERR_BACKEND: i32 = 4
+# Bad resource id, byte count or output size, or a released executor.
+export const GPU_GRAPH_EXEC_ERR_ARGUMENT: i32 = 5
+
+const STAT_DISPATCHES: i32 = 0
+const STAT_BARRIERS: i32 = 1
+const STAT_RENDER_PASSES: i32 = 2
+const STAT_FRAMES: i32 = 3
+
+export struct GpuGraphExec {
+    handle: ptr<void>
+    code: i32
+    message: string
+    resource_count: i32
+    physical: array<i32, 16>
+    bytes: array<i64, 16>
+    width: i32
+    height: i32
+}
+
+# Result of one run. execution is "metal-device" after a completed Metal
+# command buffer, and "" otherwise.
+export struct GpuGraphRun {
+    code: i32
+    message: string
+    width: i32
+    height: i32
+    compute_dispatches: i32
+    barriers: i32
+    render_passes: i32
+    frames: i32
+    gpu_ms: f64
+    execution: string
+}
+
+function exec_empty(code: i32, message: string) -> GpuGraphExec {
+    let z: i32 = 0 - 1
+    let zb: i64 = 0
+    return GpuGraphExec {
+        handle: null,
+        code: code,
+        message: message,
+        resource_count: 0,
+        physical: [z; 16],
+        bytes: [zb; 16],
+        width: 0,
+        height: 0
+    }
+}
+
+function run_fail(code: i32, message: string) -> GpuGraphRun {
+    return GpuGraphRun {
+        code: code,
+        message: message,
+        width: 0,
+        height: 0,
+        compute_dispatches: 0,
+        barriers: 0,
+        render_passes: 0,
+        frames: 0,
+        gpu_ms: 0.0,
+        execution: ""
+    }
+}
+
+function texel_bytes(format: i32) -> i64 {
+    if format == GPU_GRAPH_FMT_R32FLOAT or format == GPU_GRAPH_FMT_RGBA8UNORM {
+        return 4
+    }
+    if format == GPU_GRAPH_FMT_RG32FLOAT or format == GPU_GRAPH_FMT_RGBA16FLOAT {
+        return 8
+    }
+    return 0
+}
+
+# Byte length of a resource's raw contents, the size an upload or a
+# resource read must use: bytes for a buffer, width * height * texel
+# bytes for a 2D texture. 0 for an unknown id.
+export function gpu_graph_resource_byte_size(g: GpuGraph, resource_id: i32) -> i64 {
+    if resource_id < 0 or resource_id >= g.resource_count {
+        return 0
+    }
+    let r: GpuGraphResource = g.resources[resource_id]
+    if r.kind == GPU_RES_STORAGE_BUFFER {
+        return r.bytes as i64
+    }
+    return (r.width as i64) * (r.height as i64) * (r.depth as i64) * texel_bytes(r.format)
+}
+
+export function gpu_graph_exec_available() -> bool {
+    let h: ptr<void> = flow_gpu_graph_exec_new()
+    if h == null {
+        return false
+    }
+    flow_gpu_graph_exec_free(h)
+    return true
+}
+
+function backend_error(h: ptr<void>, what: string) -> string {
+    return what + ": " + flow_gpu_graph_exec_error(h)
+}
+
+function exec_abort(h: ptr<void>, code: i32, message: string) -> GpuGraphExec {
+    flow_gpu_graph_exec_free(h)
+    return exec_empty(code, message)
+}
+
+# Rejects valid graphs that this executor cannot run faithfully.
+function unsupported_reason(g: GpuGraph) -> string {
+    if g.hazard_mode != GPU_HAZARD_STRICT {
+        return "graph-wide feedback hazard mode"
+    }
+    let mut renders: i32 = 0
+    let mut i: i32 = 0
+    while i < g.pass_count {
+        let p: GpuPass = g.passes[i]
+        if p.feedback != 0 {
+            return "feedback pass " + p.name
+        }
+        if p.workgroup_bytes != 0 or p.barrier != 0 {
+            return "workgroup memory in pass " + p.name
+        }
+        if p.kind == GPU_PASS_RENDER {
+            renders = renders + 1
+        }
+        i = i + 1
+    }
+    if renders != 1 {
+        return "the graph needs exactly one render pass"
+    }
+    let mut r: i32 = 0
+    while r < g.resource_count {
+        let res: GpuGraphResource = g.resources[r]
+        if res.kind == GPU_RES_STORAGE_TEXTURE and res.dim != GPU_DIM_2D {
+            return "1D or 3D storage texture " + res.name
+        }
+        if res.physical != res.id {
+            return "physical alias " + res.name
+        }
+        r = r + 1
+    }
+    let mut d: i32 = 0
+    while d < g.dep_count {
+        if g.deps[d].from_pass >= g.deps[d].to_pass {
+            return "backward dependency"
+        }
+        d = d + 1
+    }
+    return ""
+}
+
+function pass_has_incoming(g: GpuGraph, pass_id: i32) -> bool {
+    let mut d: i32 = 0
+    while d < g.dep_count {
+        if g.deps[d].to_pass == pass_id {
+            return true
+        }
+        d = d + 1
+    }
+    return false
+}
+
+# The resource an iteration-odd dispatch binds: the other side of the
+# binding's ping-pong pair, or the same resource for a plain binding.
+function odd_resource(g: GpuGraph, b: GpuBinding) -> i32 {
+    if b.pingpong_id < 0 or b.pingpong_id >= g.pingpong_count {
+        return b.resource_id
+    }
+    let pp: GpuPingPong = g.pingpongs[b.pingpong_id]
+    if b.resource_id == pp.a {
+        return pp.b
+    }
+    if b.resource_id == pp.b {
+        return pp.a
+    }
+    return 0 - 1
+}
+
+# Validate the graph, allocate its resources and compile its passes.
+# On failure the result has a null handle and a nonzero code.
+export function gpu_graph_exec_new(g: ptr<GpuGraph>) -> GpuGraphExec {
+    let verr: GpuGraphError = gpu_graph_validate(g)
+    if verr.code != GPU_GRAPH_OK {
+        return exec_empty(GPU_GRAPH_EXEC_ERR_INVALID, "invalid graph: " + gpu_graph_error_name(verr.code) + ": " + verr.message)
+    }
+    let graph: GpuGraph = g[0]
+    let why: string = unsupported_reason(graph)
+    if why != "" {
+        return exec_empty(GPU_GRAPH_EXEC_ERR_UNSUPPORTED, "unsupported: " + why)
+    }
+    let h: ptr<void> = flow_gpu_graph_exec_new()
+    if h == null {
+        return exec_empty(GPU_GRAPH_EXEC_ERR_UNAVAILABLE, "no native GPU graph backend")
+    }
+    let mut ex: GpuGraphExec = exec_empty(GPU_GRAPH_EXEC_OK, "ok")
+    ex.handle = h
+    ex.resource_count = graph.resource_count
+    let mut r: i32 = 0
+    while r < graph.resource_count {
+        let res: GpuGraphResource = graph.resources[r]
+        let mut rc: i32 = 0
+        if res.kind == GPU_RES_STORAGE_BUFFER {
+            rc = flow_gpu_graph_exec_add_buffer(h, res.physical, res.bytes as i64)
+        } else {
+            rc = flow_gpu_graph_exec_add_texture(h, res.physical, res.format, res.width, res.height)
+        }
+        if rc != 0 {
+            return exec_abort(h, GPU_GRAPH_EXEC_ERR_BACKEND, backend_error(h, "allocate " + res.name))
+        }
+        ex.physical[r] = res.physical
+        ex.bytes[r] = gpu_graph_resource_byte_size(graph, r)
+        r = r + 1
+    }
+    let mut i: i32 = 0
+    while i < graph.pass_count {
+        let p: GpuPass = graph.passes[i]
+        let source: string = gpu_graph_emit_metal_pass(graph, i)
+        if source == "" {
+            return exec_abort(h, GPU_GRAPH_EXEC_ERR_UNSUPPORTED, "unsupported: no Metal body for pass " + p.name)
+        }
+        let mut barrier: i32 = 0
+        if pass_has_incoming(graph, i) {
+            barrier = 1
+        }
+        let idx: i32 = flow_gpu_graph_exec_add_pass(h, p.kind, source, p.name,
+            p.workgroup.x, p.workgroup.y, p.workgroup.z,
+            p.dispatch.x, p.dispatch.y, p.dispatch.z, p.iterations, barrier)
+        if idx != i {
+            return exec_abort(h, GPU_GRAPH_EXEC_ERR_BACKEND, backend_error(h, "pass " + p.name))
+        }
+        let mut j: i32 = 0
+        while j < p.binding_count {
+            let b: GpuBinding = p.bindings[j]
+            let odd: i32 = odd_resource(graph, b)
+            if odd < 0 {
+                return exec_abort(h, GPU_GRAPH_EXEC_ERR_INVALID, "binding outside its ping-pong pair in pass " + p.name)
+            }
+            let even_phys: i32 = graph.resources[b.resource_id].physical
+            let odd_phys: i32 = graph.resources[odd].physical
+            if flow_gpu_graph_exec_bind(h, i, b.slot, even_phys, odd_phys) != 0 {
+                return exec_abort(h, GPU_GRAPH_EXEC_ERR_BACKEND, backend_error(h, "bind " + p.name))
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return ex
+}
+
+function exec_resource_ok(ex: ptr<GpuGraphExec>, resource_id: i32, nbytes: i64) -> bool {
+    if ex.handle == null or resource_id < 0 or resource_id >= ex.resource_count {
+        return false
+    }
+    return nbytes == ex.bytes[resource_id]
+}
+
+# Replace a resource's contents with raw bytes in its layout (see
+# gpu_graph_resource_byte_size). Returns a GPU_GRAPH_EXEC_* code.
+export function gpu_graph_exec_upload(ex: ptr<GpuGraphExec>, resource_id: i32, src: ptr<void>, nbytes: i64) -> i32 {
+    if src == null or not exec_resource_ok(ex, resource_id, nbytes) {
+        ex.message = "upload: unknown resource or wrong byte count"
+        return GPU_GRAPH_EXEC_ERR_ARGUMENT
+    }
+    if flow_gpu_graph_exec_upload(ex.handle, ex.physical[resource_id], src, nbytes) != 0 {
+        ex.message = backend_error(ex.handle, "upload")
+        return GPU_GRAPH_EXEC_ERR_BACKEND
+    }
+    return GPU_GRAPH_EXEC_OK
+}
+
+# Copy a resource's current raw contents to dst.
+export function gpu_graph_exec_read_resource(ex: ptr<GpuGraphExec>, resource_id: i32, dst: ptr<void>, nbytes: i64) -> i32 {
+    if dst == null or not exec_resource_ok(ex, resource_id, nbytes) {
+        ex.message = "read: unknown resource or wrong byte count"
+        return GPU_GRAPH_EXEC_ERR_ARGUMENT
+    }
+    if flow_gpu_graph_exec_read_resource(ex.handle, ex.physical[resource_id], dst, nbytes) != 0 {
+        ex.message = backend_error(ex.handle, "read")
+        return GPU_GRAPH_EXEC_ERR_BACKEND
+    }
+    return GPU_GRAPH_EXEC_OK
+}
+
+# Run every pass once (compute iterations included) and render a
+# width x height frame. The pixels stay on the executor until
+# gpu_graph_exec_readback copies them out.
+export function gpu_graph_exec_run(ex: ptr<GpuGraphExec>, width: i32, height: i32) -> GpuGraphRun {
+    if ex.handle == null {
+        return run_fail(GPU_GRAPH_EXEC_ERR_ARGUMENT, "run: executor is not open")
+    }
+    if width < 1 or height < 1 or width > 16384 or height > 16384 {
+        return run_fail(GPU_GRAPH_EXEC_ERR_ARGUMENT, "run: output size outside 1..16384")
+    }
+    if flow_gpu_graph_exec_run(ex.handle, width, height) != 0 {
+        let msg: string = backend_error(ex.handle, "run")
+        ex.message = msg
+        return run_fail(GPU_GRAPH_EXEC_ERR_BACKEND, msg)
+    }
+    ex.width = width
+    ex.height = height
+    let h: ptr<void> = ex.handle
+    return GpuGraphRun {
+        code: GPU_GRAPH_EXEC_OK,
+        message: "ok",
+        width: width,
+        height: height,
+        compute_dispatches: flow_gpu_graph_exec_stat(h, STAT_DISPATCHES),
+        barriers: flow_gpu_graph_exec_stat(h, STAT_BARRIERS),
+        render_passes: flow_gpu_graph_exec_stat(h, STAT_RENDER_PASSES),
+        frames: flow_gpu_graph_exec_stat(h, STAT_FRAMES),
+        gpu_ms: flow_gpu_graph_exec_gpu_ms(h),
+        execution: "metal-device"
+    }
+}
+
+# Copy the last frame's rgba8unorm pixels, top row first.
+# nbytes must be width * height * 4 of the last run.
+export function gpu_graph_exec_readback(ex: ptr<GpuGraphExec>, dst: ptr<u8>, nbytes: i64) -> i32 {
+    if ex.handle == null or dst == null or ex.width < 1 or
+       nbytes != (ex.width as i64) * (ex.height as i64) * 4 {
+        ex.message = "readback: no frame, or wrong byte count"
+        return GPU_GRAPH_EXEC_ERR_ARGUMENT
+    }
+    if flow_gpu_graph_exec_readback(ex.handle, dst as ptr<void>, nbytes) != 0 {
+        ex.message = backend_error(ex.handle, "readback")
+        return GPU_GRAPH_EXEC_ERR_BACKEND
+    }
+    return GPU_GRAPH_EXEC_OK
+}
+
+# Release the device resources. The executor cannot be used afterwards.
+export function gpu_graph_exec_free(ex: ptr<GpuGraphExec>) -> void {
+    if ex.handle != null {
+        flow_gpu_graph_exec_free(ex.handle)
+        ex.handle = null
+    }
+}

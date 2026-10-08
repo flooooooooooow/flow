@@ -1,0 +1,89 @@
+# CPU reference for the vgpu graphs (#812). The fluid frame must show the
+# injected dye: from zeroed resources the graph used to render black.
+
+import "stdlib/gpu_graph_reference.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+function lit_pixels(px: ptr<u8>, pixels: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < pixels {
+        if (px[i * 4] as i32) + (px[i * 4 + 1] as i32) + (px[i * 4 + 2] as i32) > 0 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function main() -> i32 {
+    let n: i32 = 64 * 64 * 4
+    let px: ptr<u8> = malloc(n as i64) as ptr<u8>
+
+    # 1. One fluid frame: dye around the jet origin (16, 32), opaque.
+    let mut fluid: GpuGraph = gpu_graph_vgpu_fluid()
+    if gpu_graph_reference_run(&fluid, 64, 64, 1, px) != GPU_GRAPH_REF_OK {
+        return 1
+    }
+    if lit_pixels(px, 64 * 64) < 100 {
+        return 2
+    }
+    # The dye is advected downstream of the jet, so sample the splat row
+    # a few cells to the right of the origin.
+    let o: i32 = (32 * 64 + 20) * 4
+    if (px[o] as i32) < 128 or (px[o] as i32) <= (px[o + 2] as i32) or px[o + 3] != 255 as u8 {
+        return 3
+    }
+    # Far corner stays dark.
+    if px[0] != 0 as u8 or px[1] != 0 as u8 or px[2] != 0 as u8 {
+        return 4
+    }
+
+    # 2. More frames keep injecting and moving dye.
+    let more: ptr<u8> = malloc(n as i64) as ptr<u8>
+    if gpu_graph_reference_run(&fluid, 64, 64, 4, more) != GPU_GRAPH_REF_OK {
+        return 5
+    }
+    if lit_pixels(more, 64 * 64) <= lit_pixels(px, 64 * 64) {
+        return 6
+    }
+
+    # 3. Ocean and surface render a lit frame.
+    let mut ocean: GpuGraph = gpu_graph_vgpu_fft_ocean()
+    if gpu_graph_reference_run(&ocean, 64, 64, 1, px) != GPU_GRAPH_REF_OK or lit_pixels(px, 64 * 64) < 100 {
+        return 7
+    }
+    let mut surf: GpuGraph = gpu_graph_vgpu_fft_ocean_surface()
+    if gpu_graph_reference_run(&surf, 64, 64, 1, more) != GPU_GRAPH_REF_OK {
+        return 8
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if px[i] != more[i] {
+            return 9
+        }
+        i = i + 1
+    }
+
+    # 4. A kernel without a reference, bad arguments and invalid graphs fail.
+    let mut unknown: GpuGraph = gpu_graph_vgpu_fluid()
+    unknown.passes[3].name = "not_a_kernel"
+    if gpu_graph_reference_run(&unknown, 64, 64, 1, px) != GPU_GRAPH_REF_ERR_KERNEL {
+        return 10
+    }
+    if gpu_graph_reference_run(&fluid, 0, 64, 1, px) != GPU_GRAPH_REF_ERR_ARGUMENT {
+        return 11
+    }
+    if gpu_graph_reference_run(&fluid, 64, 64, 0, px) != GPU_GRAPH_REF_ERR_ARGUMENT {
+        return 12
+    }
+    let mut bad: GpuGraph = gpu_graph_vgpu_fluid()
+    bad.passes[0].bindings[1].slot = 0
+    if gpu_graph_reference_run(&bad, 64, 64, 1, px) != GPU_GRAPH_REF_ERR_INVALID {
+        return 13
+    }
+    return 0
+}

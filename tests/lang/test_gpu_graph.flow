@@ -266,7 +266,7 @@ function main() -> i32 {
     if expect_ok(fe, 31) != 0 {
         return 31
     }
-    if fluid.pass_count != 8 {
+    if fluid.pass_count != 10 {
         return 32
     }
     if fluid.resource_count != 8 {
@@ -275,22 +275,39 @@ function main() -> i32 {
     if fluid.pingpong_count != 3 {
         return 34
     }
-    if fluid.passes[4].iterations != 20 {
+    if fluid.passes[6].iterations != 20 {
         return 35
     }
-    if !gpu_graph_has_dep(fluid, 0, 1) {
+    if !gpu_graph_has_dep(fluid, 2, 3) {
         return 36
     }
-    if !gpu_graph_has_dep(fluid, 3, 4) {
+    if !gpu_graph_has_dep(fluid, 5, 6) {
         return 37
     }
-    if !gpu_graph_has_dep(fluid, 6, 7) {
+    if !gpu_graph_has_dep(fluid, 8, 9) {
         return 38
     }
     if !gpu_graph_same_source_both_backends(fluid) {
         return 39
     }
-    let fw: string = gpu_graph_emit_wgsl_pass(fluid, 0)
+    # Force and dye injection run first. The two splats touch different
+    # pairs, so they are independent; advection depends on both.
+    if fluid.passes[0].name != "splat_velocity" or fluid.passes[1].name != "splat_dye" {
+        return 67
+    }
+    if gpu_graph_has_dep(fluid, 0, 1) or !gpu_graph_has_dep(fluid, 0, 2) or !gpu_graph_has_dep(fluid, 1, 8) {
+        return 68
+    }
+    # Every ping-pong pair swaps an even number of times per frame, so a
+    # second run of the same graph reads the side the first run wrote.
+    let mut ppi: i32 = 0
+    while ppi < fluid.pingpong_count {
+        if fluid.pingpongs[ppi].front != 0 {
+            return 69
+        }
+        ppi = ppi + 1
+    }
+    let fw: string = gpu_graph_emit_wgsl_pass(fluid, 2)
     if !str_has(fw, "texture_storage_2d<rgba16float, read>") {
         return 40
     }
@@ -301,7 +318,7 @@ function main() -> i32 {
        not str_has(fw, "textureLoad") {
         return 42
     }
-    let fm: string = gpu_graph_emit_metal_pass(fluid, 0)
+    let fm: string = gpu_graph_emit_metal_pass(fluid, 2)
     if !str_has(fm, "texture2d<float, access::read>") {
         return 43
     }

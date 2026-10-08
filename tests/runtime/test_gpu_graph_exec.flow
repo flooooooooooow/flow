@@ -1,0 +1,230 @@
+# Native GPU graph executor (#812).
+#
+# Host-independent: invalid and unsupported graphs are refused before any
+# device work. With a Metal device (gpu_available): the fluid, FFT-ocean
+# and ocean-surface graphs run on the device, the readback matches the CPU
+# reference within 2 per channel, the fluid frame is not black, resources
+# persist across runs, and uploads land in the named resource.
+import "stdlib/gpu_memory.flow"
+import "stdlib/gpu_graph_exec.flow"
+import "stdlib/gpu_graph_reference.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+function max_channel_error(a: ptr<u8>, b: ptr<u8>, n: i32) -> i32 {
+    let mut m: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let mut d: i32 = (a[i] as i32) - (b[i] as i32)
+        if d < 0 {
+            d = 0 - d
+        }
+        if d > m {
+            m = d
+        }
+        i = i + 1
+    }
+    return m
+}
+
+function lit_pixels(px: ptr<u8>, pixels: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < pixels {
+        if (px[i * 4] as i32) + (px[i * 4 + 1] as i32) + (px[i * 4 + 2] as i32) > 0 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# Runs one frame on the device and checks it against the reference.
+# Returns 0, or base + a step number.
+function device_case(graph: GpuGraph, base: i32, dispatches: i32) -> i32 {
+    let mut g: GpuGraph = graph
+    let mut ex: GpuGraphExec = gpu_graph_exec_new(&g)
+    if ex.code != GPU_GRAPH_EXEC_OK {
+        println(ex.message)
+        return base + 1
+    }
+    let r: GpuGraphRun = gpu_graph_exec_run(&ex, 64, 64)
+    if r.code != GPU_GRAPH_EXEC_OK or r.execution != "metal-device" {
+        println(r.message)
+        return base + 2
+    }
+    if r.compute_dispatches != dispatches or r.render_passes != 1 or r.frames != 1 {
+        return base + 3
+    }
+    let n: i32 = 64 * 64 * 4
+    let got: ptr<u8> = malloc(n as i64) as ptr<u8>
+    if gpu_graph_exec_readback(&ex, got, n as i64) != GPU_GRAPH_EXEC_OK {
+        return base + 4
+    }
+    let want: ptr<u8> = malloc(n as i64) as ptr<u8>
+    if gpu_graph_reference_run(&g, 64, 64, 1, want) != GPU_GRAPH_REF_OK {
+        return base + 5
+    }
+    if max_channel_error(got, want, n) > 2 {
+        return base + 6
+    }
+    if lit_pixels(got, 64 * 64) < 100 {
+        return base + 7
+    }
+    gpu_graph_exec_free(&ex)
+    if ex.handle != null {
+        return base + 8
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # 1. An invalid graph is refused before the device is touched.
+    let mut bad: GpuGraph = gpu_graph_vgpu_fluid()
+    bad.passes[0].bindings[1].slot = 0
+    let e1: GpuGraphExec = gpu_graph_exec_new(&bad)
+    if e1.code != GPU_GRAPH_EXEC_ERR_INVALID or e1.handle != null {
+        return 1
+    }
+
+    # 2. A valid graph outside the executor's model is unsupported.
+    let mut fb: GpuGraph = gpu_graph_vgpu_fluid()
+    gpu_graph_set_hazard_mode(&fb, GPU_HAZARD_ALLOW_FEEDBACK)
+    let e2: GpuGraphExec = gpu_graph_exec_new(&fb)
+    if e2.code != GPU_GRAPH_EXEC_ERR_UNSUPPORTED {
+        return 2
+    }
+    let mut compute_only: GpuGraph = gpu_graph_new()
+    let cp: ptr<GpuGraph> = &compute_only
+    let buf: i32 = gpu_graph_add_storage_buffer(cp, "spectrum_a", GPU_GRAPH_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, 64 * 64 * 8)
+    let pass: i32 = gpu_graph_add_compute(cp, "initial_spectrum", gpu_dim3(8, 8, 1), gpu_dim3(64, 64, 1), 0, 0)
+    let _b: i32 = gpu_graph_bind(cp, pass, buf, GPU_GRAPH_ACCESS_WRITE, 0)
+    let e3: GpuGraphExec = gpu_graph_exec_new(cp)
+    if e3.code != GPU_GRAPH_EXEC_ERR_UNSUPPORTED {
+        return 3
+    }
+
+    # 3. Byte sizes follow the resource layout.
+    let fluid: GpuGraph = gpu_graph_vgpu_fluid()
+    if gpu_graph_resource_byte_size(fluid, 0) != 64 * 64 * 8 {
+        return 4
+    }
+    if gpu_graph_resource_byte_size(fluid, 4) != 64 * 64 * 4 {
+        return 5
+    }
+    let ocean: GpuGraph = gpu_graph_vgpu_fft_ocean()
+    if gpu_graph_resource_byte_size(ocean, 0) != 64 * 64 * 8 or gpu_graph_resource_byte_size(ocean, 99) != 0 {
+        return 6
+    }
+
+    # 4. Without a device the executor reports it, and nothing else runs.
+    if not gpu_available() {
+        let mut g: GpuGraph = gpu_graph_vgpu_fluid()
+        let e4: GpuGraphExec = gpu_graph_exec_new(&g)
+        if e4.code != GPU_GRAPH_EXEC_ERR_UNAVAILABLE or gpu_graph_exec_available() {
+            return 7
+        }
+        println("gpu graph exec: no device")
+        return 0
+    }
+    # A host with a GPU must have the native executor.
+    if not gpu_graph_exec_available() {
+        return 8
+    }
+
+    # 5. The three vgpu graphs run on the device and match the reference.
+    let f: i32 = device_case(gpu_graph_vgpu_fluid(), 10, 28)
+    if f != 0 {
+        return f
+    }
+    let o: i32 = device_case(gpu_graph_vgpu_fft_ocean(), 20, 6)
+    if o != 0 {
+        return o
+    }
+    let s: i32 = device_case(gpu_graph_vgpu_fft_ocean_surface(), 30, 6)
+    if s != 0 {
+        return s
+    }
+
+    # 6. Resources persist: a second run advances the fluid by one frame.
+    let mut g2: GpuGraph = gpu_graph_vgpu_fluid()
+    let mut ex: GpuGraphExec = gpu_graph_exec_new(&g2)
+    if ex.code != GPU_GRAPH_EXEC_OK {
+        return 40
+    }
+    let n: i32 = 64 * 64 * 4
+    let one: ptr<u8> = malloc(n as i64) as ptr<u8>
+    let two: ptr<u8> = malloc(n as i64) as ptr<u8>
+    let r1: GpuGraphRun = gpu_graph_exec_run(&ex, 64, 64)
+    if r1.code != 0 or gpu_graph_exec_readback(&ex, one, n as i64) != 0 {
+        return 41
+    }
+    let r2: GpuGraphRun = gpu_graph_exec_run(&ex, 64, 64)
+    if r2.code != 0 or r2.frames != 2 or gpu_graph_exec_readback(&ex, two, n as i64) != 0 {
+        return 42
+    }
+    if max_channel_error(one, two, n) == 0 {
+        return 43
+    }
+    let want2: ptr<u8> = malloc(n as i64) as ptr<u8>
+    if gpu_graph_reference_run(&g2, 64, 64, 2, want2) != GPU_GRAPH_REF_OK or max_channel_error(two, want2, n) > 2 {
+        return 44
+    }
+    # Pressure keeps r32float texels: 4 bytes each. Read it back and check
+    # the barrier count: every dependent dispatch and every Jacobi
+    # iteration after the first waits on a barrier.
+    let pbytes: i64 = gpu_graph_resource_byte_size(g2, 4)
+    let pressure: ptr<u8> = malloc(pbytes) as ptr<u8>
+    if gpu_graph_exec_read_resource(&ex, 4, pressure as ptr<void>, pbytes) != GPU_GRAPH_EXEC_OK {
+        return 45
+    }
+    if r2.barriers != 26 {
+        return 46
+    }
+
+    # 7. An upload replaces a resource. Dye side A full of 1.0 halves
+    # (0x3C00) shows white wherever advection reads it.
+    let dbytes: i64 = gpu_graph_resource_byte_size(g2, 2)
+    let dye: ptr<u8> = malloc(dbytes) as ptr<u8>
+    let mut i: i32 = 0
+    while i < (dbytes as i32) {
+        dye[i] = 0 as u8
+        dye[i + 1] = 60 as u8
+        i = i + 2
+    }
+    if gpu_graph_exec_upload(&ex, 2, dye as ptr<void>, dbytes) != GPU_GRAPH_EXEC_OK {
+        return 47
+    }
+    let r3: GpuGraphRun = gpu_graph_exec_run(&ex, 64, 64)
+    if r3.code != 0 or gpu_graph_exec_readback(&ex, one, n as i64) != 0 {
+        return 48
+    }
+    if lit_pixels(one, 64 * 64) != 64 * 64 or one[0] != 255 as u8 {
+        return 49
+    }
+
+    # 8. Wrong sizes and ids are argument errors.
+    if gpu_graph_exec_upload(&ex, 2, dye as ptr<void>, dbytes - 1) != GPU_GRAPH_EXEC_ERR_ARGUMENT {
+        return 50
+    }
+    if gpu_graph_exec_upload(&ex, 16, dye as ptr<void>, dbytes) != GPU_GRAPH_EXEC_ERR_ARGUMENT {
+        return 51
+    }
+    if gpu_graph_exec_readback(&ex, one, 16) != GPU_GRAPH_EXEC_ERR_ARGUMENT {
+        return 52
+    }
+    let r4: GpuGraphRun = gpu_graph_exec_run(&ex, 0, 64)
+    if r4.code != GPU_GRAPH_EXEC_ERR_ARGUMENT {
+        return 53
+    }
+    gpu_graph_exec_free(&ex)
+    let r5: GpuGraphRun = gpu_graph_exec_run(&ex, 64, 64)
+    if r5.code != GPU_GRAPH_EXEC_ERR_ARGUMENT {
+        return 54
+    }
+    println("gpu graph exec: metal ok")
+    return 0
+}

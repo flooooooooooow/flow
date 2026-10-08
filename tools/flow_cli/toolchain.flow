@@ -782,6 +782,7 @@ export function gpu_link_flags() {
     GPU_LDFLAGS = sl_new()
     if s_eq(uname_s(), "Darwin") {
         sl_push(GPU_SOURCES, TC_ROOT + "/runtime/gpu_metal.m")
+        sl_push(GPU_SOURCES, TC_ROOT + "/runtime/gpu_metal_graph.m")
         sl_push2(GPU_LDFLAGS, "-framework", "Metal")
         sl_push2(GPU_LDFLAGS, "-framework", "Foundation")
     }
