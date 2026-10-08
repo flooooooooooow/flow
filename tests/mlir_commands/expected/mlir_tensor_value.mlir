@@ -6,7 +6,7 @@ func.func @ops(%arg0: tensor<?xf32>, %arg1: tensor<?xf32>) -> tensor<?xf32> {
 %v4 = linalg.generic {
 indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],
 iterator_types = ["parallel"]
-} ins(%arg0 : tensor<?xf32>, %arg1 : tensor<?xf32>) outs(%v3 : tensor<?xf32>) {
+} ins(%arg0, %arg1 : tensor<?xf32>, tensor<?xf32>) outs(%v3 : tensor<?xf32>) {
 ^b1(%lhs: f32, %rhs: f32, %out: f32):
 %v5 = arith.addf %lhs, %rhs : f32
 linalg.yield %v5 : f32
@@ -17,7 +17,7 @@ linalg.yield %v5 : f32
 %v9 = linalg.generic {
 indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],
 iterator_types = ["parallel"]
-} ins(%v4 : tensor<?xf32>, %arg1 : tensor<?xf32>) outs(%v8 : tensor<?xf32>) {
+} ins(%v4, %arg1 : tensor<?xf32>, tensor<?xf32>) outs(%v8 : tensor<?xf32>) {
 ^b1(%lhs: f32, %rhs: f32, %out: f32):
 %v10 = arith.subf %lhs, %rhs : f32
 linalg.yield %v10 : f32
@@ -28,7 +28,7 @@ linalg.yield %v10 : f32
 %v14 = linalg.generic {
 indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],
 iterator_types = ["parallel"]
-} ins(%v9 : tensor<?xf32>, %arg1 : tensor<?xf32>) outs(%v13 : tensor<?xf32>) {
+} ins(%v9, %arg1 : tensor<?xf32>, tensor<?xf32>) outs(%v13 : tensor<?xf32>) {
 ^b1(%lhs: f32, %rhs: f32, %out: f32):
 %v15 = arith.mulf %lhs, %rhs : f32
 linalg.yield %v15 : f32
@@ -39,7 +39,7 @@ linalg.yield %v15 : f32
 %v19 = linalg.generic {
 indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],
 iterator_types = ["parallel"]
-} ins(%v14 : tensor<?xf32>, %arg1 : tensor<?xf32>) outs(%v18 : tensor<?xf32>) {
+} ins(%v14, %arg1 : tensor<?xf32>, tensor<?xf32>) outs(%v18 : tensor<?xf32>) {
 ^b1(%lhs: f32, %rhs: f32, %out: f32):
 %v20 = arith.divf %lhs, %rhs : f32
 linalg.yield %v20 : f32
