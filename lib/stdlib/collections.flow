@@ -4,6 +4,7 @@
 extern {
     function calloc(n: i64, s: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
+    function strcmp(a: string, b: string) -> i32
 }
 
 function sizeof_i32() -> i64 {
@@ -128,14 +129,62 @@ function hash_string(s: string) -> i32 {
     return (h & 0x7FFFFFFF) as i32
 }
 
-function hashmap_string_i32_new(cap: i32) -> HashMap_string_i32 {
-    let mut buckets: ptr<HashEntry_string_i32> = null
-    if cap > 0 {
-        # HashEntry_string_i32 layout is pointer + i32 + bool + padding (~16 bytes on 64-bit).
-        let entry_size: i64 = 16
-        buckets = calloc(cap as i64, entry_size) as ptr<HashEntry_string_i32>
+# String keys are borrowed, immutable C strings. Insert never copies key
+# bytes and free only releases the bucket array; callers must keep every
+# inserted key alive and unchanged for the map's lifetime. Overwriting an
+# equal key keeps the original stored pointer.
+function hashmap_string_i32_insert_raw(m: HashMap_string_i32, key: string, value: i32) -> HashMap_string_i32 {
+    if m.capacity <= 0 or key as ptr<u8> == null {
+        return m
     }
-    return HashMap_string_i32 { buckets: buckets, size: 0, capacity: cap }
+    let start: i32 = hash_string(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.buckets[i].occupied == false {
+            m.buckets[i].key = key
+            m.buckets[i].value = value
+            m.buckets[i].occupied = true
+            m.size = m.size + 1
+            return m
+        }
+        if strcmp(m.buckets[i].key, key) == 0 {
+            m.buckets[i].value = value
+            return m
+        }
+        i = i + 1
+        if i >= m.capacity {
+            i = 0
+        }
+    }
+    return m
+}
+
+function hashmap_string_i32_new(cap: i32) -> HashMap_string_i32 {
+    let mut c: i32 = cap
+    if c < 8 {
+        c = 8
+    }
+    # HashEntry_string_i32 is at most 16 bytes on the supported 32/64-bit
+    # ABIs; over-allocation on 32-bit is harmless and keeps this portable
+    # until Flow exposes sizeof(struct) as a constant expression.
+    let entry_size: i64 = 16
+    let buckets: ptr<HashEntry_string_i32> = calloc(c as i64, entry_size) as ptr<HashEntry_string_i32>
+    return HashMap_string_i32 { buckets: buckets, size: 0, capacity: c }
+}
+
+function hashmap_string_i32_rehash(m: HashMap_string_i32, cap: i32) -> HashMap_string_i32 {
+    let mut grown: HashMap_string_i32 = hashmap_string_i32_new(cap)
+    let mut i: i32 = 0
+    while i < m.capacity {
+        if m.buckets[i].occupied {
+            grown = hashmap_string_i32_insert_raw(grown, m.buckets[i].key, m.buckets[i].value)
+        }
+        i = i + 1
+    }
+    if m.buckets != null {
+        free(m.buckets as ptr<void>)
+    }
+    return grown
 }
 
 function hashmap_string_i32_len(m: HashMap_string_i32) -> i32 {
@@ -144,6 +193,73 @@ function hashmap_string_i32_len(m: HashMap_string_i32) -> i32 {
 
 function hashmap_string_i32_is_empty(m: HashMap_string_i32) -> bool {
     return m.size == 0
+}
+
+function hashmap_string_i32_contains(m: HashMap_string_i32, key: string) -> bool {
+    if m.capacity <= 0 or key as ptr<u8> == null {
+        return false
+    }
+    let start: i32 = hash_string(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.buckets[i].occupied == false {
+            return false
+        }
+        if strcmp(m.buckets[i].key, key) == 0 {
+            return true
+        }
+        i = i + 1
+        if i >= m.capacity {
+            i = 0
+        }
+    }
+    return false
+}
+
+function hashmap_string_i32_get(m: HashMap_string_i32, key: string, default_value: i32) -> i32 {
+    if m.capacity <= 0 or key as ptr<u8> == null {
+        return default_value
+    }
+    let start: i32 = hash_string(key) % m.capacity
+    let mut i: i32 = start
+    for _probe in 0 to m.capacity {
+        if m.buckets[i].occupied == false {
+            return default_value
+        }
+        if strcmp(m.buckets[i].key, key) == 0 {
+            return m.buckets[i].value
+        }
+        i = i + 1
+        if i >= m.capacity {
+            i = 0
+        }
+    }
+    return default_value
+}
+
+function hashmap_string_i32_insert(m: HashMap_string_i32, key: string, value: i32) -> HashMap_string_i32 {
+    if key as ptr<u8> == null {
+        return m
+    }
+    let mut table: HashMap_string_i32 = m
+    if table.capacity <= 0 or table.buckets == null {
+        table = hashmap_string_i32_new(8)
+    }
+    # Match HashMap_i64_i64: grow before load factor reaches 1/2.
+    if table.size * 2 >= table.capacity {
+        let mut cap: i32 = table.capacity * 2
+        if cap < 8 {
+            cap = 8
+        }
+        table = hashmap_string_i32_rehash(table, cap)
+    }
+    return hashmap_string_i32_insert_raw(table, key, value)
+}
+
+function hashmap_string_i32_free(m: HashMap_string_i32) -> void {
+    if m.buckets != null {
+        free(m.buckets as ptr<void>)
+    }
 }
 
 # =============================================================================
