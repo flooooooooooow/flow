@@ -45,6 +45,8 @@ Do not keep multiple generated backlog reports beside executable source.
 Root files are reserved for repository entry points and durable project
 contracts. Release-specific snapshots and superseded roadmaps move under an
 archive location in `docs/project/` rather than accumulating at the root.
+Source, build output and scratch files (`*.c`, `*.flow`, `*.log`, `a.out`)
+never sit at the root; `./flow tool root_files` fails in CI when one does.
 
 A document that contains changing project state must either be generated or
 point to the live source. Hand-maintained copies of test counts, current
