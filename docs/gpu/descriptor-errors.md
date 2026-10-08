@@ -5,7 +5,8 @@ flowc checks the GPU descriptor structs of
 while it type checks a program. A texture whose format does not allow its
 usage, a binding whose access the texture was not created for, or a
 fragment input with no matching vertex output is a compile error with a
-code from the table below.
+code from the table below. It stops `flow run` and `flow compile` too,
+whose lenient type check turns most other type errors into warnings.
 
 The check applies when a descriptor is a compile-time constant: a struct
 literal whose fields fold to integers through literals, module `const`

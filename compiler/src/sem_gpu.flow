@@ -26,7 +26,7 @@ import .ast {
 import .token { TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_BAR, TOK_AMP }
 import .sem_util {
     sem_s_len, sem_s_eq, sem_s_starts, sem_s_ends, sem_s_byte, sem_s_slice, sem_s_from, sem_s_span, sem_s_itoa,
-    sem_iv_get, sem_sv_get, sem_sv_len, sem_sm_get, sem_sm_put
+    sem_iv_get, sem_sv_get, sem_sv_len, sem_sv_add, sem_sm_get, sem_sm_put
 }
 import .sem_model {
     Sem, DK_CONST, SK_CONST, SK_VARIABLE,
@@ -814,6 +814,9 @@ function gv_report(c: ptr<Sem>, at: GvRef, msg: string) {
     }
     sem_sm_put(c.gpu_reported, key, sem_sv_len(c.errors))
     sem_err(c, msg)
+    # A compile-time error in lenient mode too (`flow run`, `flow compile`):
+    # the decision of 2026-10-08 makes these type errors, never warnings.
+    sem_sv_add(c.fatal, msg)
     c.pos = saved_pos
     sem_set_mod(c, saved_mod)
 }
