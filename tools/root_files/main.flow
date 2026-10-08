@@ -1,0 +1,95 @@
+# Root file check, written in Flow.
+#
+# The repository root holds entry points and project contracts
+# (docs/project/repository-structure.md). Source, build output and scratch
+# files belong in a subdirectory. Scratch C and Flow files (sim.c,
+# test_loop.flow) were once committed at the root by accident; this check
+# fails when a file like that is tracked there again.
+#
+#   ./flow tool root_files               check the tracked root files
+#   ./flow tool root_files --names A...  check the given names instead
+#
+# A root file fails when its name ends in a source, object, log, patch or
+# editor-backup extension (SCRATCH_SUFFIXES), or is `a.out` or `core`.
+# Extensionless entry points (`flow`, `flow-lsp`) and text contracts
+# (`requirements.txt`, `VERSION`, `*.md`) are allowed.
+#
+# Exit codes: 0 no scratch file at the root, 1 some found, 2 git failed.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs }
+
+const SCRATCH_SUFFIXES: string = ".c .h .cc .cpp .hpp .m .o .a .so .dylib .flow .py .sh .mlir .ll .s .wasm .log .out .tmp .bak .orig .rej .diff .patch .swp"
+
+function is_scratch(name: string) -> bool {
+    if name == "a.out" or name == "core" {
+        return true
+    }
+    let sufs: ptr<ProcStrs> = s_words(SCRATCH_SUFFIXES)
+    let mut i: i32 = 0
+    while i < sl_len(sufs) {
+        if s_ends(name, sl_get(sufs, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function tracked_root_files(root: string, out: ptr<ProcStrs>) -> i32 {
+    let g: ptr<ProcCmd> = cmd(sl_of2("git", "ls-files"))
+    cmd_cwd(g, root)
+    let listing: string = capture(g)
+    if last_status() != 0 {
+        return 2
+    }
+    let lines: ptr<ProcStrs> = s_lines(listing)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let p: string = sl_get(lines, i)
+        if s_len(p) > 0 and not s_contains(p, "/") {
+            sl_push(out, p)
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let names: ptr<ProcStrs> = sl_new()
+    if argc > 1 and argv[1] == "--names" {
+        let mut a: i32 = 2
+        while a < argc {
+            sl_push(names, argv[a])
+            a = a + 1
+        }
+    } elif argc > 1 {
+        errln("usage: ./flow tool root_files [--names NAME...]")
+        return 2
+    } else {
+        let mut root: string = env("FLOW_REPO_ROOT")
+        if s_len(root) == 0 {
+            root = cwd_physical()
+        }
+        if tracked_root_files(root, names) != 0 {
+            errln("root_files: git ls-files failed")
+            return 2
+        }
+    }
+    let mut bad: i32 = 0
+    let mut k: i32 = 0
+    while k < sl_len(names) {
+        let n: string = sl_get(names, k)
+        if is_scratch(n) {
+            errln("scratch file at the repository root: " + n)
+            bad = bad + 1
+        }
+        k = k + 1
+    }
+    if bad > 0 {
+        errln("root_files: " + s_itoa(bad) + " file(s) at the root belong in a subdirectory or nowhere")
+        return 1
+    }
+    outln("root_files: " + s_itoa(sl_len(names)) + " root files, no scratch files")
+    return 0
+}

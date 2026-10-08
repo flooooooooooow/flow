@@ -1,0 +1,61 @@
+# `./flow tool root_files` rejects scratch files at the repository root.
+#
+# The check is run with --names, so no git tree is needed. Scratch C and
+# Flow files (sim.c, test_simd.flow) were once committed at the root.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function run_names(names: ptr<ProcStrs>) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "root_files")
+    sl_push(argv, "--names")
+    sl_extend(argv, names)
+    return t_run_argv(argv)
+}
+
+function check_scratch_rejected() -> i32 {
+    let names: ptr<ProcStrs> = sl_of3("README.md", "sim.c", "test_simd.flow")
+    sl_push(names, "a.out")
+    if run_names(names) != 1 {
+        outln("expected exit 1 for scratch files")
+        return T_FAIL
+    }
+    let err: string = read_text(t_err())
+    if not a_contains(err, "scratch file at the repository root: sim.c") { return T_FAIL }
+    if not a_contains(err, "scratch file at the repository root: test_simd.flow") { return T_FAIL }
+    if not a_contains(err, "scratch file at the repository root: a.out") { return T_FAIL }
+    if not a_not_contains(err, "README.md") { return T_FAIL }
+    return T_PASS
+}
+
+function check_entry_points_allowed() -> i32 {
+    let names: ptr<ProcStrs> = sl_of3("flow", "flow-lsp", "VERSION")
+    sl_push2(names, "requirements.txt", "Makefile")
+    sl_push2(names, "flake.nix", "mkdocs.yml")
+    if run_names(names) != 0 {
+        outln("expected exit 0 for entry points and contracts")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_repository_root_clean() -> i32 {
+    if t_run_argv(sl_of3("./flow", "tool", "root_files")) != 0 {
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("root_files")
+    t_start()
+    t_end("scratch_rejected", check_scratch_rejected())
+    t_start()
+    t_end("entry_points_allowed", check_entry_points_allowed())
+    t_start()
+    t_end("repository_root_clean", check_repository_root_clean())
+    t_done()
+    return 0
+}
