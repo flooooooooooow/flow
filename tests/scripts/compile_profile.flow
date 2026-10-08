@@ -198,6 +198,14 @@ function check_compile_bench() -> i32 {
     if not a_contains(out, "\"followup\"") {
         return T_FAIL
     }
+    # The top fixed and scaling costs name a stage. The sums `total` and
+    # `emit` always won both picks before (#735).
+    if not a_not_contains(out, "\"top_fixed\": \"total\"") or not a_not_contains(out, "\"top_fixed\": \"emit\"") {
+        return T_FAIL
+    }
+    if not a_not_contains(out, "\"top_scaling\": \"total\"") or not a_not_contains(out, "\"top_scaling\": \"emit\"") {
+        return T_FAIL
+    }
     return T_PASS
 }
 
