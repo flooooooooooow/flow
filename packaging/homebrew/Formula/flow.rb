@@ -11,11 +11,13 @@ class Flow < Formula
   depends_on "python@3.12"
 
   def install
-    # Stable v1.0.1 uses the Python src/ tree, while HEAD uses the
-    # self-hosted CLI plus VERSION/tools. Both keep their repo-relative layout.
+    # v1.0.1 ships the Python src/ tree. 2.x archives and HEAD ship the
+    # self-hosted CLI with VERSION and tools/. The archive contents pick the
+    # layout; both keep their repo-relative layout.
+    self_hosted = build.head? || (buildpath/"VERSION").exist?
     libexec.install "flow", "flow-lsp"
     libexec.install "lib", "runtime", "compiler"
-    if build.head?
+    if self_hosted
       libexec.install "VERSION", "tools"
     else
       libexec.install "src"
@@ -28,8 +30,8 @@ class Flow < Formula
 
     chmod 0755, libexec/"flow"
     chmod 0755, libexec/"flow-lsp" if (libexec/"flow-lsp").exist?
-    # HEAD builds its Flow-native CLI from checked-in bootstrap C.
-    system libexec/"flow", "version" if build.head?
+    # The self-hosted CLI builds itself from checked-in bootstrap C.
+    system libexec/"flow", "version" if self_hosted
 
     python = formula_opt_bin("python@3.12")/"python3.12"
     virtualenv_create(libexec/"venv", python)

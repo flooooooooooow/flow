@@ -61,7 +61,16 @@ After cutting a new **non-RC** release:
    ```bash
    ./flow tool sync_version --homebrew --sha256 <digest>
    ```
-4. Re-run `--check-formula`, then sync the tap (below).
+4. From 2.0.0 on, `LICENSE` is proprietary and `LICENSE-1.x-MIT` covers
+   1.x only. When the formula first moves to a 2.x archive, replace
+   `license "MIT"` with `license :cannot_represent`, which is Homebrew's
+   value for a license with no SPDX identifier.
+5. Re-run `--check-formula`, then sync the tap (below).
+
+The formula picks its install layout from the archive: an archive with a
+`VERSION` file (2.x, HEAD) installs the self-hosted CLI with `tools/`; the
+v1.0.1 archive installs the Python `src/` tree. A 2.x archive therefore needs
+no change to `install` beyond the url, sha256 and license.
 
 ## Publishing / updating the tap
 
