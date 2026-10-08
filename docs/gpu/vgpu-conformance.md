@@ -68,10 +68,21 @@ that frozen image.
 ## Numerical cases
 
 MNIST and depth estimation declare `comparison.mode: numerical` and
-`capability: tensor-model-execution`. Until Flow tensors execute on the shared
-GPU resource model they report `UNSUPPORTED` rather than a false `NUMERICAL`
-pass. Fixture manifests under `tests/gpu/vgpu/` exercise a real numerical
-pass and fail.
+`capability: tensor-model-execution`. Each backend reports `NUMERICAL` only
+after a device run matches the example's host reference within `maxAbs`:
+
+- Metal: the example runs its `gpu_tensor` model kernels on the Metal
+  device and prints `GPU_DEVICE_EXECUTED metal` once a dispatch completed.
+- WebGPU: the runner emits the example's `@gpu` kernels as WGSL with their
+  reflection (`tools/gpu/main.flow --crossing-manifest`), chains them over
+  persistent device buffers with `runFlowKernelChain` in Deno
+  (`tools/gpu_test/webgpu_model.mjs`), reads the output back and compares
+  it with the `reference` line the example printed. `FLOW_DENO` names the
+  Deno binary.
+
+With no device, no Deno or no adapter the case is `UNSUPPORTED
+reason=device-execution`, never a pass. Fixture manifests under
+`tests/gpu/vgpu/` exercise a real numerical pass and fail.
 
 ## Related
 

@@ -88,12 +88,14 @@ one-thread-per-output kernel (correctness-first, **not** a tuned matmul).
 The model examples emit `GPU_DEVICE_EXECUTED metal` only when at least
 one actual Metal compute command completed during the example. The vgpu
 numerical runner additionally requires the program's CPU-reference
-comparison to pass. On Linux/non-GPU hosts and for WebGPU, it reports
-`UNSUPPORTED reason=device-execution` rather than claiming GPU parity
-from shader emission or the CPU reference.
+comparison to pass. For WebGPU it runs the example's `@gpu` kernels on a
+real adapter through Deno and compares the readback with the example's
+host reference (see [vgpu conformance](../gpu/vgpu-conformance.md#numerical-cases)).
+On hosts with no device it reports `UNSUPPORTED reason=device-execution`
+rather than claiming GPU parity from shader emission or the CPU reference.
 
 The examples are deterministic *MNIST-shaped* and *depth-shaped*
 computations, not accuracy measurements on the real MNIST test corpus
-or a depth-estimation model benchmark. Native Metal shader compilation,
-real-device numeric tests and a genuine WebGPU execution/readback host
-are required before claiming full #814 acceptance.
+or a depth-estimation model benchmark. Running the upstream vgpu models
+needs their captured weights and inputs and a frozen output to compare
+against.

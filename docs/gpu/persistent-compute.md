@@ -76,6 +76,7 @@ comparison to a frozen output, and a device-specific result record.
 
 **Scope:** This executes already-generated Flow `@gpu` compute kernels.
 It does not automatically translate host Flow control flow into GPU passes,
-does not yet wire the vgpu MNIST/depth manifest to this browser executor,
-and does not implement texture/render graph dispatch. WebGPU full model
-conformance remains an open #814 acceptance criterion.
+and does not implement texture/render graph dispatch. The vgpu MNIST and
+depth cases run their kernels through this executor on a real adapter:
+`flow gpu test --suite vgpu --backend webgpu` (see
+[vgpu conformance](vgpu-conformance.md#numerical-cases)).

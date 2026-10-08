@@ -153,11 +153,15 @@ function check_gradient_exact() -> i32 {
     return T_PASS
 }
 
+# Without a WebGPU runner (FLOW_DENO names no binary) the model case is
+# UNSUPPORTED, never a pass.
 function check_mnist_unsupported() -> i32 {
     let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
     sl_push2(argv, "--backend", "webgpu")
     sl_push2(argv, "--case", "mnist")
-    if t_run_argv(argv) != 0 {
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_env(c, "FLOW_DENO", "/nonexistent/flow-no-deno")
+    if t_run(c) != 0 {
         t_cat(t_out())
         t_cat(t_err())
         return T_FAIL
@@ -166,6 +170,33 @@ function check_mnist_unsupported() -> i32 {
         return T_FAIL
     }
     if not a_contains(out_text(), "reason=device-execution") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# With Deno and a WebGPU adapter, the model kernels run on the device and
+# match the example's host reference; with neither, UNSUPPORTED. Never FAIL.
+function check_model_webgpu() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let o: string = out_text()
+    if a_contains(o, "CASE mnist [webgpu] NUMERICAL") {
+        if not a_contains(o, "reason=webgpu-device-dispatch") {
+            return T_FAIL
+        }
+    } elif not a_contains(o, "CASE mnist [webgpu] UNSUPPORTED") {
+        return T_FAIL
+    }
+    if a_contains(o, "CASE depth [webgpu] NUMERICAL") {
+        return T_PASS
+    }
+    if not a_contains(o, "CASE depth [webgpu] UNSUPPORTED") {
         return T_FAIL
     }
     return T_PASS
@@ -205,6 +236,8 @@ function main() -> i32 {
     t_end("gradient_exact", check_gradient_exact())
     t_start()
     t_end("mnist_unsupported", check_mnist_unsupported())
+    t_start()
+    t_end("model_webgpu", check_model_webgpu())
     t_done()
     return 0
 }
