@@ -1,0 +1,14 @@
+# expect: lifetime domain escape: `scratch` lives in the `callback` domain but is stored through parameter `out`
+struct Holder {
+    view: ptr<i32>
+}
+
+@lifetime(callback)
+function fill(out: ptr<Holder>) -> void {
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    out[0].view = &scratch
+}
+
+function main() -> i32 {
+    return 0
+}
