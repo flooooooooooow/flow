@@ -4582,7 +4582,9 @@ function flowc_cgen_emit_concat_operand(w: ptr<CgenBuf>, arena: AstArena, src: p
 
 # Conservative textual use scan for the temporary-string escape proof.
 function flowc_cgen_tree_uses_ident(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32, depth: i32) -> i32 {
-    if id == AST_NONE or id < 0 or id >= arena.len or depth > 128 { return 0 }
+    if id == AST_NONE or id < 0 or id >= arena.len { return 0 }
+    # Depth exhaustion cannot certify non-escape.
+    if depth > 128 { return 1 }
     let k: i32 = arena.nodes[id].kind
     if k == AST_IDENT and flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, ns, ne) == 1 { return 1 }
     if flowc_cgen_tree_uses_ident(arena, src, arena.nodes[id].a, ns, ne, depth + 1) == 1 { return 1 }
