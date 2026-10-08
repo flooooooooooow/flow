@@ -1,0 +1,908 @@
+# Typed shader expressions for render stages (#811).
+#
+# A Flow program builds a vertex or fragment stage out of typed
+# expressions. Every expression carries its GPU type and its spelling in
+# WGSL and in the Metal Shading Language, so one Flow description yields
+# both backends and neither is written by hand. Operations check their
+# operand types as the stage is built: adding a vec3 to a vec2, writing a
+# vec2 into a vec3 varying, or sampling a cube map with a 2D coordinate
+# records an error on the stage, and the stage then emits nothing.
+#
+# The stage interface (vertex attributes, varyings, texture bindings and
+# the uniform block) is declared once in a GxIface. lib/stdlib/gpu_render.flow
+# fills it from the typed descriptors in gpu_resource_types.flow and calls
+# gx_emit_wgsl / gx_emit_metal.
+
+import "stdlib/gpu_resource_types.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function malloc(size: i64) -> ptr<void>
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strlen(s: string) -> i64
+}
+
+# Expression types.
+export const GX_ERR: i32 = 0
+export const GX_F32: i32 = 1
+export const GX_VEC2: i32 = 2
+export const GX_VEC3: i32 = 3
+export const GX_VEC4: i32 = 4
+export const GX_MAT4: i32 = 16
+export const GX_BOOL: i32 = 32
+export const GX_U32: i32 = 64
+
+export const GX_MAX_ATTRS: i32 = 8
+export const GX_MAX_VARYINGS: i32 = 16
+export const GX_MAX_TEXTURES: i32 = 4
+
+export struct GxExpr {
+    ty: i32,
+    w: string,
+    m: string
+}
+
+# The interface both stages of one pipeline share.
+export struct GxIface {
+    nattr: i32,
+    attr_loc: array<i32, 8>,
+    attr_ty: array<i32, 8>,
+    nvary: i32,
+    vary: array<GpuVarying, 16>,
+    ntex: i32,
+    tex_slot: array<i32, 4>,
+    tex_cube: array<i32, 4>,
+    tex_stages: array<i32, 4>,
+    uniform_vec4s: i32
+}
+
+# One stage body under construction.
+export struct GxFn {
+    stage: i32,
+    iface: ptr<GxIface>,
+    w: string,
+    m: string,
+    temps: i32,
+    err: string,
+    wrote_position: bool,
+    wrote_color: bool,
+    written: i32,
+    uses_vid: bool,
+    uses_iid: bool,
+    uses_ff: bool
+}
+
+# ---------------------------------------------------------------------------
+# Construction
+# ---------------------------------------------------------------------------
+
+export function gx_iface_new() -> ptr<GxIface> {
+    return calloc(1, sizeof<GxIface>()) as ptr<GxIface>
+}
+
+export function gx_fn_new(iface: ptr<GxIface>, stage: i32) -> ptr<GxFn> {
+    let f: ptr<GxFn> = calloc(1, sizeof<GxFn>()) as ptr<GxFn>
+    f[0].stage = stage
+    f[0].iface = iface
+    f[0].w = ""
+    f[0].m = ""
+    f[0].err = ""
+    return f
+}
+
+export function gx_ok(f: ptr<GxFn>) -> bool {
+    return strlen(f[0].err) == 0
+}
+
+export function gx_error(f: ptr<GxFn>) -> string {
+    return f[0].err
+}
+
+function gx_fail(f: ptr<GxFn>, msg: string) {
+    if strlen(f[0].err) == 0 {
+        f[0].err = msg
+    }
+}
+
+export function gx_bad(msg: string) -> GxExpr {
+    return GxExpr { ty: GX_ERR, w: msg, m: msg }
+}
+
+export function gx_type_name(ty: i32) -> string {
+    if ty == GX_F32 { return "f32" }
+    if ty == GX_VEC2 { return "vec2" }
+    if ty == GX_VEC3 { return "vec3" }
+    if ty == GX_VEC4 { return "vec4" }
+    if ty == GX_MAT4 { return "mat4" }
+    if ty == GX_BOOL { return "bool" }
+    if ty == GX_U32 { return "u32" }
+    return "error"
+}
+
+function gx_wgsl_type(ty: i32) -> string {
+    if ty == GX_F32 { return "f32" }
+    if ty == GX_VEC2 { return "vec2<f32>" }
+    if ty == GX_VEC3 { return "vec3<f32>" }
+    if ty == GX_VEC4 { return "vec4<f32>" }
+    if ty == GX_MAT4 { return "mat4x4<f32>" }
+    if ty == GX_BOOL { return "bool" }
+    return "u32"
+}
+
+function gx_metal_type(ty: i32) -> string {
+    if ty == GX_F32 { return "float" }
+    if ty == GX_VEC2 { return "float2" }
+    if ty == GX_VEC3 { return "float3" }
+    if ty == GX_VEC4 { return "float4" }
+    if ty == GX_MAT4 { return "float4x4" }
+    if ty == GX_BOOL { return "bool" }
+    return "uint"
+}
+
+function gx_is_float(ty: i32) -> bool {
+    return ty == GX_F32 or ty == GX_VEC2 or ty == GX_VEC3 or ty == GX_VEC4
+}
+
+function gx_is_vec(ty: i32) -> bool {
+    return ty == GX_VEC2 or ty == GX_VEC3 or ty == GX_VEC4
+}
+
+function gx_itoa(v: i32) -> string {
+    let buf: ptr<u8> = malloc(16) as ptr<u8>
+    snprintf(buf, 16, "%d", v)
+    return buf as string
+}
+
+# The GPU type of a varying, or GX_ERR when the builder cannot carry it.
+export function gx_varying_type(v: GpuVarying) -> i32 {
+    if v.scalar == GPU_SCALAR_F32 {
+        if v.components == 1 { return GX_F32 }
+        if v.components == 2 { return GX_VEC2 }
+        if v.components == 3 { return GX_VEC3 }
+        if v.components == 4 { return GX_VEC4 }
+    }
+    if v.scalar == GPU_SCALAR_U32 and v.components == 1 { return GX_U32 }
+    return GX_ERR
+}
+
+# ---------------------------------------------------------------------------
+# Leaves
+# ---------------------------------------------------------------------------
+
+# A float literal. Both languages read "%.9g" with a forced decimal point
+# as the same f32.
+export function gx_f(v: f32) -> GxExpr {
+    let buf: ptr<u8> = malloc(48) as ptr<u8>
+    snprintf(buf, 48, "%.9g", v as f64)
+    let mut s: string = buf as string
+    let n: i32 = strlen(s) as i32
+    let mut has_dot: bool = false
+    let mut i: i32 = 0
+    while i < n {
+        let ch: u8 = buf[i]
+        if ch == 46 or ch == 101 or ch == 110 or ch == 105 {
+            has_dot = true
+        }
+        i = i + 1
+    }
+    if not has_dot {
+        s = s + ".0"
+    }
+    if v < 0.0 {
+        s = "(" + s + ")"
+    }
+    return GxExpr { ty: GX_F32, w: s, m: s }
+}
+
+export function gx_u(v: i32) -> GxExpr {
+    let s: string = gx_itoa(v) + "u"
+    return GxExpr { ty: GX_U32, w: s, m: s }
+}
+
+# Uniform vec4 number `i` of the pipeline's uniform block.
+export function gx_uvec(f: ptr<GxFn>, i: i32) -> GxExpr {
+    if i < 0 or i >= f[0].iface[0].uniform_vec4s {
+        let e: GxExpr = gx_bad("uniform vec4 " + gx_itoa(i) + " is outside the uniform block")
+        gx_fail(f, e.w)
+        return e
+    }
+    let s: string = "u.v[" + gx_itoa(i) + "]"
+    return GxExpr { ty: GX_VEC4, w: s, m: s }
+}
+
+# The mat4 whose columns are uniform vec4s i .. i+3.
+export function gx_umat(f: ptr<GxFn>, i: i32) -> GxExpr {
+    if i < 0 or i + 3 >= f[0].iface[0].uniform_vec4s {
+        let e: GxExpr = gx_bad("uniform mat4 at " + gx_itoa(i) + " runs past the uniform block")
+        gx_fail(f, e.w)
+        return e
+    }
+    let cols: string = "u.v[" + gx_itoa(i) + "], u.v[" + gx_itoa(i + 1) + "], u.v[" +
+        gx_itoa(i + 2) + "], u.v[" + gx_itoa(i + 3) + "]"
+    return GxExpr { ty: GX_MAT4, w: "mat4x4<f32>(" + cols + ")", m: "float4x4(" + cols + ")" }
+}
+
+# Vertex attribute at `location` (vertex stage only).
+export function gx_attr(f: ptr<GxFn>, location: i32) -> GxExpr {
+    if f[0].stage != GPU_STAGE_VERTEX {
+        let e: GxExpr = gx_bad("vertex attribute " + gx_itoa(location) + " read outside the vertex stage")
+        gx_fail(f, e.w)
+        return e
+    }
+    let ifc: ptr<GxIface> = f[0].iface
+    let mut i: i32 = 0
+    while i < ifc[0].nattr {
+        if ifc[0].attr_loc[i] == location {
+            let n: string = "a" + gx_itoa(location)
+            return GxExpr { ty: ifc[0].attr_ty[i], w: n, m: "vin." + n }
+        }
+        i = i + 1
+    }
+    let e2: GxExpr = gx_bad("no vertex attribute at location " + gx_itoa(location))
+    gx_fail(f, e2.w)
+    return e2
+}
+
+export function gx_vertex_index(f: ptr<GxFn>) -> GxExpr {
+    if f[0].stage != GPU_STAGE_VERTEX {
+        gx_fail(f, "vertex_index read outside the vertex stage")
+        return gx_bad("vertex_index")
+    }
+    f[0].uses_vid = true
+    return GxExpr { ty: GX_U32, w: "vid", m: "vid" }
+}
+
+export function gx_instance_index(f: ptr<GxFn>) -> GxExpr {
+    if f[0].stage != GPU_STAGE_VERTEX {
+        gx_fail(f, "instance_index read outside the vertex stage")
+        return gx_bad("instance_index")
+    }
+    f[0].uses_iid = true
+    return GxExpr { ty: GX_U32, w: "iid", m: "iid" }
+}
+
+export function gx_front_facing(f: ptr<GxFn>) -> GxExpr {
+    if f[0].stage != GPU_STAGE_FRAGMENT {
+        gx_fail(f, "front_facing read outside the fragment stage")
+        return gx_bad("front_facing")
+    }
+    f[0].uses_ff = true
+    return GxExpr { ty: GX_BOOL, w: "ff", m: "ff" }
+}
+
+# Framebuffer position of the fragment (pixel centres at +0.5).
+export function gx_frag_coord(f: ptr<GxFn>) -> GxExpr {
+    if f[0].stage != GPU_STAGE_FRAGMENT {
+        gx_fail(f, "frag_coord read outside the fragment stage")
+        return gx_bad("frag_coord")
+    }
+    return GxExpr { ty: GX_VEC4, w: "vin.pos", m: "vin.pos" }
+}
+
+function gx_find_varying(ifc: ptr<GxIface>, location: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < ifc[0].nvary {
+        if ifc[0].vary[i].location == location {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Fragment input at `location`.
+export function gx_in(f: ptr<GxFn>, location: i32) -> GxExpr {
+    if f[0].stage != GPU_STAGE_FRAGMENT {
+        let e: GxExpr = gx_bad("varying " + gx_itoa(location) + " read outside the fragment stage")
+        gx_fail(f, e.w)
+        return e
+    }
+    let k: i32 = gx_find_varying(f[0].iface, location)
+    if k < 0 {
+        let e2: GxExpr = gx_bad("the fragment stage declares no input at location " + gx_itoa(location))
+        gx_fail(f, e2.w)
+        return e2
+    }
+    let n: string = "vin.v" + gx_itoa(location)
+    return GxExpr { ty: gx_varying_type(f[0].iface[0].vary[k]), w: n, m: n }
+}
+
+# ---------------------------------------------------------------------------
+# Operators
+# ---------------------------------------------------------------------------
+
+function gx_err2(a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR { return a }
+    return b
+}
+
+function gx_arith(op: string, a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR { return gx_err2(a, b) }
+    let mut ty: i32 = GX_ERR
+    if a.ty == b.ty and (gx_is_float(a.ty) or a.ty == GX_U32) {
+        ty = a.ty
+    } elif a.ty == GX_F32 and gx_is_vec(b.ty) {
+        ty = b.ty
+    } elif b.ty == GX_F32 and gx_is_vec(a.ty) {
+        ty = a.ty
+    } elif op == "*" and a.ty == GX_MAT4 and b.ty == GX_VEC4 {
+        ty = GX_VEC4
+    } elif op == "*" and a.ty == GX_MAT4 and b.ty == GX_MAT4 {
+        ty = GX_MAT4
+    }
+    if ty == GX_ERR {
+        return gx_bad("'" + op + "' cannot combine " + gx_type_name(a.ty) + " and " + gx_type_name(b.ty))
+    }
+    return GxExpr {
+        ty: ty,
+        w: "(" + a.w + " " + op + " " + b.w + ")",
+        m: "(" + a.m + " " + op + " " + b.m + ")"
+    }
+}
+
+export function gx_add(a: GxExpr, b: GxExpr) -> GxExpr { return gx_arith("+", a, b) }
+export function gx_sub(a: GxExpr, b: GxExpr) -> GxExpr { return gx_arith("-", a, b) }
+export function gx_mul(a: GxExpr, b: GxExpr) -> GxExpr { return gx_arith("*", a, b) }
+export function gx_div(a: GxExpr, b: GxExpr) -> GxExpr { return gx_arith("/", a, b) }
+
+export function gx_neg(a: GxExpr) -> GxExpr {
+    if not gx_is_float(a.ty) {
+        if a.ty == GX_ERR { return a }
+        return gx_bad("cannot negate " + gx_type_name(a.ty))
+    }
+    return GxExpr { ty: a.ty, w: "(-" + a.w + ")", m: "(-" + a.m + ")" }
+}
+
+function gx_cmp(op: string, a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR { return gx_err2(a, b) }
+    if a.ty != b.ty or (a.ty != GX_F32 and a.ty != GX_U32) {
+        return gx_bad("'" + op + "' compares two f32 or two u32 values, got " +
+            gx_type_name(a.ty) + " and " + gx_type_name(b.ty))
+    }
+    return GxExpr {
+        ty: GX_BOOL,
+        w: "(" + a.w + " " + op + " " + b.w + ")",
+        m: "(" + a.m + " " + op + " " + b.m + ")"
+    }
+}
+
+export function gx_lt(a: GxExpr, b: GxExpr) -> GxExpr { return gx_cmp("<", a, b) }
+export function gx_gt(a: GxExpr, b: GxExpr) -> GxExpr { return gx_cmp(">", a, b) }
+
+function gx_logic(op: string, a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR { return gx_err2(a, b) }
+    if a.ty != GX_BOOL or b.ty != GX_BOOL {
+        return gx_bad("'" + op + "' needs two bool values")
+    }
+    return GxExpr {
+        ty: GX_BOOL,
+        w: "(" + a.w + " " + op + " " + b.w + ")",
+        m: "(" + a.m + " " + op + " " + b.m + ")"
+    }
+}
+
+export function gx_and(a: GxExpr, b: GxExpr) -> GxExpr { return gx_logic("&&", a, b) }
+export function gx_or(a: GxExpr, b: GxExpr) -> GxExpr { return gx_logic("||", a, b) }
+
+export function gx_not(a: GxExpr) -> GxExpr {
+    if a.ty != GX_BOOL {
+        if a.ty == GX_ERR { return a }
+        return gx_bad("'!' needs a bool")
+    }
+    return GxExpr { ty: GX_BOOL, w: "(!" + a.w + ")", m: "(!" + a.m + ")" }
+}
+
+# cond ? t : f, for two values of one type and a bool.
+export function gx_select(cond: GxExpr, t: GxExpr, f: GxExpr) -> GxExpr {
+    if cond.ty == GX_ERR { return cond }
+    if t.ty == GX_ERR or f.ty == GX_ERR { return gx_err2(t, f) }
+    if cond.ty != GX_BOOL or t.ty != f.ty {
+        return gx_bad("select needs a bool and two values of one type, got " +
+            gx_type_name(t.ty) + " and " + gx_type_name(f.ty))
+    }
+    return GxExpr {
+        ty: t.ty,
+        w: "select(" + f.w + ", " + t.w + ", " + cond.w + ")",
+        m: "(" + cond.m + " ? " + t.m + " : " + f.m + ")"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Constructors and swizzles
+# ---------------------------------------------------------------------------
+
+function gx_ctor(ty: i32, args_w: string, args_m: string) -> GxExpr {
+    return GxExpr {
+        ty: ty,
+        w: gx_wgsl_type(ty) + "(" + args_w + ")",
+        m: gx_metal_type(ty) + "(" + args_m + ")"
+    }
+}
+
+export function gx_vec2(x: GxExpr, y: GxExpr) -> GxExpr {
+    if x.ty == GX_ERR or y.ty == GX_ERR { return gx_err2(x, y) }
+    if x.ty != GX_F32 or y.ty != GX_F32 { return gx_bad("vec2 takes two f32 values") }
+    return gx_ctor(GX_VEC2, x.w + ", " + y.w, x.m + ", " + y.m)
+}
+
+export function gx_vec3(x: GxExpr, y: GxExpr, z: GxExpr) -> GxExpr {
+    if x.ty == GX_ERR or y.ty == GX_ERR or z.ty == GX_ERR {
+        return gx_err2(x, gx_err2(y, z))
+    }
+    if x.ty != GX_F32 or y.ty != GX_F32 or z.ty != GX_F32 {
+        return gx_bad("vec3 takes three f32 values")
+    }
+    return gx_ctor(GX_VEC3, x.w + ", " + y.w + ", " + z.w, x.m + ", " + y.m + ", " + z.m)
+}
+
+export function gx_vec4(x: GxExpr, y: GxExpr, z: GxExpr, w: GxExpr) -> GxExpr {
+    if x.ty == GX_ERR or y.ty == GX_ERR or z.ty == GX_ERR or w.ty == GX_ERR {
+        return gx_err2(x, gx_err2(y, gx_err2(z, w)))
+    }
+    if x.ty != GX_F32 or y.ty != GX_F32 or z.ty != GX_F32 or w.ty != GX_F32 {
+        return gx_bad("vec4 takes four f32 values")
+    }
+    return gx_ctor(GX_VEC4, x.w + ", " + y.w + ", " + z.w + ", " + w.w,
+        x.m + ", " + y.m + ", " + z.m + ", " + w.m)
+}
+
+# vec4(v.xyz, w).
+export function gx_vec4_of(v: GxExpr, w: GxExpr) -> GxExpr {
+    if v.ty == GX_ERR or w.ty == GX_ERR { return gx_err2(v, w) }
+    if v.ty != GX_VEC3 or w.ty != GX_F32 { return gx_bad("vec4_of takes a vec3 and an f32") }
+    return gx_ctor(GX_VEC4, v.w + ", " + w.w, v.m + ", " + w.m)
+}
+
+# A vector of `ty` with every component s.
+export function gx_splat(ty: i32, s: GxExpr) -> GxExpr {
+    if s.ty == GX_ERR { return s }
+    if s.ty != GX_F32 or not gx_is_vec(ty) { return gx_bad("splat takes an f32 and a vector type") }
+    return gx_ctor(ty, s.w, s.m)
+}
+
+export function gx_f32_of(a: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR { return a }
+    if a.ty != GX_U32 and a.ty != GX_F32 { return gx_bad("f32_of takes a u32") }
+    return GxExpr { ty: GX_F32, w: "f32(" + a.w + ")", m: "float(" + a.m + ")" }
+}
+
+export function gx_u32_mod(a: GxExpr, n: i32) -> GxExpr {
+    if a.ty != GX_U32 {
+        if a.ty == GX_ERR { return a }
+        return gx_bad("u32_mod takes a u32")
+    }
+    let k: string = gx_itoa(n) + "u"
+    return GxExpr { ty: GX_U32, w: "(" + a.w + " % " + k + ")", m: "(" + a.m + " % " + k + ")" }
+}
+
+export function gx_u32_div(a: GxExpr, n: i32) -> GxExpr {
+    if a.ty != GX_U32 {
+        if a.ty == GX_ERR { return a }
+        return gx_bad("u32_div takes a u32")
+    }
+    let k: string = gx_itoa(n) + "u"
+    return GxExpr { ty: GX_U32, w: "(" + a.w + " / " + k + ")", m: "(" + a.m + " / " + k + ")" }
+}
+
+function gx_comp_index(ch: u8) -> i32 {
+    if ch == 120 or ch == 114 { return 0 }
+    if ch == 121 or ch == 103 { return 1 }
+    if ch == 122 or ch == 98 { return 2 }
+    if ch == 119 or ch == 97 { return 3 }
+    return 9
+}
+
+# v.xyz, v.zx, v.w ... over x y z w (or r g b a).
+export function gx_swz(v: GxExpr, pattern: string) -> GxExpr {
+    if v.ty == GX_ERR { return v }
+    if not gx_is_vec(v.ty) {
+        return gx_bad("swizzle ." + pattern + " on " + gx_type_name(v.ty))
+    }
+    let n: i32 = strlen(pattern) as i32
+    if n < 1 or n > 4 { return gx_bad("swizzle ." + pattern + " has 1 to 4 components") }
+    let p: ptr<u8> = pattern as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        if gx_comp_index(p[i]) >= v.ty {
+            return gx_bad("swizzle ." + pattern + " reaches past a " + gx_type_name(v.ty))
+        }
+        i = i + 1
+    }
+    return GxExpr { ty: n, w: v.w + "." + pattern, m: v.m + "." + pattern }
+}
+
+export function gx_x(v: GxExpr) -> GxExpr { return gx_swz(v, "x") }
+export function gx_y(v: GxExpr) -> GxExpr { return gx_swz(v, "y") }
+export function gx_z(v: GxExpr) -> GxExpr { return gx_swz(v, "z") }
+export function gx_w(v: GxExpr) -> GxExpr { return gx_swz(v, "w") }
+export function gx_xy(v: GxExpr) -> GxExpr { return gx_swz(v, "xy") }
+export function gx_xyz(v: GxExpr) -> GxExpr { return gx_swz(v, "xyz") }
+
+# ---------------------------------------------------------------------------
+# Built-in functions
+# ---------------------------------------------------------------------------
+
+function gx_call1(name: string, a: GxExpr, ty: i32) -> GxExpr {
+    return GxExpr { ty: ty, w: name + "(" + a.w + ")", m: name + "(" + a.m + ")" }
+}
+
+function gx_call2(name: string, a: GxExpr, b: GxExpr, ty: i32) -> GxExpr {
+    return GxExpr {
+        ty: ty,
+        w: name + "(" + a.w + ", " + b.w + ")",
+        m: name + "(" + a.m + ", " + b.m + ")"
+    }
+}
+
+function gx_call3(name: string, a: GxExpr, b: GxExpr, c: GxExpr, ty: i32) -> GxExpr {
+    return GxExpr {
+        ty: ty,
+        w: name + "(" + a.w + ", " + b.w + ", " + c.w + ")",
+        m: name + "(" + a.m + ", " + b.m + ", " + c.m + ")"
+    }
+}
+
+# Component-wise functions of one float value.
+function gx_unary(name: string, a: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR { return a }
+    if not gx_is_float(a.ty) { return gx_bad(name + " takes f32 or a float vector, got " + gx_type_name(a.ty)) }
+    return gx_call1(name, a, a.ty)
+}
+
+export function gx_abs(a: GxExpr) -> GxExpr { return gx_unary("abs", a) }
+export function gx_sin(a: GxExpr) -> GxExpr { return gx_unary("sin", a) }
+export function gx_cos(a: GxExpr) -> GxExpr { return gx_unary("cos", a) }
+export function gx_exp(a: GxExpr) -> GxExpr { return gx_unary("exp", a) }
+export function gx_sqrt(a: GxExpr) -> GxExpr { return gx_unary("sqrt", a) }
+export function gx_floor(a: GxExpr) -> GxExpr { return gx_unary("floor", a) }
+export function gx_fract(a: GxExpr) -> GxExpr { return gx_unary("fract", a) }
+export function gx_acos(a: GxExpr) -> GxExpr { return gx_unary("acos", a) }
+export function gx_asin(a: GxExpr) -> GxExpr { return gx_unary("asin", a) }
+
+export function gx_normalize(a: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR { return a }
+    if not gx_is_vec(a.ty) { return gx_bad("normalize takes a float vector, got " + gx_type_name(a.ty)) }
+    return gx_call1("normalize", a, a.ty)
+}
+
+export function gx_length(a: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR { return a }
+    if not gx_is_vec(a.ty) { return gx_bad("length takes a float vector, got " + gx_type_name(a.ty)) }
+    return gx_call1("length", a, GX_F32)
+}
+
+export function gx_dot(a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR { return gx_err2(a, b) }
+    if a.ty != b.ty or not gx_is_vec(a.ty) {
+        return gx_bad("dot takes two vectors of one size, got " + gx_type_name(a.ty) + " and " + gx_type_name(b.ty))
+    }
+    return gx_call2("dot", a, b, GX_F32)
+}
+
+export function gx_cross(a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR { return gx_err2(a, b) }
+    if a.ty != GX_VEC3 or b.ty != GX_VEC3 { return gx_bad("cross takes two vec3 values") }
+    return gx_call2("cross", a, b, GX_VEC3)
+}
+
+export function gx_reflect(i: GxExpr, n: GxExpr) -> GxExpr {
+    if i.ty == GX_ERR or n.ty == GX_ERR { return gx_err2(i, n) }
+    if i.ty != GX_VEC3 or n.ty != GX_VEC3 { return gx_bad("reflect takes two vec3 values") }
+    return gx_call2("reflect", i, n, GX_VEC3)
+}
+
+export function gx_refract(i: GxExpr, n: GxExpr, eta: GxExpr) -> GxExpr {
+    if i.ty == GX_ERR or n.ty == GX_ERR or eta.ty == GX_ERR { return gx_err2(i, gx_err2(n, eta)) }
+    if i.ty != GX_VEC3 or n.ty != GX_VEC3 or eta.ty != GX_F32 {
+        return gx_bad("refract takes two vec3 values and an f32")
+    }
+    return gx_call3("refract", i, n, eta, GX_VEC3)
+}
+
+# Promote an f32 operand to the vector type of its partner, since WGSL
+# requires every argument of min/max/clamp/mix/pow to share one type.
+function gx_match(a: GxExpr, ty: i32) -> GxExpr {
+    if a.ty == GX_F32 and gx_is_vec(ty) { return gx_splat(ty, a) }
+    return a
+}
+
+function gx_wider(a: GxExpr, b: GxExpr) -> i32 {
+    if gx_is_vec(a.ty) { return a.ty }
+    return b.ty
+}
+
+function gx_binary_fn(name: string, a: GxExpr, b: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR { return gx_err2(a, b) }
+    let ty: i32 = gx_wider(a, b)
+    let a2: GxExpr = gx_match(a, ty)
+    let b2: GxExpr = gx_match(b, ty)
+    if a2.ty != b2.ty or not gx_is_float(a2.ty) {
+        return gx_bad(name + " takes values of one float type, got " + gx_type_name(a.ty) + " and " + gx_type_name(b.ty))
+    }
+    return gx_call2(name, a2, b2, ty)
+}
+
+export function gx_min(a: GxExpr, b: GxExpr) -> GxExpr { return gx_binary_fn("min", a, b) }
+export function gx_max(a: GxExpr, b: GxExpr) -> GxExpr { return gx_binary_fn("max", a, b) }
+export function gx_pow(a: GxExpr, b: GxExpr) -> GxExpr { return gx_binary_fn("pow", a, b) }
+export function gx_step(edge: GxExpr, x: GxExpr) -> GxExpr { return gx_binary_fn("step", edge, x) }
+
+export function gx_atan2(y: GxExpr, x: GxExpr) -> GxExpr {
+    if y.ty == GX_ERR or x.ty == GX_ERR { return gx_err2(y, x) }
+    if y.ty != GX_F32 or x.ty != GX_F32 { return gx_bad("atan2 takes two f32 values") }
+    return gx_call2("atan2", y, x, GX_F32)
+}
+
+function gx_ternary_fn(name: string, a: GxExpr, b: GxExpr, c: GxExpr) -> GxExpr {
+    if a.ty == GX_ERR or b.ty == GX_ERR or c.ty == GX_ERR { return gx_err2(a, gx_err2(b, c)) }
+    let ty: i32 = gx_wider(a, GxExpr { ty: gx_wider(b, c), w: "", m: "" })
+    let a2: GxExpr = gx_match(a, ty)
+    let b2: GxExpr = gx_match(b, ty)
+    let c2: GxExpr = gx_match(c, ty)
+    if a2.ty != ty or b2.ty != ty or c2.ty != ty or not gx_is_float(ty) {
+        return gx_bad(name + " takes values of one float type, got " + gx_type_name(a.ty) + ", " +
+            gx_type_name(b.ty) + " and " + gx_type_name(c.ty))
+    }
+    return gx_call3(name, a2, b2, c2, ty)
+}
+
+export function gx_clamp(x: GxExpr, lo: GxExpr, hi: GxExpr) -> GxExpr { return gx_ternary_fn("clamp", x, lo, hi) }
+export function gx_mix(a: GxExpr, b: GxExpr, t: GxExpr) -> GxExpr { return gx_ternary_fn("mix", a, b, t) }
+export function gx_smoothstep(e0: GxExpr, e1: GxExpr, x: GxExpr) -> GxExpr { return gx_ternary_fn("smoothstep", e0, e1, x) }
+
+# Sample the texture bound at `slot` (fragment stage only). A 2D texture
+# takes a vec2 coordinate and a cube map a vec3 direction.
+export function gx_sample(f: ptr<GxFn>, slot: i32, coord: GxExpr) -> GxExpr {
+    if coord.ty == GX_ERR { return coord }
+    if f[0].stage != GPU_STAGE_FRAGMENT {
+        let e: GxExpr = gx_bad("texture slot " + gx_itoa(slot) + " sampled outside the fragment stage")
+        gx_fail(f, e.w)
+        return e
+    }
+    let ifc: ptr<GxIface> = f[0].iface
+    let mut i: i32 = 0
+    while i < ifc[0].ntex {
+        if ifc[0].tex_slot[i] == slot {
+            if (ifc[0].tex_stages[i] & GPU_STAGE_FRAGMENT) == 0 {
+                let e3: GxExpr = gx_bad("texture slot " + gx_itoa(slot) + " is not visible to the fragment stage")
+                gx_fail(f, e3.w)
+                return e3
+            }
+            let mut want: i32 = GX_VEC2
+            if ifc[0].tex_cube[i] != 0 { want = GX_VEC3 }
+            if coord.ty != want {
+                let e4: GxExpr = gx_bad("texture slot " + gx_itoa(slot) + " takes a " + gx_type_name(want) +
+                    " coordinate, got " + gx_type_name(coord.ty))
+                gx_fail(f, e4.w)
+                return e4
+            }
+            let s: string = gx_itoa(slot)
+            return GxExpr {
+                ty: GX_VEC4,
+                w: "textureSample(tex" + s + ", smp" + s + ", " + coord.w + ")",
+                m: "tex" + s + ".sample(smp" + s + ", " + coord.m + ")"
+            }
+        }
+        i = i + 1
+    }
+    let e2: GxExpr = gx_bad("no texture is bound at slot " + gx_itoa(slot))
+    gx_fail(f, e2.w)
+    return e2
+}
+
+# ---------------------------------------------------------------------------
+# Statements
+# ---------------------------------------------------------------------------
+
+# Bind `e` to a fresh name and return the name, so a value used several
+# times is computed once.
+export function gx_let(f: ptr<GxFn>, e: GxExpr) -> GxExpr {
+    if e.ty == GX_ERR {
+        gx_fail(f, e.w)
+        return e
+    }
+    let n: string = "t" + gx_itoa(f[0].temps)
+    f[0].temps = f[0].temps + 1
+    f[0].w = f[0].w + "    let " + n + " = " + e.w + ";\n"
+    f[0].m = f[0].m + "    " + gx_metal_type(e.ty) + " " + n + " = " + e.m + ";\n"
+    return GxExpr { ty: e.ty, w: n, m: n }
+}
+
+# Write the clip-space position (vertex stage).
+export function gx_out_position(f: ptr<GxFn>, e: GxExpr) {
+    if e.ty == GX_ERR { gx_fail(f, e.w); return }
+    if f[0].stage != GPU_STAGE_VERTEX { gx_fail(f, "position written outside the vertex stage"); return }
+    if e.ty != GX_VEC4 { gx_fail(f, "position must be a vec4, got " + gx_type_name(e.ty)); return }
+    f[0].w = f[0].w + "    vout.pos = " + e.w + ";\n"
+    f[0].m = f[0].m + "    vout.pos = " + e.m + ";\n"
+    f[0].wrote_position = true
+}
+
+# Write the varying at `location` (vertex stage). Its type must be the
+# declared one.
+export function gx_out(f: ptr<GxFn>, location: i32, e: GxExpr) {
+    if e.ty == GX_ERR { gx_fail(f, e.w); return }
+    if f[0].stage != GPU_STAGE_VERTEX {
+        gx_fail(f, "varying " + gx_itoa(location) + " written outside the vertex stage")
+        return
+    }
+    let k: i32 = gx_find_varying(f[0].iface, location)
+    if k < 0 {
+        gx_fail(f, "the vertex stage declares no output at location " + gx_itoa(location))
+        return
+    }
+    let want: i32 = gx_varying_type(f[0].iface[0].vary[k])
+    if e.ty != want {
+        gx_fail(f, "varying " + gx_itoa(location) + " is declared " + gx_type_name(want) +
+            ", written with " + gx_type_name(e.ty))
+        return
+    }
+    let n: string = "vout.v" + gx_itoa(location)
+    f[0].w = f[0].w + "    " + n + " = " + e.w + ";\n"
+    f[0].m = f[0].m + "    " + n + " = " + e.m + ";\n"
+    f[0].written = f[0].written | (1 << k)
+}
+
+# Write the fragment colour.
+export function gx_out_color(f: ptr<GxFn>, e: GxExpr) {
+    if e.ty == GX_ERR { gx_fail(f, e.w); return }
+    if f[0].stage != GPU_STAGE_FRAGMENT { gx_fail(f, "colour written outside the fragment stage"); return }
+    if e.ty != GX_VEC4 { gx_fail(f, "colour must be a vec4, got " + gx_type_name(e.ty)); return }
+    f[0].w = f[0].w + "    return " + e.w + ";\n"
+    f[0].m = f[0].m + "    return " + e.m + ";\n"
+    f[0].wrote_color = true
+}
+
+# Discard the fragment when `cond` holds.
+export function gx_discard_if(f: ptr<GxFn>, cond: GxExpr) {
+    if cond.ty == GX_ERR { gx_fail(f, cond.w); return }
+    if f[0].stage != GPU_STAGE_FRAGMENT { gx_fail(f, "discard outside the fragment stage"); return }
+    if cond.ty != GX_BOOL { gx_fail(f, "discard takes a bool, got " + gx_type_name(cond.ty)); return }
+    f[0].w = f[0].w + "    if (" + cond.w + ") { discard; }\n"
+    f[0].m = f[0].m + "    if (" + cond.m + ") { discard_fragment(); }\n"
+}
+
+# ---------------------------------------------------------------------------
+# Emission
+# ---------------------------------------------------------------------------
+
+function gx_finish_check(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string {
+    if not gx_ok(vs) { return "vertex stage: " + vs[0].err }
+    if not gx_ok(fs) { return "fragment stage: " + fs[0].err }
+    if not vs[0].wrote_position { return "vertex stage: position is never written" }
+    if not fs[0].wrote_color { return "fragment stage: colour is never written" }
+    let ifc: ptr<GxIface> = vs[0].iface
+    let mut i: i32 = 0
+    while i < ifc[0].nvary {
+        if (vs[0].written & (1 << i)) == 0 {
+            return "vertex stage: varying " + gx_itoa(ifc[0].vary[i].location) + " is never written"
+        }
+        if gx_varying_type(ifc[0].vary[i]) == GX_ERR {
+            return "varying " + gx_itoa(ifc[0].vary[i].location) + " has a type the builder cannot carry"
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# Why the stage pair cannot be emitted, or "".
+export function gx_check(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string {
+    return gx_finish_check(vs, fs)
+}
+
+function gx_wgsl_varyings(ifc: ptr<GxIface>) -> string {
+    let mut s: string = "struct VOut {\n    @builtin(position) pos: vec4<f32>,\n"
+    let mut i: i32 = 0
+    while i < ifc[0].nvary {
+        let v: GpuVarying = ifc[0].vary[i]
+        let mut interp: string = ""
+        if v.interpolation == GPU_INTERPOLATE_FLAT { interp = " @interpolate(flat)" }
+        s = s + "    @location(" + gx_itoa(v.location) + ")" + interp + " v" + gx_itoa(v.location) +
+            ": " + gx_wgsl_type(gx_varying_type(v)) + ",\n"
+        i = i + 1
+    }
+    return s + "};\n"
+}
+
+function gx_wgsl_bindings(ifc: ptr<GxIface>) -> string {
+    let mut s: string = ""
+    if ifc[0].uniform_vec4s > 0 {
+        s = s + "struct U { v: array<vec4<f32>, " + gx_itoa(ifc[0].uniform_vec4s) + "> };\n"
+        s = s + "@group(0) @binding(0) var<uniform> u: U;\n"
+    }
+    let mut i: i32 = 0
+    while i < ifc[0].ntex {
+        let slot: i32 = ifc[0].tex_slot[i]
+        let mut tt: string = "texture_2d<f32>"
+        if ifc[0].tex_cube[i] != 0 { tt = "texture_cube<f32>" }
+        s = s + "@group(0) @binding(" + gx_itoa(1 + 2 * slot) + ") var tex" + gx_itoa(slot) + ": " + tt + ";\n"
+        s = s + "@group(0) @binding(" + gx_itoa(2 + 2 * slot) + ") var smp" + gx_itoa(slot) + ": sampler;\n"
+        i = i + 1
+    }
+    return s
+}
+
+# WGSL module with entry points vs_main and fs_main, or "" with the
+# reason in the stage error.
+export function gx_emit_wgsl(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string {
+    if strlen(gx_finish_check(vs, fs)) > 0 { return "" }
+    let ifc: ptr<GxIface> = vs[0].iface
+    let mut s: string = "// Generated from Flow by lib/stdlib/gpu_shader.flow. Do not edit.\n"
+    s = s + gx_wgsl_bindings(ifc) + gx_wgsl_varyings(ifc)
+    let mut params: string = ""
+    let mut i: i32 = 0
+    while i < ifc[0].nattr {
+        if strlen(params) > 0 { params = params + ", " }
+        params = params + "@location(" + gx_itoa(ifc[0].attr_loc[i]) + ") a" + gx_itoa(ifc[0].attr_loc[i]) +
+            ": " + gx_wgsl_type(ifc[0].attr_ty[i])
+        i = i + 1
+    }
+    if strlen(params) > 0 { params = params + ", " }
+    params = params + "@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32"
+    s = s + "@vertex fn vs_main(" + params + ") -> VOut {\n    var vout: VOut;\n"
+    s = s + vs[0].w + "    return vout;\n}\n"
+    s = s + "@fragment fn fs_main(vin: VOut, @builtin(front_facing) ff: bool) -> @location(0) vec4<f32> {\n"
+    s = s + fs[0].w + "}\n"
+    return s
+}
+
+function gx_metal_resources(ifc: ptr<GxIface>, stage: i32) -> string {
+    let mut s: string = ""
+    if ifc[0].uniform_vec4s > 0 {
+        s = s + ", constant U& u [[buffer(0)]]"
+    }
+    let mut i: i32 = 0
+    while i < ifc[0].ntex {
+        if (ifc[0].tex_stages[i] & stage) != 0 {
+            let slot: string = gx_itoa(ifc[0].tex_slot[i])
+            let mut tt: string = "texture2d<float>"
+            if ifc[0].tex_cube[i] != 0 { tt = "texturecube<float>" }
+            s = s + ", " + tt + " tex" + slot + " [[texture(" + slot + ")]], sampler smp" + slot +
+                " [[sampler(" + slot + ")]]"
+        }
+        i = i + 1
+    }
+    return s
+}
+
+# Metal module with entry points vs_main and fs_main, or "".
+export function gx_emit_metal(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string {
+    if strlen(gx_finish_check(vs, fs)) > 0 { return "" }
+    let ifc: ptr<GxIface> = vs[0].iface
+    let mut s: string = "// Generated from Flow by lib/stdlib/gpu_shader.flow. Do not edit.\n"
+    s = s + "#include <metal_stdlib>\nusing namespace metal;\n"
+    if ifc[0].uniform_vec4s > 0 {
+        s = s + "struct U { float4 v[" + gx_itoa(ifc[0].uniform_vec4s) + "]; };\n"
+    }
+    if ifc[0].nattr > 0 {
+        s = s + "struct VIn {\n"
+        let mut i: i32 = 0
+        while i < ifc[0].nattr {
+            let loc: string = gx_itoa(ifc[0].attr_loc[i])
+            s = s + "    " + gx_metal_type(ifc[0].attr_ty[i]) + " a" + loc + " [[attribute(" + loc + ")]];\n"
+            i = i + 1
+        }
+        s = s + "};\n"
+    }
+    s = s + "struct VOut {\n    float4 pos [[position]];\n"
+    let mut k: i32 = 0
+    while k < ifc[0].nvary {
+        let v: GpuVarying = ifc[0].vary[k]
+        let mut interp: string = ""
+        if v.interpolation == GPU_INTERPOLATE_FLAT { interp = ", flat" }
+        s = s + "    " + gx_metal_type(gx_varying_type(v)) + " v" + gx_itoa(v.location) +
+            " [[user(locn" + gx_itoa(v.location) + ")" + interp + "]];\n"
+        k = k + 1
+    }
+    s = s + "};\n"
+    let mut vparams: string = ""
+    if ifc[0].nattr > 0 { vparams = "VIn vin [[stage_in]], " }
+    vparams = vparams + "uint vid [[vertex_id]], uint iid [[instance_id]]" +
+        gx_metal_resources(ifc, GPU_STAGE_VERTEX)
+    s = s + "vertex VOut vs_main(" + vparams + ") {\n    VOut vout;\n"
+    s = s + vs[0].m + "    return vout;\n}\n"
+    s = s + "fragment float4 fs_main(VOut vin [[stage_in]], bool ff [[front_facing]]" +
+        gx_metal_resources(ifc, GPU_STAGE_FRAGMENT) + ") {\n"
+    s = s + fs[0].m + "}\n"
+    return s
+}

@@ -1,0 +1,102 @@
+# Typed shader expressions (#811): one Flow description, WGSL and Metal
+# out, and type errors caught while the stage is built. No GPU required.
+import "stdlib/gpu_shader.flow"
+
+extern {
+    function strlen(s: string) -> i64
+    function strstr(h: string, n: string) -> ptr<u8>
+    function strcmp(a: string, b: string) -> i32
+}
+
+function same(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+function has(s: string, part: string) -> bool {
+    return strstr(s, part) != null
+}
+
+function iface() -> ptr<GxIface> {
+    let ifc: ptr<GxIface> = gx_iface_new()
+    ifc[0].nattr = 1
+    ifc[0].attr_loc[0] = 0
+    ifc[0].attr_ty[0] = GX_VEC3
+    ifc[0].nvary = 2
+    ifc[0].vary[0] = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    ifc[0].vary[1] = GpuVarying { location: 3, scalar: GPU_SCALAR_U32, components: 1, interpolation: GPU_INTERPOLATE_FLAT }
+    ifc[0].ntex = 2
+    ifc[0].tex_slot[0] = 0
+    ifc[0].tex_cube[0] = 0
+    ifc[0].tex_stages[0] = GPU_STAGE_FRAGMENT
+    ifc[0].tex_slot[1] = 1
+    ifc[0].tex_cube[1] = 1
+    ifc[0].tex_stages[1] = GPU_STAGE_FRAGMENT
+    ifc[0].uniform_vec4s = 4
+    return ifc
+}
+
+function main() -> i32 {
+    # Literals read the same in both languages.
+    if not same(gx_f(1.0).w, "1.0") { return 1 }
+    if not same(gx_f(0.0 - 0.5).m, "(-0.5)") { return 2 }
+
+    # Operand types are checked.
+    let a: GxExpr = gx_vec3(gx_f(1.0), gx_f(2.0), gx_f(3.0))
+    let b: GxExpr = gx_vec2(gx_f(1.0), gx_f(2.0))
+    if gx_add(a, b).ty != GX_ERR { return 3 }
+    if not has(gx_add(a, b).w, "cannot combine vec3 and vec2") { return 4 }
+    if gx_mul(a, gx_f(2.0)).ty != GX_VEC3 { return 5 }
+    if gx_dot(a, a).ty != GX_F32 { return 6 }
+    if gx_swz(b, "xyz").ty != GX_ERR { return 7 }
+    if gx_swz(a, "zx").ty != GX_VEC2 { return 8 }
+    # min/max/mix promote an f32 to the vector type for WGSL.
+    if not has(gx_max(a, gx_f(0.0)).w, "max(vec3<f32>(") { return 9 }
+    if gx_select(gx_lt(gx_f(1.0), gx_f(2.0)), a, b).ty != GX_ERR { return 10 }
+
+    # A complete stage pair.
+    let ifc: ptr<GxIface> = iface()
+    let vs: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_VERTEX)
+    let fs: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_FRAGMENT)
+    let p: GxExpr = gx_let(vs, gx_attr(vs, 0))
+    gx_out_position(vs, gx_mul(gx_umat(vs, 0), gx_vec4_of(p, gx_f(1.0))))
+    gx_out(vs, 0, gx_xy(p))
+    gx_out(vs, 3, gx_instance_index(vs))
+    let c: GxExpr = gx_sample(fs, 0, gx_in(fs, 0))
+    let sky: GxExpr = gx_sample(fs, 1, gx_vec3(gx_f(0.0), gx_f(1.0), gx_f(0.0)))
+    gx_discard_if(fs, gx_lt(gx_w(c), gx_f(0.5)))
+    gx_out_color(fs, gx_mix(c, sky, gx_f(0.25)))
+    if strlen(gx_check(vs, fs)) != 0 { return 11 }
+    let wgsl: string = gx_emit_wgsl(vs, fs)
+    let metal: string = gx_emit_metal(vs, fs)
+    if not has(wgsl, "@location(3) @interpolate(flat) v3: u32") { return 12 }
+    if not has(wgsl, "var tex1: texture_cube<f32>;") { return 13 }
+    if not has(wgsl, "textureSample(tex0, smp0, vin.v0)") { return 14 }
+    if not has(wgsl, "{ discard; }") { return 15 }
+    if not has(metal, "uint v3 [[user(locn3), flat]];") { return 16 }
+    if not has(metal, "texturecube<float> tex1 [[texture(1)]]") { return 17 }
+    if not has(metal, "tex0.sample(smp0, vin.v0)") { return 18 }
+    if not has(metal, "discard_fragment();") { return 19 }
+    if not has(metal, "float3 a0 [[attribute(0)]];") { return 20 }
+
+    # Stage errors: wrong varying type, wrong coordinate, wrong stage,
+    # missing writes.
+    let vs2: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_VERTEX)
+    gx_out(vs2, 0, gx_attr(vs2, 0))
+    if not has(gx_error(vs2), "varying 0 is declared vec2, written with vec3") { return 21 }
+    let fs2: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_FRAGMENT)
+    let _bad: GxExpr = gx_sample(fs2, 1, gx_in(fs2, 0))
+    if not has(gx_error(fs2), "texture slot 1 takes a vec3 coordinate, got vec2") { return 22 }
+    let vs3: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_VERTEX)
+    let _ff: GxExpr = gx_front_facing(vs3)
+    if not has(gx_error(vs3), "front_facing read outside the fragment stage") { return 23 }
+    let vs4: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_VERTEX)
+    let fs4: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_FRAGMENT)
+    gx_out_position(vs4, gx_vec4(gx_f(0.0), gx_f(0.0), gx_f(0.0), gx_f(1.0)))
+    gx_out(vs4, 0, gx_vec2(gx_f(0.0), gx_f(0.0)))
+    gx_out_color(fs4, gx_vec4(gx_f(1.0), gx_f(1.0), gx_f(1.0), gx_f(1.0)))
+    if not has(gx_check(vs4, fs4), "varying 3 is never written") { return 24 }
+    if strlen(gx_emit_wgsl(vs4, fs4)) != 0 { return 25 }
+    let _u: GxExpr = gx_umat(vs4, 2)
+    if not has(gx_error(vs4), "runs past the uniform block") { return 26 }
+    return 0
+}
