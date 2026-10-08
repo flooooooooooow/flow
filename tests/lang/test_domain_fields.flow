@@ -73,6 +73,18 @@ function fill_shorter_field() -> i32 {
 }
 
 @lifetime(callback)
+function fill_param_with_explicit_domain(out: ptr<BoundHolder>) -> i32 {
+    let scratch: array<i32, 2> = [12, 13]
+    # Explicit callback field contract proves that this pointee slot is not
+    # required to hold a longer-lived reference than the writer's domain.
+    out[0].view = &scratch
+    if out[0].view[1] != 13 {
+        return 6
+    }
+    return 0
+}
+
+@lifetime(callback)
 function return_cleared_composite() -> Holder {
     let scratch: array<i32, 2> = [8, 9]
     let mut h: Holder = Holder { view: &scratch }
@@ -99,9 +111,14 @@ function main() -> i32 {
     if d != 0 {
         return d
     }
+    let mut bh: BoundHolder = BoundHolder { view: null }
+    let e: i32 = fill_param_with_explicit_domain(&bh)
+    if e != 0 {
+        return e
+    }
     let h: Holder = return_cleared_composite()
     if h.view != null {
-        return 6
+        return 7
     }
     return 0
 }
