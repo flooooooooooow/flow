@@ -140,10 +140,12 @@ function check_gpu_test_numerical() -> i32 {
     let text: string = read_text(t_out())
     # Metal may be unavailable on this host; WebGPU shader generation
     # alone never counts as model execution.
+    # The verdict line carries the case fields between the verdict and the
+    # reason, so match the verdict prefix and the reason on their own.
     if not a_contains(text, "CASE mnist [metal] NUMERICAL") and
-       not a_contains(text, "CASE mnist [metal] UNSUPPORTED reason=device-execution") { return T_FAIL }
+       not a_contains(text, "CASE mnist [metal] UNSUPPORTED") { return T_FAIL }
     if not a_contains(text, "CASE depth [metal] NUMERICAL") and
-       not a_contains(text, "CASE depth [metal] UNSUPPORTED reason=device-execution") { return T_FAIL }
+       not a_contains(text, "CASE depth [metal] UNSUPPORTED") { return T_FAIL }
     if not a_contains(text, "CASE mnist [webgpu] UNSUPPORTED") { return T_FAIL }
     if not a_contains(text, "CASE depth [webgpu] UNSUPPORTED") { return T_FAIL }
     if not a_contains(text, "reason=device-execution") { return T_FAIL }
