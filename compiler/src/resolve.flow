@@ -2361,8 +2361,9 @@ function flowc_u64_to_hex(v: u64, buf: ptr<u8>) {
 # FLOWC_PROFILE `cache` object. A record is keyed on one file's bytes, so
 # editing one module re-parses that module only.
 #
-# Remaining gaps: typecheck / monomorphize / codegen caches, which wait on
-# the cache trust-boundary decision in docs/project/Questions.md.
+# Trust boundary (decided 2026-10-08, docs/project/Questions.md): records
+# carry a checksum and a size cap (#1402). Remaining gaps: typecheck /
+# monomorphize / codegen caches.
 
 # Bump when the on-disk record layout changes, or when a parse-affecting
 # frontend change is not already visible as a version bump. Mixed into
