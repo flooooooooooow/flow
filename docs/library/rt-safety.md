@@ -69,9 +69,12 @@ supports attributes on `function` declarations.
   yet carry a checkable RT contract. Each implementation would need
   `κ_impl ⊆ κ_trait`; that slice is future work on top of the function-pointer
   and closure checker (#766).
-- Method calls (`obj.method(...)`) that are not a proven `with rt_safe`
-  function value are treated as unresolved dynamic calls. This is no issue
-  for `memory.flow` today since it exposes free functions and no methods.
+- Method calls (`obj.method(...)`) remain conservative: a uniquely resolved
+  `impl` method is checked as the actual mangled target, while unresolved or
+  ambiguous trait dispatch is rejected. An unrelated free/local function with
+  the same method name cannot lend its `with rt_safe` contract to that dynamic
+  dispatch; receiver-based resolution must establish the target.
+
 - `extern` C calls that are not on the known unsafe-name list carry an
   `unknown` summary bit rather than an empty contract. This slice still
   rejects only the known names, so a hypothetical driver `extern` can
