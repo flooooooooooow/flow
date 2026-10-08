@@ -2715,22 +2715,13 @@ function sem_check_method_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
         sem_resolved_calls_add(c, im)
         return sem_check_function_call(c, im, all, e, stmt)
     }
-    let mut ok_dynamic: bool = false
-    let method_ty: i32 = sem_lookup(c, method)
-    if method_ty >= 0 and sem_tkind(c, sem_sym_type(c, method_ty)) == TK_FUNCTION {
-        let sty: i32 = sem_sym_type(c, method_ty)
-        let mut ri: i32 = 0
-        while ri < sem_ty_neffects(c.t, sty) {
-            if sem_s_eq(sem_ty_effect(c.t, sty, ri), "rt_safe") {
-                ok_dynamic = true
-            }
-            ri = ri + 1
-        }
-    }
-    if ok_dynamic == false {
-        sem_resolved_calls_add(c, "__unresolved_dynamic_call")
-        sem_check_rt_safe_call(c, "__unresolved_dynamic_call")
-    }
+    # A same-named free/local function is NOT a trait-method contract.
+    # If receiver-based impl resolution failed, the dispatch target is
+    # unresolved and must remain conservative in RT/callback code. Looking
+    # up `method` in the ordinary value namespace allowed an unrelated
+    # `with rt_safe` symbol to launder dynamic dispatch as proven safe.
+    sem_resolved_calls_add(c, "__unresolved_dynamic_call")
+    sem_check_rt_safe_call(c, "__unresolved_dynamic_call")
     return sem_check_function_call(c, method, all, e, stmt)
 }
 
