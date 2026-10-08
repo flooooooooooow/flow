@@ -43,10 +43,16 @@ agree. It does not download the tarball and does not publish. After a real
 non-RC GitHub Release exists, install from a clean checkout:
 
 ```bash
-brew style ./packaging/homebrew/Formula/flow.rb
-brew audit --strict --offline ./packaging/homebrew/Formula/flow.rb
-brew install --build-from-source ./packaging/homebrew/Formula/flow.rb
+./flow tool qualify_release --check-formula --mode full   # brew style + audit
+TAP="$(brew --repository)/Library/Taps/flowqualify/homebrew-check"
+mkdir -p "$TAP/Formula" && cp packaging/homebrew/Formula/flow.rb "$TAP/Formula/"
+brew install --build-from-source flowqualify/check/flow
+brew test flowqualify/check/flow
+brew uninstall flowqualify/check/flow && rm -rf "$(dirname "$TAP")"
 ```
+
+Homebrew applies formula rules and installs only from a tap, so a bare file
+path does not work with current `brew`.
 
 ### Updating the stable formula
 
@@ -89,6 +95,4 @@ Or manually copy `Formula/flow.rb` into the `homebrew-flow` repo and push.
 
 ## Local test (no tap push)
 
-```bash
-brew install --build-from-source ./packaging/homebrew/Formula/flow.rb
-```
+Use the throwaway local tap commands under "Validate the in-repo formula".

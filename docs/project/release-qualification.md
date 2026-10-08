@@ -86,18 +86,23 @@ while the candidate version in `VERSION` is newer. That mismatch is printed and
 does not count as a failure. Update url/sha256 only after the real artifact
 exists; do not guess a digest.
 
-When `--mode full` is used and `brew` is on `PATH`, the same check also runs:
-
-```bash
-brew style packaging/homebrew/Formula/flow.rb
-brew audit --strict --offline packaging/homebrew/Formula/flow.rb
-```
+When `--mode full` is used and `brew` is on `PATH`, the same check also runs
+`brew style` and `brew audit --strict`. Homebrew applies its formula rules
+only to a formula inside a tap, so the qualifier copies the formula into a
+throwaway local tap (`flowqualify/check`), checks it there, and removes the
+tap afterwards. `./flow tool qualify_release --check-formula --mode full` runs
+just this check.
 
 `brew install --build-from-source` downloads the published tarball. Run it from
-a clean checkout only after that tarball exists:
+a clean checkout only after that tarball exists, from the same kind of local
+tap:
 
 ```bash
-brew install --build-from-source ./packaging/homebrew/Formula/flow.rb
+TAP="$(brew --repository)/Library/Taps/flowqualify/homebrew-check"
+mkdir -p "$TAP/Formula" && cp packaging/homebrew/Formula/flow.rb "$TAP/Formula/"
+brew install --build-from-source flowqualify/check/flow
+brew test flowqualify/check/flow
+brew uninstall flowqualify/check/flow && rm -rf "$(dirname "$TAP")"
 ./flow tool packaging/homebrew/check-formula-sync.flow ../homebrew-flow/Formula/flow.rb
 ```
 

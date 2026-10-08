@@ -70,9 +70,8 @@ Do not guess a checksum. Read the digest from the published
 
 ```bash
 ./flow tool sync_version --homebrew --sha256 <digest>
-brew style ./packaging/homebrew/Formula/flow.rb
-brew audit --strict --offline ./packaging/homebrew/Formula/flow.rb
-brew install --build-from-source ./packaging/homebrew/Formula/flow.rb
+./flow tool qualify_release --check-formula --mode full
+# install and test from a throwaway local tap (see release-qualification.md)
 ./flow tool packaging/homebrew/sync-tap.flow
 ./flow tool packaging/homebrew/check-formula-sync.flow ../homebrew-flow/Formula/flow.rb
 ```
