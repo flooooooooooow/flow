@@ -40,7 +40,7 @@
 # Flow before timing, and times only the built executable from launch to
 # exit (#746). Each row carries a timing_scope so the two are never mixed.
 
-import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_slice, ft_from, ft_join, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_slice, ft_from, ft_join, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, StrList }
 import .json { json_parse, json_error, json_get, json_str, json_kind, json_first, json_next, json_quote, json_kind_object, json_kind_number, json_kind_string, json_kind_array, json_kind_null, Json }
 import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_mkdir_p, pr_is_dir, pr_resolve }
 import .bench { bn_fixed, bn_py_repr, bn_median, bn_min, bn_run, bn_code, bn_out, bn_wall, bn_parse_float, bn_strip, BenchRun }
@@ -751,6 +751,16 @@ function compile_native(c_path: string, bin_path: string) -> bool {
     return true
 }
 
+# The one-shot cold programs the startup cohort runs prebuilt (#746).
+# json_parse is CPU work and stays in the cold cohort only.
+function startup_programs() -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, "hello")
+    ft_list_push(l, "tiny_arithmetic")
+    ft_list_push(l, "file_transform")
+    return l
+}
+
 function suite_name(i: i32) -> string {
     if i == 0 {
         return "cold"
@@ -795,11 +805,9 @@ function discover(sys: ptr<SysInfo>, smoke: bool, have_py: bool, flavour: i32, o
         while i < ft_list_len(names) {
             let name: string = ft_list_get(names, i)
             let d: string = sdir + "/" + name
-            # The startup cohort keeps the three one-shot programs. json_parse
-            # is CPU work and stays in the cold cohort only.
             let mut include: bool = true
             if ft_eq(suite, "startup") {
-                include = ft_eq(name, "hello") or ft_eq(name, "tiny_arithmetic") or ft_eq(name, "file_transform")
+                include = ft_list_has(startup_programs(), name)
             }
             if include and pr_is_dir(d) {
                 let workload: string = suite + "_" + name
@@ -833,7 +841,13 @@ function discover(sys: ptr<SysInfo>, smoke: bool, have_py: bool, flavour: i32, o
                     ft_list_push(py_cmd, "python3")
                     ft_list_push(py_cmd, py_file)
                 }
-                let native_file: string = first_with(natives + "/" + source_suite + "/" + name, ".c")
+                # The cold sources' native twins serve the startup rows only:
+                # a cold row times compile and execute, and its ratio to a
+                # prebuilt C binary would mix the two (#746).
+                let mut native_file: string = first_with(natives + "/" + source_suite + "/" + name, ".c")
+                if ft_eq(suite, "cold") {
+                    native_file = null as string
+                }
                 if native_file as ptr<u8> != null {
                     let native_bin: string = build + "/" + workload + "_native"
                     if compile_native(native_file, native_bin) {
@@ -953,6 +967,21 @@ function check_runtime_natives() -> i32 {
             }
         }
         i = i + 1
+    }
+    # Startup rows need a C twin too, so flow_vs_native attributes what the
+    # Flow executable adds to process start (#746).
+    let cold_natives: string = ft_join(root(), "benchmarks/baselines/native/cross_harness/cold")
+    let startup: ptr<StrList> = startup_programs()
+    let mut s: i32 = 0
+    while s < ft_list_len(startup) {
+        let name: string = ft_list_get(startup, s)
+        if first_with(cold_natives + "/" + name, ".c") as ptr<u8> == null {
+            ft_errln("missing native twin: startup/" + name)
+            missing = missing + 1
+        } else {
+            ft_outln("startup_" + name + ": native")
+        }
+        s = s + 1
     }
     if missing > 0 {
         return 1
