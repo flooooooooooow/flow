@@ -8,15 +8,14 @@
 
 extern {
     function malloc(size: i64) -> ptr<u8>
+    function calloc(n: i64, size: i64) -> ptr<u8>
     function free(p: ptr<u8>) -> void
 }
 
 function main() -> i32 {
-    let mut ring: array<ptr<u8>, 16>
-    let mut s: i32 = 0
-    while s < 16 {
-        ring[s] = null
-        s = s + 1
+    let ring: ptr<ptr<u8>> = calloc(16, 8) as ptr<ptr<u8>>
+    if ring == null {
+        return 1
     }
     let mut checksum: i32 = 0
     let mut i: i32 = 0
@@ -35,13 +34,14 @@ function main() -> i32 {
         ring[slot] = p
         i = i + 1
     }
-    s = 0
+    let mut s: i32 = 0
     while s < 16 {
         if ring[s] != null {
             free(ring[s])
         }
         s = s + 1
     }
+    free(ring as ptr<u8>)
     if checksum != 150000 {
         return 2
     }

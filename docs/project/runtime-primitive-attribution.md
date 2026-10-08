@@ -113,7 +113,7 @@ the same day. Times are microseconds.
 | `runtime_parse_format` | 3263 | 15616 | 0.209 | 0.220 | 148000 | ok |
 | `runtime_buffered_io` | 2129 | 2349 | 0.906 | 0.943 | 28300 | ok |
 | `runtime_structs` | 917 | 905 | 1.013 | 1.023 | 33500 | coverage only |
-| `runtime_allocation` | 1947 | 1925 | 1.011 | 1.016 | 38300 | ok after the ring fix |
+| `runtime_allocation` | 1508 | 1454 | 1.037 | 1.029 | 38300 | ok after the ring fix |
 | `runtime_hashmap` | 1292 | 1291 | 1.001 | 1.016 | none | ok |
 | `runtime_sorting` | 1238 | 1170 | 1.058 | 1.009 | 126800 | ok (median) |
 | `runtime_numerical` | 1071 | 1061 | 1.009 | 1.015 | 27600 | ok |
@@ -130,7 +130,7 @@ What the audit changed:
   anything could see it, so clang removed every `malloc`/`free` pair and the
   native program did no heap work. Flow's #740 counting wrappers kept the
   calls. Both programs now keep each block live in a 16-slot ring, and the
-  ratio is 1.011. The wrappers themselves cost about 1%.
+  ratio is 1.037. The wrappers themselves cost about 3%.
 - `hash_i64` hashed only the low 32 bits of the key, so keys that differ
   only above bit 31 (`i << 32`, packed pairs) all landed in one probe
   cluster and each map operation was O(n). It now folds the high word in
