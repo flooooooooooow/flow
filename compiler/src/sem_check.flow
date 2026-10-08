@@ -1316,6 +1316,40 @@ function sem_domain_escape_to_named_field(c: ptr<Sem>, stmt: i32, value: i32, fi
     return true
 }
 
+# Fail closed when a domain-local reference is written through a pointer/span
+# parameter and the destination field has no explicit lifetime. The callee
+# cannot prove that the caller-owned pointee dies with this invocation.
+# A uniquely local target is not a parameter (sem_root_parameter_index < 0),
+# and annotated fields are handled by LD5 above.
+function sem_domain_escape_to_param_target(c: ptr<Sem>, stmt: i32, value: i32, lhs: i32) -> bool {
+    if c.current_domain < 0 or lhs < 0 {
+        return false
+    }
+    if sem_lhs_field_domain(c, lhs) >= 0 {
+        return false
+    }
+    let pi: i32 = sem_root_parameter_index(c, lhs)
+    if pi < 0 or c.current_function_name as ptr<u8> == null {
+        return false
+    }
+    let origin: string = sem_composite_domain_root(c, value)
+    if origin as ptr<u8> == null {
+        return false
+    }
+    let fi: i32 = sem_sm_get(c.function_decls, c.current_function_name)
+    let mut pname: string = "parameter"
+    if fi >= 0 and pi < sem_fi_nparams(c, fi) {
+        pname = sem_fi_param_name(c, fi, pi)
+    }
+    sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+    sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" +
+        sem_domain_name(c.current_domain) + "` domain but is stored through parameter `" +
+        pname + "`, whose pointee lifetime is not proven to end within this call " +
+        "(add an explicit field lifetime contract or keep the composite local)" +
+        sem_location_suffix(c, stmt))
+    return true
+}
+
 # _check_domain_escape_by_return
 function sem_domain_escape_by_return(c: ptr<Sem>, stmt: i32, value: i32) -> bool {
     if c.current_function_name as ptr<u8> != null and sem_is_reference_type(c, c.current_return_type) {
@@ -3734,6 +3768,9 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
             }
             if reported == false {
                 reported = sem_domain_escape_to_field(c, s, value, lhs, tt)
+            }
+            if reported == false {
+                reported = sem_domain_escape_to_param_target(c, s, value, lhs)
             }
             if reported == false and sem_is_reference_type(c, tt) and base as ptr<u8> != null and sem_sm_has(c.static_names, base) {
                 let origin: string = sem_local_borrow_origin(c, value)
