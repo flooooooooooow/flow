@@ -209,3 +209,50 @@ export function gpu_vertex_attribute_valid(a: GpuVertexAttribute) -> bool {
     let bytes: i32 = a.scalar_bytes * a.components
     return bytes <= a.stride and a.offset <= a.stride - bytes
 }
+
+# How a shader stage reaches a texture. A sampled binding reads through a
+# sampler; a storage binding reads or writes texels directly.
+export const GPU_ACCESS_SAMPLE: i32 = 1
+export const GPU_ACCESS_STORAGE_READ: i32 = 2
+export const GPU_ACCESS_STORAGE_WRITE: i32 = 3
+
+# Stage visibility bits for a binding.
+export const GPU_STAGE_VERTEX: i32 = 1
+export const GPU_STAGE_FRAGMENT: i32 = 2
+export const GPU_STAGE_COMPUTE: i32 = 4
+
+export struct GpuTextureBinding {
+    slot: i32,
+    stages: i32,
+    access: i32,
+    texture: GpuTextureDesc
+}
+
+# The binding's access must be one the texture was created for. Sampling
+# needs GPU_USE_SAMPLED and a single-sample color texture. Storage access
+# needs GPU_USE_STORAGE on a single-sample 2D color texture, and a vertex
+# stage cannot write a storage texture.
+export function gpu_texture_binding_valid(b: GpuTextureBinding) -> bool {
+    if not gpu_texture_valid(b.texture) { return false }
+    if b.slot < 0 or b.slot > 15 { return false }
+    if b.stages <= 0 or (b.stages & (0 - 8)) != 0 { return false }
+    let t: GpuTextureDesc = b.texture
+    if b.access == GPU_ACCESS_SAMPLE {
+        if (t.usage & GPU_USE_SAMPLED) == 0 { return false }
+        if t.samples != 1 or t.format == GPU_FORMAT_DEPTH32F { return false }
+        return true
+    }
+    if b.access == GPU_ACCESS_STORAGE_READ or b.access == GPU_ACCESS_STORAGE_WRITE {
+        if (t.usage & GPU_USE_STORAGE) == 0 { return false }
+        if t.samples != 1 or t.format == GPU_FORMAT_DEPTH32F or
+           t.dimension != GPU_TEX_2D {
+            return false
+        }
+        if b.access == GPU_ACCESS_STORAGE_WRITE and
+           (b.stages & GPU_STAGE_VERTEX) != 0 {
+            return false
+        }
+        return true
+    }
+    return false
+}
