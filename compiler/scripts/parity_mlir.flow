@@ -18,7 +18,7 @@
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --python <rev>
 #       Also run the Python generator from git revision <rev> over the
-#       fixtures and every .flow under examples/, tests/, lib/, benchmarks/
+#       fixtures and every tracked .flow under examples/, tests/, lib/, benchmarks/
 #       and compiler/fixtures/. Every program flowc accepts must produce the
 #       same normalized MLIR as Python. With mlir-opt installed, each such
 #       program is built through both MLIR paths (flowc + flow mlir-lower, and
@@ -27,13 +27,13 @@
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --write-golden <rev>
 #       Rewrite the fixture goldens and corpus.txt from the Python generator
-#       at <rev>. Only programs whose flowc output already equals Python's
+#       at <rev>. Only tracked programs whose flowc output already equals Python's
 #       are recorded in corpus.txt.
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --record
 #       Rewrite the goldens from flowc: fixture text (GPU and wasm32 text
 #       too), run output where mlir-opt is installed, and the digest of every
-#       corpus program flowc accepts. Review the diff before committing it.
+#       tracked corpus program flowc accepts. Review the diff before committing it.
 #
 # GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
 # and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
@@ -212,14 +212,27 @@ function python_emit(input: string, out: string, extra: string) -> i32 {
     return gl_status(r, true)
 }
 
-# Every .flow under the corpus directories, byte-sorted.
+# Every tracked .flow under the corpus directories, byte-sorted. This keeps
+# generated package caches and other ignored workspace files out of goldens.
+function add_tracked_flow_files(dir: string, all: ptr<ProcStrs>) {
+    let tracked: ptr<ProcStrs> = gl_git_ls(dir)
+    let mut i: i32 = 0
+    while i < sl_len(tracked) {
+        let f: string = sl_get(tracked, i)
+        if s_ends(f, ".flow") {
+            sl_push(all, f)
+        }
+        i = i + 1
+    }
+}
+
 function corpus_files() -> ptr<ProcStrs> {
     let all: ptr<ProcStrs> = sl_new()
-    gl_find_files("examples", ".flow", all)
-    gl_find_files("tests", ".flow", all)
-    gl_find_files("lib", ".flow", all)
-    gl_find_files("benchmarks", ".flow", all)
-    gl_find_files("compiler/fixtures", ".flow", all)
+    add_tracked_flow_files("examples", all)
+    add_tracked_flow_files("tests", all)
+    add_tracked_flow_files("lib", all)
+    add_tracked_flow_files("benchmarks", all)
+    add_tracked_flow_files("compiler/fixtures", all)
     gl_sort(all)
     return all
 }
