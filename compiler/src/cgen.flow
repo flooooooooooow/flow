@@ -15568,6 +15568,20 @@ function flowc_cgen_emit_module(
         # nested pairwise joins, which allocate a fresh buffer per join and
         # recopy every prefix. concatn sums the lengths once, allocates once,
         # and copies each part once. NULL parts count as empty, matching concat.
+        # Stack-backed concat for a proven non-escaping local (#1447).
+        # Oversized data falls back to the existing heap lifetime.
+        flowc_cgen_puts(&w, "__attribute__((unused)) static const char* __flowc_str_concatn_into(char* local, size_t cap, int n, ...) {\n")
+        flowc_cgen_puts(&w, "  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n")
+        flowc_cgen_puts(&w, "  va_start(ap, n);\n")
+        flowc_cgen_puts(&w, "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }\n")
+        flowc_cgen_puts(&w, "  va_end(ap);\n")
+        flowc_cgen_puts(&w, "  if (local != 0 && total < cap) { r = local; } else { r = (char*)flow_mem_malloc(total + 1); if (r == 0) { return \"\"; } flow_mem_note_temp(total + 1); }\n")
+        flowc_cgen_puts(&w, "  flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, total); off = 0;\n")
+        flowc_cgen_puts(&w, "  va_start(ap, n);\n")
+        flowc_cgen_puts(&w, "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { l = strlen(s); if (l != 0) { memcpy(r + off, s, l); off += l; } } }\n")
+        flowc_cgen_puts(&w, "  va_end(ap); r[off] = 0; return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
         flowc_cgen_puts(&w, "__attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {\n")
         flowc_cgen_puts(&w, "  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n")
         flowc_cgen_puts(&w, "  va_start(ap, n);\n")
