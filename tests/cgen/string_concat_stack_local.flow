@@ -5,6 +5,13 @@ function escaping(a: string, b: string, c: string) -> string {
     return a + b + c
 }
 
+function passed_after_alias(a: string, b: string, c: string) -> i32 {
+    let s: string = a + b + c
+    let p: ptr<u8> = s as ptr<u8>
+    println(s)
+    return p[0] as i32
+}
+
 function main() -> i32 {
     let a: string = "key_"
     let b: string = "000"
@@ -19,6 +26,7 @@ function main() -> i32 {
     }
     let kept: string = escaping("x", "y", "z")
     if kept != "xyz" { return 1 }
-    if checksum == 0 { return 2 }
+    if passed_after_alias("x", "y", "z") != 120 { return 2 }
+    if checksum == 0 { return 3 }
     return 0
 }
