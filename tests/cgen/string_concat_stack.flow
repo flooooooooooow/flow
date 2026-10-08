@@ -1,0 +1,29 @@
+# Bounded non-escaping string concat uses stack storage (#1447).
+# The same bounded concat must stay on the heap when returned.
+
+function local_join() -> i32 {
+    let a: string = "ab"
+    let b: string = "cd"
+    let c: string = "ef"
+    let s: string = a + b + c
+    let p: ptr<u8> = s as ptr<u8>
+    return (p[0] as i32) + (p[5] as i32)
+}
+
+function escaping_join() -> string {
+    let a: string = "x"
+    let b: string = "y"
+    let c: string = "z"
+    let s: string = a + b + c
+    return s
+}
+
+function main() -> i32 {
+    if local_join() != 198 {
+        return 1
+    }
+    if escaping_join() != "xyz" {
+        return 2
+    }
+    return 0
+}
