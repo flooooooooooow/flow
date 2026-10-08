@@ -1,0 +1,20 @@
+# expect: RT-safety violation: 'render' is marked '@rt_safe' but makes an unresolved dynamic call
+# A same-named free function must not prove a trait/dynamic method target safe.
+
+trait Tickable {
+    function tick() -> i32
+}
+
+@rt_safe
+function tick(s: ptr<Tickable>) -> i32 {
+    return 0
+}
+
+@rt_safe
+function render(s: ptr<Tickable>) -> i32 {
+    return s.tick()
+}
+
+function main() -> i32 {
+    return 0
+}
