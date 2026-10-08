@@ -1,0 +1,17 @@
+# expect: lifetime domain escape: `scratch` lives in the `callback` domain but is stored in `holder`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 12, column 5
+struct Box {
+    p: ptr<i32>
+}
+
+@lifetime(application)
+let mut holder: ptr<Box> = null
+
+@lifetime(callback)
+function tick() {
+    let mut scratch: array<i32, 4> = [0; 4]
+    holder[0].p = scratch
+}
+
+function main() -> i32 {
+    return 0
+}

@@ -11,6 +11,41 @@ Format:
 
 ## Open Questions
 
+### 2026-10-08: RT summary cache: may a stored snapshot skip RT checks? (#765)
+
+**Context:** PR #1355 as written added a summary cache. After a clean check
+it stored the imported `$` summary rows under `$FLOWC_RT_CACHE_DIR` or
+`~/.cache/flow/rt/`, keyed by a 64-bit hash of the client source. On the
+next compile, if the current imports refined the stored rows, Stage-A RT
+consult was skipped (`rt_cache_hit`). Three things make that a trust
+decision and not a bug fix:
+
+- Anyone who can write the cache file can switch off RT checks: a crafted
+  snapshot that lists the imports with every effect bit set is refined by
+  the real ones.
+- The key has no compiler version or schema salt, so a newer flowc with
+  stricter RT rules would trust a snapshot an older flowc wrote.
+- The selftest wrote to a fixed shared path, `/tmp/flow-rt-cache-selftest`.
+
+The PR's later hardening (owner-only 0700 directory, framing and range
+validation, lowercase-hex keys, rejecting empty snapshots) narrows the first
+point but does not remove it. The cache only skips the Stage-A consult; the
+semantic checker still runs when it is on, so the speed gain is small.
+
+**Options:**
+1. No persistent RT cache. Keep the refinement relation as a tested pure
+   function for a future incremental build (what #1355 now lands).
+2. A cache that is advisory only: it may reorder or batch work but never
+   skips a check.
+3. The original design, with the key salted like the AST cache
+   (`FLOWC_AST_CACHE_SCHEMA`, compiler version) and the #736 decision on
+   directory ownership applied to `~/.cache/flow/rt/` as well.
+
+**Recommendation:** Option 1 until #736's cache trust question is settled,
+then revisit 3 with the same rules for both caches.
+
+**Status:** Open. #1355 lands option 1.
+
 ### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
 
 **Context:** Issue #564 records that shipped handlers are tail-resumptive

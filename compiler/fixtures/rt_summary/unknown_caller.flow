@@ -1,0 +1,10 @@
+import .unknown_helper { poke }
+
+@rt_safe
+function process(n: i32) -> i32 {
+    return poke(n)
+}
+
+function main() -> i32 {
+    return process(1)
+}

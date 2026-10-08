@@ -60,7 +60,8 @@ import .rt_summary {
     FLOWC_RT_UNKNOWN,
     FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_APPLICATION,
     FLOWC_RT_DOM_PERSISTENT, FLOWC_RT_DOM_NONE,
-    flowc_rt_forbidden, flowc_rt_name_bits
+    flowc_rt_forbidden, flowc_rt_known_safe, flowc_rt_name_bits,
+    flowc_rt_unknown_only
 }
 import .type_id { flowc_type_transport_blocker }
 import .region {
@@ -1018,6 +1019,9 @@ function sem_borrow_root_name(c: ptr<Sem>, e: i32) -> string {
     if sem_nk(c, e) == AST_FIELD_ACCESS {
         return sem_borrow_root_name(c, sem_na(c, e))
     }
+    if sem_is_unary_op(c, e, TOK_STAR) {
+        return sem_borrow_root_name(c, sem_na(c, e))
+    }
     return null as string
 }
 
@@ -1390,6 +1394,71 @@ function sem_domain_escape_to_named_field(c: ptr<Sem>, stmt: i32, value: i32, fi
     return true
 }
 
+function sem_is_heap_alloc_expr(c: ptr<Sem>, e: i32) -> bool {
+    if e < 0 or sem_is_function_call(c, e) == false {
+        return false
+    }
+    let n: string = sem_nname(c, e)
+    if sem_s_eq(n, "malloc") or sem_s_eq(n, "calloc") or sem_s_eq(n, "realloc") or sem_s_eq(n, "alloc") {
+        return true
+    }
+    if sem_s_eq(n, "alloc_bytes") or sem_s_eq(n, "alloc_zeroed") or sem_s_eq(n, "alloc_i32") or sem_s_eq(n, "alloc_f32") or sem_s_eq(n, "alloc_f64") {
+        return true
+    }
+    return false
+}
+
+function sem_name_is_heap_root(c: ptr<Sem>, name: string) -> bool {
+    if name as ptr<u8> == null {
+        return false
+    }
+    return sem_sm_has(c.heap_roots, name)
+}
+
+function sem_expr_is_heap_root(c: ptr<Sem>, e: i32) -> bool {
+    if e < 0 {
+        return false
+    }
+    if sem_is_heap_alloc_expr(c, e) {
+        return true
+    }
+    if sem_nk(c, e) == AST_CAST {
+        return sem_expr_is_heap_root(c, sem_na(c, e))
+    }
+    if sem_is_variable(c, e) {
+        return sem_name_is_heap_root(c, sem_nname(c, e))
+    }
+    return false
+}
+
+function sem_mark_heap_root(c: ptr<Sem>, name: string) {
+    if name as ptr<u8> == null {
+        return
+    }
+    sem_sm_put(c.heap_roots, name, 1)
+}
+
+# Heap / field store of a shorter-lived reference (#765). Targets the
+# application domain: malloc results and anything already marked a heap root.
+function sem_domain_escape_to_heap(c: ptr<Sem>, stmt: i32, value: i32, target: string, target_type: i32) -> bool {
+    if c.current_domain < 0 {
+        return false
+    }
+    if sem_is_reference_type(c, target_type) == false {
+        return false
+    }
+    if sem_name_is_heap_root(c, target) == false {
+        return false
+    }
+    let origin: string = sem_domain_borrow_root(c, value)
+    if origin as ptr<u8> == null {
+        return false
+    }
+    sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+    sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" + sem_domain_name(c.current_domain) + "` domain but is stored in `" + target + "`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one)" + sem_location_suffix(c, stmt))
+    return true
+}
+
 # _check_domain_escape_by_return
 function sem_domain_escape_by_return(c: ptr<Sem>, stmt: i32, value: i32) -> bool {
     if c.current_function_name as ptr<u8> != null and sem_is_reference_type(c, c.current_return_type) {
@@ -1498,6 +1567,7 @@ function sem_check_domain_call(c: ptr<Sem>, name: string) {
 function sem_check_expression(c: ptr<Sem>, e: i32) -> i32
 function sem_check_statement(c: ptr<Sem>, s: i32) -> i32
 function sem_check_block(c: ptr<Sem>, b: i32) -> i32
+function sem_is_rt_heap_name(n: string) -> bool
 
 # _infer_type_quiet
 function sem_infer_type_quiet(c: ptr<Sem>, e: i32) -> i32 {
@@ -3878,6 +3948,9 @@ function sem_check_var_decl(c: ptr<Sem>, s: i32) -> i32 {
             }
             sem_local_storage_discard(c, name)
         }
+        if sem_expr_is_heap_root(c, init) {
+            sem_mark_heap_root(c, name)
+        }
     } elif c.current_function_name as ptr<u8> != null {
         sem_sv_add(c.local_storage, name)
     }
@@ -3954,6 +4027,11 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
             if reported == false {
                 reported = sem_domain_escape_to_field(c, s, value, lhs, tt)
             }
+            # Store through a heap root (#765): a malloc result or a local
+            # already marked as one lives in the application domain.
+            if reported == false and base as ptr<u8> != null and sem_sm_has(c.static_names, base) == false {
+                reported = sem_domain_escape_to_heap(c, s, value, base, tt)
+            }
             if reported == false and sem_is_reference_type(c, tt) and base as ptr<u8> != null and sem_sm_has(c.static_names, base) {
                 let origin: string = sem_local_borrow_origin(c, value)
                 if origin as ptr<u8> != null and sem_sv_has(c.local_storage, origin) {
@@ -3978,6 +4056,9 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
     }
     let et2: i32 = sem_check_expression(c, value)
     let st: i32 = sem_sym_type(c, sym)
+    if sem_is_reference_type(c, st) and sem_expr_is_heap_root(c, value) {
+        sem_mark_heap_root(c, target)
+    }
     let mut reported2: bool = sem_domain_escape_to_static(c, s, value, target, st)
     if reported2 == false {
         reported2 = sem_domain_escape_to_field(c, s, value, lhs, st)
@@ -4824,9 +4905,11 @@ function sem_check_function(c: ptr<Sem>, fi: i32) {
     sem_pv_push(c.handler_stack, row as ptr<void>)
     let prev_storage: ptr<SemStrVec> = c.local_storage
     let prev_origin: ptr<SemStrMap> = c.span_origin
+    let prev_heap: ptr<SemStrMap> = c.heap_roots
     let prev_ret: i32 = c.current_return_type
     c.local_storage = sem_sv_new()
     c.span_origin = sem_sm_new()
+    c.heap_roots = sem_sm_new()
     c.current_return_type = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
     i = 0
     while i < sem_fi_nparams(c, fi) {
@@ -4863,6 +4946,7 @@ function sem_check_function(c: ptr<Sem>, fi: i32) {
     c.current_function_name = prev_name
     c.local_storage = prev_storage
     c.span_origin = prev_origin
+    c.heap_roots = prev_heap
     c.current_return_type = prev_ret
     c.active_type_params = prev_tparams
 }
@@ -5124,9 +5208,15 @@ function sem_init_rt_summaries(c: ptr<Sem>) {
             if sem_iv_get(c.fi_extern, fi) == 1 {
                 bits = flowc_rt_name_bits(name)
                 if bits == 0 {
-                    bits = FLOWC_RT_UNKNOWN
+                    if flowc_rt_known_safe(name) == 1 {
+                        bits = 0
+                    } else {
+                        bits = FLOWC_RT_UNKNOWN
+                    }
                 }
-                prov = name
+                if bits != 0 {
+                    prov = name
+                }
             }
             sem_sum_put(c, name, bits, domain, prov)
             let plain: string = sem_sv_get(c.fi_name, fi)
@@ -5348,6 +5438,10 @@ function sem_verify_rt_safe_calls(c: ptr<Sem>) {
                 } else {
                     sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which makes an unresolved dynamic call (forbidden on an RT-safe path; see " + doc + ")")
                 }
+            } elif flowc_rt_unknown_only(sem_sm_get(c.rt_sum_bits, name)) == 1 and sem_s_eq(reason, name) {
+                sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which has an unknown effect summary (unprovable extern; see " + doc + ")")
+            } elif flowc_rt_unknown_only(sem_sm_get(c.rt_sum_bits, name)) == 1 {
+                sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which is not RT-safe because it calls '" + reason + "' (unknown effect summary; see " + doc + ")")
             } elif sem_s_eq(reason, name) {
                 sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see " + doc + ")")
             } else {

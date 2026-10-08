@@ -1,0 +1,20 @@
+# expect: lifetime domain escape: `scratch` lives in the `callback` domain but is stored in `h`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 15, column 5
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct Box {
+    p: ptr<i32>
+}
+
+@lifetime(callback)
+function tick() {
+    let mut scratch: array<i32, 4> = [0; 4]
+    let raw: ptr<void> = malloc(16)
+    let h: ptr<Box> = raw
+    h[0].p = scratch
+}
+
+function main() -> i32 {
+    return 0
+}

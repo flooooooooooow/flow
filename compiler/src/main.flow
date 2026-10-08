@@ -32,11 +32,14 @@ import .bpf_gen { flowc_bpf_gen_compile }
 import .shader_emit { flowc_shader_mode }
 import .typecheck { flowc_typecheck, flowc_typecheck_fatal, flowc_typecheck_fatal_sem }
 import .rt_summary {
-    FLOWC_RT_ALLOC, FLOWC_RT_BLOCK, FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_NONE,
-    FLOWC_RT_UNKNOWN, flowc_rt_is_callback_safe, flowc_rt_is_frame_safe,
-    flowc_rt_name_bits, flowc_rt_summary_bits, flowc_rt_summary_collect,
-    flowc_rt_summary_domain, flowc_rt_summary_find, flowc_rt_summary_prov,
-    flowc_rt_summary_prov_len
+    FLOWC_RT_ALLOC, FLOWC_RT_BLOCK, FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME,
+    FLOWC_RT_DOM_NONE, FLOWC_RT_UNKNOWN,
+    flowc_rt_forbidden, flowc_rt_is_callback_safe,
+    flowc_rt_is_frame_safe, flowc_rt_known_safe, flowc_rt_name_bits, flowc_rt_refines,
+    flowc_rt_summaries_refine, flowc_rt_summary_bits, flowc_rt_summary_buffer_valid,
+    flowc_rt_summary_collect, flowc_rt_summary_domain, flowc_rt_summary_find,
+    flowc_rt_summary_fingerprint, flowc_rt_summary_prov, flowc_rt_summary_prov_len,
+    flowc_rt_unknown_only
 }
 import .sem_check { flowc_semcheck_single }
 import .resolve {
@@ -2212,6 +2215,27 @@ function test_rt_summary() -> i32 {
     let toff: i32 = flowc_rt_summary_find(buf, n, sp, ts, te)
     if toff < 0 or flowc_rt_summary_domain(buf, toff) != FLOWC_RT_DOM_CALLBACK { ok = 0 }
     if toff < 0 or (flowc_rt_summary_bits(buf, toff) & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    if flowc_rt_known_safe("sinf") != 1 { ok = 0 }
+    if flowc_rt_known_safe("i32_to_f32") != 1 { ok = 0 }
+    if flowc_rt_known_safe("driver_read") != 0 { ok = 0 }
+    if flowc_rt_forbidden(FLOWC_RT_DOM_CALLBACK, FLOWC_RT_UNKNOWN) == 0 { ok = 0 }
+    if flowc_rt_forbidden(FLOWC_RT_DOM_FRAME, FLOWC_RT_UNKNOWN) != 0 { ok = 0 }
+    if flowc_rt_unknown_only(FLOWC_RT_UNKNOWN) != 1 { ok = 0 }
+    if flowc_rt_refines(0, FLOWC_RT_DOM_CALLBACK, FLOWC_RT_ALLOC, FLOWC_RT_DOM_FRAME) != 1 { ok = 0 }
+    if flowc_rt_refines(FLOWC_RT_ALLOC, FLOWC_RT_DOM_NONE, 0, FLOWC_RT_DOM_NONE) != 0 { ok = 0 }
+    if flowc_rt_refines(0, FLOWC_RT_DOM_FRAME, 0, FLOWC_RT_DOM_CALLBACK) != 0 { ok = 0 }
+    if flowc_rt_summary_buffer_valid(buf, n) != 1 { ok = 0 }
+    if flowc_rt_summaries_refine(buf, n, buf, n) != 1 { ok = 0 }
+    # A zero-length or structurally truncated prior snapshot must never
+    # count as refined by the current summaries.
+    if flowc_rt_summaries_refine(buf, n, buf, 0) != 0 { ok = 0 }
+    let malformed: array<u8, 7> = [36, 102, 0, 48, 124, 48, 124]
+    if flowc_rt_summary_buffer_valid(&malformed[0], 7) != 0 { ok = 0 }
+    if flowc_rt_summaries_refine(buf, n, &malformed[0], 7) != 0 { ok = 0 }
+    let bad_bits: array<u8, 8> = [36, 102, 0, 51, 50, 124, 48, 0]
+    if flowc_rt_summary_buffer_valid(&bad_bits[0], 8) != 0 { ok = 0 }
+    let fp: u64 = flowc_rt_summary_fingerprint(buf, n)
+    if fp == 0 { ok = 0 }
     printf("rt_summary_n=%d helper_bits=%d process_bits=%d tick_dom=%d ok=%d\n", n, hbits, pbits, flowc_rt_summary_domain(buf, toff), ok)
     free(buf)
     flowc_parser_free(p)

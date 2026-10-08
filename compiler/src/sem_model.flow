@@ -191,6 +191,7 @@ export struct Sem {
     static_names: ptr<SemStrMap>,
     local_storage: ptr<SemStrVec>,
     span_origin: ptr<SemStrMap>,
+    heap_roots: ptr<SemStrMap>,
     origin_pool: ptr<SemStrVec>,
     current_return_type: i32,
     function_domains: ptr<SemStrMap>,
@@ -385,6 +386,7 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.static_names = sem_sm_new()
     c.local_storage = sem_sv_new()
     c.span_origin = sem_sm_new()
+    c.heap_roots = sem_sm_new()
     c.origin_pool = sem_sv_new()
     c.current_return_type = 0 - 1
     c.function_domains = sem_sm_new()

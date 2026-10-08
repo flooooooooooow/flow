@@ -32,7 +32,7 @@ import .rt_summary {
     flowc_rt_domain_name,
     flowc_rt_summary_bits, flowc_rt_summary_collect, flowc_rt_summary_domain,
     flowc_rt_summary_find, flowc_rt_summary_prov, flowc_rt_summary_prov_len,
-    flowc_rt_bit_name
+    flowc_rt_unknown_only, flowc_rt_bit_name
 }
 import .proof_lower { flowc_proof_erase }
 import .overload_table {
@@ -961,7 +961,19 @@ function flowc_tc_rt_consult_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
     flowc_eff_diag_s("'")
     let poff2: i32 = flowc_rt_summary_prov(ctx[0].eff, off)
     let plen2: i32 = flowc_rt_summary_prov_len(ctx[0].eff, poff2)
-    if plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
+    if flowc_rt_unknown_only(bits) == 1 {
+        if plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
+            flowc_eff_diag_s(", which is not RT-safe because it calls '")
+            flowc_eff_diag_buf(ctx[0].eff, poff2, plen2)
+            flowc_eff_diag_s("' (unknown effect summary; see ")
+            flowc_eff_diag_s(doc)
+            flowc_eff_diag_s(")")
+        } else {
+            flowc_eff_diag_s(", which has an unknown effect summary (unprovable extern; see ")
+            flowc_eff_diag_s(doc)
+            flowc_eff_diag_s(")")
+        }
+    } elif plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
         flowc_eff_diag_s(", which is not RT-safe because it calls '")
         flowc_eff_diag_buf(ctx[0].eff, poff2, plen2)
         flowc_eff_diag_s("' (forbidden on an RT-safe path; see ")

@@ -577,6 +577,10 @@
           "path": "language/region-inference.md"
         },
         {
+          "label": "RT / lifetime summaries",
+          "path": "language/rt-summaries.md"
+        },
+        {
           "label": "Effects Showcase",
           "path": "effects-showcase.md"
         },

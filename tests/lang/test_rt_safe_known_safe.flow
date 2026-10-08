@@ -1,0 +1,21 @@
+# @rt_safe may call the known-safe extern allow-list (math / conversions).
+# Exit 0 on success.
+
+extern {
+    function sinf(x: f32) -> f32
+    function i32_to_f32(v: i32) -> f32
+}
+
+@rt_safe
+function process(n: i32) -> f32 {
+    let x: f32 = i32_to_f32(n)
+    return sinf(x)
+}
+
+function main() -> i32 {
+    let y: f32 = process(0)
+    if y != y {
+        return 1
+    }
+    return 0
+}

@@ -30,7 +30,7 @@ function process_block(state: ptr<FilterState>, block_size: i32) -> void {
 `@only(...)`) rather than a comment pragma, since the parser already
 supports attributes on `function` declarations.
 
-**What's checked today** (flowc):
+**What's checked today** (flowc, `compiler/src/sem_check.flow` / `rt_summary.flow`):
 
 - Direct calls to `malloc`, `calloc`, `realloc`, `free` (and the generic
   `alloc`/`dealloc` builtins) from an `@rt_safe` function are a type error.
@@ -65,17 +65,14 @@ supports attributes on `function` declarations.
 
 **Known gaps** (not yet enforced; still a coding policy for these):
 
-- Trait / interface method dispatch used from callback-safe code does not
-  yet carry a checkable RT contract. Each implementation would need
-  `κ_impl ⊆ κ_trait`; that slice is future work on top of the function-pointer
-  and closure checker (#766).
-- Method calls (`obj.method(...)`) that are not a proven `with rt_safe`
-  function value are treated as unresolved dynamic calls. This is no issue
-  for `memory.flow` today since it exposes free functions and no methods.
-- `extern` C calls that are not on the known unsafe-name list carry an
-  `unknown` summary bit rather than an empty contract. This slice still
-  rejects only the known names, so a hypothetical driver `extern` can
-  allocate internally without a hard error.
+- Closures and higher-order `with rt_safe` callables are the #766 slice
+  (PR #1348). Function-pointer contracts (`with rt_safe`) are checked
+  (#1310). A uniquely resolved `impl` method is in the `@rt_safe` call
+  graph; unresolved / ambiguous trait dispatch is rejected conservatively.
+- `extern` C calls that are not a known may-effect and not on the
+  known-safe allow-list (math, atomics, bounded copies, numeric
+  conversions, print) carry `unknown` and are rejected from `@rt_safe` /
+  `callback`. See [rt-summaries.md](../language/rt-summaries.md).
 - Device/file/network calls on the known-name list (`audio_device_open`,
   `fopen`, GPU submit, …) are recorded as I/O on the summary and rejected
   from `@rt_safe` / `callback`.
@@ -180,4 +177,6 @@ or blocking waits inside the ring ops.
 - [Lifetime domains](../language/lifetime-domains.md): `callback` / `frame` /
   `session` / `application`, and the escape rule between them
 - Examples: `examples/audio/loopback_effects.flow`, `examples/audio/bus_graph_demo.flow`
-- Tests: `tests/unit/test_rt_safety.py`: `@rt_safe` positive/negative cases
+- Tests: `tests/lang/test_rt_safe_indirect.flow`,
+  `tests/lang/test_rt_safe_known_safe.flow`,
+  `compiler/fixtures/typecheck_rules/rt_safe_*.flow`
