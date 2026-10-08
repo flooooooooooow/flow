@@ -7,7 +7,7 @@ extern {
 }
 
 function hash_i64(k: i64) -> i32 {
-    let mut h: u32 = (k as i32) as u32
+    let mut h: u32 = ((k ^ (k >> 32)) as i32) as u32
     h = h ^ (h >> 16)
     h = h * 0x7feb352d
     h = h ^ (h >> 15)

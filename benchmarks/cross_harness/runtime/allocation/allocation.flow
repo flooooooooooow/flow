@@ -1,15 +1,29 @@
 # Heap allocate/free churn for the #728 harness. The #740 profiler
 # counts these on the memory suite without the program printing counters.
+#
+# Each block stays live in a 16-slot ring until its slot comes round
+# again. An allocation that is freed before anything else can see it is
+# removed by clang at -O3, so the native twin did no heap work at all and
+# the row measured nothing (#745).
 
 extern {
     function malloc(size: i64) -> ptr<u8>
+    function calloc(n: i64, size: i64) -> ptr<u8>
     function free(p: ptr<u8>) -> void
 }
 
 function main() -> i32 {
+    let ring: ptr<ptr<u8>> = calloc(16, 8) as ptr<ptr<u8>>
+    if ring == null {
+        return 1
+    }
     let mut checksum: i32 = 0
     let mut i: i32 = 0
     while i < 50000 {
+        let slot: i32 = i % 16
+        if ring[slot] != null {
+            free(ring[slot])
+        }
         let p: ptr<u8> = malloc(64)
         if p == null {
             return 1
@@ -17,9 +31,17 @@ function main() -> i32 {
         p[0] = 1 as u8
         p[63] = 2 as u8
         checksum = checksum + (p[0] as i32) + (p[63] as i32)
-        free(p)
+        ring[slot] = p
         i = i + 1
     }
+    let mut s: i32 = 0
+    while s < 16 {
+        if ring[s] != null {
+            free(ring[s])
+        }
+        s = s + 1
+    }
+    free(ring as ptr<u8>)
     if checksum != 150000 {
         return 2
     }

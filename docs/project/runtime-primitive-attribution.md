@@ -70,14 +70,14 @@ These are the expected bounds for the stdlib and harness copies:
 
 | Primitive | Expected |
 |---|---|
-| `hash_i64` / `hash_string` | O(1) mix / O(length) djb2, not a constant |
+| `hash_i64` / `hash_string` | O(1) mix of both words / O(length) djb2, not a constant |
 | `hashmap_i64_i64_insert` | amortized O(1); the table doubles before load 1/2 |
 | `hashmap_i64_i64_get` | expected O(1) linear probe |
 | Heapsort | O(n log n) time, O(1) extra |
 | Binary search | O(log n) |
 | Reductions | O(n) |
 
-`hashmap_string_i32` still has no insert/get. That gap is
+`hashmap_string_i32` still has no insert/get (#1448). That gap is
 listed here so a suite mean cannot hide it.
 
 ## Promoted hot primitives
@@ -94,13 +94,57 @@ stable tax reading.
 The #740 memory profiler is enabled only on the memory suite so a runtime
 `flow_vs_native` ratio is not the wrapper tax.
 
+## Audit results (2026-10-08)
+
+Measured on macOS arm64 (Apple silicon, 14 threads) at `20ceebe0`. The
+harness medians for these rows are 5 to 20 ms per run, so a busy machine
+moves them by more than the 5% bar. For the verdicts each Flow binary and
+its native twin ran 200 times, interleaved, exec to exit, and the table
+gives the minimum and the median ratio. CPython is the harness median from
+the same day. Times are microseconds.
+
+| Row | Flow min | Native min | flow/native (min) | flow/native (median) | CPython median | Verdict |
+|---|---:|---:|---:|---:|---:|---|
+| `runtime_calls` | 1289 | 1286 | 1.002 | 1.010 | 83700 | ok |
+| `runtime_loops` | 1047 | 1064 | 0.984 | 1.002 | 74200 | ok |
+| `runtime_arrays` | 1534 | 1525 | 1.006 | 1.026 | 859400 | ok |
+| `runtime_strings` | 1608 | 1578 | 1.019 | 1.031 | 1119000 | ok |
+| `runtime_string_concat` | 4229 | 1862 | 2.271 | 2.119 | 561200 | tax, #1447 |
+| `runtime_parse_format` | 3263 | 15616 | 0.209 | 0.220 | 148000 | ok |
+| `runtime_buffered_io` | 2129 | 2349 | 0.906 | 0.943 | 28300 | ok |
+| `runtime_structs` | 917 | 905 | 1.013 | 1.023 | 33500 | coverage only |
+| `runtime_allocation` | 1508 | 1454 | 1.037 | 1.029 | 38300 | ok after the ring fix |
+| `runtime_hashmap` | 1292 | 1291 | 1.001 | 1.016 | none | ok |
+| `runtime_sorting` | 1238 | 1170 | 1.058 | 1.009 | 126800 | ok (median) |
+| `runtime_numerical` | 1071 | 1061 | 1.009 | 1.015 | 27600 | ok |
+| `runtime_ffi_scalar` | 949 | 933 | 1.017 | 1.007 | none | ok |
+| `runtime_ffi_batch` | 951 | 944 | 1.007 | 1.022 | none | ok |
+| `runtime_ffi_buffer` | 961 | 939 | 1.023 | 1.024 | none | ok |
+
+Flow is faster than CPython on every row with a CPython twin, by 13x
+(`runtime_buffered_io`) to 700x (`runtime_strings`).
+
+What the audit changed:
+
+- `runtime_allocation` read 1.56x. The native twin freed each block before
+  anything could see it, so clang removed every `malloc`/`free` pair and the
+  native program did no heap work. Flow's #740 counting wrappers kept the
+  calls. Both programs now keep each block live in a 16-slot ring, and the
+  ratio is 1.037. The wrappers themselves cost about 3%.
+- `hash_i64` hashed only the low 32 bits of the key, so keys that differ
+  only above bit 31 (`i << 32`, packed pairs) all landed in one probe
+  cluster and each map operation was O(n). It now folds the high word in
+  first. `tests/lang/test_hashmap_i64.flow` checks 64 such keys spread over
+  a 64-slot table. The harness copy and its native twin use the same hash.
+
 ## Remaining gaps
 
-- `hashmap_string_i32` create/len only; no insert/get.
-- No CPython twin for `runtime_hashmap` (new `.py` files are refused).
+- `runtime_string_concat` is 2.1x native: a short `+` chain is one heap
+  allocation and a separate scan, where C copies into a stack buffer (#1447).
+- `hashmap_string_i32` has create/len only; insert/get need a key ownership
+  decision (#1448).
+- No CPython twin for `runtime_hashmap` or the FFI rows (new `.py` files are
+  refused).
 - `runtime_structs` is a coverage row. It has no tax verdict.
-- `runtime_string_concat` still heaps every `+` chain; matching C can keep
-  the 36-byte result on the stack. That headroom needs a compiler
-  short-string / stack-concat slice.
-- Any other measured `tax` on a promoted row should become its own child
-  issue rather than being folded into a headline geometric mean.
+- Any new measured `tax` on a promoted row becomes its own child issue
+  rather than being folded into a headline geometric mean.
