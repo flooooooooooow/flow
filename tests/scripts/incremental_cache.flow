@@ -240,6 +240,162 @@ function check_cache_format_is_not_pickle() -> i32 {
     return T_PASS
 }
 
+# A cache root with no room left in the 512-byte key buffer for
+# "/<16 hex>.ast" must compile uncached, and must not write a record
+# through a path that ran past the buffer.
+function check_long_cache_root_skips_cache() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let home: string = t_tmp() + "/home"
+    # Grow the root to 495 bytes in 40-byte components (NAME_MAX is 255).
+    # With "/flow/ast" that is 504, so the 22-byte key suffix cannot fit.
+    let mut xdg: string = t_tmp() + "/x"
+    while s_len(xdg) + 41 <= 495 {
+        xdg = xdg + "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+    while s_len(xdg) < 495 {
+        xdg = xdg + "b"
+    }
+    let _d: bool = mkdir_p(dir)
+    if not mkdir_p(xdg) {
+        outln("could not create the long cache root")
+        return T_FAIL
+    }
+    if not write_pair(dir, 42) {
+        return T_FAIL
+    }
+    let r: i32 = compile_run(host, dir, "long-root", xdg, home)
+    if r != 42 {
+        outln("expected 42 under an over-long cache root, got " + s_itoa(r))
+        return T_FAIL
+    }
+    let n: i32 = count_ast(xdg)
+    if n != 0 {
+        outln("over-long cache root still wrote " + s_itoa(n) + " AST records")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# A record whose header names a root outside the stored arena must be
+# treated as a miss and re-parsed, never returned as the parse result.
+function check_out_of_range_root_is_a_miss() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    if not write_pair(dir, 9) {
+        return T_FAIL
+    }
+    let r1: i32 = compile_run(host, dir, "root", xdg, home)
+    if r1 != 9 {
+        outln("expected 9 from first compile, got " + s_itoa(r1))
+        return T_FAIL
+    }
+    let files: ptr<ProcStrs> = glob_suffix(ast_dir(xdg), ".ast")
+    if sl_len(files) <= 0 {
+        outln("no AST cache records to corrupt")
+        return T_FAIL
+    }
+    # FCAC header: magic, schema, node size, length, root (five i32).
+    # Set root to 0x7fffffff in every record.
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let path: string = sl_get(files, i)
+        let body: Bytes = read_bytes(path)
+        if body.len < 20 {
+            outln("cache record too small: " + path)
+            return T_FAIL
+        }
+        body.data[16] = 255
+        body.data[17] = 255
+        body.data[18] = 255
+        body.data[19] = 127
+        if not write_bytes(path, body.data, body.len) {
+            outln("could not rewrite " + path)
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    let r2: i32 = compile_run(host, dir, "root", xdg, home)
+    if r2 != 9 {
+        outln("expected 9 after corrupting the cached root, got " + s_itoa(r2))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# A record whose node payload no longer matches its checksum (a torn or
+# corrupt write) must be a miss and re-parsed. The header stays valid.
+function check_corrupt_payload_is_a_miss() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    if not write_pair(dir, 11) {
+        return T_FAIL
+    }
+    let r1: i32 = compile_run(host, dir, "payload", xdg, home)
+    if r1 != 11 {
+        outln("expected 11 from first compile, got " + s_itoa(r1))
+        return T_FAIL
+    }
+    let files: ptr<ProcStrs> = glob_suffix(ast_dir(xdg), ".ast")
+    if sl_len(files) <= 0 {
+        outln("no AST cache records to corrupt")
+        return T_FAIL
+    }
+    # Header (20 bytes) and checksum (8) stay; every payload byte becomes 0xff.
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let path: string = sl_get(files, i)
+        let body: Bytes = read_bytes(path)
+        if body.len <= 28 {
+            outln("cache record has no payload: " + path)
+            return T_FAIL
+        }
+        let mut k: i64 = 28
+        while k < body.len {
+            body.data[k] = 255
+            k = k + 1
+        }
+        if not write_bytes(path, body.data, body.len) {
+            outln("could not rewrite " + path)
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    let r2: i32 = compile_run(host, dir, "payload", xdg, home)
+    if r2 != 11 {
+        outln("expected 11 after corrupting the cached payload, got " + s_itoa(r2))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("incremental_cache")
     t_start()
@@ -250,6 +406,12 @@ function main() -> i32 {
     t_end("untrusted_checkout", check_untrusted_checkout_is_inert())
     t_start()
     t_end("format_not_pickle", check_cache_format_is_not_pickle())
+    t_start()
+    t_end("long_cache_root", check_long_cache_root_skips_cache())
+    t_start()
+    t_end("out_of_range_root", check_out_of_range_root_is_a_miss())
+    t_start()
+    t_end("corrupt_payload", check_corrupt_payload_is_a_miss())
     t_done()
     return 0
 }

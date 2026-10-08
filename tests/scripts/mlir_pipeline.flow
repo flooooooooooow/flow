@@ -19,6 +19,40 @@ function check_normalization_stays_opt_in() -> i32 {
     return T_PASS
 }
 
+function check_l2_less_than_inner_tile() -> i32 {
+    let args: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "tests/mlir/affine_loop.flow")
+    sl_push(args, t_tmp() + "/invalid-l2.mlir")
+    let c: ptr<ProcCmd> = t_cmd(args)
+    cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    cmd_env(c, "FLOWC_MLIR_TILE", "16")
+    cmd_env(c, "FLOWC_MLIR_TILE_L2", "8")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "affine L2 tile must be >= the inner tile") { return T_FAIL }
+    return T_PASS
+}
+
+function check_native_malformed_inner_tile() -> i32 {
+    let args: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "tests/mlir/affine_loop.flow")
+    sl_push(args, t_tmp() + "/invalid-inner.mlir")
+    let c: ptr<ProcCmd> = t_cmd(args)
+    cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    cmd_env(c, "FLOWC_MLIR_TILE", "32junk")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "FLOWC_MLIR_TILE must be an integer in [2, 64]") { return T_FAIL }
+    return T_PASS
+}
+
+function check_native_l2_requires_inner_tile() -> i32 {
+    let args: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "tests/mlir/affine_loop.flow")
+    sl_push(args, t_tmp() + "/orphan-l2.mlir")
+    let c: ptr<ProcCmd> = t_cmd(args)
+    cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    cmd_env(c, "FLOWC_MLIR_TILE_L2", "64")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "FLOWC_MLIR_TILE_L2 requires FLOWC_MLIR_TILE") { return T_FAIL }
+    return T_PASS
+}
+
 function check_affine_tiling() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -339,6 +373,12 @@ function main() -> i32 {
     t_end("normalization_opt_in", check_normalization_stays_opt_in())
     t_start()
     t_end("affine_tiling", check_affine_tiling())
+    t_start()
+    t_end("invalid_l2_tiling", check_l2_less_than_inner_tile())
+    t_start()
+    t_end("native_malformed_inner_tile", check_native_malformed_inner_tile())
+    t_start()
+    t_end("native_l2_requires_inner", check_native_l2_requires_inner_tile())
     t_start()
     t_end("tiling_requires_size", check_tiling_requires_size())
     t_start()

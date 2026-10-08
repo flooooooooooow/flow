@@ -2362,10 +2362,28 @@ function flowc_u64_to_hex(v: u64, buf: ptr<u8>) {
 # Bump when the on-disk record layout changes, or when a parse-affecting
 # frontend change is not already visible as a version bump. Mixed into
 # every key so older entries become unreachable.
-const FLOWC_AST_CACHE_SCHEMA: i32 = 1
+# 2: a u64 payload checksum follows the five-word header (#736).
+const FLOWC_AST_CACHE_SCHEMA: i32 = 2
 
 # ASCII "FCAC" as a little-endian i32. Identifies a non-executable record.
 const FLOWC_AST_CACHE_MAGIC: i32 = 1128350534
+
+# Largest record written or read, in AST nodes (about 185 MB at 44 bytes a
+# node). A larger module parses without the cache.
+const FLOWC_AST_CACHE_MAX_NODES: i32 = 4194304
+
+# FNV-1a style hash (type_id.flow's constants) over the record payload.
+# Catches torn writes and disk corruption; it is not a defence against
+# someone who can write the user's cache (#736).
+function flowc_ast_cache_checksum(buf: ptr<u8>, n: i32) -> u64 {
+    let mut h: u64 = 1469598103934665603
+    let mut i: i32 = 0
+    while i < n {
+        h = (h ^ (buf[i] as u64)) * 1099511628211
+        i = i + 1
+    }
+    return h
+}
 
 # Expand-all stages the bundle path applies before parse: field (1),
 # dynamics (2), flow blocks (4), shader stub (8), impl (16), generic
@@ -2503,7 +2521,10 @@ function flowc_parse_cached(
         return flowc_parse_program(p)
     }
     let mut clen: i32 = flowc_ast_cache_dir(cache_dir, 512)
-    if clen <= 0 {
+    # The key suffix needs "/" + 16 hex bytes + ".ast" + NUL (22 bytes).
+    # A cache root too long to hold it parses without the cache instead of
+    # writing past the 512-byte buffer (#736).
+    if clen <= 0 or clen + 22 > 512 {
         free(cache_dir)
         let t_parse: i64 = flowc_prof_span_begin()
         let root0: i32 = flowc_parse_program(p)
@@ -2525,18 +2546,28 @@ function flowc_parse_cached(
     let fp: ptr<void> = flowc_io_fopen(cache_file, "rb")
     if fp != null {
         let mut header: array<i32, 5> = [0, 0, 0, 0, 0]
-        if flowc_io_fread(&header[0] as ptr<u8>, 4, 5, fp) == 5 {
+        let mut stored_sum: array<u64, 1> = [0]
+        if flowc_io_fread(&header[0] as ptr<u8>, 4, 5, fp) == 5 and flowc_io_fread(&stored_sum[0] as ptr<u8>, 8, 1, fp) == 1 {
             if header[0] == FLOWC_AST_CACHE_MAGIC and header[1] == FLOWC_AST_CACHE_SCHEMA and header[2] == FLOWC_AST_NODE_SIZE {
                 let ast_len: i32 = header[3]
                 let root: i32 = header[4]
-                if ast_len > 0 and ast_len <= p[0].arena.cap {
+                # Never treat an out-of-range root or an oversized payload
+                # as a cache hit (#736).
+                if ast_len > 0 and ast_len <= p[0].arena.cap and ast_len <= FLOWC_AST_CACHE_MAX_NODES and root >= 0 and root < ast_len {
                     if flowc_io_fread(p[0].arena.nodes as ptr<u8>, FLOWC_AST_NODE_SIZE, ast_len, fp) == ast_len {
-                        p[0].arena.len = ast_len
-                        p[0].cur.start = nsrc
-                        flowc_io_fclose(fp)
-                        free(cache_dir)
-                        flowc_prof_span_end(FLOWC_PROF_CACHE, t_cache)
-                        return root
+                        # The payload must end the file and match its checksum;
+                        # a torn or corrupt record is a miss.
+                        let mut extra: array<u8, 1> = [0]
+                        let tail: i32 = flowc_io_fread(&extra[0] as ptr<u8>, 1, 1, fp)
+                        let sum: u64 = flowc_ast_cache_checksum(p[0].arena.nodes as ptr<u8>, ast_len * FLOWC_AST_NODE_SIZE)
+                        if tail == 0 and sum == stored_sum[0] {
+                            p[0].arena.len = ast_len
+                            p[0].cur.start = nsrc
+                            flowc_io_fclose(fp)
+                            free(cache_dir)
+                            flowc_prof_span_end(FLOWC_PROF_CACHE, t_cache)
+                            return root
+                        }
                     }
                 }
             }
@@ -2548,7 +2579,7 @@ function flowc_parse_cached(
     let t_parse_miss: i64 = flowc_prof_span_begin()
     let root: i32 = flowc_parse_program(p)
     flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse_miss)
-    if root >= 0 and p[0].err == 0 {
+    if root >= 0 and p[0].err == 0 and p[0].arena.len <= FLOWC_AST_CACHE_MAX_NODES {
         let fpo: ptr<void> = flowc_io_fopen(cache_file, "wb")
         if fpo != null {
             let mut header_out: array<i32, 5> = [
@@ -2558,7 +2589,11 @@ function flowc_parse_cached(
                 p[0].arena.len,
                 root
             ]
+            let mut sum_out: array<u64, 1> = [
+                flowc_ast_cache_checksum(p[0].arena.nodes as ptr<u8>, p[0].arena.len * FLOWC_AST_NODE_SIZE)
+            ]
             let _w1: i32 = flowc_io_fwrite(&header_out[0] as ptr<u8>, 4, 5, fpo)
+            let _ws: i32 = flowc_io_fwrite(&sum_out[0] as ptr<u8>, 8, 1, fpo)
             let _w2: i32 = flowc_io_fwrite(p[0].arena.nodes as ptr<u8>, FLOWC_AST_NODE_SIZE, p[0].arena.len, fpo)
             let _c2: i32 = flowc_io_fclose(fpo)
         }

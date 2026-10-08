@@ -744,8 +744,13 @@ function mlg_vector_scalar_lanes(m: ptr<Mlg>, t: i32) -> i32 {
     if mlg_is_vector_mt(t) == 0 {
         return 1
     }
-    return m[0].vc_n[t - MT_VECTOR] *
-        mlg_vector_scalar_lanes(m, m[0].vc_elem[t - MT_VECTOR])
+    let outer: i32 = m[0].vc_n[t - MT_VECTOR]
+    let inner: i32 = mlg_vector_scalar_lanes(m, m[0].vc_elem[t - MT_VECTOR])
+    # Fail closed before multiplying nested tile dimensions (#666).
+    if outer <= 0 or inner <= 0 or outer > 2147483647 / inner {
+        return 0 - 1
+    }
+    return outer * inner
 }
 
 function mlg_is_tensor_type_mt(t: i32) -> i32 {
@@ -1598,7 +1603,12 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
             if m[0].src[vq] < 48 or m[0].src[vq] > 57 {
                 vok = 0
             } else {
-                vn = vn * 10 + (m[0].src[vq] - 48)
+                let digit: i32 = m[0].src[vq] - 48
+                if vn > 214748364 or (vn == 214748364 and digit > 7) {
+                    vok = 0
+                } else {
+                    vn = vn * 10 + digit
+                }
             }
             vq = vq + 1
         }
@@ -3084,7 +3094,9 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
 function mlg_register_tiles_enabled() -> i32 {
     let v: string = getenv("FLOWC_MLIR_REGISTER_TILES")
     let p: ptr<u8> = v
-    if p != null and p[0] == 49 {
+    # Feature flags are exact, not prefix-truthy: "10"/"1junk" must not
+    # accidentally enable hardware-sensitive lowering (#666).
+    if p != null and p[0] == 49 and p[1] == 0 {
         return 1
     }
     return 0
@@ -3164,6 +3176,12 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     }
     let am: i32 = m[0].vc_n[at - MT_VECTOR]
     let bn: i32 = m[0].vc_n[bt - MT_VECTOR]
+    # Reject malformed vector dimensions before registering the nested
+    # result type; a refused tile must not mutate the vector-type table.
+    if am <= 0 or bn <= 0 {
+        mlg_refuse(m, e, "register tile operands must have positive lane counts")
+        return V_NONE
+    }
     let cap_s: string = getenv("FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
     let mut cap: i32 = 0
     if mlg_register_tile_cap(cap_s, &cap) == 0 {
@@ -3172,7 +3190,7 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     }
     let rt: i32 = mlg_vector_of(m, bt, am)
     let tile_lanes: i32 = mlg_vector_scalar_lanes(m, rt)
-    if am <= 0 or bn <= 0 or tile_lanes > cap {
+    if tile_lanes <= 0 or tile_lanes > cap {
         mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
         return V_NONE
     }
@@ -12997,6 +13015,33 @@ function mlg_affine_tile_l2_size() -> i32 {
     return mlg_env_bounded_positive(getenv("FLOWC_MLIR_TILE_L2"), 2, 128)
 }
 
+# Validate user-supplied tiling knobs before loop eligibility. A malformed
+# request must not silently fall back to a different schedule (#665).
+function mlg_affine_tile_config_valid(m: ptr<Mlg>, st: i32) -> i32 {
+    if mlg_affine_enabled() == 0 {
+        return 1
+    }
+    let tile: i32 = mlg_affine_tile_size()
+    let l2: i32 = mlg_affine_tile_l2_size()
+    if tile < 0 {
+        mlg_refuse(m, st, "FLOWC_MLIR_TILE must be an integer in [2, 64]")
+        return 0
+    }
+    if l2 < 0 {
+        mlg_refuse(m, st, "FLOWC_MLIR_TILE_L2 must be an integer in [2, 128]")
+        return 0
+    }
+    if l2 > 0 and tile == 0 {
+        mlg_refuse(m, st, "FLOWC_MLIR_TILE_L2 requires FLOWC_MLIR_TILE")
+        return 0
+    }
+    if l2 > 0 and l2 < tile {
+        mlg_refuse(m, st, "affine L2 tile must be >= the inner tile")
+        return 0
+    }
+    return 1
+}
+
 function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     let tile: i32 = mlg_affine_tile_size()
     if tile <= 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
@@ -13017,6 +13062,11 @@ function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
 function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
     let tile: i32 = mlg_affine_tile_size()
     let l2: i32 = mlg_affine_tile_l2_size()
+    # Do not silently discard malformed or inverted L2 tiling requests (#665).
+    if l2 < 0 or (l2 > 0 and l2 < tile) {
+        mlg_refuse(m, st, "affine L2 tile must be >= the inner tile")
+        return
+    }
     let lo0: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
     let lb: i32 = mlg_emit_idx_cast(m, lo0)
     let inner_lb: i32 = mlg_emit_idx_const(m, 0)
@@ -13951,6 +14001,9 @@ function mlg_emit_scf_parallel(m: ptr<Mlg>, st: i32, step_val: i32) {
 
 function mlg_emit_for(m: ptr<Mlg>, st: i32) {
     let par: i32 = mlg_for_is_parallel(m, st)
+    if par == 0 and mlg_affine_tile_config_valid(m, st) == 0 {
+        return
+    }
     if par == 1 and mlg_affine_parallel_eligible(m, st) == 1 {
         let mut step_val: i32 = 0
         let _has: i32 = mlg_const_step(m, m[0].arena.nodes[st].ival, &step_val)

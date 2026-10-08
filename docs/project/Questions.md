@@ -407,6 +407,15 @@ forms in new code. See `docs/language/dynamics-dsl.md` § Namespaces and
 
 ## Resolved Questions (Archive)
 
+### 2026-10-08: AST parse cache: how far should flowc distrust its own cache directory? (#736)
+The user cache directory stays trusted as #1345 set it. Records carry a
+payload checksum and a size cap, so a torn or corrupt record is a miss and
+is re-parsed. No ownership or mode checks on the directory and no
+`O_CREAT|O_EXCL` writes. #1402 implements this (record schema 2).
+
+**Resolved:** 2026-10-08, decided by the coordinator with the owner's
+delegation.
+
 ### 2026-10-08: Is Flow 1.0.2 still released?
 
 **Context:** Issue #760 tracked a 1.0.2 patch release over Stable 1.x.
