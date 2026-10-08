@@ -228,10 +228,38 @@ export struct AstNode {
 # change cannot reuse records written for a different node shape.
 export const FLOWC_AST_NODE_SIZE: i32 = 44
 
+# Read-only lookup tables over one arena, built by flowc_ast_index_build
+# (ast_index.flow). They are valid while the arena keeps the `len` they
+# were built for, no node is edited in place, and the caller passes the
+# same `src`. Code generation attaches one after lowering, so name
+# lookups that used to scan the whole arena per call site are hash
+# lookups (#1445). A null `ix` means no index: callers scan.
+export struct AstIndex {
+    len: i32,
+    src: ptr<u8>,
+    mask: i32,
+    head: ptr<i32>,
+    next: ptr<i32>,
+    enum_of: ptr<i32>,
+    enum_exact: i32,
+    flags: ptr<i32>,
+    by_start: ptr<i32>,
+    fns: ptr<i32>,
+    fn_count: i32,
+    fa_of: ptr<i32>,
+    fa_exact: i32,
+    attr_first: ptr<i32>,
+    attr_next: ptr<i32>,
+    row_of: ptr<i32>,
+    memo: ptr<i32>
+}
+
+# Callers that store arenas in raw buffers size them at 24 bytes.
 export struct AstArena {
     nodes: ptr<AstNode>,
     len: i32,
-    cap: i32
+    cap: i32,
+    ix: ptr<AstIndex>
 }
 
 export function flowc_ast_new(cap: i32) -> AstArena {
@@ -253,7 +281,7 @@ export function flowc_ast_new(cap: i32) -> AstArena {
         nodes[i].aux_id = AST_NONE
         i = i + 1
     }
-    return AstArena { nodes: nodes, len: 0, cap: cap }
+    return AstArena { nodes: nodes, len: 0, cap: cap, ix: null }
 }
 
 export function flowc_ast_free(arena: AstArena) -> void {

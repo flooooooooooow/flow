@@ -1,0 +1,406 @@
+# @module flowc.ast_index
+# @means  Per-module lookup tables for code generation (#1445).
+#
+# Code generation asks the same questions about one arena many times: the
+# function named X, how many overloads X has, whether X is a struct, the
+# enum that owns variant X, the nodes inside function F. Answering each by
+# scanning the whole arena made C emission quadratic in module size (61 s
+# of 73 s emit on compiler/src/main.flow). flowc_ast_index_build answers
+# them from tables built once, in arena order, so every lookup returns
+# what the scan returned.
+#
+# Tables:
+#   head/next   chains of named nodes keyed by (kind, name), ascending id
+#   enum_of     AST_ENUM_VARIANT node -> the AST_ENUM listing it
+#   flags       AST_FN -> AST_IX_EXPORTED | AST_IX_FLOW_API
+#   by_start    every node id, sorted by (start, id)
+#   fns         AST_FN ids in arena order
+#   fa_of       node -> the AST_FIELD_ACCESS whose base it is
+#   attr_first  node -> first AST_ATTR whose b is that node; attr_next
+#               links the rest, ascending id
+#   row_of      node -> first AST_EFFECT_ROW whose b is that node
+#   memo       AST_IX_MEMO_SLOTS scratch slots per node, -1 when unset,
+#               for passes that cache a per-node answer (noalias)
+#
+# An index is valid for the arena value it was built from while that
+# arena's len is unchanged and no node is edited in place. cgen attaches
+# it after lowering and frees it before returning; it never edits nodes.
+
+import .ast {
+    AstArena, AstIndex, AST_NONE, AST_ENUM, AST_ENUM_VARIANT,
+    AST_EXPORT, AST_ATTR, AST_FN, AST_FIELD_ACCESS, AST_EFFECT_ROW
+}
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+export const AST_IX_EXPORTED: i32 = 1
+export const AST_IX_FLOW_API: i32 = 2
+export const AST_IX_MEMO_SLOTS: i32 = 4
+const AST_IX_STRUCT_BYTES: i64 = 512
+
+function ix_hash(src: ptr<u8>, kind: i32, ns: i32, ne: i32) -> i32 {
+    let mut h: i64 = 5381 + (kind as i64) * 131
+    let mut i: i32 = ns
+    while i < ne {
+        h = (h * 33 + (src[i] as i64)) & 2147483647
+        i = i + 1
+    }
+    return h as i32
+}
+
+function ix_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < a1 - a0 {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function ix_span_is(src: ptr<u8>, ns: i32, ne: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit as ptr<u8>
+    let mut i: i32 = 0
+    while i < ne - ns {
+        if p[i] == 0 or p[i] != src[ns + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    if p[ne - ns] != 0 {
+        return 0
+    }
+    return 1
+}
+
+function ix_ints(n: i32, fill: i32) -> ptr<i32> {
+    let mut count: i64 = n as i64
+    if count < 1 {
+        count = 1
+    }
+    let raw: ptr<u8> = malloc(count * 4)
+    if raw == null {
+        return null
+    }
+    let out: ptr<i32> = raw as ptr<i32>
+    let mut i: i32 = 0
+    while (i as i64) < count {
+        out[i] = fill
+        i = i + 1
+    }
+    return out
+}
+
+function ix_free_ints(p: ptr<i32>) {
+    if p != null {
+        let raw: ptr<u8> = p as ptr<u8>
+        free(raw)
+    }
+}
+
+export function flowc_ast_index_free(ix: ptr<AstIndex>) {
+    if ix == null {
+        return
+    }
+    ix_free_ints(ix[0].head)
+    ix_free_ints(ix[0].next)
+    ix_free_ints(ix[0].enum_of)
+    ix_free_ints(ix[0].flags)
+    ix_free_ints(ix[0].by_start)
+    ix_free_ints(ix[0].fns)
+    ix_free_ints(ix[0].fa_of)
+    ix_free_ints(ix[0].attr_first)
+    ix_free_ints(ix[0].attr_next)
+    ix_free_ints(ix[0].row_of)
+    ix_free_ints(ix[0].memo)
+    let raw: ptr<u8> = ix as ptr<u8>
+    free(raw)
+}
+
+# Build the tables for `arena`. Returns null when memory runs out; callers
+# then keep scanning.
+export function flowc_ast_index_build(arena: AstArena, src: ptr<u8>) -> ptr<AstIndex> {
+    let n: i32 = arena.len
+    if n <= 0 or src == null {
+        return null
+    }
+    # AstIndex is 136 bytes on LP64 (17 eight-byte slots). This module
+    # keeps to the Stage-A subset, which has no sizeof, so allocate with
+    # headroom the way other passes do.
+    let ix: ptr<AstIndex> = malloc(AST_IX_STRUCT_BYTES) as ptr<AstIndex>
+    if ix == null {
+        return null
+    }
+    let mut buckets: i32 = 1024
+    while buckets < n * 2 and buckets < 1073741824 {
+        buckets = buckets * 2
+    }
+    ix[0].len = n
+    ix[0].src = src
+    ix[0].mask = buckets - 1
+    ix[0].head = ix_ints(buckets, AST_NONE)
+    ix[0].next = ix_ints(n, AST_NONE)
+    ix[0].enum_of = ix_ints(n, AST_NONE)
+    ix[0].enum_exact = 1
+    ix[0].flags = ix_ints(n, 0)
+    ix[0].by_start = ix_ints(n, 0)
+    ix[0].fns = ix_ints(n, 0)
+    ix[0].fn_count = 0
+    ix[0].fa_of = ix_ints(n, AST_NONE)
+    ix[0].fa_exact = 1
+    ix[0].attr_first = ix_ints(n, AST_NONE)
+    ix[0].attr_next = ix_ints(n, AST_NONE)
+    ix[0].row_of = ix_ints(n, AST_NONE)
+    ix[0].memo = ix_ints(n * AST_IX_MEMO_SLOTS, 0 - 1)
+    if ix[0].head == null or ix[0].next == null or ix[0].enum_of == null or ix[0].flags == null or ix[0].by_start == null or ix[0].fns == null or ix[0].fa_of == null or ix[0].attr_first == null or ix[0].attr_next == null or ix[0].row_of == null or ix[0].memo == null {
+        flowc_ast_index_free(ix)
+        return null
+    }
+    # Name chains: push in descending id order so each chain ascends.
+    let mut i: i32 = n - 1
+    while i >= 0 {
+        let ns: i32 = arena.nodes[i].name_start
+        let ne: i32 = arena.nodes[i].name_end
+        if ne > ns and ns >= 0 {
+            let b: i32 = ix_hash(src, arena.nodes[i].kind, ns, ne) & ix[0].mask
+            ix[0].next[i] = ix[0].head[b]
+            ix[0].head[b] = i
+        }
+        # Attribute chains ascend the same way; row_of ends on the lowest id.
+        let owner: i32 = arena.nodes[i].b
+        if owner >= 0 and owner < n {
+            if arena.nodes[i].kind == AST_ATTR {
+                ix[0].attr_next[i] = ix[0].attr_first[owner]
+                ix[0].attr_first[owner] = i
+            }
+            if arena.nodes[i].kind == AST_EFFECT_ROW {
+                ix[0].row_of[owner] = i
+            }
+        }
+        i = i - 1
+    }
+    # Ascending passes: enums, export flags, @flow_api, fns, field bases.
+    let mut max_start: i32 = 0
+    i = 0
+    while i < n {
+        let k: i32 = arena.nodes[i].kind
+        if arena.nodes[i].start > max_start {
+            max_start = arena.nodes[i].start
+        }
+        if k == AST_ENUM {
+            let mut v: i32 = arena.nodes[i].a
+            let mut guard: i32 = 0
+            while v != AST_NONE and guard <= n {
+                if v < 0 or v >= n {
+                    ix[0].enum_exact = 0
+                    v = AST_NONE
+                } else {
+                    if arena.nodes[v].kind != AST_ENUM_VARIANT {
+                        ix[0].enum_exact = 0
+                    }
+                    if ix[0].enum_of[v] == AST_NONE {
+                        ix[0].enum_of[v] = i
+                    }
+                    v = arena.nodes[v].next
+                }
+                guard = guard + 1
+            }
+        }
+        if k == AST_EXPORT {
+            let t: i32 = arena.nodes[i].a
+            if t >= 0 and t < n {
+                ix[0].flags[t] = ix[0].flags[t] | AST_IX_EXPORTED
+            }
+        }
+        if k == AST_ATTR {
+            let t: i32 = arena.nodes[i].b
+            if t >= 0 and t < n {
+                if ix_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "flow_api") == 1 {
+                    ix[0].flags[t] = ix[0].flags[t] | AST_IX_FLOW_API
+                }
+            }
+        }
+        if k == AST_FN {
+            ix[0].fns[ix[0].fn_count] = i
+            ix[0].fn_count = ix[0].fn_count + 1
+        }
+        if k == AST_FIELD_ACCESS {
+            let base: i32 = arena.nodes[i].a
+            if base >= 0 and base < n {
+                if ix[0].fa_of[base] == AST_NONE {
+                    ix[0].fa_of[base] = i
+                } else {
+                    ix[0].fa_exact = 0
+                }
+            }
+        }
+        i = i + 1
+    }
+    # by_start: counting sort on start, stable in id.
+    if max_start < 0 {
+        max_start = 0
+    }
+    let counts: ptr<i32> = ix_ints(max_start + 2, 0)
+    if counts == null {
+        flowc_ast_index_free(ix)
+        return null
+    }
+    let mut neg: i32 = 0
+    i = 0
+    while i < n {
+        let s: i32 = arena.nodes[i].start
+        if s < 0 {
+            neg = neg + 1
+        } else {
+            counts[s + 1] = counts[s + 1] + 1
+        }
+        i = i + 1
+    }
+    # Negative starts sort first.
+    let mut pos: i32 = neg
+    let mut s2: i32 = 0
+    while s2 <= max_start + 1 {
+        let c: i32 = counts[s2]
+        counts[s2] = pos
+        pos = pos + c
+        s2 = s2 + 1
+    }
+    let mut neg_pos: i32 = 0
+    i = 0
+    while i < n {
+        let s: i32 = arena.nodes[i].start
+        if s < 0 {
+            ix[0].by_start[neg_pos] = i
+            neg_pos = neg_pos + 1
+        } else {
+            ix[0].by_start[counts[s + 1]] = i
+            counts[s + 1] = counts[s + 1] + 1
+        }
+        i = i + 1
+    }
+    ix_free_ints(counts)
+    return ix
+}
+
+# The index attached to `arena`, or null when there is none or it no
+# longer matches this arena and source.
+export function flowc_ast_ix(arena: AstArena, src: ptr<u8>) -> ptr<AstIndex> {
+    let ix: ptr<AstIndex> = arena.ix
+    if ix == null {
+        return null
+    }
+    if ix[0].len != arena.len or ix[0].src != src {
+        return null
+    }
+    return ix
+}
+
+# The attached index for structural tables (enum_of, flags, attr_*,
+# row_of, fa_of, by_start, fns) that do not read names, so need no src.
+export function flowc_ast_ix_shape(arena: AstArena) -> ptr<AstIndex> {
+    let ix: ptr<AstIndex> = arena.ix
+    if ix == null {
+        return null
+    }
+    if ix[0].len != arena.len {
+        return null
+    }
+    return ix
+}
+
+# First node of `kind` whose name spans src[ns..ne], in arena order, else
+# AST_NONE. The index must be non-null and the span nonempty.
+export function flowc_ast_ix_find(ix: ptr<AstIndex>, arena: AstArena, kind: i32, ns: i32, ne: i32) -> i32 {
+    let src: ptr<u8> = ix[0].src
+    let mut id: i32 = ix[0].head[ix_hash(src, kind, ns, ne) & ix[0].mask]
+    while id != AST_NONE {
+        if arena.nodes[id].kind == kind {
+            if ix_span_eq(src, ns, ne, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                return id
+            }
+        }
+        id = ix[0].next[id]
+    }
+    return AST_NONE
+}
+
+# The next node after `id` with the same kind and name, in arena order.
+export function flowc_ast_ix_find_next(ix: ptr<AstIndex>, arena: AstArena, id: i32) -> i32 {
+    let src: ptr<u8> = ix[0].src
+    let kind: i32 = arena.nodes[id].kind
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    let mut j: i32 = ix[0].next[id]
+    while j != AST_NONE {
+        if arena.nodes[j].kind == kind {
+            if ix_span_eq(src, ns, ne, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+                return j
+            }
+        }
+        j = ix[0].next[j]
+    }
+    return AST_NONE
+}
+
+# Number of `kind` nodes named src[ns..ne].
+export function flowc_ast_ix_count(ix: ptr<AstIndex>, arena: AstArena, kind: i32, ns: i32, ne: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut id: i32 = flowc_ast_ix_find(ix, arena, kind, ns, ne)
+    while id != AST_NONE {
+        n = n + 1
+        id = flowc_ast_ix_find_next(ix, arena, id)
+    }
+    return n
+}
+
+# First position in by_start whose node starts at or after `pos`.
+export function flowc_ast_ix_lower(ix: ptr<AstIndex>, arena: AstArena, pos: i32) -> i32 {
+    let mut lo: i32 = 0
+    let mut hi: i32 = ix[0].len
+    while lo < hi {
+        let mid: i32 = lo + (hi - lo) / 2
+        if arena.nodes[ix[0].by_start[mid]].start < pos {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    return lo
+}
+
+# A cursor over the nodes whose start lies in [lo, hi): positions
+# flowc_ast_ix_range_first .. flowc_ast_ix_range_end, node at position k
+# is flowc_ast_ix_node(ix, k). With an index that is only those nodes, in
+# (start, id) order. Without one (null ix) it is the whole arena in id
+# order, so the caller must still test the start and must not depend on
+# the order.
+export function flowc_ast_ix_range_first(ix: ptr<AstIndex>, arena: AstArena, lo: i32) -> i32 {
+    if ix == null {
+        return 0
+    }
+    return flowc_ast_ix_lower(ix, arena, lo)
+}
+
+export function flowc_ast_ix_range_end(ix: ptr<AstIndex>, arena: AstArena, lo: i32, hi: i32) -> i32 {
+    if ix == null {
+        return arena.len
+    }
+    if hi <= lo {
+        return flowc_ast_ix_lower(ix, arena, lo)
+    }
+    return flowc_ast_ix_lower(ix, arena, hi)
+}
+
+export function flowc_ast_ix_node(ix: ptr<AstIndex>, k: i32) -> i32 {
+    if ix == null {
+        return k
+    }
+    return ix[0].by_start[k]
+}

@@ -325,7 +325,11 @@ function main() -> i32 {
     # Fifth module: parser.flow (imports token/ast/lexer: their headers).
     hdrs(hdr, "ast lexer")
     # Effect table shared by cgen, typecheck and resolve (#675).
-    compile_module(host, "effects", "ast")
+    # Per-module lookup tables over the AST, used by effects, noalias and
+    # cgen (#1445).
+    compile_module(host, "ast_index", "ast")
+    hdrs(hdr, "ast_index")
+    compile_module(host, "effects", "ast ast_index")
     hdrs(hdr, "effects")
     # Function attribute vocabulary: parser guards, typecheck checks, cgen
     # lowering (#1028, #1029).
@@ -358,11 +362,11 @@ function main() -> i32 {
     hdrs(hdr, "region")
 
     # Proven noalias / restrict certificate used by cgen (#731).
-    compile_module(host, "noalias", "token ast")
+    compile_module(host, "noalias", "token ast ast_index")
     hdrs(hdr, "noalias")
 
     # Sixth module: cgen.flow (imports token/ast/type_id/noalias/region).
-    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites type_id noalias region")
+    compile_module(host, "cgen", "token ast ast_index effects proof_lower attributes sort_plans sort_sites type_id noalias region")
     let cg: ptr<ProcStrs> = sl_of3("flowc_cgen_emit", "flowc_cgen_emit_ex", "typedef struct CgenBuf")
     sl_push2(cg, "#include <string.h>", " % ")
     module_needs("cgen", cg)

@@ -140,7 +140,7 @@ function followup_issue(name: string) -> string {
         return "#736"
     }
     if s_eq(name, "codegen") or s_eq(name, "lowering") or s_eq(name, "emit") {
-        return "#729"
+        return "#1445"
     }
     if s_eq(name, "cc") or s_eq(name, "external_compile") {
         return "#728"
