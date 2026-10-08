@@ -1,4 +1,6 @@
 ✅   ✓ test_tensor.flow
+✅   ✓ test_gpu_tensor.flow
+✅   ✓ test_gpu_model.flow
 ✅   ✓ test_ml_autograd.flow
 ✅   ✓ test_matmul_backward.flow
 ✅   ✓ test_ml_nn.flow
