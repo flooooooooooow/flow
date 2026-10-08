@@ -325,11 +325,7 @@ int32_t flow_gpu_graph_exec_add_pass(void *handle, int32_t kind, const char *sou
         if (kind == FLOW_GPU_GRAPH_PASS_RENDER) {
             [src appendString:[NSString stringWithUTF8String:kFgVertexSource]];
         }
-        /* IEEE math, so results track the CPU reference and other backends
-         * instead of fast-math approximations. */
-        MTLCompileOptions *copts = FG_AUTORELEASE([[MTLCompileOptions alloc] init]);
-        copts.fastMathEnabled = NO;
-        id<MTLLibrary> lib = FG_AUTORELEASE([dev newLibraryWithSource:src options:copts error:&error]);
+        id<MTLLibrary> lib = FG_AUTORELEASE([dev newLibraryWithSource:src options:nil error:&error]);
         if (lib == nil) {
             return fg_failf(ex, "Metal compile failed",
                             error ? [[error localizedDescription] UTF8String] : entry);

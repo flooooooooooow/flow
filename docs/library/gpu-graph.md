@@ -188,7 +188,7 @@ render passes, completed frames and GPU time, and `execution` is
 `"metal-device"`.
 
 Resources persist across runs, so a second `gpu_graph_exec_run` advances a
-simulation by one frame. Shaders compile with fast math off.
+simulation by one frame.
 
 The executor refuses, with `GPU_GRAPH_EXEC_ERR_UNSUPPORTED`, graphs it
 cannot run as written: feedback passes or the feedback hazard mode,
