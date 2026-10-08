@@ -138,11 +138,22 @@ its JSON output.
 | `startup_hello`, `startup_tiny_arithmetic`, `startup_file_transform` | executable built before timing | `precompiled_exec_to_exit` |
 | `runtime_*`, `memory_*` | executable built before timing | `precompiled_workload` |
 
-The startup rows reuse the `cold` sources, Python twins and native twins,
-with no warm-up. They measure wall time from process launch to exit, so
-they include spawn cost and the program's own work. They are not an
-`execve`-to-`main` measurement. Compare rows only when the CPU, the OS and
-the `timing_scope` match.
+The startup rows reuse the `cold` sources and Python twins, with no
+warm-up. Their native C twins live in
+`benchmarks/baselines/native/cross_harness/cold/` and are built with the
+same clang flags as the generated Flow C. A cold row times compile and
+execute, so it does not use them. `attribution.flow_vs_native` on a
+startup row is what the Flow executable adds to process start over plain
+C (loader, runtime initialization, linked libraries); 1.0 means nothing.
+`--check-runtime-natives` fails when a startup program has no twin.
+
+Startup rows measure wall time from process launch to exit, so they
+include spawn cost and the program's own work. They are not an
+`execve`-to-`main` measurement. The C twin pays the same spawn and exec
+cost, and the ratio cancels it. On macOS the first run of a newly linked
+binary also pays the system's code-signature check (about 200 ms). It
+lands in the p95 and leaves the median alone. Compare rows only when the
+CPU, the OS and the `timing_scope` match.
 
 ```bash
 ./flow tool bench_harness --smoke --out startup-smoke.json

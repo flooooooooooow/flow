@@ -208,6 +208,15 @@ function main() -> i32 {
     let natives_out: string = capture(nc)
     check("runtime natives exit", "0", s_itoa(last_status()))
     count(s_contains(natives_out, "runtime natives: complete"), "FAIL runtime natives were not complete:\n" + natives_out)
+    # Startup rows have C twins, so flow_vs_native attributes the Flow
+    # executable's own start-up cost (#746).
+    let mut sn: i32 = 0
+    let startup_names: ptr<ProcStrs> = s_words("hello tiny_arithmetic file_transform")
+    while sn < sl_len(startup_names) {
+        let want: string = "startup_" + sl_get(startup_names, sn) + ": native"
+        count(s_contains(natives_out, want), "FAIL no native twin line '" + want + "':\n" + natives_out)
+        sn = sn + 1
+    }
 
     # Python may only be asked for its version (the availability probe).
     let calls: ptr<ProcStrs> = s_lines(read_text(log))
