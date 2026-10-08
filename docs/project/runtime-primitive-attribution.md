@@ -71,14 +71,15 @@ These are the expected bounds for the stdlib and harness copies:
 | Primitive | Expected |
 |---|---|
 | `hash_i64` / `hash_string` | O(1) mix of both words / O(length) djb2, not a constant |
-| `hashmap_i64_i64_insert` | amortized O(1); the table doubles before load 1/2 |
-| `hashmap_i64_i64_get` | expected O(1) linear probe |
+| `hashmap_i64_i64_insert` / `hashmap_string_i32_insert` | amortized O(1); the table doubles before load 1/2 |
+| `hashmap_i64_i64_get` / `hashmap_string_i32_get` | expected O(1) linear probe; string lookup also costs O(key length) per equality/hash |
 | Heapsort | O(n log n) time, O(1) extra |
 | Binary search | O(log n) |
 | Reductions | O(n) |
 
-`hashmap_string_i32` still has no insert/get (#1448). That gap is
-listed here so a suite mean cannot hide it.
+`hashmap_string_i32` now has insert/get/contains/free (#1448) with borrowed
+immutable key ownership; add a promoted benchmark row before treating it as a
+measured runtime primitive.
 
 ## Promoted hot primitives
 

@@ -192,7 +192,11 @@ struct Queue_i32 {
 
 ### HashMap_string_i32
 
-Key-value store.
+Open-addressed `string -> i32` map with linear probing. Keys are **borrowed
+immutable strings**: insert stores the pointer without copying bytes, so the
+caller must keep every inserted key alive and unchanged until the map is
+freed. Overwriting an equal key updates only the value and retains the
+original stored key pointer. The table doubles before load factor 1/2.
 
 ```flow-pseudocode
 struct HashMap_string_i32 {
@@ -204,9 +208,13 @@ struct HashMap_string_i32 {
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `hashmap_string_i32_new` | `(i32) -> HashMap_string_i32` | Create with capacity |
-| `hashmap_string_i32_len` | `(HashMap_string_i32) -> i32` | Get size |
+| `hashmap_string_i32_new` | `(i32) -> HashMap_string_i32` | Create with capacity (minimum 8) |
+| `hashmap_string_i32_len` | `(HashMap_string_i32) -> i32` | Occupied entries |
 | `hashmap_string_i32_is_empty` | `(HashMap_string_i32) -> bool` | Check if empty |
+| `hashmap_string_i32_contains` | `(HashMap_string_i32, string) -> bool` | Probe by string contents |
+| `hashmap_string_i32_get` | `(HashMap_string_i32, string, i32) -> i32` | Lookup, or the default |
+| `hashmap_string_i32_insert` | `(HashMap_string_i32, string, i32) -> HashMap_string_i32` | Insert/overwrite borrowed key; may grow |
+| `hashmap_string_i32_free` | `(HashMap_string_i32) -> void` | Release buckets; does not free borrowed keys |
 | `hash_string` | `(string) -> i32` | djb2 over the C-string bytes |
 
 ### HashMap_i64_i64
