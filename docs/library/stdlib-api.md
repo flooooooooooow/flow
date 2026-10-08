@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**123** modules scanned.
+**124** modules scanned.
 
 ## Modules
 
@@ -1863,6 +1863,7 @@ First-class GPU / unified memory  CPU heap stays in stdlib/memory.flow.
 | `gpu_copy_from_device` | `(dst: ptr<void>, src: GpuBuffer, nbytes: i64) -> i32` | - |
 | `gpu_copy_device_to_device` | `(dst: GpuBuffer, src: GpuBuffer, nbytes: i64) -> i32` | - |
 | `unified_allocate` | `(size: i64) -> GpuBuffer` | - |
+| `gpu_model_dispatch_count` | `() -> i64` | Only completed device-side tensor dispatches count as GPU execution proof. |
 
 ### `gpu_resource_types.flow`
 
@@ -1933,6 +1934,63 @@ Portable P1 vertex/fragment stage descriptors and code generation (#811). The st
 | `gpu_sampled_pipeline_valid` | `(p: GpuSampledPipeline) -> bool` | Texture sampling is forbidden from multisampled / writable-only image bindings. A cube lookup requires vec3<f32>; a 2D sample uses vec2<f32>. |
 | `gpu_emit_wgsl_sampled` | `(p: GpuSampledPipeline) -> string` | These emit a real position-fetch and texture-sampling shader pair; they do not emit empty stage stubs. Source is independent of draw/instance counts. Indexing and MSAA state are enforced by the future pipeline host. |
 | `gpu_emit_metal_sampled` | `(p: GpuSampledPipeline) -> string` | - |
+
+### `gpu_tensor.flow`
+
+GPU tensors over the shared GpuBuffer resource model (#814).  Import: import "stdlib/gpu_tensor.flow"
+
+**Structs:** `GpuTensor`, `GpuTensorLayout`
+
+**Constants:**
+
+- `GPU_DTYPE_F32: i32`
+- `GPU_DTYPE_F16: i32`
+- `GPU_DTYPE_I32: i32`
+- `GPU_DTYPE_U8: i32`
+- `GPU_ACCESS_READ: i32`
+- `GPU_ACCESS_WRITE: i32`
+- `GPU_ACCESS_READ_WRITE: i32`
+- `GPU_RES_BUFFER: i32`
+- `GPU_RES_TEXTURE: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_dtype_bytes` | `(dtype: i32) -> i32` | Byte width of one element, or 0 for an unknown dtype. |
+| `gpu_tensor_numel` | `(d0: i32, d1: i32, d2: i32, d3: i32) -> i32` | Number of elements in a 4-D shape, or 0 if any dimension is not positive. |
+| `gpu_tensor_layout` | `(gt: GpuTensor) -> GpuTensorLayout` | Layout snapshot of a live tensor (shape, dtype, access, kind). |
+| `gpu_tensor_layout_eq` | `(a: GpuTensorLayout, b: GpuTensorLayout) -> bool` | True when two layouts agree on dtype, shape, access and resource kind. |
+| `gpu_tensor_empty` | `() -> GpuTensor` | Empty tensor (null storage). All bind checks fail. |
+| `gpu_tensor_is_empty` | `(gt: GpuTensor) -> bool` | True when the tensor has no host-visible storage. |
+| `gpu_tensor_alloc` | `(dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32) -> GpuTensor` | Allocate a GpuTensor. Uses a unified GpuBuffer when the backend provides one (zero-copy). Otherwise host staging, with an explicit device buffer when alloc succeeds (private / non-unified) or host-only storage on the stub. |
+| `gpu_tensor_alloc_f32` | `(d0: i32, d1: i32, d2: i32, d3: i32) -> GpuTensor` | Allocate an f32 GpuTensor with shape (d0, d1, d2, d3). |
+| `gpu_tensor_from_buffer` | `(buf: GpuBuffer, dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32, access: i32) -> GpuTensor` | Wrap an existing GpuBuffer as a tensor view. Unified buffers are zero-copy; private buffers get host staging (explicit upload/download). |
+| `gpu_tensor_from_host` | `(t: Tensor) -> GpuTensor` | Copy a host Tensor into a GpuTensor (explicit upload). |
+| `gpu_tensor_view_host` | `(t: Tensor) -> GpuTensor` | Host-only view of an existing Tensor. No device buffer; this is the explicit conversion used when a backend cannot alias host and device storage. |
+| `gpu_tensor_free` | `(gt: GpuTensor) -> void` | Release owned host staging and, when this tensor allocated it, the GpuBuffer. |
+| `gpu_tensor_buffer` | `(gt: GpuTensor) -> GpuBuffer` | The backing GpuBuffer (same handle @gpu / compute stages consume). |
+| `gpu_tensor_ptr` | `(gt: GpuTensor) -> ptr<f32>` | Host-visible pointer for kernels and model ops. On unified memory this is the device mapping (zero-copy). |
+| `gpu_tensor_is_zero_copy` | `(gt: GpuTensor) -> bool` | True when `data` is a mapping of `buffer` (no staging copy required). |
+| `gpu_tensor_is_device` | `(gt: GpuTensor) -> bool` | True when a real device buffer is attached (false on the stub fallback). |
+| `gpu_tensor_same_storage` | `(a: GpuTensor, b: GpuTensor) -> bool` | True when `a` and `b` share the same host-visible storage pointer. |
+| `gpu_tensor_upload` | `(gt: GpuTensor) -> i32` | Copy host staging to the device buffer. No-op for zero-copy and stub. |
+| `gpu_tensor_download` | `(gt: GpuTensor) -> i32` | Copy the device buffer to host staging. No-op for zero-copy and stub. |
+| `gpu_tensor_to_host` | `(gt: GpuTensor) -> Tensor` | Explicit download into a new host Tensor. |
+| `gpu_tensor_fill` | `(gt: GpuTensor, val: f32) -> i32` | Fill every element with `val` (in-place on the shared storage). |
+| `gpu_tensor_matches` | `(gt: GpuTensor, dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32) -> bool` | True when shape and dtype match the expected 4-D layout. |
+| `gpu_tensor_compatible` | `(a: GpuTensor, b: GpuTensor) -> bool` | True when two tensors can alias as the same logical resource layout. |
+| `gpu_tensor_can_bind` | `(gt: GpuTensor, dtype: i32, access: i32) -> bool` | True when the tensor's dtype and access bits cover a shader/model bind. |
+| `gpu_tensor_require` | `(gt: GpuTensor, dtype: i32, d0: i32, d1: i32, d2: i32, d3: i32) -> i32` | 0 when the tensor matches; 1 empty, 2 dtype, 3 shape. |
+| `gpu_tensor_normalize` | `(src: GpuTensor, dst: GpuTensor, scale: f32) -> i32` | dst[i] = src[i] / scale. Same-storage src==dst is allowed. |
+| `gpu_tensor_scale_bias` | `(src: GpuTensor, dst: GpuTensor, scale: f32, bias: f32) -> i32` | dst[i] = src[i] * scale + bias. |
+| `gpu_tensor_relu` | `(src: GpuTensor, dst: GpuTensor) -> i32` | dst[i] = max(0, src[i]). |
+| `gpu_tensor_clamp01` | `(src: GpuTensor, dst: GpuTensor) -> i32` | dst[i] = clamp(src[i], 0, 1). |
+| `gpu_tensor_invert01` | `(src: GpuTensor, dst: GpuTensor) -> i32` | dst[i] = 1 - clamp(src[i], 0, 1). |
+| `gpu_tensor_linear` | `(out: GpuTensor, inp: GpuTensor, weight: GpuTensor) -> i32` | out = inp @ weight for 2-D f32 layouts: inp (M,K), weight (K,N), out (M,N). |
+| `gpu_tensor_max_abs_diff` | `(a: GpuTensor, b: GpuTensor) -> f32` | Maximum \|a[i] - b[i]\| for equal-shape f32 tensors. |
+| `gpu_tensor_argmax` | `(gt: GpuTensor) -> i32` | Flat index of the maximum f32 element, or -1 if empty. |
+| `gpu_tensor_mean` | `(gt: GpuTensor) -> f32` | Mean of all f32 elements, or 0 if empty. |
 
 ### `io.flow`
 

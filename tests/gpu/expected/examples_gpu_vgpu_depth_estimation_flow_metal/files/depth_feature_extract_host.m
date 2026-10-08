@@ -2,8 +2,8 @@
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
 
-void run_estimator(
-    int input, int output, size_t count
+void run_depth_feature_extract(
+    int image, int features, int n, size_t count
 ) {
     @autoreleasepool {
         // Get default Metal device
@@ -14,7 +14,7 @@ void run_estimator(
         }
 
         // Load shader library
-        NSString* shaderPath = @"@ROOT@/build/gpu/estimator.metal";
+        NSString* shaderPath = @"@ROOT@/build/gpu/depth_feature_extract.metal";
         NSError* error = nil;
         NSString* shaderSource = [NSString stringWithContentsOfFile:shaderPath encoding:NSUTF8StringEncoding error:&error];
         id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
@@ -23,7 +23,7 @@ void run_estimator(
             return;
         }
 
-        id<MTLFunction> kernel = [library newFunctionWithName:@"estimator"];
+        id<MTLFunction> kernel = [library newFunctionWithName:@"depth_feature_extract"];
         id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:kernel error:&error];
 
         // Create command queue
@@ -32,8 +32,9 @@ void run_estimator(
         id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
         [encoder setComputePipelineState:pipeline];
 
-        [encoder setBytes:&input length:sizeof(input) atIndex:0];
-        [encoder setBytes:&output length:sizeof(output) atIndex:1];
+        [encoder setBytes:&image length:sizeof(image) atIndex:0];
+        [encoder setBytes:&features length:sizeof(features) atIndex:1];
+        [encoder setBytes:&n length:sizeof(n) atIndex:2];
 
         // Dispatch threads
         MTLSize gridSize = MTLSizeMake(count, 1, 1);
@@ -45,6 +46,5 @@ void run_estimator(
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
 
-        memcpy(output, buffer1.contents, count * sizeof(float));
     }
 }

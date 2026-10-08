@@ -753,6 +753,10 @@
           "path": "library/gpu-resource-types.md"
         },
         {
+          "label": "GPU Tensors",
+          "path": "library/gpu-tensor.md"
+        },
+        {
           "label": "Tiny Pointers",
           "path": "library/tiny-pointers.md"
         },

@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 
 typedef struct FlowGpuBuffer {
     void *mtl_ref; /* CFBridgingRetain(id<MTLBuffer>) */
@@ -22,6 +23,15 @@ typedef struct FlowGpuBuffer {
 static id<MTLDevice> g_device = nil;
 static id<MTLCommandQueue> g_queue = nil;
 static id<MTLComputePipelineState> g_mulElemPSO = nil;
+static id<MTLComputePipelineState> g_scaleBiasPSO = nil;
+static id<MTLComputePipelineState> g_reluPSO = nil;
+static id<MTLComputePipelineState> g_invertPSO = nil;
+static id<MTLComputePipelineState> g_gemmPSO = nil;
+static _Atomic uint64_t g_modelDispatchCount = 0;
+
+int64_t flow_gpu_model_dispatch_count(void) {
+    return (int64_t)atomic_load_explicit(&g_modelDispatchCount, memory_order_relaxed);
+}
 
 /* Elementwise mul — also used for mul backward (grad_a = go*b, grad_b = go*a). */
 static const char *kGpuGradMetalSource =
@@ -34,6 +44,37 @@ static const char *kGpuGradMetalSource =
     "                         uint gid [[thread_position_in_grid]]) {\n"
     "    if (gid >= n) return;\n"
     "    out[gid] = x[gid] * y[gid];\n"
+    "}\n"
+    "kernel void scale_bias_f32(device float* out [[buffer(0)]],\n"
+    "                           const device float* x [[buffer(1)]],\n"
+    "                           constant float2& factors [[buffer(2)]],\n"
+    "                           constant uint& n [[buffer(3)]],\n"
+    "                           uint gid [[thread_position_in_grid]]) {\n"
+    "    if (gid < n) out[gid] = x[gid] * factors.x + factors.y;\n"
+    "}\n"
+    "kernel void relu_f32(device float* out [[buffer(0)]],\n"
+    "                     const device float* x [[buffer(1)]],\n"
+    "                     constant uint& n [[buffer(2)]],\n"
+    "                     uint gid [[thread_position_in_grid]]) {\n"
+    "    if (gid < n) out[gid] = max(x[gid], 0.0f);\n"
+    "}\n"
+    "kernel void invert_clamp01_f32(device float* out [[buffer(0)]],\n"
+    "                     const device float* x [[buffer(1)]],\n"
+    "                     constant uint& n [[buffer(2)]],\n"
+    "                     uint gid [[thread_position_in_grid]]) {\n"
+    "    if (gid < n) out[gid] = 1.0f - clamp(x[gid], 0.0f, 1.0f);\n"
+    "}\n"
+    "kernel void gemm_f32(device float* out [[buffer(0)]],\n"
+    "                     const device float* input [[buffer(1)]],\n"
+    "                     const device float* weights [[buffer(2)]],\n"
+    "                     constant uint4& dims [[buffer(3)]],\n"
+    "                     uint gid [[thread_position_in_grid]]) {\n"
+    "    uint m = dims.x, k = dims.y, n = dims.z;\n"
+    "    if (gid >= m * n) return;\n"
+    "    uint row = gid / n, col = gid % n;\n"
+    "    float acc = 0.0f;\n"
+    "    for (uint q = 0; q < k; ++q) acc += input[row * k + q] * weights[q * n + col];\n"
+    "    out[gid] = acc;\n"
     "}\n";
 
 static id<MTLBuffer> flow_gpu_mtl(FlowGpuBuffer *buf) {
@@ -258,6 +299,19 @@ static int flow_gpu_compute_init(void) {
         if (g_mulElemPSO == nil) {
             return -1;
         }
+        fn = [lib newFunctionWithName:@"scale_bias_f32"];
+        if (!fn) return -1;
+        g_scaleBiasPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
+        fn = [lib newFunctionWithName:@"relu_f32"];
+        if (!fn) return -1;
+        g_reluPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
+        fn = [lib newFunctionWithName:@"invert_clamp01_f32"];
+        if (!fn) return -1;
+        g_invertPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
+        fn = [lib newFunctionWithName:@"gemm_f32"];
+        if (!fn) return -1;
+        g_gemmPSO = [g_device newComputePipelineStateWithFunction:fn error:&error];
+        if (!g_scaleBiasPSO || !g_reluPSO || !g_invertPSO || !g_gemmPSO) return -1;
     }
     return 0;
 }
@@ -270,10 +324,10 @@ static int flow_gpu_dispatch_mul_elem(void *out_gpu, void *x_gpu, void *y_gpu, i
     FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
     FlowGpuBuffer *x = (FlowGpuBuffer *)x_gpu;
     FlowGpuBuffer *y = (FlowGpuBuffer *)y_gpu;
-    if (!flow_gpu_f32_launch_fits(n, out->size, x->size, y->size)) {
-        return -1;
-    }
-    if (flow_gpu_compute_init() != 0) {
+    // No signed n*sizeof(float) multiplication or uint32_t truncation:
+    // flow_gpu_f32_launch_fits compares n with each buffer by division.
+    if (!flow_gpu_f32_launch_fits(n, out->size, x->size, y->size) ||
+        flow_gpu_compute_init() != 0) {
         return -1;
     }
 
@@ -337,6 +391,121 @@ int flow_gpu_mul_backward_a_f32(void *grad_a_gpu, void *grad_out_gpu, void *b_gp
 int flow_gpu_mul_backward_b_f32(void *grad_b_gpu, void *grad_out_gpu, void *a_gpu, int64_t n) {
     /* grad_b = grad_out * a */
     return flow_gpu_dispatch_mul_elem(grad_b_gpu, grad_out_gpu, a_gpu, n);
+}
+
+
+/* Validate capacity in ELEMENTS before any product/uint32 conversion. */
+static int flow_gpu_f32_count_fits(const FlowGpuBuffer *b, int64_t n) {
+    return b && b->size >= 0 && n > 0 && (uint64_t)n <= UINT32_MAX &&
+           (uint64_t)n <= (uint64_t)b->size / sizeof(float);
+}
+
+/* One independent output element per thread, shared by scale+bias and ReLU.
+ * A unified buffer is still a real Metal buffer; no CPU element loop runs. */
+static int flow_gpu_dispatch_unary(void *out_gpu, void *input_gpu,
+                                   float scale, float bias, int64_t n,
+                                   int kind) {
+    if (!out_gpu || !input_gpu) return -1;
+    FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
+    FlowGpuBuffer *input = (FlowGpuBuffer *)input_gpu;
+    if (!flow_gpu_f32_count_fits(out, n) || !flow_gpu_f32_count_fits(input, n) ||
+        flow_gpu_compute_init() != 0) return -1;
+
+    @autoreleasepool {
+        id<MTLComputePipelineState> pso = kind == 1 ? g_reluPSO : (kind == 2 ? g_invertPSO : g_scaleBiasPSO);
+        id<MTLBuffer> out_buf = flow_gpu_mtl(out);
+        id<MTLBuffer> in_buf = flow_gpu_mtl(input);
+        if (!pso || !out_buf || !in_buf) return -1;
+        id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+        if (!cmd) return -1;
+        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+        if (!enc) return -1;
+        [enc setComputePipelineState:pso];
+        [enc setBuffer:out_buf offset:0 atIndex:0];
+        [enc setBuffer:in_buf offset:0 atIndex:1];
+        uint32_t count = (uint32_t)n;
+        if (kind != 0) {
+            [enc setBytes:&count length:sizeof(count) atIndex:2];
+        } else {
+            float factors[2] = {scale, bias};
+            [enc setBytes:factors length:sizeof(factors) atIndex:2];
+            [enc setBytes:&count length:sizeof(count) atIndex:3];
+        }
+        NSUInteger threads = pso.maxTotalThreadsPerThreadgroup;
+        if (threads > 256) threads = 256;
+        if (threads == 0) return -1;
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)n, 1, 1)
+           threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        if ([cmd status] != MTLCommandBufferStatusCompleted) return -1;
+        atomic_fetch_add_explicit(&g_modelDispatchCount, 1, memory_order_relaxed);
+        return 0;
+    }
+}
+
+int flow_gpu_scale_bias_f32(void *out_gpu, void *input_gpu,
+                            float scale, float bias, int64_t n) {
+    return flow_gpu_dispatch_unary(out_gpu, input_gpu, scale, bias, n, 0);
+}
+
+int flow_gpu_relu_f32(void *out_gpu, void *input_gpu, int64_t n) {
+    return flow_gpu_dispatch_unary(out_gpu, input_gpu, 0.0f, 0.0f, n, 1);
+}
+
+int flow_gpu_invert_clamp01_f32(void *out_gpu, void *input_gpu, int64_t n) {
+    return flow_gpu_dispatch_unary(out_gpu, input_gpu, 0.0f, 0.0f, n, 2);
+}
+
+int flow_gpu_gemm_f32(void *out_gpu, void *input_gpu, void *weights_gpu,
+                      int64_t m, int64_t k, int64_t n) {
+    if (!out_gpu || !input_gpu || !weights_gpu || out_gpu == input_gpu ||
+        out_gpu == weights_gpu || m <= 0 || k <= 0 || n <= 0 ||
+        (uint64_t)m > UINT32_MAX || (uint64_t)k > UINT32_MAX ||
+        (uint64_t)n > UINT32_MAX) return -1;
+    FlowGpuBuffer *out = (FlowGpuBuffer *)out_gpu;
+    FlowGpuBuffer *input = (FlowGpuBuffer *)input_gpu;
+    FlowGpuBuffer *weights = (FlowGpuBuffer *)weights_gpu;
+    uint64_t elements = (uint64_t)m * (uint64_t)n;
+    // The generated shader indexes with uint32_t products. All flattened
+    // offsets must be within that range before launching any threads.
+    if (elements > UINT32_MAX ||
+        (uint64_t)m * (uint64_t)k > UINT32_MAX ||
+        (uint64_t)k * (uint64_t)n > UINT32_MAX ||
+        out->size < 0 || input->size < 0 ||
+        weights->size < 0 ||
+        elements > (uint64_t)out->size / sizeof(float) ||
+        (uint64_t)m * (uint64_t)k > (uint64_t)input->size / sizeof(float) ||
+        (uint64_t)k * (uint64_t)n > (uint64_t)weights->size / sizeof(float) ||
+        flow_gpu_compute_init() != 0) return -1;
+    @autoreleasepool {
+        id<MTLBuffer> dst = flow_gpu_mtl(out);
+        id<MTLBuffer> lhs = flow_gpu_mtl(input);
+        id<MTLBuffer> rhs = flow_gpu_mtl(weights);
+        if (!dst || !lhs || !rhs || !g_gemmPSO) return -1;
+        id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+        if (!cmd) return -1;
+        id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+        if (!enc) return -1;
+        uint32_t dims[4] = {(uint32_t)m, (uint32_t)k, (uint32_t)n, 0};
+        [enc setComputePipelineState:g_gemmPSO];
+        [enc setBuffer:dst offset:0 atIndex:0];
+        [enc setBuffer:lhs offset:0 atIndex:1];
+        [enc setBuffer:rhs offset:0 atIndex:2];
+        [enc setBytes:dims length:sizeof(dims) atIndex:3];
+        NSUInteger threads = g_gemmPSO.maxTotalThreadsPerThreadgroup;
+        if (threads > 256) threads = 256;
+        if (threads == 0) return -1;
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)elements, 1, 1)
+           threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        if ([cmd status] != MTLCommandBufferStatusCompleted) return -1;
+        atomic_fetch_add_explicit(&g_modelDispatchCount, 1, memory_order_relaxed);
+        return 0;
+    }
 }
 
 #endif /* __APPLE__ */

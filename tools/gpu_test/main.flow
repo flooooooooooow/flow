@@ -495,6 +495,40 @@ function run_one(c: ptr<Case>, backend: string, capture: bool) -> i32 {
     }
 
     if t_eq(mode, "numerical") {
+        # Compile + CPU reference execution does not prove device parity.
+        # The Flow Metal runtime exposes a completed compute-dispatch
+        # counter, and the model program prints a marker only after a real
+        # device-side kernel completes and its CPU-reference check passes.
+        if t_eq(c[0].model, "mnist") or t_eq(c[0].model, "depth") {
+            if not t_eq(backend, "metal") {
+                report(c, backend, "UNSUPPORTED", "-", "device-execution")
+                return 0
+            }
+            ensure_dir("build")
+            ensure_dir("build/vgpu")
+            let output_path: string = "build/vgpu/" + c[0].id + "-model.out"
+            let err_path: string = "build/vgpu/" + c[0].id + "-model.err"
+            let args: TList = tl_new()
+            tl_push(&args, "./flow")
+            tl_push(&args, "run")
+            tl_push(&args, c[0].source)
+            let p: Proc = spawn(&args, cwd(), "", output_path, err_path, 180.0)
+            if p.code != 0 {
+                report(c, backend, "FAIL", "-", "model-exit")
+                return 1
+            }
+            let trace: string = t_read_file(output_path)
+            if not t_contains(trace, "match 1") {
+                report(c, backend, "FAIL", "-", "cpu-reference-mismatch")
+                return 1
+            }
+            if not t_contains(trace, "GPU_DEVICE_EXECUTED metal") {
+                report(c, backend, "UNSUPPORTED", "-", "device-execution")
+                return 0
+            }
+            report(c, backend, "NUMERICAL", "<=0.0001", "metal-device-dispatch")
+            return 0
+        }
         if t_len(c[0].reference) == 0 or t_len(c[0].actual) == 0 {
             report(c, backend, "UNSUPPORTED", "-", "numerical-reference")
             return 0

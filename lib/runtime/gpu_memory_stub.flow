@@ -140,3 +140,29 @@ export function flow_gpu_graph_exec_stat(ex: ptr<void>, which: i32) -> i32 {
 export function flow_gpu_graph_exec_gpu_ms(ex: ptr<void>) -> f64 {
     return 0.0
 }
+
+# GPU tensor model kernels. The non-Metal runtime cannot dispatch them.
+@flow_api
+export function flow_gpu_scale_bias_f32(out: ptr<void>, input: ptr<void>, scale: f32, bias: f32, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_relu_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_gemm_f32(out: ptr<void>, input: ptr<void>, weights: ptr<void>, m: i64, k: i64, n: i64) -> i32 {
+    return -1
+}
+
+@flow_api
+export function flow_gpu_model_dispatch_count() -> i64 {
+    return 0
+}
+
+@flow_api
+export function flow_gpu_invert_clamp01_f32(out: ptr<void>, input: ptr<void>, n: i64) -> i32 {
+    return -1
+}
