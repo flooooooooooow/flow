@@ -146,9 +146,15 @@ function check_gpu_test_numerical() -> i32 {
        not a_contains(text, "CASE mnist [metal] UNSUPPORTED") { return T_FAIL }
     if not a_contains(text, "CASE depth [metal] NUMERICAL") and
        not a_contains(text, "CASE depth [metal] UNSUPPORTED") { return T_FAIL }
-    if not a_contains(text, "CASE mnist [webgpu] UNSUPPORTED") { return T_FAIL }
-    if not a_contains(text, "CASE depth [webgpu] UNSUPPORTED") { return T_FAIL }
-    if not a_contains(text, "reason=device-execution") { return T_FAIL }
+    # WebGPU counts only after a device run (Deno and an adapter); without
+    # one the case is UNSUPPORTED. Never a pass from shader emission alone.
+    if not a_contains(text, "CASE mnist [webgpu] UNSUPPORTED") and
+       not a_contains(text, "CASE mnist [webgpu] NUMERICAL") { return T_FAIL }
+    if not a_contains(text, "CASE depth [webgpu] UNSUPPORTED") and
+       not a_contains(text, "CASE depth [webgpu] NUMERICAL") { return T_FAIL }
+    if a_contains(text, "[webgpu] NUMERICAL") and not a_contains(text, "reason=webgpu-device-dispatch") {
+        return T_FAIL
+    }
     return T_PASS
 }
 
