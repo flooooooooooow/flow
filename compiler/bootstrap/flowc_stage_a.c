@@ -69823,15 +69823,15 @@ int32_t flowc_cgen_sig_field_is_string(CgenBuf* w, AstArena arena, uint8_t* src,
   if (bt == AST_NONE || bt < 0 || ((arena).nodes[bt]).kind != AST_TYPE) {
   return 0;
 }
-  if (((arena).nodes[bt]).a == AST_NONE || flowc_cgen_span_is(src, ((arena).nodes[bt]).name_start, ((arena).nodes[bt]).name_end, "ptr") == 0) {
+  int32_t st = bt;
+  if (((arena).nodes[bt]).a != AST_NONE && flowc_cgen_span_is(src, ((arena).nodes[bt]).name_start, ((arena).nodes[bt]).name_end, "ptr") == 1) {
+  st = ((arena).nodes[bt]).a;
+}
+  if (st == AST_NONE || ((arena).nodes[st]).kind != AST_TYPE || ((arena).nodes[st]).a != AST_NONE || ((arena).nodes[st]).ival != 0) {
   return 0;
 }
-  int32_t pt = ((arena).nodes[bt]).a;
-  if (((arena).nodes[pt]).kind != AST_TYPE || ((arena).nodes[pt]).a != AST_NONE || ((arena).nodes[pt]).ival != 0) {
-  return 0;
-}
-  int32_t ss = ((arena).nodes[pt]).name_start;
-  int32_t se = ((arena).nodes[pt]).name_end;
+  int32_t ss = ((arena).nodes[st]).name_start;
+  int32_t se = ((arena).nodes[st]).name_end;
   int32_t fs = ((arena).nodes[v]).name_start;
   int32_t fe = ((arena).nodes[v]).name_end;
   int32_t keylen = (((1 + (se - ss)) + 1) + (fe - fs));
@@ -73939,11 +73939,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st26043 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st26043; }
-  { __typeof__((w[0]).plan_has) __flowc_st26055 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st26055; }
-  { __typeof__((w[0]).plan_seen) __flowc_st26067 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st26067; }
-  { __typeof__((w[0]).plan_lo) __flowc_st26079 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st26079; }
-  { __typeof__((w[0]).plan_hi) __flowc_st26091 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st26091; }
+  { __typeof__((w[0]).plan_order) __flowc_st26048 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st26048; }
+  { __typeof__((w[0]).plan_has) __flowc_st26060 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st26060; }
+  { __typeof__((w[0]).plan_seen) __flowc_st26072 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st26072; }
+  { __typeof__((w[0]).plan_lo) __flowc_st26084 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st26084; }
+  { __typeof__((w[0]).plan_hi) __flowc_st26096 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st26096; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
