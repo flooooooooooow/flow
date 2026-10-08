@@ -101,10 +101,10 @@ export function gpu_graph_body_metal(name: string, a: string, b: string, c: stri
         return "uint2 xy=uint2(pos.xy);if(xy.x>=" + b + ".get_width()||xy.y>=" + b + ".get_height())return float4(0,0,0,1);return " + b + ".read(xy);"
     }
     if name == "present" {
-        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + a + ".get_width()||xy.y>=" + a + ".get_height())return float4(0,0,0,1);float4 d=" + a + ".read(xy),n=" + b + ".read(xy);float foam=" + c + ".read(xy).x;return float4(mix(n.xyz*abs(d.z),float3(1.0f),foam),1.0f);"
+        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + a + ".get_width()||xy.y>=" + a + ".get_height())return float4(0,0,0,1);float4 d=" + a + ".read(xy),n=" + b + ".read(xy);float fm=" + c + ".read(xy).x;return float4(mix(n.xyz*abs(d.z),float3(1.0f),fm),1.0f);"
     }
     if name == "surface" {
-        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + a + ".get_width()||xy.y>=" + a + ".get_height())return float4(0,0,0,1);float4 d=" + a + ".read(xy),n=" + b + ".read(xy);float foam=" + c + ".read(xy).x;return float4(mix(n.xyz*abs(d.z),float3(1.0f),foam),1.0f);"
+        return "uint2 xy=uint2(pos.xy);if(xy.x>=" + a + ".get_width()||xy.y>=" + a + ".get_height())return float4(0,0,0,1);float4 d=" + a + ".read(xy),n=" + b + ".read(xy);float fm=" + c + ".read(xy).x;return float4(mix(n.xyz*abs(d.z),float3(1.0f),fm),1.0f);"
     }
     return ""
 }
