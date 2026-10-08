@@ -21,6 +21,9 @@ extern {
 
 const PROG: string = "flow tool qualify_release"
 const DEFAULT_FORMULA: string = "packaging/homebrew/Formula/flow.rb"
+# Throwaway local tap for `brew style` / `brew audit` (validate_formula_path).
+const BREW_CHECK_USER: string = "flowqualify"
+const BREW_CHECK_REPO: string = "check"
 const DEFAULT_REV: string = "HEAD"
 const DEFAULT_OUT: string = "build/qualify"
 
@@ -375,21 +378,51 @@ function validate_formula_path(path: string, run_brew: bool) -> i32 {
         ft_outln("formula.brew: skip (brew not on PATH)")
         return 0
     }
-    let style: ptr<StrList> = rp_argv3("brew", "style", path)
-    let st: i32 = run_inherit(style)
-    if st != 0 {
+    # Homebrew 4 and later apply formula rules only to a formula inside a
+    # tap. Given a bare file path, `brew style` runs generic RuboCop and also
+    # loads any installed flooooooooooow/flow tap, so it reports
+    # Style/Documentation and Lint/DuplicateMethods for a valid formula.
+    # Check a copy in a throwaway local tap instead, then remove it.
+    let repo: string = pr_chomp(rp_capture(rp_argv2("brew", "--repository")))
+    if rp_status() != 0 or ft_len(repo) == 0 {
+        ft_errln(PROG + ": brew --repository failed")
+        return 1
+    }
+    let user_dir: string = repo + "/Library/Taps/" + BREW_CHECK_USER
+    let tap_dir: string = user_dir + "/homebrew-" + BREW_CHECK_REPO
+    let _old: i32 = run_inherit(rp_argv3("rm", "-rf", user_dir))
+    if pr_mkdir_p(tap_dir + "/Formula") == false {
+        ft_errln(PROG + ": cannot create " + tap_dir)
+        return 1
+    }
+    if ft_write_file(tap_dir + "/Formula/flow.rb", ft_read_file(path)) == false {
+        ft_errln(PROG + ": cannot copy " + path + " into " + tap_dir)
+        let _w: i32 = run_inherit(rp_argv3("rm", "-rf", user_dir))
+        return 1
+    }
+    let rc: i32 = brew_check_tap(path)
+    let _rm: i32 = run_inherit(rp_argv3("rm", "-rf", user_dir))
+    if rc == 0 {
+        ft_outln("formula.brew: pass")
+    }
+    return rc
+}
+
+function brew_check_tap(path: string) -> i32 {
+    let name: string = BREW_CHECK_USER + "/" + BREW_CHECK_REPO + "/flow"
+    let style: ptr<StrList> = rp_argv3("brew", "style", name)
+    if run_inherit(style) != 0 {
         ft_errln(PROG + ": brew style failed on " + path)
         return 1
     }
+    # `brew audit` is offline unless --online is given; current Homebrew
+    # rejects the old --offline flag.
     let audit: ptr<StrList> = rp_argv3("brew", "audit", "--strict")
-    ft_list_push(audit, "--offline")
-    ft_list_push(audit, path)
-    let au: i32 = run_inherit(audit)
-    if au != 0 {
-        ft_errln(PROG + ": brew audit --strict --offline failed on " + path)
+    ft_list_push(audit, name)
+    if run_inherit(audit) != 0 {
+        ft_errln(PROG + ": brew audit --strict failed on " + path)
         return 1
     }
-    ft_outln("formula.brew: pass")
     return 0
 }
 
