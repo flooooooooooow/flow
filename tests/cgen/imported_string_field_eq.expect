@@ -1,0 +1,5 @@
+# e.w is string even though S is declared in another bundle module.
++ __flowc_str_eq((e).w, "1.0")
+- (e).w == "1.0"
+exit 0
+stdout eq

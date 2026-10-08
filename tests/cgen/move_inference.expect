@@ -1,0 +1,22 @@
+# Last-use return of a unique parameter base: with #732 the function
+# takes a destination, so the base is copied once into it and updated there.
++ *__flowc_sret = (p);
++ (*__flowc_sret).x = 5;
+# An update value that reads the base reads the original binding.
++ (*__flowc_sret).x = (p).y;
+# Last-use argument update mutates the dead base and yields it.
++ consume(({ p.x = 9; p; }));
+# A later mention of the base keeps the copy.
+~ __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.x = 8;
++ return (n + (p).x);
+# Then-branch last-use argument update may move; the other path reads p.
++ consume(({ p.x = 7; p; }));
+# A loop that can iterate again must not move the outer binding.
+~ __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.x = i;
+# Address-taken bindings are not uniquely owned.
++ Point* q = (Point*)((&p));
+~ __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.x = 4;
+# Let-bound update with a later read of the base keeps a distinct copy.
++ q = (p);
++ q.x = 6;
+exit 0

@@ -61,6 +61,12 @@ All notable changes to FLOW will be documented in this file.
   `malloc` / `alloc_*` result. The summary refinement relation is
   implemented and tested; no persistent cache uses it yet. See
   `docs/language/rt-summaries.md`. Closures stay with #766 / PR #1348.
+- flowc: last use of a uniquely owned function-scoped `let` or by-value
+  parameter is a move for record updates. `foo(Name { ..p, f: v })` and
+  `return Name { ..p, f: v }` write the fields onto `p` when `p` is dead,
+  eliding the `__flowc_sl` temporary. A later mention, a repeating loop,
+  `&p`, a capture, a pending `defer`, or an update that reads `p` keeps
+  the copy. No `move` keyword; no implicit COW or sharing. (#696)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.

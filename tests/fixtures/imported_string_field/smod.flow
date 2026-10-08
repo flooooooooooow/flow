@@ -1,0 +1,8 @@
+export struct S {
+    ty: i32,
+    w: string
+}
+
+export function mk(t: string) -> S {
+    return S { ty: 1, w: t + "" }
+}

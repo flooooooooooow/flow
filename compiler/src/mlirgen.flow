@@ -5165,15 +5165,19 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, "  iterator_types = [\"parallel\"]")
     mlg_nl(m)
     mlg_line(m)
+    # linalg operand lists name every value first, then every type:
+    # ins(%a, %b : T, T).
     mlg_s(m, "} ins(")
     if tensor_result == 1 {
         mlg_v(m, v0)
-        mlg_s(m, " : ")
-        mlg_put_type(m, t0)
         mlg_s(m, ", ")
     }
     mlg_v(m, v1)
     mlg_s(m, " : ")
+    if tensor_result == 1 {
+        mlg_put_type(m, t0)
+        mlg_s(m, ", ")
+    }
     mlg_put_type(m, t0)
     mlg_s(m, ") outs(")
     if init != V_NONE {
@@ -5273,7 +5277,7 @@ function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, " = linalg.generic {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<() -> ()>, affine_map<(d0) -> (d0)>],")
+    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> ()>, affine_map<(d0) -> (d0)>],")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  iterator_types = [\"parallel\"]")
@@ -5281,11 +5285,11 @@ function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_line(m)
     mlg_s(m, "} ins(")
     mlg_v(m, v0)
-    mlg_s(m, " : ")
-    mlg_put_type(m, t0)
     mlg_s(m, ", ")
     mlg_v(m, v1)
-    mlg_s(m, " : f32) outs(")
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_s(m, ", f32) outs(")
     mlg_v(m, init)
     mlg_s(m, " : ")
     mlg_put_type(m, t0)

@@ -1,0 +1,70 @@
+# HashMap_string_i32: borrowed keys, collision probing, growth and overwrite (#1448).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "stdlib/collections.flow"
+
+function main() -> i32 {
+    let mut m: HashMap_string_i32 = hashmap_string_i32_new(1)
+    if m.capacity < 8 {
+        return 1
+    }
+    if hashmap_string_i32_is_empty(m) == false {
+        hashmap_string_i32_free(m)
+        return 2
+    }
+
+    # These four collide modulo 8 under djb2 because their low byte differs
+    # by multiples of 8. Linear probing must still distinguish them.
+    m = hashmap_string_i32_insert(m, "a", 1)
+    m = hashmap_string_i32_insert(m, "i", 2)
+    m = hashmap_string_i32_insert(m, "q", 3)
+    m = hashmap_string_i32_insert(m, "y", 4)
+
+    # The fifth insert grows before load 1/2.
+    m = hashmap_string_i32_insert(m, "b", 5)
+    m = hashmap_string_i32_insert(m, "c", 6)
+    m = hashmap_string_i32_insert(m, "d", 7)
+    m = hashmap_string_i32_insert(m, "e", 8)
+    m = hashmap_string_i32_insert(m, "f", 9)
+
+    if hashmap_string_i32_len(m) != 9 {
+        hashmap_string_i32_free(m)
+        return 3
+    }
+    if m.capacity < 32 {
+        hashmap_string_i32_free(m)
+        return 4
+    }
+    if hashmap_string_i32_get(m, "a", -1) != 1 or
+       hashmap_string_i32_get(m, "i", -1) != 2 or
+       hashmap_string_i32_get(m, "q", -1) != 3 or
+       hashmap_string_i32_get(m, "y", -1) != 4 {
+        hashmap_string_i32_free(m)
+        return 5
+    }
+    if hashmap_string_i32_contains(m, "d") == false {
+        hashmap_string_i32_free(m)
+        return 6
+    }
+    if hashmap_string_i32_contains(m, "missing") {
+        hashmap_string_i32_free(m)
+        return 7
+    }
+    if hashmap_string_i32_get(m, "missing", 1234) != 1234 {
+        hashmap_string_i32_free(m)
+        return 8
+    }
+
+    m = hashmap_string_i32_insert(m, "q", 99)
+    if hashmap_string_i32_len(m) != 9 {
+        hashmap_string_i32_free(m)
+        return 9
+    }
+    if hashmap_string_i32_get(m, "q", -1) != 99 {
+        hashmap_string_i32_free(m)
+        return 10
+    }
+
+    hashmap_string_i32_free(m)
+    return 0
+}

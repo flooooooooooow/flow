@@ -18,8 +18,9 @@
 + void keep_copy(Vec8* __flowc_sret
 + (*__flowc_sret).a = (p).b;
 - Vec8 keep_copy(
-# Expression-position update (call argument) still uses a temporary.
-~ __flowc_sl[0-9]+ = \(p\);
+# Expression-position update (call argument) at the last use of a unique
+# parameter mutates the dead base and passes it (#696).
++ take_vec(({ p.a = 1; p; }))
 # Array-field update memcpys into the declared variable, not a temporary.
 + memcpy(&h.cells,
 + h.tag = 7;

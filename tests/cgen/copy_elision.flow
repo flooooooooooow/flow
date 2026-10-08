@@ -52,6 +52,8 @@ function take_vec(v: Vec8) -> i32 {
 }
 
 function arg_keeps_temp(p: Vec8) -> i32 {
+    # Last use of `p` as a unique argument-position update: #696 may
+    # mutate `p` and pass it instead of building `__flowc_sl`.
     return take_vec(Vec8 { ..p, a: 1 })
 }
 
