@@ -1,0 +1,17 @@
+# expect: RT-safety violation: closure bound to an rt_safe contract captures 'g', which has no proven RT-safe summary
+function heap_touch(x: i32) -> i32 {
+    let p: ptr<void> = malloc(8)
+    free(p)
+    return x
+}
+
+@rt_safe
+function process() -> i32 {
+    let g: (i32) -> i32 = heap_touch
+    let f: (i32) -> i32 with rt_safe = |x: i32| -> i32 { return g(x) }
+    return f(1)
+}
+
+function main() -> i32 {
+    return 0
+}

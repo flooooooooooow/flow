@@ -1,0 +1,76 @@
+# Explicit UTF-8 well-formedness (#747). Scans do not allocate.
+# Overlong encodings, surrogates, truncated sequences and a lone
+# continuation byte fail. io_read_text fails closed on invalid bytes.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import std.string { str_utf8_valid, str_utf8_next }
+import std.io { FileRead, io_write_bytes, io_read_text, io_read_file }
+
+extern {
+    function remove(path: string) -> i32
+}
+
+function main() -> i32 {
+    if str_utf8_valid("") == false { return 1 }
+    if str_utf8_valid("abc") == false { return 2 }
+    # U+00E9 as C3 A9
+    let mut cafe: array<u8, 6> = []
+    cafe[0] = 99 as u8
+    cafe[1] = 97 as u8
+    cafe[2] = 102 as u8
+    cafe[3] = 195 as u8
+    cafe[4] = 169 as u8
+    cafe[5] = 0
+    if str_utf8_valid((&cafe[0]) as string) == false { return 3 }
+    if str_utf8_next("A", 0) != 1 { return 4 }
+
+    # 0xFF is never a lead byte.
+    let mut bad1: array<u8, 2> = []
+    bad1[0] = 255 as u8
+    bad1[1] = 0
+    if str_utf8_valid((&bad1[0]) as string) { return 5 }
+
+    # Overlong encoding of U+0000: C0 80.
+    let mut over: array<u8, 3> = []
+    over[0] = 192 as u8
+    over[1] = 128 as u8
+    over[2] = 0
+    if str_utf8_valid((&over[0]) as string) { return 6 }
+
+    # Isolated continuation byte.
+    let mut cont: array<u8, 2> = []
+    cont[0] = 128 as u8
+    cont[1] = 0
+    if str_utf8_valid((&cont[0]) as string) { return 7 }
+
+    # Truncated 2-byte sequence.
+    let mut trunc: array<u8, 2> = []
+    trunc[0] = 194 as u8
+    trunc[1] = 0
+    if str_utf8_valid((&trunc[0]) as string) { return 8 }
+
+    # Surrogate U+D800 as ED A0 80.
+    let mut sur: array<u8, 4> = []
+    sur[0] = 237 as u8
+    sur[1] = 160 as u8
+    sur[2] = 128 as u8
+    sur[3] = 0
+    if str_utf8_valid((&sur[0]) as string) { return 9 }
+
+    let path: string = "/tmp/flow_test_utf8_policy.txt"
+    if io_write_bytes(path, "ok\n" as ptr<u8>, 3) == false { return 10 }
+    let good: FileRead = io_read_text(path)
+    if good.ok == false or good.len != 3 { return 11 }
+
+    if io_write_bytes(path, &bad1[0], 1) == false { return 12 }
+    let raw: FileRead = io_read_file(path)
+    if raw.ok == false or raw.len != 1 { return 13 }
+    let text: FileRead = io_read_text(path)
+    if text.ok { return 14 }
+    if text.len != 1 { return 15 }
+
+    let missing: FileRead = io_read_text("/tmp/flow_test_utf8_policy_missing.txt")
+    if missing.ok or missing.len != 0 { return 16 }
+    let _rm: i32 = remove(path)
+    return 0
+}

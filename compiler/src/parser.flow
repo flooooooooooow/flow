@@ -4512,15 +4512,39 @@ function flowc_parse_unit_decl(p: ptr<Parser>) -> i32 {
 # Optional effect row `with E1, E2` after a return type. AST_FN has no free
 # child slot, so the row is an AST_EFFECT_ROW node (a = effect names) that
 # records its owner in b; backends find it by scanning the arena.
+#
+# Stop before `, name:` so a function-typed parameter
+# `f: (T) -> R with rt_safe, x: i32` does not swallow the next parameter
+# as another effect name (#766).
 export function flowc_parse_effect_row(p: ptr<Parser>) -> i32 {
     if flowc_parser_ident_is(p[0], "with") == 0 {
         return AST_NONE
     }
     let start: i32 = p[0].cur.start
     flowc_parser_advance(p)
-    let names: i32 = flowc_parse_ident_list(p)
-    if names == AST_NONE {
-        return AST_NONE
+    let mut names: i32 = AST_NONE
+    let mut more: i32 = 1
+    while more == 1 {
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        let n: i32 = flowc_parse_claim_ref(p, AST_IDENT)
+        if n == AST_NONE {
+            return AST_NONE
+        }
+        names = flowc_ast_chain_push(&p[0].arena, names, n)
+        if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+            let t1: Token = flowc_parser_peek(p[0], 1)
+            let t2: Token = flowc_parser_peek(p[0], 2)
+            if t1.kind == TOK_IDENT and t2.kind == TOK_COLON {
+                more = 0
+            } else {
+                flowc_parser_advance(p)
+            }
+        } else {
+            more = 0
+        }
     }
     let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EFFECT_ROW, start, p[0].cur.start)
     if id == AST_NONE {

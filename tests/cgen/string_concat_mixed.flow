@@ -1,0 +1,11 @@
+# Mixed numeric `+` chains lower to one __flowc_str_concatn, not nested
+# pairwise joins. `"x=" + n + " y=" + m` is four parts.
+
+function mix(n: i32, m: i32) -> string {
+    return "x=" + n + " y=" + m
+}
+
+function main() -> i32 {
+    println(mix(1, 2))
+    return 0
+}

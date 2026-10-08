@@ -4,6 +4,12 @@
 # fgetc/fputc. Errors are explicit: FileRead.ok is false on open, seek,
 # allocation or short-read failure. A missing file is an error, matching
 # Python open(), not an empty string.
+#
+# `io_read_file` is bytes as stored (binary). `io_read_text` applies the
+# UTF-8 policy in docs/library/strings.md: ok is false when the bytes are
+# not well-formed UTF-8. There is no silent replacement.
+
+import std.string { str_utf8_valid }
 
 # Print a benchmark name and elapsed time. Kept for existing callers.
 export function print_benchmark(name: string, time: f64) -> void {
@@ -86,6 +92,21 @@ export function io_write_bytes(path: string, buf: ptr<u8>, n: i64) -> bool {
 # Write a NUL-terminated string. The terminator is not written.
 export function io_write_file(path: string, text: string) -> bool {
     return io_write_bytes(path, text as ptr<u8>, strlen(text))
+}
+
+# Read the file as UTF-8 text. Same buffered path as `io_read_file`, then
+# a linear well-formedness scan. On invalid UTF-8, ok is false and `data`
+# still holds the raw bytes so the caller can inspect them. A missing file
+# is ok = false with len = 0.
+export function io_read_text(path: string) -> FileRead {
+    let r: FileRead = io_read_file(path)
+    if r.ok == false {
+        return r
+    }
+    if str_utf8_valid(r.data) == false {
+        return FileRead { data: r.data, len: r.len, ok: false }
+    }
+    return r
 }
 
 # Read up to `cap` bytes into a caller-owned buffer. Returns the number of

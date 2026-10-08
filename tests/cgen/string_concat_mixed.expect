@@ -1,0 +1,5 @@
++ __flowc_str_concatn(4, "x=",
+- __flowc_str_concat(__flowc_str_concat
+- ("x=" +
+exit 0
+stdout x=1 y=2

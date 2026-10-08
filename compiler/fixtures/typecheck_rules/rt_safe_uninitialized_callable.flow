@@ -1,0 +1,10 @@
+# expect: RT-safety violation: local rt_safe callable 'f' requires a proven initializer
+@rt_safe
+function process(x: i32) -> i32 {
+    let mut f: (i32) -> i32 with rt_safe
+    return x
+}
+
+function main() -> i32 {
+    return process(0)
+}

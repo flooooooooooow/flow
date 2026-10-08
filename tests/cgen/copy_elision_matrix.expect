@@ -1,0 +1,12 @@
+# Matrix / array-field let constructs into the declared variable.
++ memcpy(&n.a,
++ n.tag = 7;
+# Sret for the matrix-returning helper: no extra `__flowc_sl` on that return.
++ void scale(Mat2* __flowc_sret
++ *__flowc_sret = (m);
+# Last-use closure binding is a fat-pointer move, not an environment memcpy.
+- memcpy(&g
++ fn_i32__i32 g = f
+# Call site destination-passing.
++ scale(&s
+exit 0

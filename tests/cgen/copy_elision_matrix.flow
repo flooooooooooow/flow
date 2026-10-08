@@ -1,0 +1,48 @@
+# Arrays, closures and matrices on the #732 copy-elision paths.
+#
+# A 2×2 matrix is a named struct with an array field. Let-bound updates
+# and sret returns must not introduce a `__flowc_sl` temporary. A last-use
+# closure return is a fat-pointer move (no environment memcpy).
+
+struct Mat2 {
+    a: array<i32, 4>,
+    tag: i32
+}
+
+function scale(m: Mat2, k: i32) -> Mat2 {
+    return Mat2 { ..m, tag: m.tag + k }
+}
+
+function relabel(m: Mat2) -> i32 {
+    let fresh: array<i32, 4> = [9, 8, 7, 6]
+    let n: Mat2 = Mat2 { ..m, a: fresh, tag: 7 }
+    return n.tag + n.a[0]
+}
+
+function make_adder(n: i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return x + n }
+}
+
+function move_closure() -> i32 {
+    let f: (i32) -> i32 = make_adder(3)
+    let g: (i32) -> i32 = f
+    return g(4)
+}
+
+function main() -> i32 {
+    let m: Mat2 = Mat2 { a: [1, 2, 3, 4], tag: 1 }
+    let s: Mat2 = scale(m, 5)
+    if s.tag != 6 or s.a[0] != 1 {
+        return 1
+    }
+    if relabel(m) != 16 {
+        return 2
+    }
+    if move_closure() != 7 {
+        return 3
+    }
+    if m.tag != 1 or m.a[3] != 4 {
+        return 4
+    }
+    return 0
+}

@@ -1,0 +1,21 @@
+# expect: ok
+@rt_safe
+function apply_i32(f: (i32) -> i32 with rt_safe, x: i32) -> i32 {
+    return f(x)
+}
+
+@rt_safe
+function safe_double(x: i32) -> i32 {
+    return x * 2
+}
+
+@rt_safe
+function process() -> i32 {
+    let a: i32 = apply_i32(safe_double, 21)
+    let b: i32 = apply_i32(|x: i32| -> i32 { return x + 1 }, 20)
+    return a + b
+}
+
+function main() -> i32 {
+    return process()
+}

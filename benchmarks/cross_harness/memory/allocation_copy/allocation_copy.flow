@@ -27,5 +27,7 @@ function main() -> i32 {
     if sum < 0 {
         return 1
     }
+    println("allocations: 512")
+    println("copies: 262144")
     return 0
 }

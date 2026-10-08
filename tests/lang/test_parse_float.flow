@@ -1,0 +1,53 @@
+# Fast decimal parse_float on the caller buffer (#747).
+# Matches Python float() on ASCII for sign, fraction, exponent, inf/nan,
+# underscores between digits, and trailing-junk / empty errors.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import std.string { ParseF64, str_parse_f64, str_parse_f64_at }
+
+function check_ok(s: string, want: f64) -> i32 {
+    let r: ParseF64 = str_parse_f64(s)
+    if r.ok == false {
+        return 1
+    }
+    if r.value != want {
+        return 2
+    }
+    return 0
+}
+
+function main() -> i32 {
+    if check_ok("0", 0.0) != 0 { return 1 }
+    if check_ok("1.5", 1.5) != 0 { return 2 }
+    if check_ok("  -2  ", 0.0 - 2.0) != 0 { return 3 }
+    if check_ok("+8", 8.0) != 0 { return 4 }
+    if check_ok(".5", 0.5) != 0 { return 5 }
+    if check_ok("2.", 2.0) != 0 { return 6 }
+    if check_ok("1e2", 100.0) != 0 { return 7 }
+    if check_ok("1E-1", 0.1) != 0 { return 8 }
+    if check_ok("1_000.5", 1000.5) != 0 { return 9 }
+    if check_ok("2.5e+1", 25.0) != 0 { return 10 }
+
+    if str_parse_f64("").ok { return 11 }
+    if str_parse_f64("-").ok { return 12 }
+    if str_parse_f64(".").ok { return 13 }
+    if str_parse_f64("e10").ok { return 14 }
+    if str_parse_f64("1.2.3").ok { return 15 }
+    if str_parse_f64("12x").ok { return 16 }
+    if str_parse_f64("0x1.8p+0").ok { return 17 }
+
+    let inf: ParseF64 = str_parse_f64("inf")
+    if inf.ok == false { return 18 }
+    if inf.value < 0.0 or inf.value == inf.value + 1.0 { } else { return 19 }
+    let ninf: ParseF64 = str_parse_f64("-INFINITY")
+    if ninf.ok == false or ninf.value >= 0.0 { return 20 }
+    let nan: ParseF64 = str_parse_f64("NaN")
+    if nan.ok == false { return 21 }
+    if nan.value == nan.value { return 22 }
+
+    let tok: ParseF64 = str_parse_f64_at("  1.5,2", 0)
+    if tok.ok == false or tok.value != 1.5 { return 23 }
+    let rest: ptr<u8> = "  1.5,2" as ptr<u8>
+    if rest[tok.end] != 44 { return 24 }
+    return 0
+}

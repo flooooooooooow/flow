@@ -687,6 +687,10 @@
           "path": "language/ffi-boundary-audit.md"
         },
         {
+          "label": "Copy Elision",
+          "path": "language/copy-elision.md"
+        },
+        {
           "label": "C Function Pointers",
           "path": "language/c-fnptr-call.md"
         }
@@ -717,6 +721,10 @@
           "path": "library/stdlib-reference.md"
         },
         {
+          "label": "Strings and text I/O",
+          "path": "library/strings.md"
+        },
+        {
           "label": "API (generated)",
           "path": "library/stdlib-api.md"
         },
@@ -739,6 +747,10 @@
         {
           "label": "Memory",
           "path": "library/memory.md"
+        },
+        {
+          "label": "Runtime memory profile",
+          "path": "library/memory-profile.md"
         },
         {
           "label": "GPU Graph",

@@ -66,6 +66,15 @@ function copy_return_reads_base(p: Point) -> Point {
     return Point { ..p, x: p.y, y: p.x }
 }
 
+function assign_acyclic_shift(p: Point) -> i32 {
+    let mut q: Point = p
+    q = Point { ..q, x: q.y, y: 0 }
+    if q.x != 2 or q.y != 0 or q.z != 3 {
+        return 13
+    }
+    return 0
+}
+
 function array_field(a: Samples) -> i32 {
     let fresh: array<i32, 3> = [7, 8, 9]
     let b: Samples = Samples { ..a, v: fresh }
@@ -97,5 +106,7 @@ function main() -> i32 {
     let a: Samples = Samples { n: 4, v: [1, 2, 3] }
     let e5: i32 = array_field(a)
     if e5 != 0 { return e5 }
+    let e6: i32 = assign_acyclic_shift(p)
+    if e6 != 0 { return e6 }
     return 0
 }

@@ -336,8 +336,12 @@ checked. None of it is partially checked.
   onto a longer-lived location without a literal on the right-hand side is
   also not tracked.
 - **Escape through a closure environment**, a function pointer, or dynamic
-  dispatch. The `@rt_safe` call graph is over direct named calls only, and LD3
-  and LD4 inherit that.
+  dispatch, except when the callable is bound to a `with rt_safe` contract
+  (#766). That binding walks the closure body and rejects an unproven
+  function-typed capture or a pointer/span capture of a local. Trait-method
+  dispatch is not yet contracted. The `@rt_safe` call graph of a bare
+  function-typed value without that contract is still rejected conservatively
+  as an unresolved dynamic call.
 - **Use after `arena_reset` / `frame_begin` in the same function.** A
   pointer produced before a reset of the same arena is not invalidated
   by the reset call. The checker stops the pointer escaping into a

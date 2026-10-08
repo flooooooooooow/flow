@@ -221,11 +221,16 @@ function main() -> i32 {
     need("compiler/build/stage_a_token_consts.c", "const int32_t", "FAIL stage_a_token_consts: const emit missing (expected const int32_t; AST_CONST=31)")
     refuse("compiler/build/stage_a_token_consts.c", "static const int32_t", "FAIL stage_a_token_consts: export const should be non-static")
     # String `+` is concatenation, not pointer arithmetic. A three-part
-    # pure-string chain is one __flowc_str_concatn call (#747).
+    # chain (pure-string or mixed numeric) is one __flowc_str_concatn (#747).
     run_case(host, "stage_a_strcat", 42)
     if not has("compiler/build/stage_a_strcat.c", "__flowc_str_concatn(3, \"hello, \", name, \"!\")") {
         errln("FAIL stage_a_strcat: expected one-pass __flowc_str_concatn for the literal chain")
         show_matches("compiler/build/stage_a_strcat.c", "hello")
+        cli_exit(1)
+    }
+    if not has("compiler/build/stage_a_strcat.c", "__flowc_str_concatn(3, \"n=\"") {
+        errln("FAIL stage_a_strcat: expected one-pass __flowc_str_concatn for mixed numeric concat")
+        show_matches("compiler/build/stage_a_strcat.c", "n=")
         cli_exit(1)
     }
     refuse("compiler/build/stage_a_strcat.c", "(\"hello, \" + ", "FAIL stage_a_strcat: string operands emitted as C addition")
@@ -233,7 +238,12 @@ function main() -> i32 {
 
     # Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
     run_case(host, "stage_a_infer_struct", 42)
-    if not has("compiler/build/stage_a_infer_struct.c", "Pair p = make_pair(20, 22);") {
+    # A single-module struct return writes through a hidden destination
+    # (#732), so the typed let is `Pair p;` then `make_pair(&p, ...)`.
+    let infer_c: string = "compiler/build/stage_a_infer_struct.c"
+    let value_ret: bool = has(infer_c, "Pair p = make_pair(20, 22);")
+    let sret: bool = has(infer_c, "  Pair p;") and has(infer_c, "make_pair(&p, 20, 22);")
+    if not value_ret and not sret {
         errln("FAIL stage_a_infer_struct: inferred let should be typed Pair")
         show_matches("compiler/build/stage_a_infer_struct.c", "make_pair(20")
         cli_exit(1)

@@ -2057,6 +2057,7 @@ const LC_WRITE: i32 = 32
 const LC_ABORT: i32 = 64
 const LC_EXIT: i32 = 128
 const LC_FREE: i32 = 256
+const LC_MEMPROF: i32 = 512
 const HP_CONCAT: i32 = 1
 const HP_STREQ: i32 = 2
 const HP_STR_I64: i32 = 4
@@ -2071,12 +2072,67 @@ function mlg_lc_use(m: ptr<Mlg>, b: i32) {
     m[0].lc_need = m[0].lc_need | b
 }
 
+# Mark that this module needs the #740 profiler wrappers (malloc/memcpy
+# rewrite, stack notes, or a report).
+function mlg_mem_use(m: ptr<Mlg>) {
+    if (m[0].lc_need & LC_MEMPROF) == 0 {
+        mlg_intern_lit(m, "\"FLOW_MEM_PROFILE\"")
+        mlg_intern_lit(m, "\"\\n=== Flow memory profile (#740) ===\\n\"")
+        mlg_intern_lit(m, "\"allocations: %llu\\n\"")
+        mlg_intern_lit(m, "\"heap_bytes: %llu\\n\"")
+        mlg_intern_lit(m, "\"peak_live_heap: %lld\\n\"")
+        mlg_intern_lit(m, "\"temp_bytes: %llu\\n\"")
+        mlg_intern_lit(m, "\"copies: %llu\\n\"")
+        mlg_intern_lit(m, "\"stack_bytes: %llu\\n\"")
+        mlg_intern_lit(m, "\"arena_bytes: %llu\\n\"")
+        mlg_intern_lit(m, "\"promotion_bytes: %llu\\n\"")
+        mlg_intern_lit(m, "\"live_map_overflow: %llu\\n\"")
+        mlg_intern_lit(m, "\"site_concat: %llu\\n\"")
+    }
+    mlg_lc_use(m, LC_MEMPROF | LC_MALLOC | LC_MEMCPY | LC_FREE)
+}
+
+# Rewrite a libc allocator/copy name to the #740 wrapper. Returns 1 when
+# the name was rewritten.
+function mlg_put_mem_callee(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
+    if mlg_span_is(m, ns, ne, "malloc") == 1 {
+        mlg_mem_use(m)
+        mlg_lc_use(m, LC_MALLOC)
+        mlg_s(m, "flow_mem_malloc")
+        return 1
+    }
+    if mlg_span_is(m, ns, ne, "calloc") == 1 {
+        mlg_mem_use(m)
+        mlg_s(m, "flow_mem_calloc")
+        return 1
+    }
+    if mlg_span_is(m, ns, ne, "realloc") == 1 {
+        mlg_mem_use(m)
+        mlg_s(m, "flow_mem_realloc")
+        return 1
+    }
+    if mlg_span_is(m, ns, ne, "free") == 1 {
+        mlg_mem_use(m)
+        mlg_lc_use(m, LC_FREE)
+        mlg_s(m, "flow_mem_free")
+        return 1
+    }
+    if mlg_span_is(m, ns, ne, "memcpy") == 1 {
+        mlg_mem_use(m)
+        mlg_lc_use(m, LC_MEMCPY)
+        mlg_s(m, "flow_mem_memcpy")
+        return 1
+    }
+    return 0
+}
+
 function mlg_hp_use(m: ptr<Mlg>, b: i32) {
     m[0].hp_need = m[0].hp_need | b
     # The strings a helper reads are interned now, before the header is
     # written.
     if b == HP_CONCAT {
         mlg_lc_use(m, LC_STRLEN | LC_MALLOC | LC_MEMCPY)
+        mlg_mem_use(m)
         mlg_intern_lit(m, "\"\"")
     }
     if b == HP_STREQ {
@@ -2096,14 +2152,17 @@ function mlg_hp_use(m: ptr<Mlg>, b: i32) {
     }
     if b == HP_STR_I64 {
         mlg_lc_use(m, LC_MALLOC | LC_SNPRINTF)
+        mlg_mem_use(m)
         mlg_intern_lit(m, "\"%lld\"")
     }
     if b == HP_STR_U64 {
         mlg_lc_use(m, LC_MALLOC | LC_SNPRINTF)
+        mlg_mem_use(m)
         mlg_intern_lit(m, "\"%llu\"")
     }
     if b == HP_STR_F64 {
         mlg_lc_use(m, LC_MALLOC | LC_SNPRINTF)
+        mlg_mem_use(m)
         mlg_intern_lit(m, "\"%f\"")
     }
 }
@@ -2126,7 +2185,8 @@ function mlg_emit_memcpy(m: ptr<Mlg>, dst: i32, src: i32, n: i32) {
     let r: i32 = mlg_new_val(m, MT_PTR)
     mlg_line(m)
     mlg_v(m, r)
-    mlg_s(m, " = func.call @memcpy(")
+    mlg_mem_use(m)
+    mlg_s(m, " = func.call @flow_mem_memcpy(")
     mlg_v(m, dst)
     mlg_s(m, ", ")
     mlg_v(m, src)
@@ -4591,7 +4651,9 @@ function mlg_emit_unknown_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         mlg_s(m, " = ")
     }
     mlg_s(m, "func.call @")
-    mlg_span(m, ns, ne)
+    if mlg_put_mem_callee(m, ns, ne) == 0 {
+        mlg_span(m, ns, ne)
+    }
     mlg_s(m, "(")
     let mut w2: i32 = 0
     while w2 < nargs {
@@ -6535,7 +6597,8 @@ function mlg_emit_msort(m: ptr<Mlg>, e: i32, base: i32, n: i32, et: i32, eft: i3
     let buf: i32 = mlg_new_val(m, MT_PTR)
     mlg_line(m)
     mlg_v(m, buf)
-    mlg_s(m, " = func.call @malloc(")
+    mlg_mem_use(m)
+    mlg_s(m, " = func.call @flow_mem_malloc(")
     mlg_v(m, bytes)
     mlg_s(m, ") : (i64) -> !llvm.ptr")
     mlg_nl(m)
@@ -6649,7 +6712,8 @@ function mlg_emit_msort(m: ptr<Mlg>, e: i32, base: i32, n: i32, et: i32, eft: i3
         mlg_close_region(m)
         mlg_close_region(m)
         mlg_line(m)
-        mlg_s(m, "func.call @free(")
+        mlg_mem_use(m)
+        mlg_s(m, "func.call @flow_mem_free(")
         mlg_v(m, buf)
         mlg_s(m, ") : (!llvm.ptr) -> ()")
         mlg_nl(m)
@@ -7660,12 +7724,233 @@ function mlg_try_fma(m: ptr<Mlg>, e: i32) -> i32 {
     return res
 }
 
+# 1 when `id` is a string `+` (one operand is already a string, or a
+# nested concat). Used to flatten mixed `"x=" + n + " y=" + m` chains.
+function mlg_is_concat_node(m: ptr<Mlg>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if m[0].arena.nodes[id].kind != AST_BINOP {
+        return 0
+    }
+    if m[0].arena.nodes[id].ival != TOK_PLUS {
+        return 0
+    }
+    if mlg_expr_is_string(m, m[0].arena.nodes[id].a) == 1 {
+        return 1
+    }
+    return mlg_expr_is_string(m, m[0].arena.nodes[id].b)
+}
+
+# Flatten a string `+` chain into `out[0 .. n)` left to right. Returns n
+# when n > 2; otherwise 0 so the caller keeps the pairwise helper.
+function mlg_flatten_concat(m: ptr<Mlg>, id: i32, out: ptr<i32>, out_cap: i32) -> i32 {
+    let mut stack: array<i32, 64> = []
+    let mut sp: i32 = 1
+    stack[0] = id
+    let mut n: i32 = 0
+    while sp > 0 {
+        sp = sp - 1
+        let cur: i32 = stack[sp]
+        if mlg_is_concat_node(m, cur) == 1 {
+            if sp + 2 > 64 {
+                return 0
+            }
+            stack[sp] = m[0].arena.nodes[cur].b
+            sp = sp + 1
+            stack[sp] = m[0].arena.nodes[cur].a
+            sp = sp + 1
+        } else {
+            if n >= out_cap {
+                return 0
+            }
+            out[n] = cur
+            n = n + 1
+        }
+    }
+    if n > 2 {
+        return n
+    }
+    return 0
+}
+
+# A pointer operand as a non-null C string: null becomes "".
+function mlg_str_or_empty(m: ptr<Mlg>, p: i32) -> i32 {
+    mlg_intern_lit(m, "\"\"")
+    let empty: i32 = mlg_emit_addressof_str(m, mlg_intern_lit(m, "\"\""))
+    let z: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, z)
+    mlg_s(m, " = llvm.mlir.zero : !llvm.ptr")
+    mlg_nl(m)
+    let isn: i32 = mlg_new_val(m, MT_I1)
+    mlg_line(m)
+    mlg_v(m, isn)
+    mlg_s(m, " = llvm.icmp \"eq\" ")
+    mlg_v(m, p)
+    mlg_s(m, ", ")
+    mlg_v(m, z)
+    mlg_s(m, " : !llvm.ptr")
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = arith.select ")
+    mlg_v(m, isn)
+    mlg_s(m, ", ")
+    mlg_v(m, empty)
+    mlg_s(m, ", ")
+    mlg_v(m, p)
+    mlg_s(m, " : !llvm.ptr")
+    mlg_nl(m)
+    return r
+}
+
+function mlg_sz_mt(m: ptr<Mlg>) -> i32 {
+    if mlg_st32(m) == 1 {
+        return MT_I32
+    }
+    return MT_I64
+}
+
+# strlen(p) as the target size_t.
+function mlg_emit_strlen_sz(m: ptr<Mlg>, p: i32) -> i32 {
+    mlg_lc_use(m, LC_STRLEN)
+    let t: i32 = mlg_sz_mt(m)
+    let r: i32 = mlg_new_val(m, t)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = func.call @strlen(")
+    mlg_v(m, p)
+    mlg_s(m, ") : (!llvm.ptr) -> ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    return r
+}
+
+# One-allocation join of n already-string operands, matching C concatn.
+function mlg_emit_str_concatn(m: ptr<Mlg>, leaves: ptr<i32>, n: i32) -> i32 {
+    mlg_lc_use(m, LC_STRLEN | LC_MALLOC | LC_MEMCPY)
+    mlg_intern_lit(m, "\"\"")
+    let sz: i32 = mlg_sz_mt(m)
+    let mut parts: array<i32, 32> = []
+    let mut lens: array<i32, 32> = []
+    let mut i: i32 = 0
+    while i < n {
+        parts[i] = mlg_str_or_empty(m, mlg_emit_str_operand(m, leaves[i]))
+        lens[i] = mlg_emit_strlen_sz(m, parts[i])
+        i = i + 1
+    }
+    let mut total: i32 = lens[0]
+    i = 1
+    while i < n {
+        let s: i32 = mlg_new_val(m, sz)
+        mlg_line(m)
+        mlg_v(m, s)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, total)
+        mlg_s(m, ", ")
+        mlg_v(m, lens[i])
+        mlg_s(m, " : ")
+        mlg_put_type(m, sz)
+        mlg_nl(m)
+        total = s
+        i = i + 1
+    }
+    let one: i32 = mlg_const_int(m, 1, sz)
+    let nbytes: i32 = mlg_new_val(m, sz)
+    mlg_line(m)
+    mlg_v(m, nbytes)
+    mlg_s(m, " = arith.addi ")
+    mlg_v(m, total)
+    mlg_s(m, ", ")
+    mlg_v(m, one)
+    mlg_s(m, " : ")
+    mlg_put_type(m, sz)
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = func.call @malloc(")
+    mlg_v(m, nbytes)
+    mlg_s(m, ") : (")
+    mlg_put_type(m, sz)
+    mlg_s(m, ") -> !llvm.ptr")
+    mlg_nl(m)
+    let mut off: i32 = mlg_const_int(m, 0, sz)
+    i = 0
+    while i < n {
+        let dst: i32 = mlg_new_val(m, MT_PTR)
+        mlg_line(m)
+        mlg_v(m, dst)
+        mlg_s(m, " = llvm.getelementptr ")
+        mlg_v(m, r)
+        mlg_s(m, "[")
+        mlg_v(m, off)
+        mlg_s(m, "] : (!llvm.ptr, ")
+        mlg_put_type(m, sz)
+        mlg_s(m, ") -> !llvm.ptr, i8")
+        mlg_nl(m)
+        let cpy: i32 = mlg_new_val(m, MT_PTR)
+        mlg_line(m)
+        mlg_v(m, cpy)
+        mlg_s(m, " = func.call @memcpy(")
+        mlg_v(m, dst)
+        mlg_s(m, ", ")
+        mlg_v(m, parts[i])
+        mlg_s(m, ", ")
+        mlg_v(m, lens[i])
+        mlg_s(m, ") : (!llvm.ptr, !llvm.ptr, ")
+        mlg_put_type(m, sz)
+        mlg_s(m, ") -> !llvm.ptr")
+        mlg_nl(m)
+        let next: i32 = mlg_new_val(m, sz)
+        mlg_line(m)
+        mlg_v(m, next)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, off)
+        mlg_s(m, ", ")
+        mlg_v(m, lens[i])
+        mlg_s(m, " : ")
+        mlg_put_type(m, sz)
+        mlg_nl(m)
+        off = next
+        i = i + 1
+    }
+    let term: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, term)
+    mlg_s(m, " = llvm.getelementptr ")
+    mlg_v(m, r)
+    mlg_s(m, "[")
+    mlg_v(m, off)
+    mlg_s(m, "] : (!llvm.ptr, ")
+    mlg_put_type(m, sz)
+    mlg_s(m, ") -> !llvm.ptr, i8")
+    mlg_nl(m)
+    let z8: i32 = mlg_const_int(m, 0, MT_I8)
+    mlg_line(m)
+    mlg_s(m, "llvm.store ")
+    mlg_v(m, z8)
+    mlg_s(m, ", ")
+    mlg_v(m, term)
+    mlg_s(m, " : i8, !llvm.ptr")
+    mlg_nl(m)
+    return r
+}
+
 function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
     let op: i32 = m[0].arena.nodes[e].ival
     let l: i32 = m[0].arena.nodes[e].a
     let r: i32 = m[0].arena.nodes[e].b
     if op == TOK_PLUS and (mlg_expr_is_string(m, l) == 1 or mlg_expr_is_string(m, r) == 1) {
-        # String `+`: a new string, as the C backend's __flowc_str_concat.
+        # String `+`: pairwise __flow_str_concat, or one-allocation strcat
+        # for a chain of three or more parts (C's __flowc_str_concatn).
+        let mut leaves: array<i32, 32> = []
+        let n: i32 = mlg_flatten_concat(m, e, &leaves[0], 32)
+        if n > 2 {
+            return mlg_emit_str_concatn(m, &leaves[0], n)
+        }
         let sl: i32 = mlg_emit_str_operand(m, l)
         let sr: i32 = mlg_emit_str_operand(m, r)
         mlg_hp_use(m, HP_CONCAT)
@@ -9199,11 +9484,12 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
         mlg_s(m, szs)
         mlg_nl(m)
         env = mlg_new_val(m, MT_PTR)
-        # The environment is malloc'd (libc's, declared once in the header).
+        # The environment is malloc'd and counted by the #740 wrappers.
         mlg_lc_use(m, LC_MALLOC)
+        mlg_mem_use(m)
         mlg_line(m)
         mlg_v(m, env)
-        mlg_s(m, " = func.call @malloc(")
+        mlg_s(m, " = func.call @flow_mem_malloc(")
         mlg_v(m, sz)
         mlg_s(m, ") : (")
         mlg_s(m, szs)
@@ -9454,10 +9740,19 @@ function mlg_same_struct_text(m: ptr<Mlg>, a: i32, b: i32, depth: i32) -> i32 {
     return 1
 }
 
-# Python generate_record_update: `Name { ..base, f: v }` copies base and
-# inserts the listed fields. The struct comes from the base's declared type
-# (or, for other expressions, the first struct whose MLIR type matches);
-# with none, the value is just the base.
+function mlg_is_record_update(m: ptr<Mlg>, e: i32) -> i32 {
+    if e == AST_NONE or mlg_kind(m, e) != AST_STRUCT_LIT {
+        return 0
+    }
+    if m[0].arena.nodes[e].c == AST_NONE {
+        return 0
+    }
+    return 1
+}
+
+# `Name { ..base, f: v }` insertvalues the listed fields onto the base SSA.
+# A later stabilize/materialize is skipped for let/return destinations so
+# the update is not copied field-by-field a second time (#732).
 function mlg_emit_record_update(m: ptr<Mlg>, e: i32) -> i32 {
     let base: i32 = m[0].arena.nodes[e].c
     let mut k: i32 = 0 - 1
@@ -9750,7 +10045,8 @@ function mlg_emit_llarr_buf(m: ptr<Mlg>, la: i32) -> i32 {
         mlg_nl(m)
         mlg_line(m)
         mlg_v(m, p)
-        mlg_s(m, " = func.call @malloc(")
+        mlg_mem_use(m)
+        mlg_s(m, " = func.call @flow_mem_malloc(")
         mlg_v(m, sz)
         mlg_s(m, ") : (")
         mlg_s(m, mlg_szs(m))
@@ -9769,6 +10065,22 @@ function mlg_emit_llarr_buf(m: ptr<Mlg>, la: i32) -> i32 {
         mlg_s(m, " x ")
         mlg_put_type(m, la)
         mlg_s(m, " : (i64) -> !llvm.ptr")
+        mlg_nl(m)
+        mlg_mem_use(m)
+        let nb: i32 = mlg_new_val(m, MT_I64)
+        mlg_line(m)
+        mlg_v(m, nb)
+        mlg_s(m, " = arith.constant ")
+        mlg_i64(m, bytes)
+        mlg_s(m, " : ")
+        mlg_s(m, mlg_szs(m))
+        mlg_nl(m)
+        mlg_line(m)
+        mlg_s(m, "func.call @flow_mem_note_stack(")
+        mlg_v(m, nb)
+        mlg_s(m, ") : (")
+        mlg_s(m, mlg_szs(m))
+        mlg_s(m, ") -> ()")
         mlg_nl(m)
     }
     m[0].v_llarr[p] = la
@@ -10366,8 +10678,15 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
         mlg_set_vuns(m, v, 1)
     }
     if mlg_is_struct_mt(mt) == 1 and v >= 0 and m[0].vtx[v] > 0 {
-        # Python stabilizes an aggregate initialized from a Tensor field.
-        v = mlg_stabilize(m, v, mt)
+        # A record update already insertvalued onto the base; a second
+        # field-by-field materialize is the copy #732 elides.
+        if mlg_is_record_update(m, init) == 0 {
+            v = mlg_stabilize(m, v, mt)
+        } else {
+            mlg_line(m)
+            mlg_s(m, "// flowc.copy_elision record-update")
+            mlg_nl(m)
+        }
     }
     let l: i32 = mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), vt, ty, v)
     let is_mut: i32 = m[0].arena.nodes[st].ival
@@ -10638,7 +10957,8 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
         let cpr: i32 = mlg_new_val(m, MT_PTR)
         mlg_line(m)
         mlg_v(m, cpr)
-        mlg_s(m, " = func.call @memcpy(")
+        mlg_mem_use(m)
+        mlg_s(m, " = func.call @flow_mem_memcpy(")
         mlg_v(m, hp)
         mlg_s(m, ", ")
         mlg_v(m, v)
@@ -10675,7 +10995,13 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
         }
     }
     if mlg_is_struct_mt(rt) == 1 {
-        v = mlg_stabilize(m, v, rt)
+        if mlg_is_record_update(m, e) == 0 {
+            v = mlg_stabilize(m, v, rt)
+        } else {
+            mlg_line(m)
+            mlg_s(m, "// flowc.copy_elision record-update")
+            mlg_nl(m)
+        }
     }
     if mlg_is_memref_mt(rt) == 1 {
         # An array returned by value outlives the callee's stack: copy it to
@@ -10797,7 +11123,8 @@ function mlg_emit_assign(m: ptr<Mlg>, st: i32) {
             let cp: i32 = mlg_new_val(m, MT_PTR)
             mlg_line(m)
             mlg_v(m, cp)
-            mlg_s(m, " = func.call @memcpy(")
+            mlg_mem_use(m)
+            mlg_s(m, " = func.call @flow_mem_memcpy(")
             mlg_v(m, m[0].l_ssa[l])
             mlg_s(m, ", ")
             mlg_v(m, v)
@@ -20485,6 +20812,321 @@ function mlg_szs(m: ptr<Mlg>) -> string {
     return "i64"
 }
 
+# Opt-in #740 profiler wrappers for the MLIR backend. Dormant unless
+# FLOW_MEM_PROFILE is set at run time. Counters live in llvm.mlir.global
+# cells; libc malloc/memcpy stay declared and the wrappers call them.
+function mlg_put_mem_profile(m: ptr<Mlg>) {
+    if (m[0].lc_need & LC_MEMPROF) == 0 {
+        return
+    }
+    let sz: string = mlg_szs(m)
+    let envk: i32 = mlg_intern_lit(m, "\"FLOW_MEM_PROFILE\"")
+    let hdrk: i32 = mlg_intern_lit(m, "\"\\n=== Flow memory profile (#740) ===\\n\"")
+    let k_alloc: i32 = mlg_intern_lit(m, "\"allocations: %llu\\n\"")
+    let k_heap: i32 = mlg_intern_lit(m, "\"heap_bytes: %llu\\n\"")
+    let k_peak: i32 = mlg_intern_lit(m, "\"peak_live_heap: %lld\\n\"")
+    let k_temp: i32 = mlg_intern_lit(m, "\"temp_bytes: %llu\\n\"")
+    let k_copy: i32 = mlg_intern_lit(m, "\"copies: %llu\\n\"")
+    let k_stack: i32 = mlg_intern_lit(m, "\"stack_bytes: %llu\\n\"")
+    let k_arena: i32 = mlg_intern_lit(m, "\"arena_bytes: %llu\\n\"")
+    let k_promo: i32 = mlg_intern_lit(m, "\"promotion_bytes: %llu\\n\"")
+    let k_ovf: i32 = mlg_intern_lit(m, "\"live_map_overflow: %llu\\n\"")
+    let k_concat: i32 = mlg_intern_lit(m, "\"site_concat: %llu\\n\"")
+    mlg_s(m, "  func.func private @getenv(!llvm.ptr) -> !llvm.ptr\n")
+    mlg_s(m, "  func.func private @atexit(!llvm.ptr) -> i32\n")
+    if m[0].needs_printf == 0 {
+        mlg_s(m, "  llvm.func @printf(!llvm.ptr, ...) -> i32\n")
+    }
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_profile_on() {addr_space = 0 : i32} : i32 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i32) : i32\n    llvm.return %z : i32\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_inited() {addr_space = 0 : i32} : i32 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i32) : i32\n    llvm.return %z : i32\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_alloc_count() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_alloc_bytes() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_temp_bytes() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_copy_bytes() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_stack_bytes() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_arena_bytes() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_live_bytes() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_peak_live() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_site_concat() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_map_overflow() {addr_space = 0 : i32} : i64 {\n")
+    mlg_s(m, "    %z = llvm.mlir.constant(0 : i64) : i64\n    llvm.return %z : i64\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_ptrs() {addr_space = 0 : i32} : !llvm.array<256 x ptr> {\n")
+    mlg_s(m, "    %z = llvm.mlir.zero : !llvm.array<256 x ptr>\n    llvm.return %z : !llvm.array<256 x ptr>\n  }\n")
+    mlg_s(m, "  llvm.mlir.global internal @flow_mem_sz() {addr_space = 0 : i32} : !llvm.array<256 x i64> {\n")
+    mlg_s(m, "    %z = llvm.mlir.zero : !llvm.array<256 x i64>\n    llvm.return %z : !llvm.array<256 x i64>\n  }\n")
+    mlg_s(m, "  func.func private @flow_mem_profile_init() {\n")
+    mlg_s(m, "    %ip = llvm.mlir.addressof @flow_mem_inited : !llvm.ptr\n")
+    mlg_s(m, "    %iv = llvm.load %ip : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %done = arith.cmpi ne, %iv, %z32 : i32\n")
+    mlg_s(m, "    scf.if %done {\n      scf.yield\n    } else {\n")
+    mlg_s(m, "      %one32 = arith.constant 1 : i32\n")
+    mlg_s(m, "      llvm.store %one32, %ip : i32, !llvm.ptr\n")
+    mlg_s(m, "      %name = llvm.mlir.addressof @str_")
+    mlg_i(m, envk)
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %e = func.call @getenv(%name) : (!llvm.ptr) -> !llvm.ptr\n")
+    mlg_s(m, "      %null = llvm.mlir.zero : !llvm.ptr\n")
+    mlg_s(m, "      %ok = llvm.icmp \"ne\" %e, %null : !llvm.ptr\n")
+    mlg_s(m, "      %on = scf.if %ok -> (i32) {\n")
+    mlg_s(m, "        %b = llvm.load %e : !llvm.ptr -> i8\n")
+    mlg_s(m, "        %z8 = arith.constant 0 : i8\n")
+    mlg_s(m, "        %nz = arith.cmpi ne, %b, %z8 : i8\n")
+    mlg_s(m, "        %c48 = arith.constant 48 : i8\n")
+    mlg_s(m, "        %is0 = arith.cmpi eq, %b, %c48 : i8\n")
+    mlg_s(m, "        %e1 = llvm.getelementptr %e[1] : (!llvm.ptr) -> !llvm.ptr, i8\n")
+    mlg_s(m, "        %b1 = llvm.load %e1 : !llvm.ptr -> i8\n")
+    mlg_s(m, "        %term = arith.cmpi eq, %b1, %z8 : i8\n")
+    mlg_s(m, "        %zeroish = arith.andi %is0, %term : i1\n")
+    mlg_s(m, "        %keep = arith.andi %nz, %zeroish : i1\n")
+    mlg_s(m, "        %not0 = arith.xori %keep, %nz : i1\n")
+    mlg_s(m, "        %sel = arith.select %not0, %one32, %z32 : i32\n")
+    mlg_s(m, "        scf.yield %sel : i32\n      } else {\n        scf.yield %z32 : i32\n      }\n")
+    mlg_s(m, "      %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "      llvm.store %on, %op : i32, !llvm.ptr\n")
+    mlg_s(m, "      %onb = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "      scf.if %onb {\n")
+    # func.constant, not llvm.mlir.addressof: @flow_mem_report is a func.func
+    # until func-to-llvm, and addressof must name an llvm.func or global.
+    mlg_s(m, "        %rf = func.constant @flow_mem_report : () -> ()\n")
+    mlg_s(m, "        %rp = builtin.unrealized_conversion_cast %rf : () -> () to !llvm.ptr\n")
+    mlg_s(m, "        %ar = func.call @atexit(%rp) : (!llvm.ptr) -> i32\n")
+    mlg_s(m, "        scf.yield\n      }\n      scf.yield\n    }\n    func.return\n  }\n")
+    mlg_s(m, "  func.func private @flow_mem_note_alloc(%n: i64) {\n")
+    mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n")
+    mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "    scf.if %yes {\n")
+    mlg_s(m, "      %one = arith.constant 1 : i64\n")
+    mlg_s(m, "      %cp = llvm.mlir.addressof @flow_mem_alloc_count : !llvm.ptr\n")
+    mlg_s(m, "      %cv = llvm.load %cp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %cn = arith.addi %cv, %one : i64\n")
+    mlg_s(m, "      llvm.store %cn, %cp : i64, !llvm.ptr\n")
+    mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_alloc_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n")
+    mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n")
+    mlg_s(m, "      %lp = llvm.mlir.addressof @flow_mem_live_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %lv = llvm.load %lp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %ln = arith.addi %lv, %n : i64\n")
+    mlg_s(m, "      llvm.store %ln, %lp : i64, !llvm.ptr\n")
+    mlg_s(m, "      %pp = llvm.mlir.addressof @flow_mem_peak_live : !llvm.ptr\n")
+    mlg_s(m, "      %pv = llvm.load %pp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %gt = arith.cmpi sgt, %ln, %pv : i64\n")
+    mlg_s(m, "      %np = arith.select %gt, %ln, %pv : i64\n")
+    mlg_s(m, "      llvm.store %np, %pp : i64, !llvm.ptr\n")
+    mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n")
+    mlg_s(m, "  func.func private @flow_mem_note_copy(%n: i64) {\n")
+    mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n")
+    mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "    scf.if %yes {\n")
+    mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_copy_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n")
+    mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n")
+    mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n")
+    mlg_s(m, "  func.func private @flow_mem_note_temp(%n: i64) {\n")
+    mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n")
+    mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "    scf.if %yes {\n")
+    mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_temp_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n")
+    mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n")
+    mlg_s(m, "      %sp = llvm.mlir.addressof @flow_mem_site_concat : !llvm.ptr\n")
+    mlg_s(m, "      %sv = llvm.load %sp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %sn = arith.addi %sv, %n : i64\n")
+    mlg_s(m, "      llvm.store %sn, %sp : i64, !llvm.ptr\n")
+    mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n")
+    mlg_s(m, "  func.func private @flow_mem_note_stack(%n: ")
+    mlg_s(m, sz)
+    mlg_s(m, ") {\n")
+    mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n")
+    mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "    scf.if %yes {\n")
+    mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n")
+    if mlg_st32(m) == 1 {
+        mlg_s(m, "      %nw = arith.extsi %n : i32 to i64\n")
+        mlg_s(m, "      %bn = arith.addi %bv, %nw : i64\n")
+    } else {
+        mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n")
+    }
+    mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n")
+    mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n")
+    mlg_s(m, "  func.func private @flow_mem_note_arena(%n: ")
+    mlg_s(m, sz)
+    mlg_s(m, ") {\n")
+    mlg_s(m, "    func.call @flow_mem_profile_init() : () -> ()\n")
+    mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "    scf.if %yes {\n")
+    if mlg_st32(m) == 1 {
+        mlg_s(m, "      %nw = arith.extsi %n : i32 to i64\n")
+        mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr\n")
+        mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n")
+        mlg_s(m, "      %bn = arith.addi %bv, %nw : i64\n")
+    } else {
+        mlg_s(m, "      %bp = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr\n")
+        mlg_s(m, "      %bv = llvm.load %bp : !llvm.ptr -> i64\n")
+        mlg_s(m, "      %bn = arith.addi %bv, %n : i64\n")
+    }
+    mlg_s(m, "      llvm.store %bn, %bp : i64, !llvm.ptr\n")
+    mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n")
+    mlg_s(m, "  func.func @flow_mem_malloc(%n: ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr {\n")
+    mlg_s(m, "    %p = func.call @malloc(%n) : (")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr\n")
+    if mlg_st32(m) == 1 {
+        mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n")
+        mlg_s(m, "    func.call @flow_mem_note_alloc(%nw) : (i64) -> ()\n")
+    } else {
+        mlg_s(m, "    func.call @flow_mem_note_alloc(%n) : (i64) -> ()\n")
+    }
+    mlg_s(m, "    func.return %p : !llvm.ptr\n  }\n")
+    if mlg_lc_declared(m, "calloc") == 0 {
+        mlg_s(m, "  func.func private @calloc(")
+        mlg_s(m, sz)
+        mlg_s(m, ", ")
+        mlg_s(m, sz)
+        mlg_s(m, ") -> !llvm.ptr\n")
+    }
+    if mlg_lc_declared(m, "realloc") == 0 {
+        mlg_s(m, "  func.func private @realloc(!llvm.ptr, ")
+        mlg_s(m, sz)
+        mlg_s(m, ") -> !llvm.ptr\n")
+    }
+    mlg_s(m, "  func.func @flow_mem_calloc(%c: ")
+    mlg_s(m, sz)
+    mlg_s(m, ", %s: ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr {\n")
+    mlg_s(m, "    %p = func.call @calloc(%c, %s) : (")
+    mlg_s(m, sz)
+    mlg_s(m, ", ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr\n")
+    mlg_s(m, "    %n = arith.muli %c, %s : ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n")
+    if mlg_st32(m) == 1 {
+        mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n")
+        mlg_s(m, "    func.call @flow_mem_note_alloc(%nw) : (i64) -> ()\n")
+    } else {
+        mlg_s(m, "    func.call @flow_mem_note_alloc(%n) : (i64) -> ()\n")
+    }
+    mlg_s(m, "    func.return %p : !llvm.ptr\n  }\n")
+    mlg_s(m, "  func.func @flow_mem_realloc(%p: !llvm.ptr, %n: ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr {\n")
+    mlg_s(m, "    %q = func.call @realloc(%p, %n) : (!llvm.ptr, ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr\n")
+    if mlg_st32(m) == 1 {
+        mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n")
+        mlg_s(m, "    func.call @flow_mem_note_alloc(%nw) : (i64) -> ()\n")
+    } else {
+        mlg_s(m, "    func.call @flow_mem_note_alloc(%n) : (i64) -> ()\n")
+    }
+    mlg_s(m, "    func.return %q : !llvm.ptr\n  }\n")
+    mlg_s(m, "  func.func @flow_mem_free(%p: !llvm.ptr) {\n")
+    mlg_s(m, "    func.call @free(%p) : (!llvm.ptr) -> ()\n")
+    mlg_s(m, "    func.return\n  }\n")
+    mlg_s(m, "  func.func @flow_mem_memcpy(%d: !llvm.ptr, %s: !llvm.ptr, %n: ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr {\n")
+    if mlg_st32(m) == 1 {
+        mlg_s(m, "    %nw = arith.extsi %n : i32 to i64\n")
+        mlg_s(m, "    func.call @flow_mem_note_copy(%nw) : (i64) -> ()\n")
+    } else {
+        mlg_s(m, "    func.call @flow_mem_note_copy(%n) : (i64) -> ()\n")
+    }
+    mlg_s(m, "    %r = func.call @memcpy(%d, %s, %n) : (!llvm.ptr, !llvm.ptr, ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> !llvm.ptr\n")
+    mlg_s(m, "    func.return %r : !llvm.ptr\n  }\n")
+    mlg_s(m, "  func.func @flow_mem_report() {\n")
+    mlg_s(m, "    %op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr\n")
+    mlg_s(m, "    %on = llvm.load %op : !llvm.ptr -> i32\n")
+    mlg_s(m, "    %z32 = arith.constant 0 : i32\n")
+    mlg_s(m, "    %yes = arith.cmpi ne, %on, %z32 : i32\n")
+    mlg_s(m, "    scf.if %yes {\n")
+    mlg_s(m, "      %hdr = llvm.mlir.addressof @str_")
+    mlg_i(m, hdrk)
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %h = llvm.call @printf(%hdr) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32\n")
+    mlg_put_mem_printf(m, k_alloc, "flow_mem_alloc_count")
+    mlg_put_mem_printf(m, k_heap, "flow_mem_alloc_bytes")
+    mlg_put_mem_printf(m, k_peak, "flow_mem_peak_live")
+    mlg_put_mem_printf(m, k_temp, "flow_mem_temp_bytes")
+    mlg_put_mem_printf(m, k_copy, "flow_mem_copy_bytes")
+    mlg_put_mem_printf(m, k_stack, "flow_mem_stack_bytes")
+    mlg_put_mem_printf(m, k_arena, "flow_mem_arena_bytes")
+    mlg_s(m, "      %sp = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %sv = llvm.load %sp : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %ap = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr\n")
+    mlg_s(m, "      %av = llvm.load %ap : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %promo = arith.addi %sv, %av : i64\n")
+    mlg_s(m, "      %pf = llvm.mlir.addressof @str_")
+    mlg_i(m, k_promo)
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %ph = llvm.call @printf(%pf, %promo) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32\n")
+    mlg_put_mem_printf(m, k_ovf, "flow_mem_map_overflow")
+    mlg_put_mem_printf(m, k_concat, "flow_mem_site_concat")
+    mlg_s(m, "      scf.yield\n    }\n    func.return\n  }\n")
+}
+
+function mlg_put_mem_printf(m: ptr<Mlg>, k: i32, gname: string) {
+    mlg_s(m, "      %g_")
+    mlg_s(m, gname)
+    mlg_s(m, " = llvm.mlir.addressof @")
+    mlg_s(m, gname)
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %v_")
+    mlg_s(m, gname)
+    mlg_s(m, " = llvm.load %g_")
+    mlg_s(m, gname)
+    mlg_s(m, " : !llvm.ptr -> i64\n")
+    mlg_s(m, "      %f_")
+    mlg_s(m, gname)
+    mlg_s(m, " = llvm.mlir.addressof @str_")
+    mlg_i(m, k)
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %w_")
+    mlg_s(m, gname)
+    mlg_s(m, " = llvm.call @printf(%f_")
+    mlg_s(m, gname)
+    mlg_s(m, ", %v_")
+    mlg_s(m, gname)
+    mlg_s(m, ") vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32\n")
+}
+
 # Declarations of the libc functions in lc_need the program does not
 # declare itself.
 function mlg_put_lc_decls(m: ptr<Mlg>) {
@@ -20547,7 +21189,7 @@ function mlg_put_str_of(m: ptr<Mlg>, name: string, arg_t: string, fmt: string, c
     mlg_s(m, cap)
     mlg_s(m, " : ")
     mlg_s(m, sz)
-    mlg_s(m, "\n    %r = func.call @malloc(%n) : (")
+    mlg_s(m, "\n    %r = func.call @flow_mem_malloc(%n) : (")
     mlg_s(m, sz)
     mlg_s(m, ") -> !llvm.ptr\n    %f = llvm.mlir.addressof @str_")
     mlg_i(m, mlg_intern_lit(m, fmt))
@@ -20585,15 +21227,21 @@ function mlg_put_helpers(m: ptr<Mlg>) {
         mlg_s(m, sz)
         mlg_s(m, "\n    %n = arith.addi %s, %one : ")
         mlg_s(m, sz)
-        mlg_s(m, "\n    %r = func.call @malloc(%n) : (")
+        mlg_s(m, "\n    %r = func.call @flow_mem_malloc(%n) : (")
         mlg_s(m, sz)
-        mlg_s(m, ") -> !llvm.ptr\n    %c0 = func.call @memcpy(%r, %a, %la) : (!llvm.ptr, !llvm.ptr, ")
+        mlg_s(m, ") -> !llvm.ptr\n")
+        if mlg_st32(m) == 1 {
+            mlg_s(m, "    %nt = arith.extsi %n : i32 to i64\n    func.call @flow_mem_note_temp(%nt) : (i64) -> ()\n")
+        } else {
+            mlg_s(m, "    func.call @flow_mem_note_temp(%n) : (i64) -> ()\n")
+        }
+        mlg_s(m, "    %c0 = func.call @flow_mem_memcpy(%r, %a, %la) : (!llvm.ptr, !llvm.ptr, ")
         mlg_s(m, sz)
         mlg_s(m, ") -> !llvm.ptr\n    %rb = llvm.getelementptr %r[%la] : (!llvm.ptr, ")
         mlg_s(m, sz)
         mlg_s(m, ") -> !llvm.ptr, i8\n    %lb1 = arith.addi %lb, %one : ")
         mlg_s(m, sz)
-        mlg_s(m, "\n    %c1 = func.call @memcpy(%rb, %b, %lb1) : (!llvm.ptr, !llvm.ptr, ")
+        mlg_s(m, "\n    %c1 = func.call @flow_mem_memcpy(%rb, %b, %lb1) : (!llvm.ptr, !llvm.ptr, ")
         mlg_s(m, sz)
         mlg_s(m, ") -> !llvm.ptr\n    func.return %r : !llvm.ptr\n  }\n")
     }
@@ -20797,6 +21445,7 @@ function mlg_assemble(m: ptr<Mlg>, body: ptr<u8>, body_len: i32, dst: ptr<u8>, d
     mlg_nl(m)
     mlg_put_lc_decls(m)
     mlg_put_uk_decls(m)
+    mlg_put_mem_profile(m)
     if m[0].needs_printf == 1 {
         mlg_s(m, "  llvm.func @printf(!llvm.ptr, ...) -> i32")
         mlg_nl(m)

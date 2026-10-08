@@ -1,0 +1,158 @@
+# First-slice RT-safe callable contracts (#766). Function-pointer and
+# closure bindings to `with rt_safe` are compile-time only: the checker
+# proves or rejects the callable, and the contract is erased before
+# codegen.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcStrs, proc_env }
+
+function check_only(src: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push(argv, "--strict")
+    sl_push2(argv, src, t_tmp() + "/out.c")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    proc_env(c, "FLOWC_CHECK_ONLY", "1")
+    return t_run(c)
+}
+
+function emit_c(src: string, outc: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push(argv, "--strict")
+    sl_push2(argv, src, outc)
+    return t_run(t_cmd(argv))
+}
+
+function log_text() -> string {
+    return read_text(t_out()) + read_text(t_err())
+}
+
+function check_hof_rejects_allocating_fn() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if check_only("compiler/fixtures/typecheck_rules/rt_safe_hof_bad_fn.flow") == 0 {
+        outln("expected HOF to reject an allocating function")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let log: string = log_text()
+    if not a_contains(log, "RT-safety violation") {
+        return T_FAIL
+    }
+    if not a_contains(log, "unsafe_fn") {
+        return T_FAIL
+    }
+    if not a_contains(log, "malloc") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_hof_rejects_allocating_closure() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if check_only("compiler/fixtures/typecheck_rules/rt_safe_hof_bad_closure.flow") == 0 {
+        outln("expected HOF to reject an allocating closure")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let log: string = log_text()
+    if not a_contains(log, "RT-safety violation") {
+        return T_FAIL
+    }
+    if not a_contains(log, "closure") {
+        return T_FAIL
+    }
+    if not a_contains(log, "malloc") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_hof_accepts_proven_safe() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if check_only("compiler/fixtures/typecheck_rules/rt_safe_hof_ok.flow") != 0 {
+        outln("expected HOF to accept a proven-safe callable")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_uninitialized_contract_is_rejected() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS { return need }
+    if check_only("compiler/fixtures/typecheck_rules/rt_safe_uninitialized_callable.flow") == 0 {
+        outln("expected uninitialized rt_safe callable to fail")
+        return T_FAIL
+    }
+    let log: string = log_text()
+    if not a_contains(log, "requires a proven initializer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_cast_cannot_launder_unsafe_callable() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS { return need }
+    if check_only("compiler/fixtures/typecheck_rules/rt_safe_cast_launder.flow") == 0 {
+        outln("expected cast-laundered allocating callable to fail")
+        return T_FAIL
+    }
+    let log: string = log_text()
+    if not a_contains(log, "RT-safety violation") { return T_FAIL }
+    if not a_contains(log, "unsafe_fn") { return T_FAIL }
+    if not a_contains(log, "malloc") { return T_FAIL }
+    return T_PASS
+}
+
+function check_contract_erased_before_codegen() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let outc: string = t_tmp() + "/callable.c"
+    if emit_c("compiler/fixtures/typecheck_rules/rt_safe_hof_ok.flow", outc) != 0 {
+        outln("expected proven-safe callable program to emit C")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let csrc: string = read_text(outc)
+    if a_contains(csrc, "rt_safe") {
+        outln("rt_safe contract leaked into generated C")
+        return T_FAIL
+    }
+    if not a_contains(csrc, "apply_i32") {
+        outln("expected apply_i32 in generated C")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("rt_callable")
+    t_start()
+    t_end("hof_rejects_allocating_fn", check_hof_rejects_allocating_fn())
+    t_start()
+    t_end("hof_rejects_allocating_closure", check_hof_rejects_allocating_closure())
+    t_start()
+    t_end("hof_accepts_proven_safe", check_hof_accepts_proven_safe())
+    t_start()
+    t_end("uninitialized_contract_rejected", check_uninitialized_contract_is_rejected())
+    t_start()
+    t_end("cast_laundering_rejected", check_cast_cannot_launder_unsafe_callable())
+    t_start()
+    t_end("contract_erased_before_codegen", check_contract_erased_before_codegen())
+    t_done()
+    return 0
+}

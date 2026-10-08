@@ -106,19 +106,20 @@ Frame reset is bounded bump-pointer bookkeeping rather than one free per object.
 
 ## Runtime memory profile
 
-Compiled programs include an opt-in allocator profile (#740). It is dormant unless `FLOW_MEM_PROFILE` is set to a non-empty value other than `0` when the process starts: one predictable branch per routed allocation and no output otherwise.
+Compiled programs include an opt-in allocator profile (#740). See
+[Runtime memory profile](memory-profile.md) for the report keys, live-block
+map, per-site attribution and stack/arena promotion counters.
 
-When enabled, the program writes a report at exit to stderr, or to the file named by `FLOW_MEM_PROFILE_OUT`:
+It is dormant unless `FLOW_MEM_PROFILE` is set to a non-empty value other
+than `0` when the process starts. `./flow tool bench_harness` sets
+`FLOW_MEM_PROFILE` and `FLOW_MEM_PROFILE_OUT` so the #728 schema records
+allocation fields without rewriting workload sources.
 
-- heap allocation count and cumulative bytes requested
-- peak live heap (high-water mark of still-live routed bytes)
-- peak RSS via `getrusage` (kilobytes; macOS bytes are normalised)
-- compiler-temporary bytes (string concat / format helpers)
-- copy volume from routed `memcpy` and string joins
+Runtime rows in the #728 harness leave the profiler off so `flow_vs_native`
+is not the wrapper tax.
 
-`./flow tool bench_harness` sets both variables on the memory suite, so the #728 schema records `allocations`, `heap_bytes`, `peak_live_heap`, `temp_bytes`, `copies` and `median_rss_kb` without rewriting workload sources. Runtime rows leave the profiler off so `flow_vs_native` is not the wrapper tax.
-
-Stack/arena promotion bytes and per-source copy attribution are reported as deferred until the lifetime work in #669.
+These counters are runtime accounting. They do not implement the #669
+static-lifetime analysis.
 
 ## Rules
 

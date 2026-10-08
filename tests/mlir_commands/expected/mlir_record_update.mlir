@@ -24,146 +24,136 @@ llvm.store %v7, %v9 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
 %v13 = llvm.load %v12 : !llvm.ptr -> i32
 %v14 = arith.addi %v13, %arg1 : i32
 %v15 = llvm.insertvalue %v14, %v10[0] : !llvm.struct<(i32, i32, f64)>
-%v16 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v17 = llvm.extractvalue %v15[0] : !llvm.struct<(i32, i32, f64)>
-%v18 = llvm.insertvalue %v17, %v16[0] : !llvm.struct<(i32, i32, f64)>
-%v19 = llvm.extractvalue %v15[1] : !llvm.struct<(i32, i32, f64)>
-%v20 = llvm.insertvalue %v19, %v18[1] : !llvm.struct<(i32, i32, f64)>
-%v21 = llvm.extractvalue %v15[2] : !llvm.struct<(i32, i32, f64)>
-%v22 = llvm.insertvalue %v21, %v20[2] : !llvm.struct<(i32, i32, f64)>
-%v23 = llvm.mlir.constant(1 : i64) : i64
-%v24 = llvm.alloca %v23 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v22, %v24 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v25 = llvm.load %v24 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-func.return %v25 : !llvm.struct<(i32, i32, f64)>
+// flowc.copy_elision record-update
+func.return %v15 : !llvm.struct<(i32, i32, f64)>
 }
 func.func @make() -> !llvm.struct<(i32, i32, f64)> {
-%v26 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v27 = arith.constant 1 : i32
-%v28 = llvm.insertvalue %v27, %v26[0] : !llvm.struct<(i32, i32, f64)>
-%v29 = arith.constant 2 : i32
-%v30 = llvm.insertvalue %v29, %v28[1] : !llvm.struct<(i32, i32, f64)>
-%v31 = arith.constant 0.5 : f64
-%v32 = llvm.insertvalue %v31, %v30[2] : !llvm.struct<(i32, i32, f64)>
+%v16 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
+%v17 = arith.constant 1 : i32
+%v18 = llvm.insertvalue %v17, %v16[0] : !llvm.struct<(i32, i32, f64)>
+%v19 = arith.constant 2 : i32
+%v20 = llvm.insertvalue %v19, %v18[1] : !llvm.struct<(i32, i32, f64)>
+%v21 = arith.constant 0.5 : f64
+%v22 = llvm.insertvalue %v21, %v20[2] : !llvm.struct<(i32, i32, f64)>
+%v23 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
+%v24 = llvm.extractvalue %v22[0] : !llvm.struct<(i32, i32, f64)>
+%v25 = llvm.insertvalue %v24, %v23[0] : !llvm.struct<(i32, i32, f64)>
+%v26 = llvm.extractvalue %v22[1] : !llvm.struct<(i32, i32, f64)>
+%v27 = llvm.insertvalue %v26, %v25[1] : !llvm.struct<(i32, i32, f64)>
+%v28 = llvm.extractvalue %v22[2] : !llvm.struct<(i32, i32, f64)>
+%v29 = llvm.insertvalue %v28, %v27[2] : !llvm.struct<(i32, i32, f64)>
+%v30 = llvm.mlir.constant(1 : i64) : i64
+%v31 = llvm.alloca %v30 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
+llvm.store %v29, %v31 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v32 = llvm.load %v31 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+func.return %v32 : !llvm.struct<(i32, i32, f64)>
+}
+func.func @main() -> i32 {
 %v33 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v34 = llvm.extractvalue %v32[0] : !llvm.struct<(i32, i32, f64)>
+%v34 = arith.constant 3 : i32
 %v35 = llvm.insertvalue %v34, %v33[0] : !llvm.struct<(i32, i32, f64)>
-%v36 = llvm.extractvalue %v32[1] : !llvm.struct<(i32, i32, f64)>
+%v36 = arith.constant 4 : i32
 %v37 = llvm.insertvalue %v36, %v35[1] : !llvm.struct<(i32, i32, f64)>
-%v38 = llvm.extractvalue %v32[2] : !llvm.struct<(i32, i32, f64)>
+%v38 = arith.constant 1.5 : f64
 %v39 = llvm.insertvalue %v38, %v37[2] : !llvm.struct<(i32, i32, f64)>
 %v40 = llvm.mlir.constant(1 : i64) : i64
 %v41 = llvm.alloca %v40 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
 llvm.store %v39, %v41 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
 %v42 = llvm.load %v41 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-func.return %v42 : !llvm.struct<(i32, i32, f64)>
-}
-func.func @main() -> i32 {
-%v43 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v44 = arith.constant 3 : i32
-%v45 = llvm.insertvalue %v44, %v43[0] : !llvm.struct<(i32, i32, f64)>
-%v46 = arith.constant 4 : i32
-%v47 = llvm.insertvalue %v46, %v45[1] : !llvm.struct<(i32, i32, f64)>
-%v48 = arith.constant 1.5 : f64
-%v49 = llvm.insertvalue %v48, %v47[2] : !llvm.struct<(i32, i32, f64)>
-%v50 = llvm.mlir.constant(1 : i64) : i64
-%v51 = llvm.alloca %v50 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v49, %v51 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v52 = llvm.load %v51 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v53 = arith.constant 40 : i32
-%v54 = llvm.insertvalue %v53, %v52[1] : !llvm.struct<(i32, i32, f64)>
-%v55 = llvm.mlir.constant(1 : i64) : i64
-%v56 = llvm.alloca %v55 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v54, %v56 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v57 = llvm.load %v56 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v58 = arith.constant 10 : i32
-%v59 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v60 = llvm.extractvalue %v57[0] : !llvm.struct<(i32, i32, f64)>
-%v61 = llvm.insertvalue %v60, %v59[0] : !llvm.struct<(i32, i32, f64)>
-%v62 = llvm.extractvalue %v57[1] : !llvm.struct<(i32, i32, f64)>
-%v63 = llvm.insertvalue %v62, %v61[1] : !llvm.struct<(i32, i32, f64)>
-%v64 = llvm.extractvalue %v57[2] : !llvm.struct<(i32, i32, f64)>
-%v65 = llvm.insertvalue %v64, %v63[2] : !llvm.struct<(i32, i32, f64)>
-%v66 = func.call @moved(%v65, %v58) : (!llvm.struct<(i32, i32, f64)>, i32) -> !llvm.struct<(i32, i32, f64)>
+%v43 = arith.constant 40 : i32
+%v44 = llvm.insertvalue %v43, %v42[1] : !llvm.struct<(i32, i32, f64)>
+%v45 = llvm.mlir.constant(1 : i64) : i64
+%v46 = llvm.alloca %v45 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
+llvm.store %v44, %v46 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v47 = llvm.load %v46 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v48 = arith.constant 10 : i32
+%v49 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
+%v50 = llvm.extractvalue %v47[0] : !llvm.struct<(i32, i32, f64)>
+%v51 = llvm.insertvalue %v50, %v49[0] : !llvm.struct<(i32, i32, f64)>
+%v52 = llvm.extractvalue %v47[1] : !llvm.struct<(i32, i32, f64)>
+%v53 = llvm.insertvalue %v52, %v51[1] : !llvm.struct<(i32, i32, f64)>
+%v54 = llvm.extractvalue %v47[2] : !llvm.struct<(i32, i32, f64)>
+%v55 = llvm.insertvalue %v54, %v53[2] : !llvm.struct<(i32, i32, f64)>
+%v56 = func.call @moved(%v55, %v48) : (!llvm.struct<(i32, i32, f64)>, i32) -> !llvm.struct<(i32, i32, f64)>
+%v57 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
+%v58 = llvm.extractvalue %v56[0] : !llvm.struct<(i32, i32, f64)>
+%v59 = llvm.insertvalue %v58, %v57[0] : !llvm.struct<(i32, i32, f64)>
+%v60 = llvm.extractvalue %v56[1] : !llvm.struct<(i32, i32, f64)>
+%v61 = llvm.insertvalue %v60, %v59[1] : !llvm.struct<(i32, i32, f64)>
+%v62 = llvm.extractvalue %v56[2] : !llvm.struct<(i32, i32, f64)>
+%v63 = llvm.insertvalue %v62, %v61[2] : !llvm.struct<(i32, i32, f64)>
+%v64 = llvm.mlir.constant(1 : i64) : i64
+%v65 = llvm.alloca %v64 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
+llvm.store %v63, %v65 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v66 = llvm.load %v65 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
 %v67 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v68 = llvm.extractvalue %v66[0] : !llvm.struct<(i32, i32, f64)>
+%v68 = llvm.extractvalue %v55[0] : !llvm.struct<(i32, i32, f64)>
 %v69 = llvm.insertvalue %v68, %v67[0] : !llvm.struct<(i32, i32, f64)>
-%v70 = llvm.extractvalue %v66[1] : !llvm.struct<(i32, i32, f64)>
+%v70 = llvm.extractvalue %v55[1] : !llvm.struct<(i32, i32, f64)>
 %v71 = llvm.insertvalue %v70, %v69[1] : !llvm.struct<(i32, i32, f64)>
-%v72 = llvm.extractvalue %v66[2] : !llvm.struct<(i32, i32, f64)>
+%v72 = llvm.extractvalue %v55[2] : !llvm.struct<(i32, i32, f64)>
 %v73 = llvm.insertvalue %v72, %v71[2] : !llvm.struct<(i32, i32, f64)>
 %v74 = llvm.mlir.constant(1 : i64) : i64
 %v75 = llvm.alloca %v74 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
 llvm.store %v73, %v75 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
 %v76 = llvm.load %v75 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v77 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v78 = llvm.extractvalue %v65[0] : !llvm.struct<(i32, i32, f64)>
-%v79 = llvm.insertvalue %v78, %v77[0] : !llvm.struct<(i32, i32, f64)>
-%v80 = llvm.extractvalue %v65[1] : !llvm.struct<(i32, i32, f64)>
-%v81 = llvm.insertvalue %v80, %v79[1] : !llvm.struct<(i32, i32, f64)>
-%v82 = llvm.extractvalue %v65[2] : !llvm.struct<(i32, i32, f64)>
-%v83 = llvm.insertvalue %v82, %v81[2] : !llvm.struct<(i32, i32, f64)>
-%v84 = llvm.mlir.constant(1 : i64) : i64
-%v85 = llvm.alloca %v84 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v83, %v85 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v86 = llvm.load %v85 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-llvm.store %v86, %v56 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+llvm.store %v76, %v46 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v77 = llvm.mlir.constant(1 : i64) : i64
+%v78 = llvm.alloca %v77 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
+llvm.store %v66, %v78 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v79 = func.call @make() : () -> !llvm.struct<(i32, i32, f64)>
+%v80 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
+%v81 = llvm.extractvalue %v79[0] : !llvm.struct<(i32, i32, f64)>
+%v82 = llvm.insertvalue %v81, %v80[0] : !llvm.struct<(i32, i32, f64)>
+%v83 = llvm.extractvalue %v79[1] : !llvm.struct<(i32, i32, f64)>
+%v84 = llvm.insertvalue %v83, %v82[1] : !llvm.struct<(i32, i32, f64)>
+%v85 = llvm.extractvalue %v79[2] : !llvm.struct<(i32, i32, f64)>
+%v86 = llvm.insertvalue %v85, %v84[2] : !llvm.struct<(i32, i32, f64)>
 %v87 = llvm.mlir.constant(1 : i64) : i64
 %v88 = llvm.alloca %v87 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v76, %v88 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v89 = func.call @make() : () -> !llvm.struct<(i32, i32, f64)>
-%v90 = llvm.mlir.undef : !llvm.struct<(i32, i32, f64)>
-%v91 = llvm.extractvalue %v89[0] : !llvm.struct<(i32, i32, f64)>
-%v92 = llvm.insertvalue %v91, %v90[0] : !llvm.struct<(i32, i32, f64)>
-%v93 = llvm.extractvalue %v89[1] : !llvm.struct<(i32, i32, f64)>
-%v94 = llvm.insertvalue %v93, %v92[1] : !llvm.struct<(i32, i32, f64)>
-%v95 = llvm.extractvalue %v89[2] : !llvm.struct<(i32, i32, f64)>
-%v96 = llvm.insertvalue %v95, %v94[2] : !llvm.struct<(i32, i32, f64)>
-%v97 = llvm.mlir.constant(1 : i64) : i64
-%v98 = llvm.alloca %v97 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v96, %v98 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v99 = llvm.load %v98 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v100 = arith.constant 2 : i32
-%v101 = arith.sitofp %v100 : i32 to f64
-%v102 = llvm.insertvalue %v101, %v99[2] : !llvm.struct<(i32, i32, f64)>
-%v103 = llvm.load %v88 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v104 = llvm.getelementptr %v88[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
-%v105 = llvm.load %v104 : !llvm.ptr -> i32
-%v106 = arith.constant 1 : i32
-%v107 = arith.addi %v105, %v106 : i32
-%v108 = llvm.insertvalue %v107, %v102[1] : !llvm.struct<(i32, i32, f64)>
-%v109 = llvm.mlir.constant(1 : i64) : i64
-%v110 = llvm.alloca %v109 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
-llvm.store %v108, %v110 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
-%v111 = llvm.load %v56 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v112 = llvm.getelementptr %v56[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
+llvm.store %v86, %v88 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v89 = llvm.load %v88 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v90 = arith.constant 2 : i32
+%v91 = arith.sitofp %v90 : i32 to f64
+%v92 = llvm.insertvalue %v91, %v89[2] : !llvm.struct<(i32, i32, f64)>
+%v93 = llvm.load %v78 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v94 = llvm.getelementptr %v78[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
+%v95 = llvm.load %v94 : !llvm.ptr -> i32
+%v96 = arith.constant 1 : i32
+%v97 = arith.addi %v95, %v96 : i32
+%v98 = llvm.insertvalue %v97, %v92[1] : !llvm.struct<(i32, i32, f64)>
+%v99 = llvm.mlir.constant(1 : i64) : i64
+%v100 = llvm.alloca %v99 x !llvm.struct<(i32, i32, f64)> : (i64) -> !llvm.ptr
+llvm.store %v98, %v100 : !llvm.struct<(i32, i32, f64)>, !llvm.ptr
+%v101 = llvm.load %v46 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v102 = llvm.getelementptr %v46[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
+%v103 = llvm.load %v102 : !llvm.ptr -> i32
+%v104 = llvm.load %v46 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v105 = llvm.getelementptr %v46[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
+%v106 = llvm.load %v105 : !llvm.ptr -> i32
+%v107 = arith.addi %v103, %v106 : i32
+%v108 = llvm.mlir.addressof @str_0 : !llvm.ptr
+%v109 = llvm.call @printf(%v108, %v107) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v110 = arith.constant 0 : i32
+%v111 = llvm.load %v78 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v112 = llvm.getelementptr %v78[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
 %v113 = llvm.load %v112 : !llvm.ptr -> i32
-%v114 = llvm.load %v56 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v115 = llvm.getelementptr %v56[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
-%v116 = llvm.load %v115 : !llvm.ptr -> i32
-%v117 = arith.addi %v113, %v116 : i32
-%v118 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v119 = llvm.call @printf(%v118, %v117) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v120 = arith.constant 0 : i32
-%v121 = llvm.load %v88 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v122 = llvm.getelementptr %v88[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
-%v123 = llvm.load %v122 : !llvm.ptr -> i32
-%v124 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v125 = llvm.call @printf(%v124, %v123) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v126 = arith.constant 0 : i32
-%v127 = llvm.load %v110 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v128 = llvm.getelementptr %v110[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
-%v129 = llvm.load %v128 : !llvm.ptr -> f64
-%v130 = llvm.mlir.addressof @str_1 : !llvm.ptr
-%v131 = llvm.call @printf(%v130, %v129) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
-%v132 = arith.constant 0 : i32
-%v133 = llvm.load %v110 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
-%v134 = llvm.getelementptr %v110[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
-%v135 = llvm.load %v134 : !llvm.ptr -> i32
-%v136 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v137 = llvm.call @printf(%v136, %v135) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v138 = arith.constant 0 : i32
-%v139 = arith.constant 0 : i32
-func.return %v139 : i32
+%v114 = llvm.mlir.addressof @str_0 : !llvm.ptr
+%v115 = llvm.call @printf(%v114, %v113) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v116 = arith.constant 0 : i32
+%v117 = llvm.load %v100 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v118 = llvm.getelementptr %v100[0, 2] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
+%v119 = llvm.load %v118 : !llvm.ptr -> f64
+%v120 = llvm.mlir.addressof @str_1 : !llvm.ptr
+%v121 = llvm.call @printf(%v120, %v119) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+%v122 = arith.constant 0 : i32
+%v123 = llvm.load %v100 : !llvm.ptr -> !llvm.struct<(i32, i32, f64)>
+%v124 = llvm.getelementptr %v100[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32, i32, f64)>
+%v125 = llvm.load %v124 : !llvm.ptr -> i32
+%v126 = llvm.mlir.addressof @str_0 : !llvm.ptr
+%v127 = llvm.call @printf(%v126, %v125) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v128 = arith.constant 0 : i32
+%v129 = arith.constant 0 : i32
+func.return %v129 : i32
 }
 }

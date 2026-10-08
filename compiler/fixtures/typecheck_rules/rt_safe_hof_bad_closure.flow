@@ -1,0 +1,18 @@
+# expect: RT-safety violation: closure bound to an rt_safe contract can reach 'malloc', which is forbidden on an RT-safe path
+@rt_safe
+function apply_i32(f: (i32) -> i32 with rt_safe, x: i32) -> i32 {
+    return f(x)
+}
+
+@rt_safe
+function process() -> i32 {
+    return apply_i32(|x: i32| -> i32 {
+        let p: ptr<void> = malloc(8)
+        free(p)
+        return x
+    }, 1)
+}
+
+function main() -> i32 {
+    return 0
+}

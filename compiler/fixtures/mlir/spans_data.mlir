@@ -1,9 +1,300 @@
 module {
+func.func private @memcpy(!llvm.ptr, !llvm.ptr, i64) -> !llvm.ptr
+func.func private @free(!llvm.ptr) -> ()
 func.func private @malloc(i64) -> !llvm.ptr
+func.func private @getenv(!llvm.ptr) -> !llvm.ptr
+func.func private @atexit(!llvm.ptr) -> i32
+llvm.mlir.global internal @flow_mem_profile_on() {addr_space = 0 : i32} : i32 {
+%z = llvm.mlir.constant(0 : i32) : i32
+llvm.return %z : i32
+}
+llvm.mlir.global internal @flow_mem_inited() {addr_space = 0 : i32} : i32 {
+%z = llvm.mlir.constant(0 : i32) : i32
+llvm.return %z : i32
+}
+llvm.mlir.global internal @flow_mem_alloc_count() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_alloc_bytes() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_temp_bytes() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_copy_bytes() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_stack_bytes() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_arena_bytes() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_live_bytes() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_peak_live() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_site_concat() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_map_overflow() {addr_space = 0 : i32} : i64 {
+%z = llvm.mlir.constant(0 : i64) : i64
+llvm.return %z : i64
+}
+llvm.mlir.global internal @flow_mem_ptrs() {addr_space = 0 : i32} : !llvm.array<256 x ptr> {
+%z = llvm.mlir.zero : !llvm.array<256 x ptr>
+llvm.return %z : !llvm.array<256 x ptr>
+}
+llvm.mlir.global internal @flow_mem_sz() {addr_space = 0 : i32} : !llvm.array<256 x i64> {
+%z = llvm.mlir.zero : !llvm.array<256 x i64>
+llvm.return %z : !llvm.array<256 x i64>
+}
+func.func private @flow_mem_profile_init() {
+%ip = llvm.mlir.addressof @flow_mem_inited : !llvm.ptr
+%iv = llvm.load %ip : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%done = arith.cmpi ne, %iv, %z32 : i32
+scf.if %done {
+scf.yield
+} else {
+%one32 = arith.constant 1 : i32
+llvm.store %one32, %ip : i32, !llvm.ptr
+%name = llvm.mlir.addressof @str_0 : !llvm.ptr
+%e = func.call @getenv(%name) : (!llvm.ptr) -> !llvm.ptr
+%null = llvm.mlir.zero : !llvm.ptr
+%ok = llvm.icmp "ne" %e, %null : !llvm.ptr
+%on = scf.if %ok -> (i32) {
+%b = llvm.load %e : !llvm.ptr -> i8
+%z8 = arith.constant 0 : i8
+%nz = arith.cmpi ne, %b, %z8 : i8
+%c48 = arith.constant 48 : i8
+%is0 = arith.cmpi eq, %b, %c48 : i8
+%e1 = llvm.getelementptr %e[1] : (!llvm.ptr) -> !llvm.ptr, i8
+%b1 = llvm.load %e1 : !llvm.ptr -> i8
+%term = arith.cmpi eq, %b1, %z8 : i8
+%zeroish = arith.andi %is0, %term : i1
+%keep = arith.andi %nz, %zeroish : i1
+%not0 = arith.xori %keep, %nz : i1
+%sel = arith.select %not0, %one32, %z32 : i32
+scf.yield %sel : i32
+} else {
+scf.yield %z32 : i32
+}
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+llvm.store %on, %op : i32, !llvm.ptr
+%onb = arith.cmpi ne, %on, %z32 : i32
+scf.if %onb {
+%rf = func.constant @flow_mem_report : () -> ()
+%rp = builtin.unrealized_conversion_cast %rf : () -> () to !llvm.ptr
+%ar = func.call @atexit(%rp) : (!llvm.ptr) -> i32
+scf.yield
+}
+scf.yield
+}
+func.return
+}
+func.func private @flow_mem_note_alloc(%n: i64) {
+func.call @flow_mem_profile_init() : () -> ()
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+%on = llvm.load %op : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%yes = arith.cmpi ne, %on, %z32 : i32
+scf.if %yes {
+%one = arith.constant 1 : i64
+%cp = llvm.mlir.addressof @flow_mem_alloc_count : !llvm.ptr
+%cv = llvm.load %cp : !llvm.ptr -> i64
+%cn = arith.addi %cv, %one : i64
+llvm.store %cn, %cp : i64, !llvm.ptr
+%bp = llvm.mlir.addressof @flow_mem_alloc_bytes : !llvm.ptr
+%bv = llvm.load %bp : !llvm.ptr -> i64
+%bn = arith.addi %bv, %n : i64
+llvm.store %bn, %bp : i64, !llvm.ptr
+%lp = llvm.mlir.addressof @flow_mem_live_bytes : !llvm.ptr
+%lv = llvm.load %lp : !llvm.ptr -> i64
+%ln = arith.addi %lv, %n : i64
+llvm.store %ln, %lp : i64, !llvm.ptr
+%pp = llvm.mlir.addressof @flow_mem_peak_live : !llvm.ptr
+%pv = llvm.load %pp : !llvm.ptr -> i64
+%gt = arith.cmpi sgt, %ln, %pv : i64
+%np = arith.select %gt, %ln, %pv : i64
+llvm.store %np, %pp : i64, !llvm.ptr
+scf.yield
+}
+func.return
+}
+func.func private @flow_mem_note_copy(%n: i64) {
+func.call @flow_mem_profile_init() : () -> ()
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+%on = llvm.load %op : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%yes = arith.cmpi ne, %on, %z32 : i32
+scf.if %yes {
+%bp = llvm.mlir.addressof @flow_mem_copy_bytes : !llvm.ptr
+%bv = llvm.load %bp : !llvm.ptr -> i64
+%bn = arith.addi %bv, %n : i64
+llvm.store %bn, %bp : i64, !llvm.ptr
+scf.yield
+}
+func.return
+}
+func.func private @flow_mem_note_temp(%n: i64) {
+func.call @flow_mem_profile_init() : () -> ()
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+%on = llvm.load %op : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%yes = arith.cmpi ne, %on, %z32 : i32
+scf.if %yes {
+%bp = llvm.mlir.addressof @flow_mem_temp_bytes : !llvm.ptr
+%bv = llvm.load %bp : !llvm.ptr -> i64
+%bn = arith.addi %bv, %n : i64
+llvm.store %bn, %bp : i64, !llvm.ptr
+%sp = llvm.mlir.addressof @flow_mem_site_concat : !llvm.ptr
+%sv = llvm.load %sp : !llvm.ptr -> i64
+%sn = arith.addi %sv, %n : i64
+llvm.store %sn, %sp : i64, !llvm.ptr
+scf.yield
+}
+func.return
+}
+func.func private @flow_mem_note_stack(%n: i64) {
+func.call @flow_mem_profile_init() : () -> ()
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+%on = llvm.load %op : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%yes = arith.cmpi ne, %on, %z32 : i32
+scf.if %yes {
+%bp = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr
+%bv = llvm.load %bp : !llvm.ptr -> i64
+%bn = arith.addi %bv, %n : i64
+llvm.store %bn, %bp : i64, !llvm.ptr
+scf.yield
+}
+func.return
+}
+func.func private @flow_mem_note_arena(%n: i64) {
+func.call @flow_mem_profile_init() : () -> ()
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+%on = llvm.load %op : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%yes = arith.cmpi ne, %on, %z32 : i32
+scf.if %yes {
+%bp = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr
+%bv = llvm.load %bp : !llvm.ptr -> i64
+%bn = arith.addi %bv, %n : i64
+llvm.store %bn, %bp : i64, !llvm.ptr
+scf.yield
+}
+func.return
+}
+func.func @flow_mem_malloc(%n: i64) -> !llvm.ptr {
+%p = func.call @malloc(%n) : (i64) -> !llvm.ptr
+func.call @flow_mem_note_alloc(%n) : (i64) -> ()
+func.return %p : !llvm.ptr
+}
+func.func private @calloc(i64, i64) -> !llvm.ptr
+func.func private @realloc(!llvm.ptr, i64) -> !llvm.ptr
+func.func @flow_mem_calloc(%c: i64, %s: i64) -> !llvm.ptr {
+%p = func.call @calloc(%c, %s) : (i64, i64) -> !llvm.ptr
+%n = arith.muli %c, %s : i64
+func.call @flow_mem_note_alloc(%n) : (i64) -> ()
+func.return %p : !llvm.ptr
+}
+func.func @flow_mem_realloc(%p: !llvm.ptr, %n: i64) -> !llvm.ptr {
+%q = func.call @realloc(%p, %n) : (!llvm.ptr, i64) -> !llvm.ptr
+func.call @flow_mem_note_alloc(%n) : (i64) -> ()
+func.return %q : !llvm.ptr
+}
+func.func @flow_mem_free(%p: !llvm.ptr) {
+func.call @free(%p) : (!llvm.ptr) -> ()
+func.return
+}
+func.func @flow_mem_memcpy(%d: !llvm.ptr, %s: !llvm.ptr, %n: i64) -> !llvm.ptr {
+func.call @flow_mem_note_copy(%n) : (i64) -> ()
+%r = func.call @memcpy(%d, %s, %n) : (!llvm.ptr, !llvm.ptr, i64) -> !llvm.ptr
+func.return %r : !llvm.ptr
+}
+func.func @flow_mem_report() {
+%op = llvm.mlir.addressof @flow_mem_profile_on : !llvm.ptr
+%on = llvm.load %op : !llvm.ptr -> i32
+%z32 = arith.constant 0 : i32
+%yes = arith.cmpi ne, %on, %z32 : i32
+scf.if %yes {
+%hdr = llvm.mlir.addressof @str_1 : !llvm.ptr
+%h = llvm.call @printf(%hdr) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
+%g_flow_mem_alloc_count = llvm.mlir.addressof @flow_mem_alloc_count : !llvm.ptr
+%v_flow_mem_alloc_count = llvm.load %g_flow_mem_alloc_count : !llvm.ptr -> i64
+%f_flow_mem_alloc_count = llvm.mlir.addressof @str_2 : !llvm.ptr
+%w_flow_mem_alloc_count = llvm.call @printf(%f_flow_mem_alloc_count, %v_flow_mem_alloc_count) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_alloc_bytes = llvm.mlir.addressof @flow_mem_alloc_bytes : !llvm.ptr
+%v_flow_mem_alloc_bytes = llvm.load %g_flow_mem_alloc_bytes : !llvm.ptr -> i64
+%f_flow_mem_alloc_bytes = llvm.mlir.addressof @str_3 : !llvm.ptr
+%w_flow_mem_alloc_bytes = llvm.call @printf(%f_flow_mem_alloc_bytes, %v_flow_mem_alloc_bytes) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_peak_live = llvm.mlir.addressof @flow_mem_peak_live : !llvm.ptr
+%v_flow_mem_peak_live = llvm.load %g_flow_mem_peak_live : !llvm.ptr -> i64
+%f_flow_mem_peak_live = llvm.mlir.addressof @str_4 : !llvm.ptr
+%w_flow_mem_peak_live = llvm.call @printf(%f_flow_mem_peak_live, %v_flow_mem_peak_live) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_temp_bytes = llvm.mlir.addressof @flow_mem_temp_bytes : !llvm.ptr
+%v_flow_mem_temp_bytes = llvm.load %g_flow_mem_temp_bytes : !llvm.ptr -> i64
+%f_flow_mem_temp_bytes = llvm.mlir.addressof @str_5 : !llvm.ptr
+%w_flow_mem_temp_bytes = llvm.call @printf(%f_flow_mem_temp_bytes, %v_flow_mem_temp_bytes) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_copy_bytes = llvm.mlir.addressof @flow_mem_copy_bytes : !llvm.ptr
+%v_flow_mem_copy_bytes = llvm.load %g_flow_mem_copy_bytes : !llvm.ptr -> i64
+%f_flow_mem_copy_bytes = llvm.mlir.addressof @str_6 : !llvm.ptr
+%w_flow_mem_copy_bytes = llvm.call @printf(%f_flow_mem_copy_bytes, %v_flow_mem_copy_bytes) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_stack_bytes = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr
+%v_flow_mem_stack_bytes = llvm.load %g_flow_mem_stack_bytes : !llvm.ptr -> i64
+%f_flow_mem_stack_bytes = llvm.mlir.addressof @str_7 : !llvm.ptr
+%w_flow_mem_stack_bytes = llvm.call @printf(%f_flow_mem_stack_bytes, %v_flow_mem_stack_bytes) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_arena_bytes = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr
+%v_flow_mem_arena_bytes = llvm.load %g_flow_mem_arena_bytes : !llvm.ptr -> i64
+%f_flow_mem_arena_bytes = llvm.mlir.addressof @str_8 : !llvm.ptr
+%w_flow_mem_arena_bytes = llvm.call @printf(%f_flow_mem_arena_bytes, %v_flow_mem_arena_bytes) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%sp = llvm.mlir.addressof @flow_mem_stack_bytes : !llvm.ptr
+%sv = llvm.load %sp : !llvm.ptr -> i64
+%ap = llvm.mlir.addressof @flow_mem_arena_bytes : !llvm.ptr
+%av = llvm.load %ap : !llvm.ptr -> i64
+%promo = arith.addi %sv, %av : i64
+%pf = llvm.mlir.addressof @str_9 : !llvm.ptr
+%ph = llvm.call @printf(%pf, %promo) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_map_overflow = llvm.mlir.addressof @flow_mem_map_overflow : !llvm.ptr
+%v_flow_mem_map_overflow = llvm.load %g_flow_mem_map_overflow : !llvm.ptr -> i64
+%f_flow_mem_map_overflow = llvm.mlir.addressof @str_10 : !llvm.ptr
+%w_flow_mem_map_overflow = llvm.call @printf(%f_flow_mem_map_overflow, %v_flow_mem_map_overflow) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%g_flow_mem_site_concat = llvm.mlir.addressof @flow_mem_site_concat : !llvm.ptr
+%v_flow_mem_site_concat = llvm.load %g_flow_mem_site_concat : !llvm.ptr -> i64
+%f_flow_mem_site_concat = llvm.mlir.addressof @str_11 : !llvm.ptr
+%w_flow_mem_site_concat = llvm.call @printf(%f_flow_mem_site_concat, %v_flow_mem_site_concat) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+scf.yield
+}
+func.return
+}
 llvm.func @printf(!llvm.ptr, ...) -> i32
-llvm.mlir.global internal constant @str_0("%f\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
-llvm.mlir.global internal constant @str_1("%lld\0A\00") {addr_space = 0 : i32} : !llvm.array<6 x i8>
-llvm.mlir.global internal constant @str_2("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_0("FLOW_MEM_PROFILE\00") {addr_space = 0 : i32} : !llvm.array<17 x i8>
+llvm.mlir.global internal constant @str_1("\0A=== Flow memory profile (#740) ===\0A\00") {addr_space = 0 : i32} : !llvm.array<37 x i8>
+llvm.mlir.global internal constant @str_2("allocations: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<19 x i8>
+llvm.mlir.global internal constant @str_3("heap_bytes: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<18 x i8>
+llvm.mlir.global internal constant @str_4("peak_live_heap: %lld\0A\00") {addr_space = 0 : i32} : !llvm.array<22 x i8>
+llvm.mlir.global internal constant @str_5("temp_bytes: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<18 x i8>
+llvm.mlir.global internal constant @str_6("copies: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
+llvm.mlir.global internal constant @str_7("stack_bytes: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<19 x i8>
+llvm.mlir.global internal constant @str_8("arena_bytes: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<19 x i8>
+llvm.mlir.global internal constant @str_9("promotion_bytes: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<23 x i8>
+llvm.mlir.global internal constant @str_10("live_map_overflow: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<25 x i8>
+llvm.mlir.global internal constant @str_11("site_concat: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<19 x i8>
+llvm.mlir.global internal constant @str_12("%f\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_13("%lld\0A\00") {addr_space = 0 : i32} : !llvm.array<6 x i8>
+llvm.mlir.global internal constant @str_14("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
 // Constant: K
 llvm.mlir.global internal constant @K(3 : i32) : i32
 // Constant: MASK
@@ -98,7 +389,7 @@ func.func @make(%arg0: i32) -> !llvm.struct<(!llvm.ptr, i64)> {
 %v55 = arith.constant 8 : i32
 %v56 = arith.extsi %v55 : i32 to i64
 %v57 = arith.muli %v54, %v56 : i64
-%v58 = func.call @malloc(%v57) : (i64) -> !llvm.ptr
+%v58 = func.call @flow_mem_malloc(%v57) : (i64) -> !llvm.ptr
 %v59 = arith.constant 0 : i32
 %v60 = arith.extsi %v59 : i32 to i64
 %v61 = arith.extsi %arg0 : i32 to i64
@@ -268,12 +559,12 @@ llvm.store %v191, %v193 : !llvm.struct<(!llvm.ptr, i64)>, !llvm.ptr
 llvm.store %v194, %v193 : !llvm.struct<(!llvm.ptr, i64)>, !llvm.ptr
 %v195 = llvm.load %v181 : !llvm.ptr -> !llvm.struct<(!llvm.ptr, i64)>
 %v196 = func.call @total(%v195) : (!llvm.struct<(!llvm.ptr, i64)>) -> f64
-%v197 = llvm.mlir.addressof @str_0 : !llvm.ptr
+%v197 = llvm.mlir.addressof @str_12 : !llvm.ptr
 %v198 = llvm.call @printf(%v197, %v196) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
 %v199 = arith.constant 0 : i32
 %v200 = llvm.load %v193 : !llvm.ptr -> !llvm.struct<(!llvm.ptr, i64)>
 %v201 = llvm.extractvalue %v200[1] : !llvm.struct<(!llvm.ptr, i64)>
-%v202 = llvm.mlir.addressof @str_1 : !llvm.ptr
+%v202 = llvm.mlir.addressof @str_13 : !llvm.ptr
 %v203 = llvm.call @printf(%v202, %v201) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
 %v204 = arith.constant 0 : i32
 %v205 = llvm.load %v166 : !llvm.ptr -> !llvm.struct<(!llvm.ptr, i64)>
@@ -288,7 +579,7 @@ llvm.store %v194, %v193 : !llvm.struct<(!llvm.ptr, i64)>, !llvm.ptr
 %v214 = llvm.insertvalue %v211, %v213[0] : !llvm.struct<(!llvm.ptr, i64)>
 %v215 = llvm.insertvalue %v212, %v214[1] : !llvm.struct<(!llvm.ptr, i64)>
 %v216 = func.call @total(%v215) : (!llvm.struct<(!llvm.ptr, i64)>) -> f64
-%v217 = llvm.mlir.addressof @str_0 : !llvm.ptr
+%v217 = llvm.mlir.addressof @str_12 : !llvm.ptr
 %v218 = llvm.call @printf(%v217, %v216) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
 %v219 = arith.constant 0 : i32
 %v220 = arith.constant 7 : i32
@@ -297,195 +588,199 @@ llvm.store %v194, %v193 : !llvm.struct<(!llvm.ptr, i64)>, !llvm.ptr
 %v223 = arith.constant 1 : index
 %v224 = llvm.mlir.constant(1 : i64) : i64
 %v225 = llvm.alloca %v224 x !llvm.array<4 x i32> : (i64) -> !llvm.ptr
-scf.for %v226 = %v221 to %v222 step %v223 {
-%v227 = arith.index_cast %v226 : index to i64
-%v228 = llvm.getelementptr %v225[0, %v227] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
-llvm.store %v220, %v228 : i32, !llvm.ptr
+%v226 = arith.constant 16 : i64
+func.call @flow_mem_note_stack(%v226) : (i64) -> ()
+scf.for %v227 = %v221 to %v222 step %v223 {
+%v228 = arith.index_cast %v227 : index to i64
+%v229 = llvm.getelementptr %v225[0, %v228] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
+llvm.store %v220, %v229 : i32, !llvm.ptr
 }
-%v229 = arith.constant 2 : i32
-%v230 = arith.extsi %v229 : i32 to i64
-%v231 = llvm.getelementptr %v225[0, %v230] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
-%v232 = llvm.load %v231 : !llvm.ptr -> i32
-%v233 = arith.constant 7 : i32
-%v234 = arith.constant 0 : index
-%v235 = arith.constant 4 : index
-%v236 = arith.constant 1 : index
-%v237 = memref.alloca() : memref<4xi32>
-scf.for %v238 = %v234 to %v235 step %v236 {
-memref.store %v233, %v237[%v238] : memref<4xi32>
+%v230 = arith.constant 2 : i32
+%v231 = arith.extsi %v230 : i32 to i64
+%v232 = llvm.getelementptr %v225[0, %v231] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
+%v233 = llvm.load %v232 : !llvm.ptr -> i32
+%v234 = arith.constant 7 : i32
+%v235 = arith.constant 0 : index
+%v236 = arith.constant 4 : index
+%v237 = arith.constant 1 : index
+%v238 = memref.alloca() : memref<4xi32>
+scf.for %v239 = %v235 to %v236 step %v237 {
+memref.store %v234, %v238[%v239] : memref<4xi32>
 }
-%v239 = memref.extract_aligned_pointer_as_index %v237 : memref<4xi32> -> index
-%v240 = arith.index_cast %v239 : index to i64
-%v241 = llvm.inttoptr %v240 : i64 to !llvm.ptr
-%v242 = arith.constant 0 : index
-%v243 = memref.dim %v237, %v242 : memref<4xi32>
-%v244 = arith.index_cast %v243 : index to i64
-%v245 = llvm.mlir.undef : !llvm.struct<(!llvm.ptr, i64)>
-%v246 = llvm.insertvalue %v241, %v245[0] : !llvm.struct<(!llvm.ptr, i64)>
-%v247 = llvm.insertvalue %v244, %v246[1] : !llvm.struct<(!llvm.ptr, i64)>
-%v248 = func.call @first4(%v247) : (!llvm.struct<(!llvm.ptr, i64)>) -> i32
-%v249 = arith.addi %v232, %v248 : i32
-%v250 = llvm.mlir.addressof @str_2 : !llvm.ptr
-%v251 = llvm.call @printf(%v250, %v249) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v252 = arith.constant 0 : i32
-%v253 = arith.constant 8 : i32
-%v254 = arith.index_cast %v253 : i32 to index
-%v255 = memref.alloc(%v254) : memref<?xf32>
-%v256 = arith.constant 0.0 : f32
-%v257 = arith.constant 0 : index
-%v258 = arith.constant 1 : index
-scf.for %v259 = %v257 to %v254 step %v258 {
-memref.store %v256, %v255[%v259] : memref<?xf32>
+%v240 = memref.extract_aligned_pointer_as_index %v238 : memref<4xi32> -> index
+%v241 = arith.index_cast %v240 : index to i64
+%v242 = llvm.inttoptr %v241 : i64 to !llvm.ptr
+%v243 = arith.constant 0 : index
+%v244 = memref.dim %v238, %v243 : memref<4xi32>
+%v245 = arith.index_cast %v244 : index to i64
+%v246 = llvm.mlir.undef : !llvm.struct<(!llvm.ptr, i64)>
+%v247 = llvm.insertvalue %v242, %v246[0] : !llvm.struct<(!llvm.ptr, i64)>
+%v248 = llvm.insertvalue %v245, %v247[1] : !llvm.struct<(!llvm.ptr, i64)>
+%v249 = func.call @first4(%v248) : (!llvm.struct<(!llvm.ptr, i64)>) -> i32
+%v250 = arith.addi %v233, %v249 : i32
+%v251 = llvm.mlir.addressof @str_14 : !llvm.ptr
+%v252 = llvm.call @printf(%v251, %v250) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v253 = arith.constant 0 : i32
+%v254 = arith.constant 8 : i32
+%v255 = arith.index_cast %v254 : i32 to index
+%v256 = memref.alloc(%v255) : memref<?xf32>
+%v257 = arith.constant 0.0 : f32
+%v258 = arith.constant 0 : index
+%v259 = arith.constant 1 : index
+scf.for %v260 = %v258 to %v255 step %v259 {
+memref.store %v257, %v256[%v260] : memref<?xf32>
 }
-%v260 = arith.constant 8 : i32
-%v261 = arith.index_cast %v260 : i32 to index
-%v262 = memref.alloc(%v261) : memref<?xf32>
-%v263 = arith.constant 0.0 : f32
-%v264 = arith.constant 0 : index
-%v265 = arith.constant 1 : index
-scf.for %v266 = %v264 to %v261 step %v265 {
-memref.store %v263, %v262[%v266] : memref<?xf32>
+%v261 = arith.constant 8 : i32
+%v262 = arith.index_cast %v261 : i32 to index
+%v263 = memref.alloc(%v262) : memref<?xf32>
+%v264 = arith.constant 0.0 : f32
+%v265 = arith.constant 0 : index
+%v266 = arith.constant 1 : index
+scf.for %v267 = %v265 to %v262 step %v266 {
+memref.store %v264, %v263[%v267] : memref<?xf32>
 }
-%v267 = arith.constant 0 : i32
-%v268 = arith.constant 8 : i32
-%v269 = arith.index_cast %v267 : i32 to index
+%v268 = arith.constant 0 : i32
+%v269 = arith.constant 8 : i32
 %v270 = arith.index_cast %v268 : i32 to index
-%v271 = arith.constant 1 : index
-%v272 = arith.constant -1 : index
-%v273 = arith.cmpi sle, %v269, %v270 : index
-%v274 = arith.select %v273, %v271, %v272 : index
-cf.br ^b10(%v269 : index)
-^b10(%v275: index):
-%v276 = arith.cmpi slt, %v275, %v270 : index
-%v277 = arith.cmpi sgt, %v275, %v270 : index
-%v278 = arith.select %v273, %v276, %v277 : i1
-cf.cond_br %v278, ^b11(%v275 : index), ^b12(%v275 : index)
-^b11(%v279: index):
-%v280 = arith.constant 1.5 : f64
-%v281 = arith.truncf %v280 : f64 to f32
-memref.store %v281, %v262[%v279] : memref<?xf32>
-%v282 = arith.constant 2.0 : f64
-%v283 = arith.truncf %v282 : f64 to f32
-memref.store %v283, %v255[%v279] : memref<?xf32>
-%v284 = arith.addi %v279, %v274 : index
-cf.br ^b10(%v284 : index)
-^b12(%v285: index):
-%v286 = arith.constant 8 : i32
-%v287 = arith.constant 0.5 : f64
-%v288 = arith.truncf %v287 : f64 to f32
-func.call @scale(%v255, %v262, %v286, %v288) : (memref<?xf32>, memref<?xf32>, i32, f32) -> ()
-%v289 = arith.constant 3 : i32
-%v290 = arith.index_cast %v289 : i32 to index
-%v291 = memref.load %v255[%v290] : memref<?xf32>
-%v292 = arith.extf %v291 : f32 to f64
-%v293 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v294 = llvm.call @printf(%v293, %v292) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
-%v295 = arith.constant 0 : i32
-%v296 = arith.constant 1.0 : f64
-%v297 = arith.constant 2.0 : f64
-%v298 = arith.constant 3.0 : f64
-%v299 = arith.truncf %v296 : f64 to f32
+%v271 = arith.index_cast %v269 : i32 to index
+%v272 = arith.constant 1 : index
+%v273 = arith.constant -1 : index
+%v274 = arith.cmpi sle, %v270, %v271 : index
+%v275 = arith.select %v274, %v272, %v273 : index
+cf.br ^b10(%v270 : index)
+^b10(%v276: index):
+%v277 = arith.cmpi slt, %v276, %v271 : index
+%v278 = arith.cmpi sgt, %v276, %v271 : index
+%v279 = arith.select %v274, %v277, %v278 : i1
+cf.cond_br %v279, ^b11(%v276 : index), ^b12(%v276 : index)
+^b11(%v280: index):
+%v281 = arith.constant 1.5 : f64
+%v282 = arith.truncf %v281 : f64 to f32
+memref.store %v282, %v263[%v280] : memref<?xf32>
+%v283 = arith.constant 2.0 : f64
+%v284 = arith.truncf %v283 : f64 to f32
+memref.store %v284, %v256[%v280] : memref<?xf32>
+%v285 = arith.addi %v280, %v275 : index
+cf.br ^b10(%v285 : index)
+^b12(%v286: index):
+%v287 = arith.constant 8 : i32
+%v288 = arith.constant 0.5 : f64
+%v289 = arith.truncf %v288 : f64 to f32
+func.call @scale(%v256, %v263, %v287, %v289) : (memref<?xf32>, memref<?xf32>, i32, f32) -> ()
+%v290 = arith.constant 3 : i32
+%v291 = arith.index_cast %v290 : i32 to index
+%v292 = memref.load %v256[%v291] : memref<?xf32>
+%v293 = arith.extf %v292 : f32 to f64
+%v294 = llvm.mlir.addressof @str_12 : !llvm.ptr
+%v295 = llvm.call @printf(%v294, %v293) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+%v296 = arith.constant 0 : i32
+%v297 = arith.constant 1.0 : f64
+%v298 = arith.constant 2.0 : f64
+%v299 = arith.constant 3.0 : f64
 %v300 = arith.truncf %v297 : f64 to f32
 %v301 = arith.truncf %v298 : f64 to f32
-%v302 = memref.alloca() : memref<3xf32>
-%v303 = arith.constant 0 : index
-memref.store %v299, %v302[%v303] : memref<3xf32>
-%v304 = arith.constant 1 : index
-memref.store %v300, %v302[%v304] : memref<3xf32>
-%v305 = arith.constant 2 : index
-memref.store %v301, %v302[%v305] : memref<3xf32>
-%v306 = arith.constant 4.0 : f64
-%v307 = arith.constant 5.0 : f64
-%v308 = arith.constant 6.0 : f64
-%v309 = arith.truncf %v306 : f64 to f32
+%v302 = arith.truncf %v299 : f64 to f32
+%v303 = memref.alloca() : memref<3xf32>
+%v304 = arith.constant 0 : index
+memref.store %v300, %v303[%v304] : memref<3xf32>
+%v305 = arith.constant 1 : index
+memref.store %v301, %v303[%v305] : memref<3xf32>
+%v306 = arith.constant 2 : index
+memref.store %v302, %v303[%v306] : memref<3xf32>
+%v307 = arith.constant 4.0 : f64
+%v308 = arith.constant 5.0 : f64
+%v309 = arith.constant 6.0 : f64
 %v310 = arith.truncf %v307 : f64 to f32
 %v311 = arith.truncf %v308 : f64 to f32
-%v312 = memref.alloca() : memref<3xf32>
-%v313 = arith.constant 0 : index
-memref.store %v309, %v312[%v313] : memref<3xf32>
-%v314 = arith.constant 1 : index
-memref.store %v310, %v312[%v314] : memref<3xf32>
-%v315 = arith.constant 2 : index
-memref.store %v311, %v312[%v315] : memref<3xf32>
-%v316 = arith.constant 3 : i32
-%v317 = memref.cast %v302 : memref<3xf32> to memref<?xf32>
-%v318 = memref.cast %v312 : memref<3xf32> to memref<?xf32>
-%v319 = func.call @dot(%v317, %v318, %v316) : (memref<?xf32>, memref<?xf32>, i32) -> f32
-%v320 = arith.extf %v319 : f32 to f64
-%v321 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v322 = llvm.call @printf(%v321, %v320) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
-%v323 = arith.constant 0 : i32
-%v324 = arith.constant 1 : i32
-%v325 = arith.constant 2 : i32
-%v326 = arith.constant 3 : i32
-%v327 = llvm.mlir.constant(1 : i64) : i64
-%v328 = llvm.alloca %v327 x !llvm.array<3 x i32> : (i64) -> !llvm.ptr
-%v329 = llvm.mlir.zero : !llvm.array<3 x i32>
-llvm.store %v329, %v328 : !llvm.array<3 x i32>, !llvm.ptr
-%v330 = llvm.mlir.constant(0 : i64) : i64
-%v331 = llvm.getelementptr %v328[0, %v330] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
-llvm.store %v324, %v331 : i32, !llvm.ptr
-%v332 = llvm.mlir.constant(1 : i64) : i64
-%v333 = llvm.getelementptr %v328[0, %v332] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+%v312 = arith.truncf %v309 : f64 to f32
+%v313 = memref.alloca() : memref<3xf32>
+%v314 = arith.constant 0 : index
+memref.store %v310, %v313[%v314] : memref<3xf32>
+%v315 = arith.constant 1 : index
+memref.store %v311, %v313[%v315] : memref<3xf32>
+%v316 = arith.constant 2 : index
+memref.store %v312, %v313[%v316] : memref<3xf32>
+%v317 = arith.constant 3 : i32
+%v318 = memref.cast %v303 : memref<3xf32> to memref<?xf32>
+%v319 = memref.cast %v313 : memref<3xf32> to memref<?xf32>
+%v320 = func.call @dot(%v318, %v319, %v317) : (memref<?xf32>, memref<?xf32>, i32) -> f32
+%v321 = arith.extf %v320 : f32 to f64
+%v322 = llvm.mlir.addressof @str_12 : !llvm.ptr
+%v323 = llvm.call @printf(%v322, %v321) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+%v324 = arith.constant 0 : i32
+%v325 = arith.constant 1 : i32
+%v326 = arith.constant 2 : i32
+%v327 = arith.constant 3 : i32
+%v328 = llvm.mlir.constant(1 : i64) : i64
+%v329 = llvm.alloca %v328 x !llvm.array<3 x i32> : (i64) -> !llvm.ptr
+%v330 = arith.constant 12 : i64
+func.call @flow_mem_note_stack(%v330) : (i64) -> ()
+%v331 = llvm.mlir.zero : !llvm.array<3 x i32>
+llvm.store %v331, %v329 : !llvm.array<3 x i32>, !llvm.ptr
+%v332 = llvm.mlir.constant(0 : i64) : i64
+%v333 = llvm.getelementptr %v329[0, %v332] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
 llvm.store %v325, %v333 : i32, !llvm.ptr
-%v334 = llvm.mlir.constant(2 : i64) : i64
-%v335 = llvm.getelementptr %v328[0, %v334] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+%v334 = llvm.mlir.constant(1 : i64) : i64
+%v335 = llvm.getelementptr %v329[0, %v334] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
 llvm.store %v326, %v335 : i32, !llvm.ptr
-%v336 = arith.constant 0 : i32
-%v337 = llvm.mlir.constant(1 : i64) : i64
-%v338 = llvm.alloca %v337 x i32 : (i64) -> !llvm.ptr
-llvm.store %v336, %v338 : i32, !llvm.ptr
-%v339 = arith.constant 0 : i32
-%v340 = arith.extsi %v339 : i32 to i64
-%v341 = llvm.getelementptr %v328[0, %v340] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
-%v342 = llvm.load %v341 : !llvm.ptr -> i32
-%v343 = arith.constant 1 : i32
-%v344 = arith.cmpi eq, %v342, %v343 : i32
+%v336 = llvm.mlir.constant(2 : i64) : i64
+%v337 = llvm.getelementptr %v329[0, %v336] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+llvm.store %v327, %v337 : i32, !llvm.ptr
+%v338 = arith.constant 0 : i32
+%v339 = llvm.mlir.constant(1 : i64) : i64
+%v340 = llvm.alloca %v339 x i32 : (i64) -> !llvm.ptr
+llvm.store %v338, %v340 : i32, !llvm.ptr
+%v341 = arith.constant 0 : i32
+%v342 = arith.extsi %v341 : i32 to i64
+%v343 = llvm.getelementptr %v329[0, %v342] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+%v344 = llvm.load %v343 : !llvm.ptr -> i32
 %v345 = arith.constant 1 : i32
-%v346 = arith.extsi %v345 : i32 to i64
-%v347 = llvm.getelementptr %v328[0, %v346] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
-%v348 = llvm.load %v347 : !llvm.ptr -> i32
-%v349 = arith.constant 2 : i32
-%v350 = arith.extsi %v349 : i32 to i64
-%v351 = llvm.getelementptr %v328[0, %v350] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
-%v352 = llvm.load %v351 : !llvm.ptr -> i32
-cf.cond_br %v344, ^b13, ^b14
+%v346 = arith.cmpi eq, %v344, %v345 : i32
+%v347 = arith.constant 1 : i32
+%v348 = arith.extsi %v347 : i32 to i64
+%v349 = llvm.getelementptr %v329[0, %v348] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+%v350 = llvm.load %v349 : !llvm.ptr -> i32
+%v351 = arith.constant 2 : i32
+%v352 = arith.extsi %v351 : i32 to i64
+%v353 = llvm.getelementptr %v329[0, %v352] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+%v354 = llvm.load %v353 : !llvm.ptr -> i32
+cf.cond_br %v346, ^b13, ^b14
 ^b13:
-%v353 = arith.addi %v348, %v352 : i32
-llvm.store %v353, %v338 : i32, !llvm.ptr
+%v355 = arith.addi %v350, %v354 : i32
+llvm.store %v355, %v340 : i32, !llvm.ptr
 cf.br ^b15
 ^b14:
-%v354 = arith.constant 99 : i32
-llvm.store %v354, %v338 : i32, !llvm.ptr
+%v356 = arith.constant 99 : i32
+llvm.store %v356, %v340 : i32, !llvm.ptr
 cf.br ^b15
 ^b15:
-%v355 = llvm.load %v338 : !llvm.ptr -> i32
-%v356 = llvm.mlir.addressof @str_2 : !llvm.ptr
-%v357 = llvm.call @printf(%v356, %v355) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v358 = arith.constant 0 : i32
-%v359 = llvm.mlir.addressof @K : !llvm.ptr
-%v360 = llvm.load %v359 : !llvm.ptr -> i32
-%v361 = llvm.mlir.addressof @MASK : !llvm.ptr
+%v357 = llvm.load %v340 : !llvm.ptr -> i32
+%v358 = llvm.mlir.addressof @str_14 : !llvm.ptr
+%v359 = llvm.call @printf(%v358, %v357) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v360 = arith.constant 0 : i32
+%v361 = llvm.mlir.addressof @K : !llvm.ptr
 %v362 = llvm.load %v361 : !llvm.ptr -> i32
-%v363 = arith.addi %v360, %v362 : i32
-%v364 = llvm.mlir.addressof @counter : !llvm.ptr
-%v365 = llvm.load %v364 : !llvm.ptr -> i32
-%v366 = arith.addi %v363, %v365 : i32
-%v367 = llvm.mlir.addressof @str_2 : !llvm.ptr
-%v368 = llvm.call @printf(%v367, %v366) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v369 = arith.constant 0 : i32
-%v370 = llvm.mlir.addressof @NEG : !llvm.ptr
-%v371 = llvm.load %v370 : !llvm.ptr -> i64
-%v372 = llvm.mlir.addressof @str_1 : !llvm.ptr
-%v373 = llvm.call @printf(%v372, %v371) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
-%v374 = arith.constant 0 : i32
-%v375 = arith.constant 1.5 : f64
-%v376 = arith.constant 2.0 : f64
-%v377 = arith.mulf %v375, %v376 : f64
-%v378 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v379 = llvm.call @printf(%v378, %v377) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
-%v380 = arith.constant 0 : i32
-%v381 = arith.constant 0 : i32
-func.return %v381 : i32
+%v363 = llvm.mlir.addressof @MASK : !llvm.ptr
+%v364 = llvm.load %v363 : !llvm.ptr -> i32
+%v365 = arith.addi %v362, %v364 : i32
+%v366 = llvm.mlir.addressof @counter : !llvm.ptr
+%v367 = llvm.load %v366 : !llvm.ptr -> i32
+%v368 = arith.addi %v365, %v367 : i32
+%v369 = llvm.mlir.addressof @str_14 : !llvm.ptr
+%v370 = llvm.call @printf(%v369, %v368) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v371 = arith.constant 0 : i32
+%v372 = llvm.mlir.addressof @NEG : !llvm.ptr
+%v373 = llvm.load %v372 : !llvm.ptr -> i64
+%v374 = llvm.mlir.addressof @str_13 : !llvm.ptr
+%v375 = llvm.call @printf(%v374, %v373) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%v376 = arith.constant 0 : i32
+%v377 = arith.constant 1.5 : f64
+%v378 = arith.constant 2.0 : f64
+%v379 = arith.mulf %v377, %v378 : f64
+%v380 = llvm.mlir.addressof @str_12 : !llvm.ptr
+%v381 = llvm.call @printf(%v380, %v379) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+%v382 = arith.constant 0 : i32
+%v383 = arith.constant 0 : i32
+func.return %v383 : i32
 }
 }
