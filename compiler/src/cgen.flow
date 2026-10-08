@@ -1586,15 +1586,17 @@ function flowc_cgen_sig_field_is_string(w: ptr<CgenBuf>, arena: AstArena, src: p
     if bt == AST_NONE or bt < 0 or arena.nodes[bt].kind != AST_TYPE {
         return 0
     }
-    if arena.nodes[bt].a == AST_NONE or flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "ptr") == 0 {
+    # Imported struct values and ptr<ImportedStruct> both use the signature
+    # table because the declaring AST lives in another bundle module (#1464).
+    let mut st: i32 = bt
+    if arena.nodes[bt].a != AST_NONE and flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "ptr") == 1 {
+        st = arena.nodes[bt].a
+    }
+    if st == AST_NONE or arena.nodes[st].kind != AST_TYPE or arena.nodes[st].a != AST_NONE or arena.nodes[st].ival != 0 {
         return 0
     }
-    let pt: i32 = arena.nodes[bt].a
-    if arena.nodes[pt].kind != AST_TYPE or arena.nodes[pt].a != AST_NONE or arena.nodes[pt].ival != 0 {
-        return 0
-    }
-    let ss: i32 = arena.nodes[pt].name_start
-    let se: i32 = arena.nodes[pt].name_end
+    let ss: i32 = arena.nodes[st].name_start
+    let se: i32 = arena.nodes[st].name_end
     let fs: i32 = arena.nodes[v].name_start
     let fe: i32 = arena.nodes[v].name_end
     let keylen: i32 = 1 + (se - ss) + 1 + (fe - fs)
