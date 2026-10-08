@@ -340,6 +340,62 @@ function check_out_of_range_root_is_a_miss() -> i32 {
     return T_PASS
 }
 
+# A record whose node payload no longer matches its checksum (a torn or
+# corrupt write) must be a miss and re-parsed. The header stays valid.
+function check_corrupt_payload_is_a_miss() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    if not write_pair(dir, 11) {
+        return T_FAIL
+    }
+    let r1: i32 = compile_run(host, dir, "payload", xdg, home)
+    if r1 != 11 {
+        outln("expected 11 from first compile, got " + s_itoa(r1))
+        return T_FAIL
+    }
+    let files: ptr<ProcStrs> = glob_suffix(ast_dir(xdg), ".ast")
+    if sl_len(files) <= 0 {
+        outln("no AST cache records to corrupt")
+        return T_FAIL
+    }
+    # Header (20 bytes) and checksum (8) stay; every payload byte becomes 0xff.
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let path: string = sl_get(files, i)
+        let body: Bytes = read_bytes(path)
+        if body.len <= 28 {
+            outln("cache record has no payload: " + path)
+            return T_FAIL
+        }
+        let mut k: i64 = 28
+        while k < body.len {
+            body.data[k] = 255
+            k = k + 1
+        }
+        if not write_bytes(path, body.data, body.len) {
+            outln("could not rewrite " + path)
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    let r2: i32 = compile_run(host, dir, "payload", xdg, home)
+    if r2 != 11 {
+        outln("expected 11 after corrupting the cached payload, got " + s_itoa(r2))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("incremental_cache")
     t_start()
@@ -354,6 +410,8 @@ function main() -> i32 {
     t_end("long_cache_root", check_long_cache_root_skips_cache())
     t_start()
     t_end("out_of_range_root", check_out_of_range_root_is_a_miss())
+    t_start()
+    t_end("corrupt_payload", check_corrupt_payload_is_a_miss())
     t_done()
     return 0
 }
