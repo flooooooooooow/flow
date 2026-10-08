@@ -33,8 +33,8 @@ import .shader_emit { flowc_shader_mode }
 import .typecheck { flowc_typecheck, flowc_typecheck_fatal, flowc_typecheck_fatal_sem }
 import .rt_summary {
     FLOWC_RT_ALLOC, FLOWC_RT_BLOCK, FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME,
-    FLOWC_RT_DOM_NONE, FLOWC_RT_UNKNOWN, flowc_rt_cache_load, flowc_rt_cache_reusable,
-    flowc_rt_cache_store, flowc_rt_forbidden, flowc_rt_is_callback_safe,
+    FLOWC_RT_DOM_NONE, FLOWC_RT_UNKNOWN,
+    flowc_rt_forbidden, flowc_rt_is_callback_safe,
     flowc_rt_is_frame_safe, flowc_rt_known_safe, flowc_rt_name_bits, flowc_rt_refines,
     flowc_rt_summaries_refine, flowc_rt_summary_bits, flowc_rt_summary_buffer_valid,
     flowc_rt_summary_collect, flowc_rt_summary_domain, flowc_rt_summary_find,
@@ -2226,8 +2226,8 @@ function test_rt_summary() -> i32 {
     if flowc_rt_refines(0, FLOWC_RT_DOM_FRAME, 0, FLOWC_RT_DOM_CALLBACK) != 0 { ok = 0 }
     if flowc_rt_summary_buffer_valid(buf, n) != 1 { ok = 0 }
     if flowc_rt_summaries_refine(buf, n, buf, n) != 1 { ok = 0 }
-    # A zero-length or structurally truncated prior cache must NEVER prove
-    # that imported RT/lifetime summaries are reusable.
+    # A zero-length or structurally truncated prior snapshot must never
+    # count as refined by the current summaries.
     if flowc_rt_summaries_refine(buf, n, buf, 0) != 0 { ok = 0 }
     let malformed: array<u8, 7> = [36, 102, 0, 48, 124, 48, 124]
     if flowc_rt_summary_buffer_valid(&malformed[0], 7) != 0 { ok = 0 }
@@ -2236,21 +2236,7 @@ function test_rt_summary() -> i32 {
     if flowc_rt_summary_buffer_valid(&bad_bits[0], 8) != 0 { ok = 0 }
     let fp: u64 = flowc_rt_summary_fingerprint(buf, n)
     if fp == 0 { ok = 0 }
-    setenv("FLOWC_RT_CACHE_DIR", "/tmp/flow-rt-cache-selftest", 1)
-    let cache_key: string = "0123456789abcdef"
-    if flowc_rt_cache_store("../escape", buf, n) != 0 - 1 { ok = 0 }
-    if flowc_rt_cache_store(cache_key, buf, n) != 0 { ok = 0 }
-    let loaded: ptr<u8> = malloc(4096)
-    if loaded == null {
-        free(buf)
-        flowc_parser_free(p)
-        return 0
-    }
-    let ln: i32 = flowc_rt_cache_load(cache_key, loaded, 4096)
-    if ln != n { ok = 0 }
-    if flowc_rt_cache_reusable(loaded, ln, buf, n) != 1 { ok = 0 }
     printf("rt_summary_n=%d helper_bits=%d process_bits=%d tick_dom=%d ok=%d\n", n, hbits, pbits, flowc_rt_summary_domain(buf, toff), ok)
-    free(loaded)
     free(buf)
     flowc_parser_free(p)
     return ok

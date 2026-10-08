@@ -57,10 +57,9 @@ All notable changes to FLOW will be documented in this file.
 - Type checker (#765, remaining slice): `@rt_safe` / `@lifetime(callback)`
   reject `unknown` effect summaries except for a known-safe extern
   allow-list; uniquely resolved `impl` methods join the RT call graph;
-  LD1 also rejects stores through `malloc` / `alloc_*` and through a
-  field of a longer-lived static; imported summaries are cached under a
-  refinement key so a dependency whose public contract shrinks does not
-  invalidate a previously accepted client. See
+  LD1 also rejects a reference stored through a local that holds a
+  `malloc` / `alloc_*` result. The summary refinement relation is
+  implemented and tested; no persistent cache uses it yet. See
   `docs/language/rt-summaries.md`. Closures stay with #766 / PR #1348.
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)

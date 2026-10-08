@@ -58,19 +58,22 @@ summary worklist. Function-pointer contracts (`with rt_safe`) landed in
 dispatch, including an ambiguous trait method, stays a conservative
 reject from `@rt_safe`.
 
-## Incremental cache
+## Refinement
 
 If a dependency's public contract *refines* the one a client was last
 accepted under (`effects_new ⊆ effects_old`, and the declared domain did
 not move longer-lived), that client stays accepted. Only effect growth
-or a move to a longer-lived (or newly declared) domain invalidates the
+or a move to a longer-lived (or newly declared) domain can invalidate the
 prior result.
 
-The checker keys that snapshot on the client's source hash plus the
-imported `$` rows (name, bits, domain; provenance is diagnostic only).
-Files live under `$FLOWC_RT_CACHE_DIR` or `~/.cache/flow/rt/`. A cache
-hit skips Stage-A RT consult; the semantic checker still walks the
-program when it is on.
+`flowc_rt_refines` and `flowc_rt_summaries_refine` implement that relation
+over the imported `$` rows (name, bits, domain; provenance is diagnostic
+only). An empty, truncated or malformed snapshot never counts as refined.
+`flowc_rt_summary_fingerprint` hashes the same rows.
+
+No persistent cache uses the relation yet. Every compile checks every
+imported summary. A cache that lets a stored snapshot skip RT checks is an
+open design question (docs/project/Questions.md, "RT summary cache").
 
 ## Escape through fields and the heap
 
