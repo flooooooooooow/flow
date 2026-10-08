@@ -18,8 +18,8 @@
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --python <rev>
 #       Also run the Python generator from git revision <rev> over the
-#       fixtures and every tracked .flow under examples/, tests/, lib/, benchmarks/
-#       and compiler/fixtures/. Every program flowc accepts must produce the
+#       fixtures and every tracked, standalone .flow under examples/, tests/,
+#       lib/, benchmarks/ and compiler/fixtures/. Every program flowc accepts must produce the
 #       same normalized MLIR as Python. With mlir-opt installed, each such
 #       program is built through both MLIR paths (flowc + flow mlir-lower, and
 #       `python -m flow.transpiler --mlir --llvm`) and run; the two runs must
@@ -27,7 +27,8 @@
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --write-golden <rev>
 #       Rewrite the fixture goldens and corpus.txt from the Python generator
-#       at <rev>. Only tracked programs whose flowc output already equals Python's
+#       at <rev>. Only tracked standalone programs whose flowc output already
+#       equals Python's
 #       are recorded in corpus.txt.
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --record
@@ -212,14 +213,42 @@ function python_emit(input: string, out: string, extra: string) -> i32 {
     return gl_status(r, true)
 }
 
-# Every tracked .flow under the corpus directories, byte-sorted. This keeps
-# generated package caches and other ignored workspace files out of goldens.
+# Package entrypoints with registry dependencies require `flow install` before
+# flowc can resolve their imports. Leave those to the package gates.
+function needs_registry_install(f: string) -> bool {
+    if not s_ends(f, "/src/main.flow") {
+        return false
+    }
+    let manifest: string = s_replace(f, "/src/main.flow", "/flow.toml")
+    if not is_file(manifest) {
+        return false
+    }
+    let lines: ptr<ProcStrs> = gl_file_lines(manifest)
+    let mut in_dependencies: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        i = i + 1
+        if s_eq(line, "[dependencies]") {
+            in_dependencies = true
+        } elif s_starts(line, "[") {
+            in_dependencies = false
+        } elif in_dependencies and s_contains(line, "= \"") {
+            return true
+        }
+    }
+    return false
+}
+
+# Every tracked standalone .flow under the corpus directories, byte-sorted.
+# This keeps generated package caches and other ignored workspace files out
+# of goldens.
 function add_tracked_flow_files(dir: string, all: ptr<ProcStrs>) {
     let tracked: ptr<ProcStrs> = gl_git_ls(dir)
     let mut i: i32 = 0
     while i < sl_len(tracked) {
         let f: string = sl_get(tracked, i)
-        if s_ends(f, ".flow") {
+        if s_ends(f, ".flow") and not needs_registry_install(f) {
             sl_push(all, f)
         }
         i = i + 1
