@@ -1,0 +1,12 @@
+# expect: lifetime domain escape: `scratch` lives in the `frame` domain but is stored through parameter `out`
+struct Holder {
+    view: ptr<i32>
+}
+
+@lifetime(frame)
+function fill(out: ptr<Holder>) -> void {
+    let scratch: array<i32, 2> = [7, 8]
+    out[0] = Holder { view: &scratch }
+}
+
+function main() -> i32 { return 0 }
