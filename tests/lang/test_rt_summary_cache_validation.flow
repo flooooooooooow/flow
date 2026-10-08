@@ -1,0 +1,39 @@
+# #765: serialized RT summary caches are compiler-trusted input.
+# Malformed, empty and truncated buffers must never be reusable.
+
+import "compiler/src/rt_summary.flow"
+
+function main() -> i32 {
+    # A minimal valid RT summary row:
+    # kind '$', name "f", NUL, value "0|0|", NUL
+    let mut valid: array<u8, 9> = [36, 102, 0, 48, 124, 48, 124, 0, 0]
+    if flowc_rt_summary_buffer_valid(&valid[0], 8) != 1 { return 1 }
+
+    let mut empty: array<u8, 1> = [0]
+    if flowc_rt_summary_buffer_valid(&empty[0], 0) != 0 { return 2 }
+
+    let mut no_name_nul: array<u8, 4> = [36, 102, 111, 111]
+    if flowc_rt_summary_buffer_valid(&no_name_nul[0], 4) != 0 { return 3 }
+
+    let mut no_value_nul: array<u8, 7> = [36, 102, 0, 48, 124, 48, 124]
+    if flowc_rt_summary_buffer_valid(&no_value_nul[0], 7) != 0 { return 4 }
+
+    let mut bad_bits: array<u8, 9> = [36, 102, 0, 57, 57, 124, 48, 124, 0]
+    if flowc_rt_summary_buffer_valid(&bad_bits[0], 9) != 0 { return 5 }
+
+    let mut bad_domain: array<u8, 9> = [36, 102, 0, 48, 124, 57, 124, 0, 0]
+    if flowc_rt_summary_buffer_valid(&bad_domain[0], 8) != 0 { return 6 }
+
+    let mut no_separator: array<u8, 8> = [36, 102, 0, 48, 48, 48, 48, 0]
+    if flowc_rt_summary_buffer_valid(&no_separator[0], 8) != 0 { return 7 }
+
+    # An empty/truncated old cache must never "refine" and suppress checks.
+    if flowc_rt_summaries_refine(&valid[0], 8, &empty[0], 0) != 0 { return 8 }
+    if flowc_rt_summaries_refine(&valid[0], 8, &no_name_nul[0], 4) != 0 { return 9 }
+    if flowc_rt_summaries_refine(&no_value_nul[0], 7, &valid[0], 8) != 0 { return 10 }
+
+    # Identical valid contracts are reusable.
+    if flowc_rt_summaries_refine(&valid[0], 8, &valid[0], 8) != 1 { return 11 }
+
+    return 0
+}
