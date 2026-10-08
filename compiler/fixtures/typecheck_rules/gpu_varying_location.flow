@@ -1,0 +1,11 @@
+# expect: [GPU020] GpuVarying field 'location': varying location 32 is outside 0..31
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let v: GpuVarying = GpuVarying {
+        location: 32, scalar: GPU_SCALAR_F32,
+        components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    if gpu_varying_valid(v) { return 1 }
+    return 0
+}

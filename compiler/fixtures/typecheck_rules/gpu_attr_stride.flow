@@ -1,0 +1,11 @@
+# expect: [GPU030] GpuVertexAttribute field 'offset': an attribute of 12 bytes at offset 16 does not fit the 20-byte stride
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let a: GpuVertexAttribute = GpuVertexAttribute {
+        location: 0, offset: 16, stride: 20,
+        scalar_bytes: 4, components: 3
+    }
+    if gpu_vertex_attribute_valid(a) { return 1 }
+    return 0
+}

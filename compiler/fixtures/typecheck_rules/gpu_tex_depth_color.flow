@@ -1,0 +1,12 @@
+# expect: [GPU004] GpuTextureDesc field 'usage': a depth32f texture cannot have usage color_attachment
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 8, height: 8, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT | GPU_USE_COLOR_ATTACHMENT
+    }
+    if gpu_texture_valid(t) { return 1 }
+    return 0
+}

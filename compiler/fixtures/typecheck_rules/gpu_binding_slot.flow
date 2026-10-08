@@ -1,0 +1,15 @@
+# expect: [GPU058] GpuTextureBinding field 'slot': binding slot 16 is outside 0..15
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let b: GpuTextureBinding = GpuTextureBinding {
+        slot: 16, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: t
+    }
+    if gpu_texture_binding_valid(b) { return 1 }
+    return 0
+}

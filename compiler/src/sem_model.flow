@@ -162,6 +162,10 @@ export struct Sem {
     sy_mut: ptr<SemIntVec>,
     sy_def: ptr<SemIntVec>,
     sy_over: ptr<SemPtrVec>,
+    # The initializer (node, module) of an immutable `let`, or -1: the GPU
+    # descriptor checks (sem_gpu.flow) fold through these bindings.
+    sy_init: ptr<SemIntVec>,
+    sy_init_mod: ptr<SemIntVec>,
     g_scope: ptr<SemStrMap>,
     ls_name: ptr<SemStrVec>,
     ls_sym: ptr<SemIntVec>,
@@ -251,7 +255,9 @@ export struct Sem {
     cimport_headers: ptr<SemStrVec>,
     cimport_names: ptr<SemStrMap>,
     cimport_unknown: bool,
-    root_mod: i32
+    root_mod: i32,
+    # GPU descriptor diagnostics already reported: key -> error index.
+    gpu_reported: ptr<SemStrMap>
 }
 
 export function sem_new(strict: bool) -> ptr<Sem> {
@@ -358,6 +364,9 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.sy_mut = sem_iv_new()
     c.sy_def = sem_iv_new()
     c.sy_over = sem_pv_new()
+    c.sy_init = sem_iv_new()
+    c.sy_init_mod = sem_iv_new()
+    c.gpu_reported = sem_sm_new()
     c.g_scope = sem_sm_new()
     c.ls_name = sem_sv_new()
     c.ls_sym = sem_iv_new()
@@ -702,6 +711,8 @@ export function sem_sym_new(c: ptr<Sem>, name: string, ty: i32, kind: i32) -> i3
     sem_iv_push(c.sy_kind, kind)
     sem_iv_push(c.sy_mut, 0)
     sem_iv_push(c.sy_def, 0 - 1)
+    sem_iv_push(c.sy_init, 0 - 1)
+    sem_iv_push(c.sy_init_mod, 0 - 1)
     sem_pv_push(c.sy_over, null)
     return id
 }

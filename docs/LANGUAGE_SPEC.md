@@ -1339,6 +1339,28 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 CUDA/OpenCL backends are **not** shipping.
 
+### 10.6.1 GPU descriptor checking
+
+**Status:** ✅ flowc type checker ([descriptor errors](gpu/descriptor-errors.md))
+
+The GPU resource structs of `lib/stdlib/gpu_resource_types.flow` and
+`gpu_stage_codegen.flow` (textures, samplers, varyings, vertex attributes,
+render targets, sampled pipelines and texture bindings) carry type rules
+that flowc checks. A texture format that does not allow its usage, a
+binding access the texture was not created for, and a vertex/fragment
+interface mismatch at `gpu_stage_links` are compile-time type errors,
+coded `GPU001` to `GPU062`.
+
+A rule is checked when the fields it reads are compile-time constants:
+literals, module `const` values, integer arithmetic and bit operations on
+them, record updates and immutable `let` bindings. A field built at run
+time (a parameter, a `let mut`, a call) is not folded, and the library
+validators check it when the program runs. Every descriptor the checker
+rejects also fails its validator, so the two never disagree on a constant
+descriptor. Only the library's own declarations are checked. A program's
+own struct with the same name is left alone. Decision recorded in
+[Questions](project/Questions.md) (2026-10-08).
+
 ### 10.7 Recording and GIF output
 
 **Status:** ✅ (headless recorder + pure-Flow stdlib encoder)
