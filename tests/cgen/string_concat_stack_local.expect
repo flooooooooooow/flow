@@ -1,0 +1,6 @@
+# The non-escaping local gets caller stack storage and the bounded helper.
++ char __flowc_strtmp
++ = __flowc_str_concatn_into(__flowc_strtmp
+# A returned concat retains the ordinary heap-lifetime helper.
++ return __flowc_str_concatn(3, a, b, c)
+exit 0
