@@ -11578,6 +11578,15 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
             }
         }
+        # A bounded, non-escaping pure-string concat can use storage in this
+        # C block. Escaping/unknown chains keep the heap concat expression.
+        if arr_n == 0 and init != AST_NONE and is_captured == 0 {
+            let stack_cap: i32 = flowc_cgen_stack_concat_capacity(w, arena, src, id)
+            if stack_cap > 0 {
+                flowc_cgen_emit_stack_concat_let(w, arena, src, id, stack_cap)
+                return
+            }
+        }
         # `let f = f(x)` where f is also a function: C would see the new
         # local inside its own initializer, so evaluate the initializer first.
         let mut pre: i32 = 0
