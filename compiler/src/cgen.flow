@@ -11234,6 +11234,311 @@ function flowc_cgen_region_let_remark(w: ptr<CgenBuf>, arena: AstArena, src: ptr
     }
 }
 
+
+# --- non-escaping bounded string concat (#1447) ---------------------------
+# A pure-string concat whose leaves are immutable locals initialized from
+# bounded literals can live in the current C block instead of the heap.
+# The escape proof is deliberately conservative: derived local aliases are
+# followed, but returning/passing/storing an alias, capturing it in a lambda,
+# or embedding it in an aggregate keeps the heap concat path.
+
+function flowc_cgen_alias_has(aliases: ptr<i32>, n: i32, decl: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if aliases[i] == decl {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# 1 when expr evaluates to the tracked pointer/string value. Indexing a
+# byte/element is a read, not an escape of the base pointer.
+function flowc_cgen_alias_value(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, aliases: ptr<i32>, n: i32, depth: i32) -> i32 {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len or depth > 48 {
+        return 0
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_IDENT {
+        let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, expr)
+        return flowc_cgen_alias_has(aliases, n, decl)
+    }
+    if k == AST_INDEX {
+        let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, expr)
+        if ty != AST_NONE and (flowc_noalias_ty_is_ptr(arena, src, ty) == 1 or flowc_cgen_type_is_string(arena, src, ty) == 1) {
+            return flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].a, aliases, n, depth + 1)
+        }
+        return 0
+    }
+    if k == AST_CAST or k == AST_UNARY or k == AST_FIELD_ACCESS {
+        return flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].a, aliases, n, depth + 1)
+    }
+    if k == AST_BINOP {
+        if flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].a, aliases, n, depth + 1) == 1 {
+            return 1
+        }
+        return flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].b, aliases, n, depth + 1)
+    }
+    if k == AST_IF_EXPR {
+        if flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].a, aliases, n, depth + 1) == 1 {
+            return 1
+        }
+        if flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].b, aliases, n, depth + 1) == 1 {
+            return 1
+        }
+        return flowc_cgen_alias_value(w, arena, src, arena.nodes[expr].c, aliases, n, depth + 1)
+    }
+    return 0
+}
+
+# Any tracked alias occurrence, including below indexing/aggregates/calls.
+# Used only in contexts that may retain the pointer.
+function flowc_cgen_alias_contains(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, aliases: ptr<i32>, n: i32, depth: i32) -> i32 {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len or depth > 48 {
+        return 0
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_IDENT {
+        let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, expr)
+        return flowc_cgen_alias_has(aliases, n, decl)
+    }
+    if k == AST_STRING or k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_TYPE {
+        return 0
+    }
+    if k == AST_CALL {
+        let mut a: i32 = arena.nodes[expr].a
+        while a != AST_NONE {
+            if flowc_cgen_alias_contains(w, arena, src, a, aliases, n, depth + 1) == 1 {
+                return 1
+            }
+            a = arena.nodes[a].next
+        }
+        return 0
+    }
+    if k == AST_STRUCT_LIT or k == AST_ARRAY_LIT {
+        let mut el: i32 = arena.nodes[expr].a
+        while el != AST_NONE {
+            let mut v: i32 = el
+            if k == AST_STRUCT_LIT {
+                v = arena.nodes[el].a
+            }
+            if flowc_cgen_alias_contains(w, arena, src, v, aliases, n, depth + 1) == 1 {
+                return 1
+            }
+            el = arena.nodes[el].next
+        }
+        if k == AST_ARRAY_LIT and flowc_cgen_alias_contains(w, arena, src, arena.nodes[expr].b, aliases, n, depth + 1) == 1 {
+            return 1
+        }
+        return 0
+    }
+    if flowc_cgen_alias_contains(w, arena, src, arena.nodes[expr].a, aliases, n, depth + 1) == 1 {
+        return 1
+    }
+    if flowc_cgen_alias_contains(w, arena, src, arena.nodes[expr].b, aliases, n, depth + 1) == 1 {
+        return 1
+    }
+    return flowc_cgen_alias_contains(w, arena, src, arena.nodes[expr].c, aliases, n, depth + 1)
+}
+
+# Upper bound in payload bytes, or -1 when it is not statically bounded.
+# Source spelling length is a safe upper bound for escaped literals.
+function flowc_cgen_static_string_bound(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, depth: i32) -> i32 {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len or depth > 32 {
+        return 0 - 1
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_STRING {
+        let mut n: i32 = arena.nodes[expr].name_end - arena.nodes[expr].name_start - 2
+        if n < 0 {
+            n = 0
+        }
+        return n
+    }
+    if k == AST_CAST {
+        if flowc_cgen_type_is_string(arena, src, arena.nodes[expr].b) == 0 {
+            return 0 - 1
+        }
+        return flowc_cgen_static_string_bound(w, arena, src, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_IDENT {
+        let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, expr)
+        if decl == AST_NONE or arena.nodes[decl].kind != AST_LET {
+            return 0 - 1
+        }
+        let r: Region = flowc_region_of_binding(arena, src, w[0].cur_fn, decl)
+        if r.kind != RI_LOCAL or r.ident != decl {
+            return 0 - 1
+        }
+        return flowc_cgen_static_string_bound(w, arena, src, arena.nodes[decl].b, depth + 1)
+    }
+    if k == AST_BINOP and arena.nodes[expr].ival == TOK_PLUS and flowc_cgen_is_str_concat(w, arena, src, expr) == 1 {
+        let a: i32 = flowc_cgen_static_string_bound(w, arena, src, arena.nodes[expr].a, depth + 1)
+        let b: i32 = flowc_cgen_static_string_bound(w, arena, src, arena.nodes[expr].b, depth + 1)
+        if a < 0 or b < 0 or a > 1024 - b {
+            return 0 - 1
+        }
+        return a + b
+    }
+    return 0 - 1
+}
+
+function flowc_cgen_stack_concat_non_escaping(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, let_id: i32) -> i32 {
+    if w[0].cur_fn == AST_NONE {
+        return 0
+    }
+    let mut aliases: array<i32, 16> = []
+    aliases[0] = let_id
+    let mut n: i32 = 1
+    let mut changed: i32 = 1
+    while changed == 1 {
+        changed = 0
+        let mut i: i32 = 0
+        while i < arena.len {
+            if arena.nodes[i].kind == AST_LET and arena.nodes[i].start > arena.nodes[let_id].end and
+               arena.nodes[i].start >= arena.nodes[w[0].cur_fn].start and arena.nodes[i].start < arena.nodes[w[0].cur_fn].end and
+               flowc_cgen_alias_has(&aliases[0], n, i) == 0 {
+                if flowc_cgen_alias_value(w, arena, src, arena.nodes[i].b, &aliases[0], n, 0) == 1 {
+                    if n >= 16 {
+                        return 0
+                    }
+                    aliases[n] = i
+                    n = n + 1
+                    changed = 1
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    let mut ai: i32 = 0
+    while ai < n {
+        if flowc_cgen_is_captured(w, src, arena.nodes[aliases[ai]].name_start, arena.nodes[aliases[ai]].name_end) == 1 {
+            return 0
+        }
+        ai = ai + 1
+    }
+
+    let mut j: i32 = 0
+    while j < arena.len {
+        if arena.nodes[j].start > arena.nodes[let_id].end and
+           arena.nodes[j].start >= arena.nodes[w[0].cur_fn].start and arena.nodes[j].start < arena.nodes[w[0].cur_fn].end {
+            let k: i32 = arena.nodes[j].kind
+            if k == AST_RETURN {
+                if flowc_cgen_alias_value(w, arena, src, arena.nodes[j].a, &aliases[0], n, 0) == 1 {
+                    return 0
+                }
+            } elif k == AST_CALL {
+                let mut arg: i32 = arena.nodes[j].a
+                while arg != AST_NONE {
+                    if flowc_cgen_alias_contains(w, arena, src, arg, &aliases[0], n, 0) == 1 {
+                        return 0
+                    }
+                    arg = arena.nodes[arg].next
+                }
+            } elif k == AST_ASSIGN {
+                if flowc_cgen_alias_value(w, arena, src, arena.nodes[j].b, &aliases[0], n, 0) == 1 {
+                    return 0
+                }
+            } elif k == AST_STRUCT_LIT or k == AST_ARRAY_LIT {
+                if flowc_cgen_alias_contains(w, arena, src, j, &aliases[0], n, 0) == 1 {
+                    return 0
+                }
+            }
+        }
+        j = j + 1
+    }
+    return 1
+}
+
+# Stack capacity including the NUL, or 0 when the heap path must remain.
+function flowc_cgen_stack_concat_capacity(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, let_id: i32) -> i32 {
+    let init: i32 = arena.nodes[let_id].b
+    if init == AST_NONE or flowc_cgen_is_concat_node(w, arena, src, init) == 0 {
+        return 0
+    }
+    let ann: i32 = arena.nodes[let_id].a
+    if ann != AST_NONE and flowc_cgen_type_is_string(arena, src, ann) == 0 {
+        return 0
+    }
+    let bound: i32 = flowc_cgen_static_string_bound(w, arena, src, init, 0)
+    if bound < 0 or bound > 1024 {
+        return 0
+    }
+    if flowc_cgen_stack_concat_non_escaping(w, arena, src, let_id) == 0 {
+        return 0
+    }
+    return bound + 1
+}
+
+function flowc_cgen_emit_stack_concat_let(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, let_id: i32, cap: i32) {
+    let init: i32 = arena.nodes[let_id].b
+    let mut leaves: array<i32, 32> = []
+    let mut n: i32 = flowc_cgen_flatten_concat(w, arena, src, init, &leaves[0], 32)
+    if n == 0 {
+        n = 2
+        leaves[0] = arena.nodes[init].a
+        leaves[1] = arena.nodes[init].b
+    }
+    let mut q: i32 = 0
+    while q < n {
+        if flowc_cgen_expr_is_string(w, arena, src, leaves[q]) == 0 or flowc_cgen_static_string_bound(w, arena, src, leaves[q], 0) < 0 {
+            return
+        }
+        q = q + 1
+    }
+
+    flowc_cgen_puts(w, "  char __flowc_sbuf")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_putc(w, 91)
+    flowc_cgen_put_i32(w, cap)
+    flowc_cgen_puts(w, "]; size_t __flowc_soff")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, " = 0; const char* __flowc_sp")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, "; size_t __flowc_sn")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, ";\n")
+
+    q = 0
+    while q < n {
+        flowc_cgen_puts(w, "  __flowc_sp")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_expr(w, arena, src, leaves[q])
+        flowc_cgen_puts(w, "; if (__flowc_sp")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, ") { __flowc_sn")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, " = strlen(__flowc_sp")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, "); memcpy(__flowc_sbuf")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, " + __flowc_soff")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, ", __flowc_sp")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, ", __flowc_sn")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, "); __flowc_soff")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, " += __flowc_sn")
+        flowc_cgen_put_i32(w, let_id)
+        flowc_cgen_puts(w, "; }\n")
+        q = q + 1
+    }
+    flowc_cgen_puts(w, "  __flowc_sbuf")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, "[__flowc_soff")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, "] = 0; const char* ")
+    flowc_cgen_put_ident(w, src, arena.nodes[let_id].name_start, arena.nodes[let_id].name_end)
+    flowc_cgen_puts(w, " = __flowc_sbuf")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, ";\n")
+}
+
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
