@@ -84,6 +84,7 @@ extern {
     function atoi(s: string) -> i32
     function write(fd: i32, buf: string, n: i64) -> i64
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
     function flowc_prof_mode_raw() -> i32
     function flowc_prof_now_raw() -> i64
     function flowc_prof_add_raw(id: i32, ns: i64)
@@ -11339,6 +11340,109 @@ function flowc_cgen_kernel_read_ok(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return 0
 }
 
+# 1 when the C type of kernel scalar `e` is float or an integer type, so
+# the scalar loop's `x * e` is float arithmetic, the same as the kernel's
+# `(float)(e)` lanes. A bare float literal is a C double, and so is an f64
+# name; both make the scalar statement double arithmetic.
+function flowc_cgen_kernel_k_no_double(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, e: i32, depth: i32) -> i32 {
+    if e == AST_NONE or depth > 32 {
+        return 0
+    }
+    let k: i32 = arena.nodes[e].kind
+    if k == AST_INT {
+        return 1
+    }
+    if k == AST_FLOAT {
+        # `1.5f` is already a C float.
+        let le: i32 = arena.nodes[e].name_end
+        if le > arena.nodes[e].name_start and (src[le - 1] == 102 or src[le - 1] == 70) {
+            return 1
+        }
+        return 0
+    }
+    if k == AST_IDENT {
+        let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, e)
+        if flowc_cgen_ty_is_int_name(arena, src, ty) == 1 {
+            return 1
+        }
+        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE {
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "f32")
+        }
+        return 0
+    }
+    if k == AST_CAST {
+        let ty: i32 = arena.nodes[e].b
+        if flowc_cgen_ty_is_int_name(arena, src, ty) == 1 {
+            return 1
+        }
+        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE {
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "f32")
+        }
+        return 0
+    }
+    if k == AST_UNARY and arena.nodes[e].ival == TOK_MINUS {
+        return flowc_cgen_kernel_k_no_double(w, arena, src, arena.nodes[e].a, depth + 1)
+    }
+    if k == AST_BINOP {
+        if flowc_cgen_kernel_k_no_double(w, arena, src, arena.nodes[e].a, depth + 1) == 0 {
+            return 0
+        }
+        return flowc_cgen_kernel_k_no_double(w, arena, src, arena.nodes[e].b, depth + 1)
+    }
+    return 0
+}
+
+# 1 when float literal `e` (optionally negated) is a double whose value an
+# f32 holds exactly. Then one `x * e` rounded to float equals `x * (float)e`:
+# the double product of two 24-bit significands is exact and rounds once.
+function flowc_cgen_float_lit_f32_exact(arena: AstArena, src: ptr<u8>, e: i32) -> i32 {
+    let mut lit: i32 = e
+    if lit != AST_NONE and arena.nodes[lit].kind == AST_UNARY and arena.nodes[lit].ival == TOK_MINUS {
+        lit = arena.nodes[lit].a
+    }
+    if lit == AST_NONE or arena.nodes[lit].kind != AST_FLOAT {
+        return 0
+    }
+    let s: i32 = arena.nodes[lit].name_start
+    let n: i32 = arena.nodes[lit].name_end - s
+    if n <= 0 or n > 62 {
+        return 0
+    }
+    let mut buf: array<u8, 64>
+    let mut i: i32 = 0
+    while i < n {
+        buf[i] = src[s + i]
+        i = i + 1
+    }
+    buf[n] = 0
+    let v: f64 = strtod(&buf[0], null)
+    let narrowed: f32 = v as f32
+    if (narrowed as f64) == v {
+        return 1
+    }
+    return 0
+}
+
+# 1 when the f32 kernel computes what the scalar loop computes. The kernel
+# rounds k to float once (`(float)(k)` lanes); the scalar statement and
+# the tail use k at its own C type. A double k (`0.1`, an f64 name) makes
+# the scalar loop double arithmetic, and the lanes would disagree with the
+# tail in the last bit. Fill stores k either way. Scale also takes a
+# literal an f32 holds exactly. Axpy is two operations, so the double
+# product could round differently, and it takes no double k.
+function flowc_cgen_kernel_k_matches_scalar(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, kind: i32, kv: i32) -> i32 {
+    if kind == 1 or kv == AST_NONE {
+        return 1
+    }
+    if flowc_cgen_kernel_k_no_double(w, arena, src, kv, 0) == 1 {
+        return 1
+    }
+    if kind == 2 {
+        return flowc_cgen_float_lit_f32_exact(arena, src, kv)
+    }
+    return 0
+}
+
 # Preconditions for the vector_size kernels beyond pattern shape.
 function flowc_cgen_vector_kernel_safe(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, kind: i32, dst: i32, src0: i32, src1: i32, kv: i32, is_f64: i32) -> i32 {
     # The kernel loads and stores whole lanes with memcpy, which would skip
@@ -11350,6 +11454,9 @@ function flowc_cgen_vector_kernel_safe(w: ptr<CgenBuf>, arena: AstArena, src: pt
         if flowc_cgen_kernel_scalar_ok(arena, kv, 0) == 0 {
             return 0
         }
+    }
+    if is_f64 == 0 and flowc_cgen_kernel_k_matches_scalar(w, arena, src, kind, kv) == 0 {
+        return 0
     }
     let mut elem: string = "f32"
     if is_f64 == 1 {
