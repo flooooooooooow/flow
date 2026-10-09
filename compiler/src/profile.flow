@@ -28,6 +28,8 @@ static int32_t flowc_prof_loc;
 static int32_t flowc_prof_mode_cache;
 static int32_t flowc_prof_mode_ready;
 static int32_t flowc_prof_startup_done;
+/* AST cache outcomes: 0 hit, 1 miss, 2 store, 3 bypass (no cache dir). */
+static int32_t flowc_prof_cache_n[4];
 static int64_t flowc_prof_now_ns_c(void) {
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts) != 0) {
@@ -106,6 +108,13 @@ void flowc_prof_set_loc_raw(int32_t n) {
 }
 int32_t flowc_prof_ast_raw(void) { return flowc_prof_ast; }
 int32_t flowc_prof_loc_raw(void) { return flowc_prof_loc; }
+void flowc_prof_cache_note_raw(int32_t kind) {
+  if (kind >= 0 && kind < 4) { flowc_prof_cache_n[kind] += 1; }
+}
+int32_t flowc_prof_cache_count_raw(int32_t kind) {
+  if (kind < 0 || kind >= 4) { return 0; }
+  return flowc_prof_cache_n[kind];
+}
 void flowc_prof_mark_startup_raw(void) {
   int64_t now;
   if (flowc_prof_mode_c() == 0 || flowc_prof_startup_done) { return; }
@@ -133,6 +142,8 @@ extern {
     function flowc_prof_set_loc_raw(n: i32)
     function flowc_prof_ast_raw() -> i32
     function flowc_prof_loc_raw() -> i32
+    function flowc_prof_cache_note_raw(kind: i32)
+    function flowc_prof_cache_count_raw(kind: i32) -> i32
     function flowc_prof_mark_startup_raw()
     function flowc_prof_write_line_raw(s: string)
     function malloc(size: i64) -> ptr<u8>
@@ -152,6 +163,16 @@ export const FLOWC_PROF_LOWERING: i32 = 6
 export const FLOWC_PROF_CODEGEN: i32 = 7
 export const FLOWC_PROF_CACHE: i32 = 8
 export const FLOWC_PROF_COUNT: i32 = 9
+
+# AST cache outcomes counted for the profile's `cache` object (#736).
+export const FLOWC_CACHE_HIT: i32 = 0
+export const FLOWC_CACHE_MISS: i32 = 1
+export const FLOWC_CACHE_STORE: i32 = 2
+export const FLOWC_CACHE_BYPASS: i32 = 3
+
+export function flowc_prof_cache_note(kind: i32) {
+    flowc_prof_cache_note_raw(kind)
+}
 
 export function flowc_prof_enabled() -> i32 {
     if flowc_prof_mode_raw() == 0 {
@@ -319,7 +340,8 @@ export function flowc_prof_format_json(buf: ptr<u8>, cap: i32) -> i32 {
     }
     n = n + snprintf(buf + n, (cap - n) as i64, "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast)
     n = n + snprintf(buf + n, (cap - n) as i64, ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms)
-    n = n + snprintf(buf + n, (cap - n) as i64, ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s)
+    n = n + snprintf(buf + n, (cap - n) as i64, ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld", loc_s, ast_s)
+    n = n + snprintf(buf + n, (cap - n) as i64, ", \"cache\": {\"hits\": %d, \"misses\": %d, \"stores\": %d, \"bypassed\": %d}}", flowc_prof_cache_count_raw(FLOWC_CACHE_HIT), flowc_prof_cache_count_raw(FLOWC_CACHE_MISS), flowc_prof_cache_count_raw(FLOWC_CACHE_STORE), flowc_prof_cache_count_raw(FLOWC_CACHE_BYPASS))
     if n < cap {
         buf[n] = 0
     }
@@ -362,6 +384,9 @@ export function flowc_prof_emit() {
         let tot: ptr<u8> = malloc(64)
         let _tn: i32 = snprintf(tot, 64, "  %-18s %6lld ms", "total", flowc_prof_ns_to_ms(total_ns))
         flowc_prof_write_line(tot as string)
+        let cl: ptr<u8> = malloc(128)
+        let _cn: i32 = snprintf(cl, 128, "  AST cache: %d hits, %d misses, %d stores, %d bypassed", flowc_prof_cache_count_raw(FLOWC_CACHE_HIT), flowc_prof_cache_count_raw(FLOWC_CACHE_MISS), flowc_prof_cache_count_raw(FLOWC_CACHE_STORE), flowc_prof_cache_count_raw(FLOWC_CACHE_BYPASS))
+        flowc_prof_write_line(cl as string)
     }
     let marker: ptr<u8> = malloc(2600)
     let _mn: i32 = snprintf(marker, 2600, "[flow-profile] %s", buf as string)

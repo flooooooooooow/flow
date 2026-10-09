@@ -86,6 +86,8 @@ decision because it changes output bits.
 **Status:** Open.
 
 ---
+
+
 ### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
 
 **Context:** Issue #564 records that shipped handlers are tail-resumptive
