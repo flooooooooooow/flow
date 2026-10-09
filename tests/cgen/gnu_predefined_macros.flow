@@ -1,0 +1,16 @@
+# Flow names that GNU C predefines as macros on some hosts (#1442):
+# `linux` and `unix` on Linux, `i386` on 32-bit x86. They must be renamed
+# in the C, or gcc on Linux sees `int32_t 1 = ...`.
+
+function unix(n: i32) -> i32 {
+    return n + 1
+}
+
+function main() -> i32 {
+    let linux: i32 = 2
+    let i386: i32 = 3
+    if unix(linux) + i386 != 6 {
+        return 1
+    }
+    return 0
+}

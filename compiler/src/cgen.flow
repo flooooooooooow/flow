@@ -84,6 +84,7 @@ extern {
     function atoi(s: string) -> i32
     function write(fd: i32, buf: string, n: i64) -> i64
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
     function flowc_prof_mode_raw() -> i32
     function flowc_prof_now_raw() -> i64
     function flowc_prof_add_raw(id: i32, ns: i64)
@@ -2002,6 +2003,20 @@ function flowc_cgen_try_rupdate_last_use_expr(w: ptr<CgenBuf>, arena: AstArena, 
     return 1
 }
 
+# 1 when src[start..end] is a macro that GCC or Clang predefine in GNU mode
+# outside the reserved `_` namespace, so an identifier with that name would
+# be replaced by the preprocessor (#1442). `cc -dM -E - </dev/null` lists
+# them: `linux` and `unix` on Linux, `i386` on 32-bit x86, and the
+# TargetConditionals `TARGET_OS_*` and `TARGET_IPHONE_SIMULATOR` names that
+# Apple clang predefines on macOS.
+function flowc_cgen_is_predefined_macro(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_cgen_span_is(src, start, end, "linux") == 1 { return 1 }
+    if flowc_cgen_span_is(src, start, end, "unix") == 1 { return 1 }
+    if flowc_cgen_span_is(src, start, end, "i386") == 1 { return 1 }
+    if flowc_cgen_span_is(src, start, end, "TARGET_IPHONE_SIMULATOR") == 1 { return 1 }
+    if end - start > 10 and flowc_cgen_span_is(src, start, start + 10, "TARGET_OS_") == 1 { return 1 }
+    return 0
+}
 # Check if a source span is a C reserved word. If so, emit the mangled
 # name (_flow_<word>) instead. Returns 1 if mangled, 0 if not.
 function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
@@ -2019,6 +2034,14 @@ function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i3
     }
     if flowc_cgen_span_is(src, start, end, "_Atomic") == 1 {
         flowc_cgen_puts(w, "_flow_Atomic")
+        return
+    }
+    # GCC and Clang predefine these as macros in GNU mode on some hosts
+    # (`linux` and `unix` on Linux, `i386` on 32-bit x86), so a Flow name
+    # spelled like one would become `1` in the C (#1442).
+    if flowc_cgen_is_predefined_macro(src, start, end) == 1 {
+        flowc_cgen_puts(w, "_flow_")
+        flowc_cgen_put_span(w, src, start, end)
         return
     }
     # System headers expose these typedef names in the generated C preamble.
@@ -5410,9 +5433,25 @@ function flowc_cgen_is_captured(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32)
 # Check if an identifier span matches any enum variant name.
 # Returns the enum name span as a packed (start, end) pair in ival,
 # or AST_NONE if no match. Scans all AST_ENUM nodes in the arena.
-# Check if an identifier span refers to a span-typed variable.
-# Scans AST_PARAM and AST_LET nodes for matching name with a span type.
-function flowc_cgen_is_span_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+# Declared type of an AST_PARAM or AST_LET. A lambda parameter keeps its
+# type in b.
+function flowc_cgen_var_decl_ty(arena: AstArena, decl: i32) -> i32 {
+    if arena.nodes[decl].kind == AST_PARAM and arena.nodes[decl].a == AST_NONE {
+        return arena.nodes[decl].b
+    }
+    return arena.nodes[decl].a
+}
+
+# Check if an identifier refers to a span-typed variable. The declaration in
+# the function being emitted decides, so a span parameter in one function
+# never makes a same-named ptr<T> in another index through `.data` (#1443).
+# Outside a function body, or for a name the scoped lookup cannot see, fall
+# back to scanning every AST_PARAM and AST_LET with that name.
+function flowc_cgen_is_span_var(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
+    if decl != AST_NONE {
+        return flowc_cgen_type_is_span(arena, src, flowc_cgen_var_decl_ty(arena, decl))
+    }
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
     let mut i: i32 = 0
@@ -5449,11 +5488,18 @@ function flowc_cgen_is_span_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
 # shapes. Slice lowering needs this: without it the element type of xs[a..b]
 # was unknown and every slice was built as flowc_span_int32_t, so slicing a
 # ptr<f64> produced a span struct that was never declared.
-function flowc_cgen_var_elem_type(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+function flowc_cgen_var_elem_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
+    # The declaration in the function being emitted decides (#1443).
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
     let mut i: i32 = 0
-    while i < arena.len {
+    let mut stop: i32 = arena.len
+    if decl != AST_NONE {
+        i = decl
+        stop = decl + 1
+    }
+    while i < stop {
         if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
             if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
                 let mut ty: i32 = arena.nodes[i].a
@@ -6903,7 +6949,7 @@ function flowc_cgen_emit_fat_thunks(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     flowc_cgen_puts(w, ", ")
                 }
                 first = 0
-                flowc_cgen_put_span(w, src, arena.nodes[p].name_start, arena.nodes[p].name_end)
+                flowc_cgen_put_ident(w, src, arena.nodes[p].name_start, arena.nodes[p].name_end)
                 p = arena.nodes[p].next
             }
             flowc_cgen_puts(w, "); }\n")
@@ -7115,7 +7161,7 @@ function flowc_cgen_div_is_checked(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     if lp == FLOWC_PRIM_UNKNOWN and arena.nodes[la].kind == AST_INDEX and arena.nodes[la].ival != 1 {
         let lb: i32 = arena.nodes[la].a
         if arena.nodes[lb].kind == AST_IDENT {
-            lp = flowc_cgen_prim_of_type(arena, src, flowc_cgen_var_elem_type(arena, src, lb))
+            lp = flowc_cgen_prim_of_type(arena, src, flowc_cgen_var_elem_type(w, arena, src, lb))
         }
     }
     if rp == FLOWC_PRIM_F64 {
@@ -8125,7 +8171,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             # named a flowc_span_int32_t that no typedef ever declared.
             let mut elem: i32 = AST_NONE
             if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-                elem = flowc_cgen_var_elem_type(arena, src, arena.nodes[id].a)
+                elem = flowc_cgen_var_elem_type(w, arena, src, arena.nodes[id].a)
             }
             flowc_cgen_puts(w, "((flowc_span_")
             if elem != AST_NONE {
@@ -8142,7 +8188,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "*)")
             # If base is a span variable, use .data as the pointer base.
             if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-                if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
+                if flowc_cgen_is_span_var(w, arena, src, arena.nodes[id].a) == 1 {
                     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
                     flowc_cgen_puts(w, ".data")
                 } else {
@@ -8170,7 +8216,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 # xs[a..] → length = sizeof(xs)/sizeof(xs[0]) - a
                 # For span variables, use .len instead of sizeof.
                 if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-                    if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
+                    if flowc_cgen_is_span_var(w, arena, src, arena.nodes[id].a) == 1 {
                         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
                         flowc_cgen_puts(w, ".len - ")
                     } else {
@@ -8213,7 +8259,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         }
         # Span indexing: proven-disjoint spans use the restrict `.data` temp.
         if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-            if flowc_cgen_is_span_var(arena, src, arena.nodes[id].a) == 1 {
+            if flowc_cgen_is_span_var(w, arena, src, arena.nodes[id].a) == 1 {
                 if flowc_noalias_ident_span_data_restrict(arena, src, w[0].cur_fn, arena.nodes[id].a, w[0].na_clone) == 1 {
                     flowc_cgen_puts(w, "__flowc_na_d_")
                     flowc_cgen_put_ident(w, src, arena.nodes[arena.nodes[id].a].name_start, arena.nodes[arena.nodes[id].a].name_end)
@@ -10481,8 +10527,8 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
     if disjoint != 1 {
         return 0
     }
-    let dst_span: i32 = flowc_cgen_is_span_var(arena, src, dst)
-    let src_span: i32 = flowc_cgen_is_span_var(arena, src, srcb)
+    let dst_span: i32 = flowc_cgen_is_span_var(w, arena, src, dst)
+    let src_span: i32 = flowc_cgen_is_span_var(w, arena, src, srcb)
     flowc_cgen_puts(w, "  /* region: disjoint */\n")
     flowc_cgen_puts(w, "  if ((")
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
@@ -10525,7 +10571,7 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
 
 # Pointer to `base[idx]`. Spans go through `.data`.
 function flowc_cgen_emit_elem_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32, idx: i32) {
-    if flowc_cgen_is_span_var(arena, src, base) == 1 {
+    if flowc_cgen_is_span_var(w, arena, src, base) == 1 {
         flowc_cgen_puts(w, "((")
         flowc_cgen_emit_expr(w, arena, src, base)
         flowc_cgen_puts(w, ").data + (")
@@ -10542,7 +10588,7 @@ function flowc_cgen_emit_elem_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
 
 # Pointer to `base[loop_var]` where the index is a for-loop's own name.
 function flowc_cgen_emit_elem_ptr_for(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32, loop_id: i32) {
-    if flowc_cgen_is_span_var(arena, src, base) == 1 {
+    if flowc_cgen_is_span_var(w, arena, src, base) == 1 {
         flowc_cgen_puts(w, "((")
         flowc_cgen_emit_expr(w, arena, src, base)
         flowc_cgen_puts(w, ").data + (")
@@ -10956,8 +11002,8 @@ function flowc_cgen_try_emit_while_as_for(w: ptr<CgenBuf>, arena: AstArena, src:
 
 # --- target-guarded vector_size kernels (#739) ---------------------------
 
-function flowc_cgen_elem_is_name(arena: AstArena, src: ptr<u8>, base: i32, name: string) -> i32 {
-    let ty: i32 = flowc_cgen_var_elem_type(arena, src, base)
+function flowc_cgen_elem_is_name(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32, name: string) -> i32 {
+    let ty: i32 = flowc_cgen_var_elem_type(w, arena, src, base)
     if ty == AST_NONE {
         return 0
     }
@@ -11284,8 +11330,8 @@ function flowc_cgen_try_emit_vector_kernel(w: ptr<CgenBuf>, arena: AstArena, src
     if typed == AST_NONE {
         typed = src0
     }
-    let is_f64: i32 = flowc_cgen_elem_is_name(arena, src, typed, "f64")
-    let is_f32: i32 = flowc_cgen_elem_is_name(arena, src, typed, "f32")
+    let is_f64: i32 = flowc_cgen_elem_is_name(w, arena, src, typed, "f64")
+    let is_f32: i32 = flowc_cgen_elem_is_name(w, arena, src, typed, "f32")
     if is_f32 == 0 and is_f64 == 0 {
         return 0
     }
@@ -11339,6 +11385,109 @@ function flowc_cgen_kernel_read_ok(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return 0
 }
 
+# 1 when the C type of kernel scalar `e` is float or an integer type, so
+# the scalar loop's `x * e` is float arithmetic, the same as the kernel's
+# `(float)(e)` lanes. A bare float literal is a C double, and so is an f64
+# name; both make the scalar statement double arithmetic.
+function flowc_cgen_kernel_k_no_double(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, e: i32, depth: i32) -> i32 {
+    if e == AST_NONE or depth > 32 {
+        return 0
+    }
+    let k: i32 = arena.nodes[e].kind
+    if k == AST_INT {
+        return 1
+    }
+    if k == AST_FLOAT {
+        # `1.5f` is already a C float.
+        let le: i32 = arena.nodes[e].name_end
+        if le > arena.nodes[e].name_start and (src[le - 1] == 102 or src[le - 1] == 70) {
+            return 1
+        }
+        return 0
+    }
+    if k == AST_IDENT {
+        let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, e)
+        if flowc_cgen_ty_is_int_name(arena, src, ty) == 1 {
+            return 1
+        }
+        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE {
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "f32")
+        }
+        return 0
+    }
+    if k == AST_CAST {
+        let ty: i32 = arena.nodes[e].b
+        if flowc_cgen_ty_is_int_name(arena, src, ty) == 1 {
+            return 1
+        }
+        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE {
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "f32")
+        }
+        return 0
+    }
+    if k == AST_UNARY and arena.nodes[e].ival == TOK_MINUS {
+        return flowc_cgen_kernel_k_no_double(w, arena, src, arena.nodes[e].a, depth + 1)
+    }
+    if k == AST_BINOP {
+        if flowc_cgen_kernel_k_no_double(w, arena, src, arena.nodes[e].a, depth + 1) == 0 {
+            return 0
+        }
+        return flowc_cgen_kernel_k_no_double(w, arena, src, arena.nodes[e].b, depth + 1)
+    }
+    return 0
+}
+
+# 1 when float literal `e` (optionally negated) is a double whose value an
+# f32 holds exactly. Then one `x * e` rounded to float equals `x * (float)e`:
+# the double product of two 24-bit significands is exact and rounds once.
+function flowc_cgen_float_lit_f32_exact(arena: AstArena, src: ptr<u8>, e: i32) -> i32 {
+    let mut lit: i32 = e
+    if lit != AST_NONE and arena.nodes[lit].kind == AST_UNARY and arena.nodes[lit].ival == TOK_MINUS {
+        lit = arena.nodes[lit].a
+    }
+    if lit == AST_NONE or arena.nodes[lit].kind != AST_FLOAT {
+        return 0
+    }
+    let s: i32 = arena.nodes[lit].name_start
+    let n: i32 = arena.nodes[lit].name_end - s
+    if n <= 0 or n > 62 {
+        return 0
+    }
+    let mut buf: array<u8, 64>
+    let mut i: i32 = 0
+    while i < n {
+        buf[i] = src[s + i]
+        i = i + 1
+    }
+    buf[n] = 0
+    let v: f64 = strtod(&buf[0], null)
+    let narrowed: f32 = v as f32
+    if (narrowed as f64) == v {
+        return 1
+    }
+    return 0
+}
+
+# 1 when the f32 kernel computes what the scalar loop computes. The kernel
+# rounds k to float once (`(float)(k)` lanes); the scalar statement and
+# the tail use k at its own C type. A double k (`0.1`, an f64 name) makes
+# the scalar loop double arithmetic, and the lanes would disagree with the
+# tail in the last bit. Fill stores k either way. Scale also takes a
+# literal an f32 holds exactly. Axpy is two operations, so the double
+# product could round differently, and it takes no double k.
+function flowc_cgen_kernel_k_matches_scalar(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, kind: i32, kv: i32) -> i32 {
+    if kind == 1 or kv == AST_NONE {
+        return 1
+    }
+    if flowc_cgen_kernel_k_no_double(w, arena, src, kv, 0) == 1 {
+        return 1
+    }
+    if kind == 2 {
+        return flowc_cgen_float_lit_f32_exact(arena, src, kv)
+    }
+    return 0
+}
+
 # Preconditions for the vector_size kernels beyond pattern shape.
 function flowc_cgen_vector_kernel_safe(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, kind: i32, dst: i32, src0: i32, src1: i32, kv: i32, is_f64: i32) -> i32 {
     # The kernel loads and stores whole lanes with memcpy, which would skip
@@ -11351,17 +11500,20 @@ function flowc_cgen_vector_kernel_safe(w: ptr<CgenBuf>, arena: AstArena, src: pt
             return 0
         }
     }
+    if is_f64 == 0 and flowc_cgen_kernel_k_matches_scalar(w, arena, src, kind, kv) == 0 {
+        return 0
+    }
     let mut elem: string = "f32"
     if is_f64 == 1 {
         elem = "f64"
     }
-    if dst != AST_NONE and flowc_cgen_elem_is_name(arena, src, dst, elem) == 0 {
+    if dst != AST_NONE and flowc_cgen_elem_is_name(w, arena, src, dst, elem) == 0 {
         return 0
     }
-    if src0 != AST_NONE and flowc_cgen_elem_is_name(arena, src, src0, elem) == 0 {
+    if src0 != AST_NONE and flowc_cgen_elem_is_name(w, arena, src, src0, elem) == 0 {
         return 0
     }
-    if src1 != AST_NONE and flowc_cgen_elem_is_name(arena, src, src1, elem) == 0 {
+    if src1 != AST_NONE and flowc_cgen_elem_is_name(w, arena, src, src1, elem) == 0 {
         return 0
     }
     # Fill (1) reads no memory; sum (5) and dot (6) store nothing.
@@ -12639,7 +12791,7 @@ function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
     if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].ival == 0 - 2 {
         flowc_cgen_emit_type(w, arena, src, arena.nodes[ty].b)
         flowc_cgen_puts(w, " (*")
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         flowc_cgen_puts(w, ")(")
         let mut param: i32 = arena.nodes[ty].a
         let mut first: i32 = 1
@@ -12677,7 +12829,7 @@ function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
         }
     }
     flowc_cgen_putc(w, 32)
-    flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
 }
 
 # 1 if fn name span is "main" and it has exactly two parameters (CLI argc/argv).
@@ -14696,7 +14848,7 @@ function flowc_cgen_emit_export_alias(w: ptr<CgenBuf>, arena: AstArena, src: ptr
             flowc_cgen_puts(w, ", ")
         }
         first = 0
-        flowc_cgen_put_span(w, src, arena.nodes[p].name_start, arena.nodes[p].name_end)
+        flowc_cgen_put_ident(w, src, arena.nodes[p].name_start, arena.nodes[p].name_end)
         p = arena.nodes[p].next
     }
     flowc_cgen_puts(w, "); }\n")
@@ -14948,6 +15100,12 @@ export function flowc_cgen_emit_sigs(
         # complex.h defines the macro I. A Flow field or variable may be
         # named I, and the complex constructors use _Complex_I instead.
         flowc_cgen_puts(&w, "#undef I\n")
+        # GCC and Clang predefine linux and unix on Linux and i386 on 32-bit
+        # x86 in GNU mode. Nothing below depends on them, and a Flow field
+        # may carry one of those names (#1442).
+        flowc_cgen_puts(&w, "#undef linux\n")
+        flowc_cgen_puts(&w, "#undef unix\n")
+        flowc_cgen_puts(&w, "#undef i386\n")
         flowc_cgen_puts(&w, "#include <time.h>\n")
         # Portable 128-bit vector_size types for the #739 C kernels. SSE2 is
         # baseline on x86-64; NEON is baseline on aarch64. Scalar fallback

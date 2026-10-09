@@ -41,7 +41,9 @@ import .profile {
     flowc_prof_carve, flowc_prof_phase_ns,
     FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_IMPORT,
     FLOWC_PROF_TYPECHECK, FLOWC_PROF_MONO, FLOWC_PROF_LOWERING,
-    FLOWC_PROF_CODEGEN, FLOWC_PROF_CACHE
+    FLOWC_PROF_CODEGEN, FLOWC_PROF_CACHE,
+    flowc_prof_cache_note, FLOWC_CACHE_HIT, FLOWC_CACHE_MISS,
+    FLOWC_CACHE_STORE, FLOWC_CACHE_BYPASS
 }
 
 extern {
@@ -2355,9 +2357,13 @@ function flowc_u64_to_hex(v: u64, buf: ptr<u8>) {
 # `.flow_cache/` is never opened, so an untrusted tree cannot execute
 # code merely by shipping crafted cache data.
 #
-# Remaining gaps (not this slice): typecheck / monomorphize / codegen
-# caches, a full import-dependency graph, hit/miss diagnostics, and
-# stale-executable prevention.
+# Each lookup counts as a hit, miss (then a store) or bypass in the
+# FLOWC_PROFILE `cache` object. A record is keyed on one file's bytes, so
+# editing one module re-parses that module only.
+#
+# Trust boundary (decided 2026-10-08, docs/project/Questions.md): records
+# carry a checksum and a size cap (#1402). Remaining gaps: typecheck /
+# monomorphize / codegen caches.
 
 # Bump when the on-disk record layout changes, or when a parse-affecting
 # frontend change is not already visible as a version bump. Mixed into
@@ -2518,6 +2524,7 @@ function flowc_parse_cached(
 
     let cache_dir: ptr<u8> = malloc(512)
     if cache_dir == null {
+        flowc_prof_cache_note(FLOWC_CACHE_BYPASS)
         return flowc_parse_program(p)
     }
     let mut clen: i32 = flowc_ast_cache_dir(cache_dir, 512)
@@ -2525,6 +2532,7 @@ function flowc_parse_cached(
     # A cache root too long to hold it parses without the cache instead of
     # writing past the 512-byte buffer (#736).
     if clen <= 0 or clen + 22 > 512 {
+        flowc_prof_cache_note(FLOWC_CACHE_BYPASS)
         free(cache_dir)
         let t_parse: i64 = flowc_prof_span_begin()
         let root0: i32 = flowc_parse_program(p)
@@ -2566,6 +2574,7 @@ function flowc_parse_cached(
                             flowc_io_fclose(fp)
                             free(cache_dir)
                             flowc_prof_span_end(FLOWC_PROF_CACHE, t_cache)
+                            flowc_prof_cache_note(FLOWC_CACHE_HIT)
                             return root
                         }
                     }
@@ -2575,6 +2584,7 @@ function flowc_parse_cached(
         flowc_io_fclose(fp)
     }
     flowc_prof_span_end(FLOWC_PROF_CACHE, t_cache)
+    flowc_prof_cache_note(FLOWC_CACHE_MISS)
 
     let t_parse_miss: i64 = flowc_prof_span_begin()
     let root: i32 = flowc_parse_program(p)
@@ -2593,9 +2603,12 @@ function flowc_parse_cached(
                 flowc_ast_cache_checksum(p[0].arena.nodes as ptr<u8>, p[0].arena.len * FLOWC_AST_NODE_SIZE)
             ]
             let _w1: i32 = flowc_io_fwrite(&header_out[0] as ptr<u8>, 4, 5, fpo)
-            let _ws: i32 = flowc_io_fwrite(&sum_out[0] as ptr<u8>, 8, 1, fpo)
-            let _w2: i32 = flowc_io_fwrite(p[0].arena.nodes as ptr<u8>, FLOWC_AST_NODE_SIZE, p[0].arena.len, fpo)
+            let ws: i32 = flowc_io_fwrite(&sum_out[0] as ptr<u8>, 8, 1, fpo)
+            let w2: i32 = flowc_io_fwrite(p[0].arena.nodes as ptr<u8>, FLOWC_AST_NODE_SIZE, p[0].arena.len, fpo)
             let _c2: i32 = flowc_io_fclose(fpo)
+            if _w1 == 5 and ws == 1 and w2 == p[0].arena.len {
+                flowc_prof_cache_note(FLOWC_CACHE_STORE)
+            }
         }
     }
 

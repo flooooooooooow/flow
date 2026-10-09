@@ -46,6 +46,48 @@ then revisit 3 with the same rules for both caches.
 
 **Status:** Open. #1355 lands option 1.
 
+### 2026-10-08: Float literals in f32 arithmetic: f32 or f64?
+
+**Context:** #729 lists "unnecessary f32<->f64 promotion" as a codegen tax.
+The two halves of the compiler disagree about what `y[i] * 0.1` means when
+`y` is `span<f32>`. The type checkers (`sem_check_literal`, `ut_expr`) give
+a float literal the type f32. The C backend copies the literal digits, so C
+reads `0.1` as a double, promotes `y[i]`, multiplies in double and rounds
+once on the store. The MLIR emitter also types a float literal f64
+(`docs/design/mlir-in-flow.md`: "float literals f64"). Only
+`let x: f32 = 1.5` appends `f`.
+
+The cost is real. On macOS arm64 at -O3, `a[i] = a[i] * 0.1 + 1.3` over
+4096 floats runs 3.24x slower than the same loop with `0.1f` and `1.3f`:
+clang widens to two-lane f64 vectors with `fcvtl`/`fcvtn` around them. The
+results also differ: for 1677722 of the 8388608 floats in [1, 2),
+`(float)(x * 0.1)` is not `x * 0.1f`. So the fix changes numeric output of
+existing f32 programs in the last bit.
+
+#1450 fixed the one place where the C backend mixed both rules in one loop
+(the f32 vector kernel lanes against the scalar tail). It keeps today's
+double semantics.
+
+**Options:**
+1. A float literal takes the type of the other operand when that is f32
+   (as the type checker already says). The C backend emits `0.1f` there,
+   MLIR emits an f32 constant, and the docs change. Removes the tax;
+   changes results.
+2. Keep double evaluation (today's behaviour) and change the type checkers
+   and docs to say a float literal is f64 and an f32 operand is promoted.
+   No numeric change; the tax stays.
+3. Option 1 behind a flag or edition first, with a diff tool that reports
+   which programs change.
+
+**Recommendation:** Option 1. f32 code is written for f32 throughput (DSP,
+graphics, ML), and the type checker already promises f32. It needs an owner
+decision because it changes output bits.
+
+**Status:** Open.
+
+---
+
+
 ### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
 
 **Context:** Issue #564 records that shipped handlers are tail-resumptive

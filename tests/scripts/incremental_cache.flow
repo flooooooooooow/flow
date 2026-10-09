@@ -2,8 +2,9 @@
 # explicit schema/compiler salt and parse-affecting config, and persistence
 # is a non-executable record under the user cache. A checkout that ships
 # crafted pickle (or any project-local cache) cannot run cache-controlled
-# code. Typecheck / monomorphize / codegen caches and a full dependency
-# graph are remaining gaps.
+# code. The FLOWC_PROFILE `cache` counts show a single-leaf edit re-parses
+# only that leaf. Typecheck / monomorphize / codegen caches are remaining
+# gaps.
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
@@ -396,8 +397,109 @@ function check_corrupt_payload_is_a_miss() -> i32 {
     return T_PASS
 }
 
+# One count from the profile's `"cache": {...}` object, or -1.
+function cache_count(err: string, key: string) -> i32 {
+    let at: i32 = s_find(err, "\"cache\": {", 0)
+    if at < 0 {
+        return 0 - 1
+    }
+    let k: i32 = s_find(err, "\"" + key + "\": ", at)
+    if k < 0 {
+        return 0 - 1
+    }
+    return s_atoi(s_from(err, k + s_len(key) + 4), 0 - 1)
+}
+
+# Emit with FLOWC_PROFILE=json; writes hits, misses, stores into out.
+function emit_counts(host: string, src: string, out_c: string, xdg: string, home: string, out: ptr<i32>) -> bool {
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", src)
+    proc_env(c, "FLOWC_OUT", out_c)
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_PROFILE", "json")
+    proc_env(c, "FLOW_CACHE_SALT", "leaf-edit")
+    proc_env(c, "XDG_CACHE_HOME", xdg)
+    proc_env(c, "HOME", home)
+    if t_run(c) != 0 {
+        outln("flowc emit failed")
+        t_cat(t_err())
+        return false
+    }
+    let err: string = read_text(t_err())
+    out[0] = cache_count(err, "hits")
+    out[1] = cache_count(err, "misses")
+    out[2] = cache_count(err, "stores")
+    if out[0] < 0 or out[1] < 0 or out[2] < 0 {
+        outln("no cache counts in the profile line")
+        t_cat(t_err())
+        return false
+    }
+    return true
+}
+
+# Hit/miss diagnostics, and a single-leaf edit re-parses only that leaf:
+# cold build misses and stores every module, a no-op rebuild hits every
+# module, and editing leaf.flow misses once and hits the rest.
+function check_leaf_edit_reparses_only_leaf() -> i32 {
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/proj"
+    let xdg: string = t_tmp() + "/xdg"
+    let home: string = t_tmp() + "/home"
+    let _d: bool = mkdir_p(dir)
+    let w1: bool = write_text(dir + "/leaf.flow", "export function helper() -> i32 { return 1; }\n")
+    let w2: bool = write_text(dir + "/mid.flow", "export function other() -> i32 { return 2; }\n")
+    let w3: bool = write_text(dir + "/app.flow", "import .leaf\nimport .mid\nfunction main() -> i32 { return helper() + other(); }\n")
+    if not (w1 and w2 and w3) {
+        return T_FAIL
+    }
+    let mut n: array<i32, 3> = [0, 0, 0]
+    let src: string = dir + "/app.flow"
+    let out_c: string = dir + "/app.c"
+
+    # A bundle looks each module up more than once (the private-name scan,
+    # then emit), so a cold build already hits on the second lookup. What
+    # matters: one miss and one store per distinct module source.
+    if not emit_counts(host, src, out_c, xdg, home, &n[0]) {
+        return T_FAIL
+    }
+    let modules: i32 = n[1]
+    let lookups: i32 = n[0] + n[1]
+    if modules < 3 or n[2] != modules {
+        outln("cold build: want one miss and one store per module (>= 3), got hits=" + s_itoa(n[0]) + " misses=" + s_itoa(n[1]) + " stores=" + s_itoa(n[2]))
+        return T_FAIL
+    }
+
+    if not emit_counts(host, src, out_c, xdg, home, &n[0]) {
+        return T_FAIL
+    }
+    if n[1] != 0 or n[2] != 0 or n[0] != lookups {
+        outln("no-op rebuild: want " + s_itoa(lookups) + " hits and no misses, got hits=" + s_itoa(n[0]) + " misses=" + s_itoa(n[1]) + " stores=" + s_itoa(n[2]))
+        return T_FAIL
+    }
+
+    let _e: bool = write_text(dir + "/leaf.flow", "export function helper() -> i32 { return 5; }\n")
+    if not emit_counts(host, src, out_c, xdg, home, &n[0]) {
+        return T_FAIL
+    }
+    if n[1] != 1 or n[2] != 1 or n[0] != lookups - 1 {
+        outln("leaf edit: want 1 miss and " + s_itoa(lookups - 1) + " hits, got hits=" + s_itoa(n[0]) + " misses=" + s_itoa(n[1]) + " stores=" + s_itoa(n[2]))
+        return T_FAIL
+    }
+    if not a_contains(read_text(out_c), "return 5") {
+        outln("edited leaf did not reach the emitted C")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("incremental_cache")
+    t_start()
+    t_end("leaf_edit", check_leaf_edit_reparses_only_leaf())
     t_start()
     t_end("salt_mutation", check_salt_mutation_invalidates())
     t_start()
