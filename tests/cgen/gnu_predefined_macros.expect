@@ -1,0 +1,6 @@
+# GNU predefined macro names are renamed like C keywords (#1442).
++ int32_t _flow_linux = 2;
++ int32_t _flow_i386 = 3;
++ _flow_unix(_flow_linux)
+- int32_t linux =
+exit 0
