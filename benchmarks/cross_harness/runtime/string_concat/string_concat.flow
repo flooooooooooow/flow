@@ -26,8 +26,8 @@ function main() -> i32 {
     if checksum != 172550000 {
         return 1
     }
-    # One concatn allocation and one copy of the 36-byte payload per row.
-    println("allocations: 50000")
+    # The non-escaping short concat is stack-backed; payload bytes are still copied once per row.
+    println("allocations: 0")
     println("copies: 1800000")
     return 0
 }

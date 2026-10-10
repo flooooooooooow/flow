@@ -4580,6 +4580,103 @@ function flowc_cgen_emit_concat_operand(w: ptr<CgenBuf>, arena: AstArena, src: p
     flowc_cgen_emit_expr(w, arena, src, id)
 }
 
+# Conservative textual use scan for the temporary-string escape proof.
+function flowc_cgen_tree_uses_ident(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32, depth: i32) -> i32 {
+    if id == AST_NONE or id < 0 or id >= arena.len { return 0 }
+    # Depth exhaustion cannot certify non-escape.
+    if depth > 128 { return 1 }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_IDENT and flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, ns, ne) == 1 { return 1 }
+    if flowc_cgen_tree_uses_ident(arena, src, arena.nodes[id].a, ns, ne, depth + 1) == 1 { return 1 }
+    if flowc_cgen_tree_uses_ident(arena, src, arena.nodes[id].b, ns, ne, depth + 1) == 1 { return 1 }
+    if flowc_cgen_tree_uses_ident(arena, src, arena.nodes[id].c, ns, ne, depth + 1) == 1 { return 1 }
+    return flowc_cgen_tree_uses_ident(arena, src, arena.nodes[id].next, ns, ne, depth + 1)
+}
+
+# Prove every use of one pointer alias is a read through pointer[index].
+# Passing, returning, rebinding, shadowing, taking its address, or writing through it fail closed.
+function flowc_cgen_index_reads_only(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32, depth: i32) -> i32 {
+    if id == AST_NONE { return 1 }
+    if id < 0 or id >= arena.len or depth > 128 { return 0 }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_IDENT {
+        if flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, ns, ne) == 1 { return 0 }
+        return flowc_cgen_index_reads_only(arena, src, arena.nodes[id].next, ns, ne, depth + 1)
+    }
+    if k == AST_LET or k == AST_PARAM or k == AST_FOR {
+        if flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, ns, ne) == 1 { return 0 }
+    }
+    if k == AST_ASSIGN {
+        if flowc_cgen_tree_uses_ident(arena, src, arena.nodes[id].a, ns, ne, 0) == 1 { return 0 }
+        if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].b, ns, ne, depth + 1) == 0 { return 0 }
+        if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].c, ns, ne, depth + 1) == 0 { return 0 }
+        return flowc_cgen_index_reads_only(arena, src, arena.nodes[id].next, ns, ne, depth + 1)
+    }
+    if k == AST_INDEX {
+        let base: i32 = arena.nodes[id].a
+        if base != AST_NONE and arena.nodes[base].kind == AST_IDENT and flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, ns, ne) == 1 {
+            if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].b, ns, ne, depth + 1) == 0 { return 0 }
+            if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].c, ns, ne, depth + 1) == 0 { return 0 }
+            return flowc_cgen_index_reads_only(arena, src, arena.nodes[id].next, ns, ne, depth + 1)
+        }
+    }
+    if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].a, ns, ne, depth + 1) == 0 { return 0 }
+    if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].b, ns, ne, depth + 1) == 0 { return 0 }
+    if flowc_cgen_index_reads_only(arena, src, arena.nodes[id].c, ns, ne, depth + 1) == 0 { return 0 }
+    return flowc_cgen_index_reads_only(arena, src, arena.nodes[id].next, ns, ne, depth + 1)
+}
+
+# Narrow stack-lifetime proof for #1447: concat local -> immediate ptr<u8> cast alias -> indexed reads only.
+function flowc_cgen_stack_concat_alias(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, let_id: i32) -> i32 {
+    let init: i32 = arena.nodes[let_id].b
+    if init == AST_NONE or arena.nodes[init].kind != AST_BINOP or arena.nodes[init].ival != TOK_PLUS { return AST_NONE }
+    if flowc_cgen_expr_is_string(w, arena, src, init) == 0 { return AST_NONE }
+    let alias: i32 = arena.nodes[let_id].next
+    if alias == AST_NONE or arena.nodes[alias].kind != AST_LET { return AST_NONE }
+    let aty: i32 = arena.nodes[alias].a
+    let ai: i32 = arena.nodes[alias].b
+    if aty == AST_NONE or arena.nodes[aty].kind != AST_TYPE or arena.nodes[aty].a == AST_NONE or flowc_cgen_span_is(src, arena.nodes[aty].name_start, arena.nodes[aty].name_end, "ptr") == 0 { return AST_NONE }
+    let ae: i32 = arena.nodes[aty].a
+    if arena.nodes[ae].kind != AST_TYPE or flowc_cgen_span_is(src, arena.nodes[ae].name_start, arena.nodes[ae].name_end, "u8") == 0 { return AST_NONE }
+    if ai == AST_NONE or arena.nodes[ai].kind != AST_CAST { return AST_NONE }
+    let src_id: i32 = arena.nodes[ai].a
+    if src_id == AST_NONE or arena.nodes[src_id].kind != AST_IDENT or flowc_cgen_span_eq(src, arena.nodes[src_id].name_start, arena.nodes[src_id].name_end, arena.nodes[let_id].name_start, arena.nodes[let_id].name_end) == 0 { return AST_NONE }
+    let cast_ty: i32 = arena.nodes[ai].b
+    if cast_ty == AST_NONE or arena.nodes[cast_ty].kind != AST_TYPE or arena.nodes[cast_ty].a == AST_NONE or flowc_cgen_span_is(src, arena.nodes[cast_ty].name_start, arena.nodes[cast_ty].name_end, "ptr") == 0 { return AST_NONE }
+    if flowc_cgen_tree_uses_ident(arena, src, arena.nodes[alias].next, arena.nodes[let_id].name_start, arena.nodes[let_id].name_end, 0) == 1 { return AST_NONE }
+    if flowc_cgen_index_reads_only(arena, src, arena.nodes[alias].next, arena.nodes[alias].name_start, arena.nodes[alias].name_end, 0) == 0 { return AST_NONE }
+    return alias
+}
+
+function flowc_cgen_emit_stack_concat_let(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, let_id: i32) -> i32 {
+    if flowc_cgen_is_captured(w, src, arena.nodes[let_id].name_start, arena.nodes[let_id].name_end) == 1 { return 0 }
+    if flowc_cgen_stack_concat_alias(w, arena, src, let_id) == AST_NONE { return 0 }
+    let init: i32 = arena.nodes[let_id].b
+    let mut leaves: array<i32, 32> = []
+    let n: i32 = flowc_cgen_flatten_concat(w, arena, src, init, &leaves[0], 32)
+    if n < 2 { return 0 }
+    flowc_cgen_perf_remark(w, arena, src, let_id, "str_concat_stack", "non-escaping short concat uses a 128-byte local buffer with heap fallback", 1)
+    flowc_cgen_puts(w, "  char __flowc_strtmp")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, "[128];\n  const char* ")
+    flowc_cgen_put_ident(w, src, arena.nodes[let_id].name_start, arena.nodes[let_id].name_end)
+    flowc_cgen_puts(w, " = __flowc_str_concatn_into(__flowc_strtmp")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, ", sizeof(__flowc_strtmp")
+    flowc_cgen_put_i32(w, let_id)
+    flowc_cgen_puts(w, "), ")
+    flowc_cgen_put_i32(w, n)
+    flowc_cgen_puts(w, ", (const char* const[]){")
+    let mut i: i32 = 0
+    while i < n {
+        if i != 0 { flowc_cgen_puts(w, ", ") }
+        flowc_cgen_emit_concat_operand(w, arena, src, leaves[i])
+        i = i + 1
+    }
+    flowc_cgen_puts(w, "});\n")
+    return 1
+}
+
 # Emit a string `+` as one N-way join, or a pairwise join when the chain is
 # only two parts.
 function flowc_cgen_emit_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
@@ -12096,6 +12193,11 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 }
             }
         }
+        # A narrowly proven non-escaping concat local can use caller-stack
+        # storage. All escaping or unknown cases retain normal heap strings.
+        if arr_n == 0 and init != AST_NONE {
+            if flowc_cgen_emit_stack_concat_let(w, arena, src, id) == 1 { return }
+        }
         # `let f = f(x)` where f is also a function: C would see the new
         # local inside its own initializer, so evaluate the initializer first.
         let mut pre: i32 = 0
@@ -15469,6 +15571,18 @@ function flowc_cgen_emit_module(
         # nested pairwise joins, which allocate a fresh buffer per join and
         # recopy every prefix. concatn sums the lengths once, allocates once,
         # and copies each part once. NULL parts count as empty, matching concat.
+        # Stack-backed concat for a proven non-escaping local (#1447).
+        # Oversized data falls back to the existing heap lifetime.
+        flowc_cgen_puts(&w, "__attribute__((unused, always_inline)) static inline const char* __flowc_str_concatn_into(char* local, size_t cap, int n, const char* const* parts) {\n")
+        flowc_cgen_puts(&w, "  size_t lens[32]; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n")
+        flowc_cgen_puts(&w, "  if (n < 0 || n > 32) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  for (i = 0; i < n; i++) { s = parts[i]; l = s != 0 ? strlen(s) : 0; lens[i] = l; total += l; }\n")
+        flowc_cgen_puts(&w, "  if (local != 0 && total < cap) { r = local; } else { r = (char*)flow_mem_malloc(total + 1); if (r == 0) { return \"\"; } flow_mem_note_temp(total + 1); }\n")
+        flowc_cgen_puts(&w, "  flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, total); off = 0;\n")
+        flowc_cgen_puts(&w, "  for (i = 0; i < n; i++) { l = lens[i]; if (l != 0) { memcpy(r + off, parts[i], l); off += l; } }\n")
+        flowc_cgen_puts(&w, "  r[off] = 0; return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
         flowc_cgen_puts(&w, "__attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {\n")
         flowc_cgen_puts(&w, "  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n")
         flowc_cgen_puts(&w, "  va_start(ap, n);\n")
