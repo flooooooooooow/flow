@@ -1,4 +1,4 @@
-# expect: lifetime domain escape: `scratch` lives in the `frame` domain but is stored through parameter `out`
+# expect: lifetime domain escape: `scratch` lives in the `frame` domain but is stored through parameter `out`, whose pointee lifetime is not proven to end within this call (add an explicit field lifetime contract or keep the composite local) at line 9, column 5
 struct Holder {
     view: ptr<i32>
 }
