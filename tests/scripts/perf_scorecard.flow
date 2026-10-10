@@ -27,7 +27,7 @@ function fixture() -> string {
     a = a + row("missing_python", "verified", "8", "null", "0.1", "null", "50", "null", "null") + ","
     a = a + row("bad_parity", "unresolved", "5", "10", "0.1", "0.1", "100", "100", "1.0") + ","
     a = a + row("noisy_run", "verified", "8", "10", "3", "0.1", "100", "100", "1.0") + ","
-    a = a + s_replace(row("not_enough_repeats", "verified", "10", "10", "0.1", "0.1", "100", "100", "1.0"), "\\\"repeats\\\":5", "\\\"repeats\\\":2")
+    a = a + s_replace(row("not_enough_repeats", "verified", "10", "10", "0.1", "0.1", "100", "100", "1.0"), "\"repeats\":5", "\"repeats\":2")
     return a + "]}"
 }
 
@@ -61,8 +61,10 @@ function check_verdicts() -> i32 {
     if not a_contains(s, "\"verdict\": \"no_python_data\"") { return T_FAIL }
     if not a_contains(s, "\"verdict\": \"unresolved_parity\"") { return T_FAIL }
     if not a_contains(s, "\"verdict\": \"noisy\"") { return T_FAIL }
+    if not a_contains(s, "\"verdict\": \"insufficient_repetitions\"") { return T_FAIL }
+    if not a_contains(s, "\"flow_vs_python\": 0.8") { return T_FAIL }
     if not a_contains(s, "\"native_tax\": \"tax\"") { return T_FAIL }
-    if not a_contains(s, "\"wins\": 1, \"memory_wins\": 1, \"ties\": 2, \"losses\": 1, \"unscored\": 3, \"native_taxes\": 1") { return T_FAIL }
+    if not a_contains(s, "\"wins\": 1, \"memory_wins\": 1, \"ties\": 1, \"losses\": 1, \"unscored\": 4, \"native_taxes\": 1") { return T_FAIL }
     return T_PASS
 }
 
