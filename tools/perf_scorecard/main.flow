@@ -10,15 +10,13 @@
 # --strict returns 1 if there are any losses, native taxes or unscored rows.
 
 import "tools/flow_cli/sys.flow"
-import "scripts/tools/lib/json.flow" {
-    Json, json_parse, json_error, json_kind, json_kind_string,
-    json_kind_number, json_kind_array, json_get, json_first, json_next,
-    json_str, json_quote, json_free
-}
+import "scripts/tools/lib/json.flow"
 import std.process { proc_argc, proc_argv }
 
 extern {
     function atof(s: string) -> f64
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, ...) -> i32
+    function malloc(size: i64) -> ptr<void>
 }
 
 function field_text(j: ptr<Json>, node: i32, name: string) -> string {
@@ -47,9 +45,22 @@ function metric(j: ptr<Json>, row: i32, group: string, key: string) -> f64 {
     return number(j, json_get(j, row, group), key)
 }
 
-function ratio_text(j: ptr<Json>, row: i32, key: string) -> string {
-    let attribution: i32 = json_get(j, row, "attribution")
-    let at: i32 = json_get(j, attribution, key)
+# Always compute the Flow/Python ratio from the medians that were graded.
+# A stale or inconsistent attribution field cannot misreport the verdict.
+function measured_ratio(j: ptr<Json>, row: i32) -> string {
+    let fm: f64 = metric(j, row, "flow_metrics", "median")
+    let pm: f64 = metric(j, row, "python_metrics", "median")
+    if fm <= 0.0 or pm <= 0.0 {
+        return "null"
+    }
+    let result: f64 = fm / pm
+    let buf: ptr<i8> = malloc(64) as ptr<i8>
+    let _n: i32 = snprintf(buf, 64, "%.9g", result)
+    return buf as string
+}
+
+function native_ratio(j: ptr<Json>, row: i32) -> string {
+    let at: i32 = json_get(j, json_get(j, row, "attribution"), "flow_vs_native")
     if at < 0 or json_kind(j, at) != json_kind_number() {
         return "null"
     }
@@ -205,8 +216,8 @@ function main() -> i32 {
         report = report + "    {\"workload_id\": " + json_quote(name)
         report = report + ", \"timing_scope\": " + json_quote(field_text(j, row, "timing_scope"))
         report = report + ", \"verdict\": " + json_quote(v)
-        report = report + ", \"flow_vs_python\": " + ratio_text(j, row, "flow_vs_python")
-        report = report + ", \"flow_vs_native\": " + ratio_text(j, row, "flow_vs_native")
+        report = report + ", \"flow_vs_python\": " + measured_ratio(j, row)
+        report = report + ", \"flow_vs_native\": " + native_ratio(j, row)
         report = report + ", \"native_tax\": " + json_quote(tax) + "}"
         row = json_next(j, row)
     }
