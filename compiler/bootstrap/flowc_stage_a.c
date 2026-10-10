@@ -86649,6 +86649,7 @@ const char* sem_node_key(Sem* c, int32_t node);
 bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char* target, int32_t target_type);
 bool sem_domain_escape_to_field(Sem* c, int32_t stmt, int32_t value, int32_t lhs, int32_t target_type);
 bool sem_domain_escape_to_named_field(Sem* c, int32_t stmt, int32_t value, const char* field_name, int32_t field_domain);
+bool sem_domain_escape_to_param_target(Sem* c, int32_t stmt, int32_t value, int32_t lhs);
 bool sem_is_heap_alloc_expr(Sem* c, int32_t e);
 bool sem_name_is_heap_root(Sem* c, const char* name);
 bool sem_expr_is_heap_root(Sem* c, int32_t e);
@@ -88142,6 +88143,31 @@ bool sem_domain_escape_to_named_field(Sem* c, int32_t stmt, int32_t value, const
 }
   sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
   sem_err(c, __flowc_str_concatn(10, "lifetime domain escape: `", origin, "` lives in the `", sem_domain_name(c->current_domain), "` domain but is stored in field `", field_name, "`, which is declared to live in the `", sem_domain_name(field_domain), "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)", sem_location_suffix(c, stmt)));
+  return 1;
+}
+
+bool sem_domain_escape_to_param_target(Sem* c, int32_t stmt, int32_t value, int32_t lhs) {
+  if (c->current_domain < 0 || lhs < 0) {
+  return 0;
+}
+  if (sem_lhs_field_domain(c, lhs) >= 0) {
+  return 0;
+}
+  int32_t pi = sem_root_parameter_index(c, lhs);
+  if (pi < 0 || (uint8_t*)(c->current_function_name) == NULL) {
+  return 0;
+}
+  const char* origin = sem_composite_domain_root(c, value);
+  if ((uint8_t*)(origin) == NULL) {
+  return 0;
+}
+  int32_t fi = sem_sm_get(c->function_decls, c->current_function_name);
+  const char* pname = "parameter";
+  if (fi >= 0 && pi < sem_fi_nparams(c, fi)) {
+  pname = sem_fi_param_name(c, fi, pi);
+}
+  sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
+  sem_err(c, __flowc_str_concatn(9, "lifetime domain escape: `", origin, "` lives in the `", sem_domain_name(c->current_domain), "` domain but is stored through parameter `", pname, "`, whose pointee lifetime is not proven to end within this call ", "(add an explicit field lifetime contract or keep the composite local)", sem_location_suffix(c, stmt)));
   return 1;
 }
 
@@ -90042,7 +90068,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st15260 = sem_static_length(c, e); tys->size[sp] = __flowc_st15260; }
+  { __typeof__(tys->size[sp]) __flowc_st15391 = sem_static_length(c, e); tys->size[sp] = __flowc_st15391; }
   return sp;
 }
 
@@ -90213,7 +90239,7 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st16009 = sem_iv_new(); c->return_sink = __flowc_st16009; }
+  { __typeof__(c->return_sink) __flowc_st16140 = sem_iv_new(); c->return_sink = __flowc_st16140; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_walk_lambda_captures(c, sem_ncc(c, e), cname, mark);
@@ -90222,9 +90248,9 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   c->current_rt_safe_fn = prev_rt;
   c->rt_safe_from_domain = prev_rt_dom;
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st16059 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st16059; }
+  { __typeof__(tys->ret[f]) __flowc_st16190 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st16190; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st16068 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st16068; }
+  { __typeof__(tys->ret[f]) __flowc_st16199 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st16199; }
 }
   return f;
 }
@@ -90766,6 +90792,9 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
 }
   if (reported == 0) {
   reported = sem_domain_escape_to_field(c, s, value, lhs, tt);
+}
+  if (reported == 0) {
+  reported = sem_domain_escape_to_param_target(c, s, value, lhs);
 }
   if (reported == 0 && (uint8_t*)(base) != NULL && sem_sm_has(c->static_names, base) == 0) {
   reported = sem_domain_escape_to_heap(c, s, value, base, tt);
@@ -91624,17 +91653,17 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   SemStrMap* prev_heap = (SemStrMap*)(c->heap_roots);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st22121 = sem_sv_new(); c->local_storage = __flowc_st22121; }
-  { __typeof__(c->span_origin) __flowc_st22125 = sem_sm_new(); c->span_origin = __flowc_st22125; }
-  { __typeof__(c->heap_roots) __flowc_st22129 = sem_sm_new(); c->heap_roots = __flowc_st22129; }
-  { __typeof__(c->current_return_type) __flowc_st22138 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st22138; }
+  { __typeof__(c->local_storage) __flowc_st22264 = sem_sv_new(); c->local_storage = __flowc_st22264; }
+  { __typeof__(c->span_origin) __flowc_st22268 = sem_sm_new(); c->span_origin = __flowc_st22268; }
+  { __typeof__(c->heap_roots) __flowc_st22272 = sem_sm_new(); c->heap_roots = __flowc_st22272; }
+  { __typeof__(c->current_return_type) __flowc_st22281 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st22281; }
   i = 0;
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
   sem_define_var(c, sem_fi_param_name(c, fi, i), pt, 0);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st22181 = sem_iv_new(); c->return_sink = __flowc_st22181; }
+  { __typeof__(c->return_sink) __flowc_st22324 = sem_iv_new(); c->return_sink = __flowc_st22324; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
