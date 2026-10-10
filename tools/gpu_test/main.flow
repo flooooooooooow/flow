@@ -600,76 +600,8 @@ function run_job_case(c: ptr<Case>, backend: string, capture: bool) -> i32 {
     return 1
 }
 
-# The "reference" line the model example printed (its host result), or "".
-function reference_line(trace: string) -> string {
-    let mut at: i32 = 0
-    if not t_starts_with(trace, "reference ") {
-        at = t_find(trace, "\nreference ")
-        if at < 0 {
-            return ""
-        }
-        at = at + 1
-    }
-    let rest: string = t_from(trace, at)
-    let nl: i32 = t_find_char(rest, 10)
-    if nl < 0 {
-        return t_strip(rest)
-    }
-    return t_sub(rest, 0, nl)
-}
-
-# WebGPU model case: emit the example's @gpu kernels as WGSL with their
-# reflection, chain them over persistent device buffers in Deno
-# (tools/gpu_test/webgpu_model.mjs) and compare the readback with the
-# example's host reference. No Deno or no adapter: UNSUPPORTED.
-# FLOW_DENO names the Deno binary (default deno).
-function run_model_webgpu(c: ptr<Case>, trace: string) -> i32 {
-    let reference: string = reference_line(trace)
-    if t_len(reference) == 0 {
-        report(c, "webgpu", "FAIL", "-", "no-reference-line")
-        return 1
-    }
-    let deno: string = t_env("FLOW_DENO", "deno")
-    let dir: string = "build/vgpu/" + c[0].id + "-wgsl"
-    ensure_dir(dir)
-    let gen: TList = tl_new()
-    tl_push(&gen, "./flow")
-    tl_push(&gen, "tool")
-    tl_push(&gen, "tools/gpu/main.flow")
-    tl_push(&gen, "--crossing-manifest")
-    tl_push(&gen, "--out")
-    tl_push(&gen, dir)
-    tl_push(&gen, c[0].source)
-    let g: Proc = spawn(&gen, cwd(), "", dir + "/manifest.json", dir + "/emit.err", 180.0)
-    if g.code != 0 {
-        report(c, "webgpu", "FAIL", "-", "wgsl-emit")
-        return 1
-    }
-    let run: TList = tl_new()
-    tl_push(&run, deno)
-    tl_push(&run, "run")
-    tl_push(&run, "--allow-read")
-    tl_push(&run, "tools/gpu_test/webgpu_model.mjs")
-    tl_push(&run, c[0].model)
-    tl_push(&run, dir)
-    tl_push(&run, reference)
-    let out_path: string = dir + "/device.out"
-    let p: Proc = spawn(&run, cwd(), "", out_path, dir + "/device.err", 180.0)
-    if p.code == 127 or p.code == 2 {
-        report(c, "webgpu", "UNSUPPORTED", "-", "device-execution")
-        return 0
-    }
-    let got: string = t_read_file(out_path)
-    if p.code != 0 or not t_contains(got, "WEBGPU_DEVICE_EXECUTED") or not t_contains(got, "match 1") {
-        report(c, "webgpu", "FAIL", "-", "webgpu-mismatch")
-        return 1
-    }
-    report(c, "webgpu", "NUMERICAL", "<=0.0001", "webgpu-device-dispatch")
-    return 0
-}
-
 function run_one(c: ptr<Case>, backend: string, capture: bool) -> i32 {
-    if c[0].job {
+    if t_eq(c[0].renderer, "render-job") {
         return run_job_case(c, backend, capture)
     }
     if not backend_listed(c, backend) {
