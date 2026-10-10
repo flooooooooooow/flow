@@ -75,6 +75,9 @@ function native_ratio(j: ptr<Json>, row: i32) -> string {
 # recorded separately as memory_win. 10% relative sample dispersion is
 # a conservative local noise gate, not a claim of statistical significance.
 function verdict(j: ptr<Json>, row: i32) -> string {
+    if s_len(field_text(j, row, "workload_id")) == 0 {
+        return "unresolved_workload"
+    }
     if not s_eq(field_text(j, row, "semantic_parity_status"), "verified") {
         return "unresolved_parity"
     }
@@ -175,6 +178,12 @@ function main() -> i32 {
     if s_len(sha) == 0 or s_len(os) == 0 or s_len(cpu) == 0 or
        rows < 0 or json_kind(j, rows) != json_kind_array() {
         errln("perf_scorecard: missing system git_sha/os/cpu or benchmarks array")
+        json_free(j)
+        return 2
+    }
+
+    if json_first(j, rows) < 0 {
+        errln("perf_scorecard: no measured benchmark rows")
         json_free(j)
         return 2
     }
