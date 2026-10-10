@@ -233,16 +233,14 @@ static inline const char* __flowc_str_concat(const char* a, const char* b) {
   return r;
 }
 
-__attribute__((unused)) static const char* __flowc_str_concatn_into(char* local, size_t cap, int n, ...) {
-  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;
-  va_start(ap, n);
-  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }
-  va_end(ap);
+__attribute__((unused, always_inline)) static inline const char* __flowc_str_concatn_into(char* local, size_t cap, int n, const char* const* parts) {
+  size_t lens[32]; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;
+  if (n < 0 || n > 32) { return ""; }
+  for (i = 0; i < n; i++) { s = parts[i]; l = s != 0 ? strlen(s) : 0; lens[i] = l; total += l; }
   if (local != 0 && total < cap) { r = local; } else { r = (char*)flow_mem_malloc(total + 1); if (r == 0) { return ""; } flow_mem_note_temp(total + 1); }
   flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, total); off = 0;
-  va_start(ap, n);
-  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { l = strlen(s); if (l != 0) { memcpy(r + off, s, l); off += l; } } }
-  va_end(ap); r[off] = 0; return r;
+  for (i = 0; i < n; i++) { l = lens[i]; if (l != 0) { memcpy(r + off, parts[i], l); off += l; } }
+  r[off] = 0; return r;
 }
 
 __attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {
@@ -74817,12 +74815,15 @@ int32_t flowc_cgen_emit_stack_concat_let(CgenBuf* w, AstArena arena, uint8_t* sr
   flowc_cgen_put_i32(w, let_id);
   flowc_cgen_puts(w, "), ");
   flowc_cgen_put_i32(w, n);
+  flowc_cgen_puts(w, ", (const char* const[]){");
   int32_t i = 0;
   for (; i < (n); i = i + 1) {
+  if (i != 0) {
   flowc_cgen_puts(w, ", ");
+}
   flowc_cgen_emit_concat_operand(w, arena, src, leaves[i]);
 }
-  flowc_cgen_puts(w, ");\n");
+  flowc_cgen_puts(w, "});\n");
   return 1;
 }
 
@@ -85667,16 +85668,14 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
   flowc_cgen_puts((&w), "  return r;\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_putc((&w), 10);
-  flowc_cgen_puts((&w), "__attribute__((unused)) static const char* __flowc_str_concatn_into(char* local, size_t cap, int n, ...) {\n");
-  flowc_cgen_puts((&w), "  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n");
-  flowc_cgen_puts((&w), "  va_start(ap, n);\n");
-  flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }\n");
-  flowc_cgen_puts((&w), "  va_end(ap);\n");
+  flowc_cgen_puts((&w), "__attribute__((unused, always_inline)) static inline const char* __flowc_str_concatn_into(char* local, size_t cap, int n, const char* const* parts) {\n");
+  flowc_cgen_puts((&w), "  size_t lens[32]; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n");
+  flowc_cgen_puts((&w), "  if (n < 0 || n > 32) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) { s = parts[i]; l = s != 0 ? strlen(s) : 0; lens[i] = l; total += l; }\n");
   flowc_cgen_puts((&w), "  if (local != 0 && total < cap) { r = local; } else { r = (char*)flow_mem_malloc(total + 1); if (r == 0) { return \"\"; } flow_mem_note_temp(total + 1); }\n");
   flowc_cgen_puts((&w), "  flow_mem_note_copy_site(FLOW_MEM_SITE_CONCAT, total); off = 0;\n");
-  flowc_cgen_puts((&w), "  va_start(ap, n);\n");
-  flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { l = strlen(s); if (l != 0) { memcpy(r + off, s, l); off += l; } } }\n");
-  flowc_cgen_puts((&w), "  va_end(ap); r[off] = 0; return r;\n");
+  flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) { l = lens[i]; if (l != 0) { memcpy(r + off, parts[i], l); off += l; } }\n");
+  flowc_cgen_puts((&w), "  r[off] = 0; return r;\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_putc((&w), 10);
   flowc_cgen_puts((&w), "__attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {\n");
