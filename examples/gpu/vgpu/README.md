@@ -47,11 +47,26 @@ compositing. `compareRgba` then provides an exact byte comparison primitive.
 | Gradient | `gradient.flow` | emit + exact-pixel | emit + exact-pixel | captured `rgba8unorm` at 160×90, `time=0` |
 | MNIST | `mnist.flow` | source stub | source stub | `UNSUPPORTED` (`tensor-model-execution`) |
 | Depth | `depth_estimation.flow` | source stub | source stub | `UNSUPPORTED` (`tensor-model-execution`) |
+| Instanced rendering | `instanced_rendering.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
+| Batch rendering | `batch_rendering.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
+| Environment map | `environment_map.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
+| Earth | `earth.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
+| Anti-aliasing | `anti_aliasing.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
+| Clipping | `clipping.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
+| Transmission | `transmission.flow` | drawn on device | drawn on device | probes, Metal = WebGPU, captured frame at 128×72 |
 
-The next tranche should deliberately exercise missing capabilities instead of
-adding only fragment effects: textures/samplers, vertex and index buffers,
-instancing, storage textures, multi-pass compute, depth/stencil, cubemaps,
-workgroup memory/barriers, and tensor/model execution.
+The seven render cases (#811) are Flow programs built on
+`lib/stdlib/gpu_render.flow`. Each one declares typed textures, samplers,
+vertex layouts and stage interfaces, builds its vertex and fragment stages
+from typed shader expressions that emit WGSL and Metal together, and runs
+headless: `./flow run examples/gpu/vgpu/earth.flow` draws the frame on the
+Metal device and on a WebGPU adapter under Deno, then checks the program's
+own pixel probes, that the two backends agree, and the captured frame in
+`refs/`. The captured frames come from these programs, not from the
+upstream pages. See [GPU render jobs](../../../docs/library/gpu-render.md).
+
+Still open in the corpus: storage textures, multi-pass compute,
+workgroup memory and barriers, and tensor and model execution.
 
 ## Run the suite
 

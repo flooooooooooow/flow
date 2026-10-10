@@ -65,6 +65,26 @@ shader windows:
 Both Metal (MSL emit) and WebGPU (WGSL emit) must compile the fill and match
 that frozen image.
 
+## Render-job cases
+
+A case whose `renderer` is `render-job` is a Flow program built on
+[GPU render jobs](../library/gpu-render.md) (#811). The runner runs it with
+`FLOW_GPU_BACKENDS` set to the backend. The program draws its frame on the
+real device (the Metal host `runtime/gpu_render_metal.m`, or
+`tools/gpu_render/webgpu_host.mjs` under Deno), checks its own pixel probes
+and compares the frame with its `reference` within the case's
+`channelTolerance`. A frame identical to the reference is `EXACT`, one
+within tolerance `TOLERANCE`. A backend without a device or toolchain is
+`UNSUPPORTED`.
+
+```bash
+./flow gpu test --suite vgpu --all-backends --case earth
+```
+
+`--capture-reference` rewrites a render-job reference from the frame the
+first backend renders. These references pin the Flow scene; they are not
+images of the upstream pages.
+
 ## Numerical cases
 
 MNIST and depth estimation declare `comparison.mode: numerical` and

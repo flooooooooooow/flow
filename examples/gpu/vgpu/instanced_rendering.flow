@@ -1,0 +1,130 @@
+# vgpu compatibility case: https://vgpu.sh/examples/instanced-rendering
+#
+# One cube mesh and one instance stream draw 125,000 independently
+# animated cubes in a single instanced, indexed, depth-tested draw. Each
+# instance carries its grid position and an animation phase; the vertex
+# stage scales and colours the cube from them. The frame is fixed at
+# time 1.5 so it can be compared across Metal and WebGPU.
+#
+#   ./flow run examples/gpu/vgpu/instanced_rendering.flow
+import "stdlib/gpu_render_host.flow"
+import "stdlib/gpu_scene.flow"
+
+const W: i32 = 128
+const H: i32 = 72
+const SIDE: i32 = 50
+const TIME: f32 = 1.5
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+function main() -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("instanced_rendering", W, H, gpu_job_root())
+
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT | GPU_USE_SAMPLED
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let targets: GpuRenderTargets = GpuRenderTargets { color: color, depth: depth, has_depth: true }
+
+    # Vertex stream: position and normal of one cube. Instance stream:
+    # grid position and phase.
+    let a_pos: GpuVertexAttribute = GpuVertexAttribute { location: 0, offset: 0, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_nrm: GpuVertexAttribute = GpuVertexAttribute { location: 1, offset: 12, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_inst: GpuVertexAttribute = GpuVertexAttribute { location: 2, offset: 0, stride: 16, scalar_bytes: 4, components: 4 }
+
+    # Stage interface: world normal and instance colour.
+    let normal_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let color_v: GpuVarying = GpuVarying { location: 1, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_FLAT }
+    let vs_out: array<GpuVarying, 2> = [normal_v, color_v]
+    let fs_in: array<GpuVarying, 2> = [normal_v, color_v]
+
+    let p: ptr<GpuPipeline> = gpu_pipeline_new(job, "cubes", &vs_out[0], 2, &fs_in[0], 2)
+    gpu_pipeline_targets(p, targets)
+    gpu_pipeline_state(p, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_BACK, GPU_DEPTH_WRITE, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(p, 6)
+    gpu_pipeline_vertex_buffer(p, 0, 32, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(p, 0, a_pos)
+    gpu_pipeline_attribute(p, 0, a_nrm)
+    gpu_pipeline_vertex_buffer(p, 1, 16, GPU_STEP_INSTANCE)
+    gpu_pipeline_attribute(p, 1, a_inst)
+
+    # Uniforms: view-projection (0..3), time and grid size (4), light (5).
+    let vs: ptr<GxFn> = gpu_pipeline_vs(p)
+    let inst: GxExpr = gx_attr(vs, 2)
+    let time: GxExpr = gx_x(gx_uvec(vs, 4))
+    let side: GxExpr = gx_y(gx_uvec(vs, 4))
+    let wave: GxExpr = gx_let(vs, gx_sin(gx_add(gx_w(inst), gx_mul(time, gx_f(2.0)))))
+    let scale: GxExpr = gx_let(vs, gx_add(gx_f(0.28), gx_mul(gx_f(0.14), wave)))
+    let lift: GxExpr = gx_mul(wave, gx_f(0.6))
+    let offset: GxExpr = gx_add(gx_xyz(inst), gx_vec3(gx_f(0.0), lift, gx_f(0.0)))
+    let world: GxExpr = gx_let(vs, gx_add(gx_mul(gx_attr(vs, 0), scale), offset))
+    gx_out_position(vs, gx_mul(gx_umat(vs, 0), gx_vec4_of(world, gx_f(1.0))))
+    gx_out(vs, 0, gx_attr(vs, 1))
+    let t: GxExpr = gx_let(vs, gx_add(gx_div(gx_xyz(inst), side), gx_splat(GX_VEC3, gx_f(0.5))))
+    gx_out(vs, 1, gx_mix(gx_vec3(gx_f(0.95), gx_f(0.35), gx_f(0.2)), gx_vec3(gx_f(0.2), gx_f(0.5), gx_f(0.95)),
+        gx_clamp(gx_div(gx_add(gx_x(t), gx_z(t)), gx_f(2.0)), gx_f(0.0), gx_f(1.0))))
+
+    let fs: ptr<GxFn> = gpu_pipeline_fs(p)
+    let n: GxExpr = gx_normalize(gx_in(fs, 0))
+    let light: GxExpr = gx_normalize(gx_xyz(gx_uvec(fs, 5)))
+    let diffuse: GxExpr = gx_max(gx_dot(n, light), gx_f(0.0))
+    let shade: GxExpr = gx_add(gx_f(0.25), gx_mul(gx_f(0.75), diffuse))
+    gx_out_color(fs, gx_vec4_of(gx_mul(gx_in(fs, 1), shade), gx_f(1.0)))
+    let _pid: i32 = gpu_pipeline_finish(p)
+
+    # Geometry and instances.
+    let cube: ptr<GpuMesh> = gpu_mesh_new()
+    gpu_mesh_cube(cube, 1.0, 0)
+    let vb: i32 = gpu_vertex_buffer(job, cube[0].v, cube[0].nv * GPU_MESH_STRIDE)
+    let ib: i32 = gpu_index_buffer(job, cube[0].idx, cube[0].ni)
+    let count: i32 = SIDE * SIDE * SIDE
+    let inst_data: ptr<f32> = calloc((count * 4) as i64, 4) as ptr<f32>
+    let half: f32 = ((SIDE - 1) as f32) * 0.5
+    let mut i: i32 = 0
+    while i < count {
+        let x: i32 = i % SIDE
+        let y: i32 = (i / SIDE) % SIDE
+        let z: i32 = i / (SIDE * SIDE)
+        inst_data[i * 4] = (x as f32) - half
+        inst_data[i * 4 + 1] = (y as f32) - half
+        inst_data[i * 4 + 2] = (z as f32) - half
+        inst_data[i * 4 + 3] = ((x * 7 + y * 13 + z * 3) % 64) as f32 * 0.19634954
+        i = i + 1
+    }
+    let instb: i32 = gpu_vertex_buffer(job, inst_data, count * 4)
+
+    let u: ptr<f32> = calloc(24, 4) as ptr<f32>
+    let proj: ptr<f32> = gpu_m4_new()
+    let view: ptr<f32> = gpu_m4_new()
+    let vp: ptr<f32> = gpu_m4_new()
+    gpu_m4_perspective(proj, 0.8, (W as f32) / (H as f32), 1.0, 400.0)
+    gpu_m4_look_at(view, 62.0, 48.0, 78.0, 0.0, 0.0, 0.0)
+    gpu_m4_mul(vp, proj, view)
+    gpu_m4_store(u, 0, vp)
+    gpu_v4_store(u, 4, TIME, SIDE as f32, 0.0, 0.0)
+    gpu_v4_store(u, 5, 0.4, 0.8, 0.45, 0.0)
+    let ub: i32 = gpu_uniform_buffer(job, u, 6)
+    let g: i32 = gpu_group(job, p, ub)
+
+    let color_t: i32 = gpu_texture(job, color, null)
+    let depth_t: i32 = gpu_texture(job, depth, null)
+    gpu_pass(job, color_t, 0 - 1, depth_t, 0.04, 0.05, 0.08, 1.0)
+    let vbs: array<i32, 2> = [vb, instb]
+    gpu_draw_indexed(job, p, g, &vbs[0], 2, ib, cube[0].ni, count, 0, 0, 0)
+    gpu_output(job, color_t)
+
+    # The corners show the clear colour. The grid fills the middle: cool
+    # blue at the near corner (high x and z), warm at the far top edge.
+    gpu_probe_pixel(job, "background", 0, 0, 10, 13, 20, 255, 1)
+    gpu_probe_dominant(job, "near-corner-blue", 64, 36, 2, 40)
+    gpu_probe_dominant(job, "far-edge-warm", 62, 13, 0, 40)
+    return gpu_job_run(job)
+}

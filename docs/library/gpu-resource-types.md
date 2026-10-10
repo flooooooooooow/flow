@@ -72,12 +72,10 @@ Regression programs (do not require a GPU):
 ./flow run tests/lang/test_gpu_stage_codegen.flow
 ```
 
-These are **not yet** language-level compile-time diagnostics for arbitrary
-render source. A working Metal/WebGPU pipeline host must still create render
-pipelines, configure vertex/index/instance bindings, build and bind textures
-and samplers, create depth/MSAA targets, submit draws and read back images.
-The full instancing, Earth, cubemap and materials compatibility corpus from
-#811 remains unverified; generated source alone is not GPU rendering parity.
+These two emitters cover one fixed sampled-quad stage pair. General stages,
+pipelines and draws on both backends are in
+[GPU render jobs](gpu-render.md), which builds vertex and fragment stages
+from typed expressions and runs them on Metal and WebGPU.
 
 ## Browser WebGPU draw/readback host
 
@@ -121,11 +119,10 @@ Host-side mocks and strict invalid-input tests:
 node --test tests/webgpu/sampled-draw.test.mjs
 ```
 
-**Not yet complete:** A compiler-driven glue layer from arbitrary Flow
-render-stage declarations to these descriptors, WebGPU/Metal feature
-negotiation beyond the portable baseline, and frozen upstream vgpu
-reference-image comparisons on live devices remain. Real shader execution
-is not the same as established vgpu pixel parity.
+This host draws the fixed sampled quad in a browser. The render-job host
+for general pipelines under Deno is `tools/gpu_render/webgpu_host.mjs`
+([GPU render jobs](gpu-render.md)). Feature negotiation beyond the
+portable baseline is not done: the descriptor limits stay conservative.
 
 ## Flow-generated WebGPU textured draw smoke test
 
@@ -156,9 +153,6 @@ The generated shader modules live under
 they are absent, rather than substituting an inline shader. The reference
 is a deterministic single-color texture. It is not an upstream vgpu screenshot.
 
-A unit-test/mock-device result must not be mistaken for evidence of
-physical WebGPU rendering. The remaining #811 acceptance work includes
-driver/device runs, a native Metal render host, general indexed vertex
-layouts and material/lighting pipelines, upstream vgpu reference images
-for instancing/Earth/cubemaps/clipping/transmission, and compile-time
-diagnostics integrated into arbitrary Flow GPU declarations.
+A mock-device result is not evidence of rendering on a device. The
+render-job cases in [GPU render jobs](gpu-render.md) are drawn on the Metal
+device and on a WebGPU adapter and compared pixel by pixel.

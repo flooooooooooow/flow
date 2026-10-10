@@ -1,0 +1,252 @@
+# vgpu compatibility case: https://vgpu.sh/examples/environment-map
+#
+# One environment lights the whole scene: it is the background and the
+# source of every reflection. The upstream example reads a 360 degree
+# equirectangular photo; here the environment is a cube map that this
+# program paints (sky gradient, sun, chequered ground), so the frame is
+# reproducible without an asset. A fullscreen pass draws the sky by view
+# direction, then a mirror sphere and a matte sphere sample the same cube
+# map along the reflected ray and along the normal.
+#
+#   ./flow run examples/gpu/vgpu/environment_map.flow
+import "stdlib/gpu_render_host.flow"
+import "stdlib/gpu_scene.flow"
+
+const W: i32 = 128
+const H: i32 = 72
+const FACE: i32 = 64
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sqrtf(x: f32) -> f32
+    function powf(x: f32, y: f32) -> f32
+    function atan2f(y: f32, x: f32) -> f32
+    function floorf(x: f32) -> f32
+    function tanf(x: f32) -> f32
+}
+
+function clamp01(x: f32) -> f32 {
+    if x < 0.0 { return 0.0 }
+    if x > 1.0 { return 1.0 }
+    return x
+}
+
+function unorm(x: f32) -> u8 {
+    return (clamp01(x) * 255.0 + 0.5) as u8
+}
+
+# The environment radiance along a unit direction, written as rgba8.
+function paint(out: ptr<u8>, o: i32, x: f32, y: f32, z: f32) {
+    let mut r: f32 = 0.0
+    let mut g: f32 = 0.0
+    let mut b: f32 = 0.0
+    if y >= 0.0 {
+        let t: f32 = sqrtf(y)
+        r = 0.86 + (0.16 - 0.86) * t
+        g = 0.78 + (0.36 - 0.78) * t
+        b = 0.66 + (0.78 - 0.66) * t
+        # Sun towards (0.48, 0.42, -0.77).
+        let d: f32 = x * 0.48 + y * 0.42 + z * (0.0 - 0.77)
+        if d > 0.985 {
+            r = 1.0
+            g = 0.97
+            b = 0.85
+        }
+    } else {
+        let az: f32 = atan2f(z, x) * 2.546479
+        let el: f32 = y * 6.0
+        let cell: i32 = (floorf(az) as i32) + (floorf(el) as i32)
+        let mut k: f32 = 0.3
+        if cell % 2 == 0 { k = 0.55 }
+        r = k * 0.8
+        g = k * 0.85
+        b = k * 0.7
+    }
+    out[o] = unorm(r)
+    out[o + 1] = unorm(g)
+    out[o + 2] = unorm(b)
+    out[o + 3] = 255
+}
+
+# Cube faces in the Metal / WebGPU order +x -x +y -y +z -z.
+function paint_cube() -> ptr<u8> {
+    let data: ptr<u8> = calloc((FACE * FACE * 6 * 4) as i64, 1) as ptr<u8>
+    let mut f: i32 = 0
+    while f < 6 {
+        let mut j: i32 = 0
+        while j < FACE {
+            let mut i: i32 = 0
+            while i < FACE {
+                let u: f32 = ((i as f32) + 0.5) / (FACE as f32) * 2.0 - 1.0
+                let v: f32 = ((j as f32) + 0.5) / (FACE as f32) * 2.0 - 1.0
+                let mut x: f32 = 0.0
+                let mut y: f32 = 0.0
+                let mut z: f32 = 0.0
+                if f == 0 { x = 1.0; y = 0.0 - v; z = 0.0 - u }
+                if f == 1 { x = 0.0 - 1.0; y = 0.0 - v; z = u }
+                if f == 2 { x = u; y = 1.0; z = v }
+                if f == 3 { x = u; y = 0.0 - 1.0; z = 0.0 - v }
+                if f == 4 { x = u; y = 0.0 - v; z = 1.0 }
+                if f == 5 { x = 0.0 - u; y = 0.0 - v; z = 0.0 - 1.0 }
+                let l: f32 = sqrtf(x * x + y * y + z * z)
+                paint(data, ((f * FACE + j) * FACE + i) * 4, x / l, y / l, z / l)
+                i = i + 1
+            }
+            j = j + 1
+        }
+        f = f + 1
+    }
+    return data
+}
+
+function main() -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("environment_map", W, H, gpu_job_root())
+
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let env: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA8,
+        width: FACE, height: FACE, layers: 6, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let env_binding: GpuTextureBinding = GpuTextureBinding {
+        slot: 0, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: env
+    }
+    let linear: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_LINEAR,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_CLAMP, address_w: GPU_ADDRESS_CLAMP
+    }
+    let targets: GpuRenderTargets = GpuRenderTargets { color: color, depth: depth, has_depth: true }
+
+    # Camera.
+    let ex: f32 = 0.0
+    let ey: f32 = 0.9
+    let ez: f32 = 4.2
+    let fovy: f32 = 0.9
+    let aspect: f32 = (W as f32) / (H as f32)
+    let proj: ptr<f32> = gpu_m4_new()
+    let view: ptr<f32> = gpu_m4_new()
+    let vp: ptr<f32> = gpu_m4_new()
+    gpu_m4_perspective(proj, fovy, aspect, 0.1, 50.0)
+    gpu_m4_look_at(view, ex, ey, ez, 0.0, 0.0, 0.0)
+    gpu_m4_mul(vp, proj, view)
+
+    # Sky: a fullscreen triangle from vertex_index; the vertex stage turns
+    # each corner into a world-space view direction.
+    let dir_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let sky_out: array<GpuVarying, 1> = [dir_v]
+    let sky_in: array<GpuVarying, 1> = [dir_v]
+    let sky: ptr<GpuPipeline> = gpu_pipeline_new(job, "sky", &sky_out[0], 1, &sky_in[0], 1)
+    gpu_pipeline_targets(sky, targets)
+    gpu_pipeline_state(sky, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_NONE, GPU_DEPTH_ALWAYS, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(sky, 3)
+    gpu_pipeline_texture(sky, env_binding)
+    let svs: ptr<GxFn> = gpu_pipeline_vs(sky)
+    let vid: GxExpr = gx_vertex_index(svs)
+    let cx: GxExpr = gx_let(svs, gx_sub(gx_mul(gx_f32_of(gx_u32_mod(vid, 2)), gx_f(4.0)), gx_f(1.0)))
+    let cy: GxExpr = gx_let(svs, gx_sub(gx_mul(gx_f32_of(gx_u32_div(vid, 2)), gx_f(4.0)), gx_f(1.0)))
+    gx_out_position(svs, gx_vec4(cx, cy, gx_f(1.0), gx_f(1.0)))
+    let right: GxExpr = gx_mul(gx_xyz(gx_uvec(svs, 0)), cx)
+    let up: GxExpr = gx_mul(gx_xyz(gx_uvec(svs, 1)), cy)
+    gx_out(svs, 0, gx_add(gx_add(right, up), gx_xyz(gx_uvec(svs, 2))))
+    let sfs: ptr<GxFn> = gpu_pipeline_fs(sky)
+    gx_out_color(sfs, gx_sample(sfs, 0, gx_normalize(gx_in(sfs, 0))))
+    let _sky_id: i32 = gpu_pipeline_finish(sky)
+
+    # Spheres: per instance (centre, radius) and (tint, metalness).
+    let a_pos: GpuVertexAttribute = GpuVertexAttribute { location: 0, offset: 0, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_place: GpuVertexAttribute = GpuVertexAttribute { location: 1, offset: 0, stride: 32, scalar_bytes: 4, components: 4 }
+    let a_mat: GpuVertexAttribute = GpuVertexAttribute { location: 2, offset: 16, stride: 32, scalar_bytes: 4, components: 4 }
+    let world_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let normal_v: GpuVarying = GpuVarying { location: 1, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let mat_v: GpuVarying = GpuVarying { location: 2, scalar: GPU_SCALAR_F32, components: 4, interpolation: GPU_INTERPOLATE_FLAT }
+    let ball_out: array<GpuVarying, 3> = [world_v, normal_v, mat_v]
+    let ball_in: array<GpuVarying, 3> = [world_v, normal_v, mat_v]
+    let ball: ptr<GpuPipeline> = gpu_pipeline_new(job, "spheres", &ball_out[0], 3, &ball_in[0], 3)
+    gpu_pipeline_targets(ball, targets)
+    gpu_pipeline_state(ball, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_BACK, GPU_DEPTH_WRITE, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(ball, 5)
+    gpu_pipeline_texture(ball, env_binding)
+    gpu_pipeline_vertex_buffer(ball, 0, 32, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(ball, 0, a_pos)
+    gpu_pipeline_vertex_buffer(ball, 1, 32, GPU_STEP_INSTANCE)
+    gpu_pipeline_attribute(ball, 1, a_place)
+    gpu_pipeline_attribute(ball, 1, a_mat)
+    let bvs: ptr<GxFn> = gpu_pipeline_vs(ball)
+    let place: GxExpr = gx_attr(bvs, 1)
+    let unit: GxExpr = gx_let(bvs, gx_attr(bvs, 0))
+    let world: GxExpr = gx_let(bvs, gx_add(gx_mul(unit, gx_w(place)), gx_xyz(place)))
+    gx_out_position(bvs, gx_mul(gx_umat(bvs, 0), gx_vec4_of(world, gx_f(1.0))))
+    gx_out(bvs, 0, world)
+    gx_out(bvs, 1, unit)
+    gx_out(bvs, 2, gx_attr(bvs, 2))
+    let bfs: ptr<GxFn> = gpu_pipeline_fs(ball)
+    let n: GxExpr = gx_let(bfs, gx_normalize(gx_in(bfs, 1)))
+    let view_dir: GxExpr = gx_let(bfs, gx_normalize(gx_sub(gx_in(bfs, 0), gx_xyz(gx_uvec(bfs, 4)))))
+    let mirror: GxExpr = gx_xyz(gx_sample(bfs, 0, gx_reflect(view_dir, n)))
+    let diffuse: GxExpr = gx_xyz(gx_sample(bfs, 0, n))
+    let mat: GxExpr = gx_let(bfs, gx_in(bfs, 2))
+    let cos_v: GxExpr = gx_max(gx_dot(gx_neg(view_dir), n), gx_f(0.0))
+    let fresnel: GxExpr = gx_let(bfs, gx_add(gx_f(0.04), gx_mul(gx_f(0.96), gx_pow(gx_sub(gx_f(1.0), cos_v), gx_f(5.0)))))
+    let metal: GxExpr = gx_mul(mirror, gx_mix(gx_xyz(mat), gx_splat(GX_VEC3, gx_f(1.0)), fresnel))
+    let matte: GxExpr = gx_add(gx_mul(diffuse, gx_xyz(mat)), gx_mul(mirror, fresnel))
+    gx_out_color(bfs, gx_vec4_of(gx_mix(matte, metal, gx_w(mat)), gx_f(1.0)))
+    let _ball_id: i32 = gpu_pipeline_finish(ball)
+
+    # Resources.
+    let env_t: i32 = gpu_texture(job, env, paint_cube())
+    let smp: i32 = gpu_sampler(job, linear)
+
+    let su: ptr<f32> = calloc(12, 4) as ptr<f32>
+    let th: f32 = tanf(fovy * 0.5)
+    # Camera basis from the view matrix rows (s, u, -f).
+    gpu_v4_store(su, 0, view[0] * th * aspect, view[4] * th * aspect, view[8] * th * aspect, 0.0)
+    gpu_v4_store(su, 1, view[1] * th, view[5] * th, view[9] * th, 0.0)
+    gpu_v4_store(su, 2, 0.0 - view[2], 0.0 - view[6], 0.0 - view[10], 0.0)
+    let sky_u: i32 = gpu_uniform_buffer(job, su, 3)
+    let sky_g: i32 = gpu_group(job, sky, sky_u)
+    gpu_group_texture(job, sky, sky_g, 0, env_t, smp)
+
+    let bu: ptr<f32> = calloc(20, 4) as ptr<f32>
+    gpu_m4_store(bu, 0, vp)
+    gpu_v4_store(bu, 4, ex, ey, ez, 1.0)
+    let ball_u: i32 = gpu_uniform_buffer(job, bu, 5)
+    let ball_g: i32 = gpu_group(job, ball, ball_u)
+    gpu_group_texture(job, ball, ball_g, 0, env_t, smp)
+
+    let mesh: ptr<GpuMesh> = gpu_mesh_new()
+    gpu_mesh_uv_sphere(mesh, 1.0, 32, 48, 0)
+    let vb: i32 = gpu_vertex_buffer(job, mesh[0].v, mesh[0].nv * GPU_MESH_STRIDE)
+    let ib: i32 = gpu_index_buffer(job, mesh[0].idx, mesh[0].ni)
+    let inst: ptr<f32> = calloc(16, 4) as ptr<f32>
+    gpu_v4_store(inst, 0, 0.0 - 0.55, 0.0, 0.0, 1.0)
+    gpu_v4_store(inst, 1, 0.95, 0.85, 0.7, 1.0)
+    gpu_v4_store(inst, 2, 1.25, 0.0 - 0.45, 0.9, 0.55)
+    gpu_v4_store(inst, 3, 0.8, 0.25, 0.2, 0.0)
+    let instb: i32 = gpu_vertex_buffer(job, inst, 16)
+
+    let color_t: i32 = gpu_texture(job, color, null)
+    let depth_t: i32 = gpu_texture(job, depth, null)
+    gpu_pass(job, color_t, 0 - 1, depth_t, 0.0, 0.0, 0.0, 1.0)
+    let none: array<i32, 1> = [0]
+    gpu_draw(job, sky, sky_g, &none[0], 0, 3, 1, 0, 0)
+    let vbs: array<i32, 2> = [vb, instb]
+    gpu_draw_indexed(job, ball, ball_g, &vbs[0], 2, ib, mesh[0].ni, 2, 0, 0, 0)
+    gpu_output(job, color_t)
+
+    # Sky above the horizon is bluer than the ground below it; the mirror
+    # sphere shows the sky on its upper half; the matte sphere is red.
+    gpu_probe_dominant(job, "sky", 64, 2, 2, 25)
+    gpu_probe_brighter(job, "sky-over-ground", 64, 2, 5, 65, 150)
+    gpu_probe_dominant(job, "mirror-reflects-sky", 50, 24, 2, 50)
+    gpu_probe_dominant(job, "matte-red", 90, 50, 0, 50)
+    return gpu_job_run(job)
+}

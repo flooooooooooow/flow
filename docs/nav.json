@@ -773,6 +773,10 @@
           "path": "library/gpu-resource-types.md"
         },
         {
+          "label": "GPU Render Jobs",
+          "path": "library/gpu-render.md"
+        },
+        {
           "label": "GPU Tensors",
           "path": "library/gpu-tensor.md"
         },

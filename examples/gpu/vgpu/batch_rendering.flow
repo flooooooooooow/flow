@@ -1,0 +1,143 @@
+# vgpu compatibility case: https://vgpu.sh/examples/batch-rendering
+#
+# Four primitive ranges (cube, pyramid, octahedron, prism) live in one
+# vertex buffer and one index buffer. Four indexed draws select them by
+# first index and base vertex, and pick a per-object transform and colour
+# through first_instance. On WebGPU the draws are recorded once as a
+# render bundle; Metal encodes the same draws directly.
+#
+#   ./flow run examples/gpu/vgpu/batch_rendering.flow
+import "stdlib/gpu_render_host.flow"
+import "stdlib/gpu_scene.flow"
+
+const W: i32 = 128
+const H: i32 = 72
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+function main() -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("batch_rendering", W, H, gpu_job_root())
+
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let targets: GpuRenderTargets = GpuRenderTargets { color: color, depth: depth, has_depth: true }
+
+    let a_pos: GpuVertexAttribute = GpuVertexAttribute { location: 0, offset: 0, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_nrm: GpuVertexAttribute = GpuVertexAttribute { location: 1, offset: 12, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_place: GpuVertexAttribute = GpuVertexAttribute { location: 2, offset: 0, stride: 32, scalar_bytes: 4, components: 4 }
+    let a_tint: GpuVertexAttribute = GpuVertexAttribute { location: 3, offset: 16, stride: 32, scalar_bytes: 4, components: 4 }
+
+    let normal_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let tint_v: GpuVarying = GpuVarying { location: 1, scalar: GPU_SCALAR_F32, components: 4, interpolation: GPU_INTERPOLATE_FLAT }
+    let vs_out: array<GpuVarying, 2> = [normal_v, tint_v]
+    let fs_in: array<GpuVarying, 2> = [normal_v, tint_v]
+
+    let p: ptr<GpuPipeline> = gpu_pipeline_new(job, "batch", &vs_out[0], 2, &fs_in[0], 2)
+    gpu_pipeline_targets(p, targets)
+    gpu_pipeline_state(p, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_BACK, GPU_DEPTH_WRITE, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(p, 5)
+    gpu_pipeline_vertex_buffer(p, 0, 32, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(p, 0, a_pos)
+    gpu_pipeline_attribute(p, 0, a_nrm)
+    gpu_pipeline_vertex_buffer(p, 1, 32, GPU_STEP_INSTANCE)
+    gpu_pipeline_attribute(p, 1, a_place)
+    gpu_pipeline_attribute(p, 1, a_tint)
+
+    # place = (x, y, z, angle about y). Uniforms: view-projection, light.
+    let vs: ptr<GxFn> = gpu_pipeline_vs(p)
+    let place: GxExpr = gx_attr(vs, 2)
+    let c: GxExpr = gx_let(vs, gx_cos(gx_w(place)))
+    let s: GxExpr = gx_let(vs, gx_sin(gx_w(place)))
+    let pos: GxExpr = gx_let(vs, gx_attr(vs, 0))
+    let nrm: GxExpr = gx_let(vs, gx_attr(vs, 1))
+    let rx: GxExpr = gx_add(gx_mul(c, gx_x(pos)), gx_mul(s, gx_z(pos)))
+    let rz: GxExpr = gx_sub(gx_mul(c, gx_z(pos)), gx_mul(s, gx_x(pos)))
+    let world: GxExpr = gx_add(gx_vec3(rx, gx_y(pos), rz), gx_xyz(place))
+    gx_out_position(vs, gx_mul(gx_umat(vs, 0), gx_vec4_of(world, gx_f(1.0))))
+    let nx: GxExpr = gx_add(gx_mul(c, gx_x(nrm)), gx_mul(s, gx_z(nrm)))
+    let nz: GxExpr = gx_sub(gx_mul(c, gx_z(nrm)), gx_mul(s, gx_x(nrm)))
+    gx_out(vs, 0, gx_vec3(nx, gx_y(nrm), nz))
+    gx_out(vs, 1, gx_attr(vs, 3))
+
+    let fs: ptr<GxFn> = gpu_pipeline_fs(p)
+    let n: GxExpr = gx_normalize(gx_in(fs, 0))
+    let diffuse: GxExpr = gx_max(gx_dot(n, gx_normalize(gx_xyz(gx_uvec(fs, 4)))), gx_f(0.0))
+    let shade: GxExpr = gx_add(gx_f(0.3), gx_mul(gx_f(0.7), diffuse))
+    gx_out_color(fs, gx_vec4_of(gx_mul(gx_xyz(gx_in(fs, 1)), shade), gx_f(1.0)))
+    let _pid: i32 = gpu_pipeline_finish(p)
+
+    # One mesh, four ranges. Each range's indices start at 0 for its own
+    # vertices; base_vertex moves them to the range.
+    let mesh: ptr<GpuMesh> = gpu_mesh_new()
+    let first: array<i32, 5> = [0, 0, 0, 0, 0]
+    let base: array<i32, 5> = [0, 0, 0, 0, 0]
+    gpu_mesh_cube(mesh, 0.8, 0)
+    first[1] = mesh[0].ni
+    base[1] = mesh[0].nv
+    gpu_mesh_pyramid(mesh, 0.9, base[1])
+    first[2] = mesh[0].ni
+    base[2] = mesh[0].nv
+    gpu_mesh_octahedron(mesh, 1.1, base[2])
+    first[3] = mesh[0].ni
+    base[3] = mesh[0].nv
+    gpu_mesh_prism(mesh, 0.85, base[3])
+    first[4] = mesh[0].ni
+    base[4] = mesh[0].nv
+
+    let vb: i32 = gpu_vertex_buffer(job, mesh[0].v, mesh[0].nv * GPU_MESH_STRIDE)
+    let ib: i32 = gpu_index_buffer(job, mesh[0].idx, mesh[0].ni)
+
+    let inst: ptr<f32> = calloc(32, 4) as ptr<f32>
+    gpu_v4_store(inst, 0, 0.0 - 3.3, 0.0, 0.0, 0.6)
+    gpu_v4_store(inst, 1, 0.95, 0.42, 0.25, 1.0)
+    gpu_v4_store(inst, 2, 0.0 - 1.1, 0.0, 0.0, 0.3)
+    gpu_v4_store(inst, 3, 0.98, 0.8, 0.25, 1.0)
+    gpu_v4_store(inst, 4, 1.1, 0.0, 0.0, 0.5)
+    gpu_v4_store(inst, 5, 0.3, 0.85, 0.5, 1.0)
+    gpu_v4_store(inst, 6, 3.3, 0.0, 0.0, 0.35)
+    gpu_v4_store(inst, 7, 0.35, 0.55, 0.98, 1.0)
+    let instb: i32 = gpu_vertex_buffer(job, inst, 32)
+
+    let u: ptr<f32> = calloc(20, 4) as ptr<f32>
+    let proj: ptr<f32> = gpu_m4_new()
+    let view: ptr<f32> = gpu_m4_new()
+    let vp: ptr<f32> = gpu_m4_new()
+    gpu_m4_perspective(proj, 0.75, (W as f32) / (H as f32), 0.5, 50.0)
+    gpu_m4_look_at(view, 0.0, 2.6, 7.5, 0.0, 0.0, 0.0)
+    gpu_m4_mul(vp, proj, view)
+    gpu_m4_store(u, 0, vp)
+    gpu_v4_store(u, 4, 0.0 - 0.4, 0.85, 0.35, 0.0)
+    let ub: i32 = gpu_uniform_buffer(job, u, 5)
+    let g: i32 = gpu_group(job, p, ub)
+
+    let color_t: i32 = gpu_texture(job, color, null)
+    let depth_t: i32 = gpu_texture(job, depth, null)
+    gpu_pass(job, color_t, 0 - 1, depth_t, 0.93, 0.93, 0.95, 1.0)
+    let vbs: array<i32, 2> = [vb, instb]
+    gpu_bundle_begin(job)
+    let mut k: i32 = 0
+    while k < 4 {
+        gpu_draw_indexed(job, p, g, &vbs[0], 2, ib, first[k + 1] - first[k], 1, first[k], base[k], k)
+        k = k + 1
+    }
+    gpu_bundle_end(job)
+    gpu_output(job, color_t)
+
+    # Background between the objects; each object shows its own hue.
+    gpu_probe_pixel(job, "background", 2, 2, 237, 237, 242, 255, 1)
+    gpu_probe_dominant(job, "cube-orange", 25, 37, 0, 30)
+    gpu_probe_differ(job, "pyramid-yellow", 52, 40, 2, 2, 150)
+    gpu_probe_dominant(job, "octahedron-green", 76, 30, 1, 50)
+    gpu_probe_dominant(job, "prism-blue", 100, 37, 2, 60)
+    return gpu_job_run(job)
+}
