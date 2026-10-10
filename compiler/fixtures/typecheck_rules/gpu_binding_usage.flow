@@ -1,0 +1,15 @@
+# expect: [GPU055] GpuTextureBinding field 'access': a storage_write binding needs a texture with usage storage
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let b: GpuTextureBinding = GpuTextureBinding {
+        slot: 0, stages: GPU_STAGE_COMPUTE, access: GPU_ACCESS_STORAGE_WRITE, texture: t
+    }
+    if gpu_texture_binding_valid(b) { return 1 }
+    return 0
+}

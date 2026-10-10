@@ -24,6 +24,12 @@ function has(src: string, word: string) -> bool {
     return false
 }
 
+# Invalid descriptors go through runtime(), which flowc does not fold, so
+# the library validators are what reject them (#811).
+function runtime(t: GpuTextureDesc) -> GpuTextureDesc {
+    return t
+}
+
 function main() -> i32 {
     let color: GpuTextureDesc = GpuTextureDesc {
         dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
@@ -45,7 +51,7 @@ function main() -> i32 {
         usage: GPU_USE_DEPTH_ATTACHMENT
     }
     let bad_targets: GpuRenderTargets = GpuRenderTargets {
-        color: color, depth: bad_depth, has_depth: true
+        color: color, depth: runtime(bad_depth), has_depth: true
     }
     if gpu_targets_valid(bad_targets) { return 2 }
 
@@ -93,7 +99,7 @@ function main() -> i32 {
     if not has(gpu_emit_metal_sampled(cp), "texturecube<float>") { return 12 }
 
     let bad_p: GpuSampledPipeline = GpuSampledPipeline {
-        texture: cube, sampler: sampler, targets: targets, varying: vary
+        texture: runtime(cube), sampler: sampler, targets: targets, varying: vary
     }
     if gpu_sampled_pipeline_valid(bad_p) { return 13 }
     if gpu_emit_metal_sampled(bad_p) != "" { return 14 }

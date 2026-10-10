@@ -1,0 +1,12 @@
+# expect: [GPU006] GpuTextureDesc field 'layers': a cube texture needs a multiple of 6 layers, got 5
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA8,
+        width: 8, height: 8, layers: 5, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    if gpu_texture_valid(t) { return 1 }
+    return 0
+}

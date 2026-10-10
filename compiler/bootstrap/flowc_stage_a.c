@@ -18441,6 +18441,8 @@ typedef struct Sem {
   SemIntVec* sy_mut;
   SemIntVec* sy_def;
   SemPtrVec* sy_over;
+  SemIntVec* sy_init;
+  SemIntVec* sy_init_mod;
   SemStrMap* g_scope;
   SemStrVec* ls_name;
   SemIntVec* ls_sym;
@@ -18516,6 +18518,7 @@ typedef struct Sem {
   SemStrMap* cimport_names;
   bool cimport_unknown;
   int32_t root_mod;
+  SemStrMap* gpu_reported;
 } Sem;
 
 #undef DK_FUNC
@@ -18668,7 +18671,7 @@ void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n)
 void sem_field_attribute_errors(Sem* c, const char* struct_name, const char* field_name, int32_t start, int32_t n);
 Sem* sem_new(bool strict) {
   Sem* c = (Sem*)((Sem*)(flow_mem_malloc(8192)));
-  { __typeof__(c->t) __flowc_st691 = sem_tys_new(); c->t = __flowc_st691; }
+  { __typeof__(c->t) __flowc_st700 = sem_tys_new(); c->t = __flowc_st700; }
   c->strict = strict;
   c->check_effect_rows = 1;
   c->safety_profile = 0;
@@ -18689,157 +18692,160 @@ Sem* sem_new(bool strict) {
   c->check_effect_rows = 0;
 }
   c->nm = 0;
-  { __typeof__(c->m_ar) __flowc_st783 = (AstArena*)(flow_mem_malloc((64 * 24))); c->m_ar = __flowc_st783; }
-  { __typeof__(c->m_root) __flowc_st793 = (int32_t*)(flow_mem_malloc((64 * 4))); c->m_root = __flowc_st793; }
-  { __typeof__(c->m_src) __flowc_st804 = (uint8_t**)(flow_mem_malloc((64 * 8))); c->m_src = __flowc_st804; }
-  { __typeof__(c->m_path) __flowc_st814 = (const char**)(flow_mem_malloc((64 * 8))); c->m_path = __flowc_st814; }
-  { __typeof__(c->m_lines) __flowc_st818 = sem_pv_new(); c->m_lines = __flowc_st818; }
-  { __typeof__(c->m_rows) __flowc_st822 = sem_pv_new(); c->m_rows = __flowc_st822; }
+  { __typeof__(c->m_ar) __flowc_st792 = (AstArena*)(flow_mem_malloc((64 * 24))); c->m_ar = __flowc_st792; }
+  { __typeof__(c->m_root) __flowc_st802 = (int32_t*)(flow_mem_malloc((64 * 4))); c->m_root = __flowc_st802; }
+  { __typeof__(c->m_src) __flowc_st813 = (uint8_t**)(flow_mem_malloc((64 * 8))); c->m_src = __flowc_st813; }
+  { __typeof__(c->m_path) __flowc_st823 = (const char**)(flow_mem_malloc((64 * 8))); c->m_path = __flowc_st823; }
+  { __typeof__(c->m_lines) __flowc_st827 = sem_pv_new(); c->m_lines = __flowc_st827; }
+  { __typeof__(c->m_rows) __flowc_st831 = sem_pv_new(); c->m_rows = __flowc_st831; }
   c->cm = (0 - 1);
   c->src = NULL;
   c->pos = 0;
-  { __typeof__(c->d_kind) __flowc_st840 = sem_iv_new(); c->d_kind = __flowc_st840; }
-  { __typeof__(c->d_mod) __flowc_st844 = sem_iv_new(); c->d_mod = __flowc_st844; }
-  { __typeof__(c->d_node) __flowc_st848 = sem_iv_new(); c->d_node = __flowc_st848; }
-  { __typeof__(c->d_name) __flowc_st852 = sem_sv_new(); c->d_name = __flowc_st852; }
-  { __typeof__(c->d_info) __flowc_st856 = sem_iv_new(); c->d_info = __flowc_st856; }
-  { __typeof__(c->d_astart) __flowc_st860 = sem_iv_new(); c->d_astart = __flowc_st860; }
-  { __typeof__(c->d_alen) __flowc_st864 = sem_iv_new(); c->d_alen = __flowc_st864; }
-  { __typeof__(c->attr_pool) __flowc_st868 = sem_sv_new(); c->attr_pool = __flowc_st868; }
-  { __typeof__(c->fi_name) __flowc_st872 = sem_sv_new(); c->fi_name = __flowc_st872; }
-  { __typeof__(c->fi_mangled) __flowc_st876 = sem_sv_new(); c->fi_mangled = __flowc_st876; }
-  { __typeof__(c->fi_mod) __flowc_st880 = sem_iv_new(); c->fi_mod = __flowc_st880; }
-  { __typeof__(c->fi_node) __flowc_st884 = sem_iv_new(); c->fi_node = __flowc_st884; }
-  { __typeof__(c->fi_pstart) __flowc_st888 = sem_iv_new(); c->fi_pstart = __flowc_st888; }
-  { __typeof__(c->fi_plen) __flowc_st892 = sem_iv_new(); c->fi_plen = __flowc_st892; }
-  { __typeof__(c->fi_ret) __flowc_st896 = sem_iv_new(); c->fi_ret = __flowc_st896; }
-  { __typeof__(c->fi_astart) __flowc_st900 = sem_iv_new(); c->fi_astart = __flowc_st900; }
-  { __typeof__(c->fi_alen) __flowc_st904 = sem_iv_new(); c->fi_alen = __flowc_st904; }
-  { __typeof__(c->fi_extern) __flowc_st908 = sem_iv_new(); c->fi_extern = __flowc_st908; }
-  { __typeof__(c->fi_variadic) __flowc_st912 = sem_iv_new(); c->fi_variadic = __flowc_st912; }
-  { __typeof__(c->fi_tpstart) __flowc_st916 = sem_iv_new(); c->fi_tpstart = __flowc_st916; }
-  { __typeof__(c->fi_tplen) __flowc_st920 = sem_iv_new(); c->fi_tplen = __flowc_st920; }
-  { __typeof__(c->fi_estart) __flowc_st924 = sem_iv_new(); c->fi_estart = __flowc_st924; }
-  { __typeof__(c->fi_elen) __flowc_st928 = sem_iv_new(); c->fi_elen = __flowc_st928; }
-  { __typeof__(c->fi_body) __flowc_st932 = sem_iv_new(); c->fi_body = __flowc_st932; }
-  { __typeof__(c->fi_has_self) __flowc_st936 = sem_iv_new(); c->fi_has_self = __flowc_st936; }
-  { __typeof__(c->fp_names) __flowc_st940 = sem_sv_new(); c->fp_names = __flowc_st940; }
-  { __typeof__(c->fp_types) __flowc_st944 = sem_iv_new(); c->fp_types = __flowc_st944; }
-  { __typeof__(c->tp_names) __flowc_st948 = sem_sv_new(); c->tp_names = __flowc_st948; }
-  { __typeof__(c->tp_bounds) __flowc_st952 = sem_sv_new(); c->tp_bounds = __flowc_st952; }
-  { __typeof__(c->ef_pool) __flowc_st956 = sem_sv_new(); c->ef_pool = __flowc_st956; }
-  { __typeof__(c->im_type) __flowc_st960 = sem_sv_new(); c->im_type = __flowc_st960; }
-  { __typeof__(c->im_trait) __flowc_st964 = sem_sv_new(); c->im_trait = __flowc_st964; }
-  { __typeof__(c->im_methods) __flowc_st968 = sem_pv_new(); c->im_methods = __flowc_st968; }
-  { __typeof__(c->se_name) __flowc_st972 = sem_sv_new(); c->se_name = __flowc_st972; }
-  { __typeof__(c->se_kind) __flowc_st976 = sem_iv_new(); c->se_kind = __flowc_st976; }
-  { __typeof__(c->se_fstart) __flowc_st980 = sem_iv_new(); c->se_fstart = __flowc_st980; }
-  { __typeof__(c->se_flen) __flowc_st984 = sem_iv_new(); c->se_flen = __flowc_st984; }
-  { __typeof__(c->se_base) __flowc_st988 = sem_iv_new(); c->se_base = __flowc_st988; }
-  { __typeof__(c->se_tpstart) __flowc_st992 = sem_iv_new(); c->se_tpstart = __flowc_st992; }
-  { __typeof__(c->se_tplen) __flowc_st996 = sem_iv_new(); c->se_tplen = __flowc_st996; }
-  { __typeof__(c->se_decl) __flowc_st1000 = sem_iv_new(); c->se_decl = __flowc_st1000; }
-  { __typeof__(c->sf_names) __flowc_st1004 = sem_sv_new(); c->sf_names = __flowc_st1004; }
-  { __typeof__(c->sf_types) __flowc_st1008 = sem_iv_new(); c->sf_types = __flowc_st1008; }
-  { __typeof__(c->sf_domains) __flowc_st1012 = sem_iv_new(); c->sf_domains = __flowc_st1012; }
-  { __typeof__(c->struct_types) __flowc_st1016 = sem_sm_new(); c->struct_types = __flowc_st1016; }
-  { __typeof__(c->generic_struct_types) __flowc_st1020 = sem_sm_new(); c->generic_struct_types = __flowc_st1020; }
-  { __typeof__(c->opaque_c_types) __flowc_st1024 = sem_sm_new(); c->opaque_c_types = __flowc_st1024; }
-  { __typeof__(c->generic_function_decls) __flowc_st1028 = sem_sm_new(); c->generic_function_decls = __flowc_st1028; }
-  { __typeof__(c->active_type_params) __flowc_st1032 = sem_sv_new(); c->active_type_params = __flowc_st1032; }
-  { __typeof__(c->effect_types) __flowc_st1036 = sem_sm_new(); c->effect_types = __flowc_st1036; }
-  { __typeof__(c->capability_types) __flowc_st1040 = sem_sm_new(); c->capability_types = __flowc_st1040; }
-  { __typeof__(c->enum_decls) __flowc_st1044 = sem_sm_new(); c->enum_decls = __flowc_st1044; }
-  { __typeof__(c->enum_variant_owner) __flowc_st1048 = sem_sm_new(); c->enum_variant_owner = __flowc_st1048; }
-  { __typeof__(c->trait_types) __flowc_st1052 = sem_sm_new(); c->trait_types = __flowc_st1052; }
-  { __typeof__(c->impl_pairs) __flowc_st1056 = sem_sm_new(); c->impl_pairs = __flowc_st1056; }
-  { __typeof__(c->impl_methods) __flowc_st1060 = sem_sm_new(); c->impl_methods = __flowc_st1060; }
-  { __typeof__(c->impl_method_lists) __flowc_st1064 = sem_pv_new(); c->impl_method_lists = __flowc_st1064; }
-  { __typeof__(c->unit_base_order) __flowc_st1068 = sem_sv_new(); c->unit_base_order = __flowc_st1068; }
-  { __typeof__(c->unit_dims) __flowc_st1072 = sem_sm_new(); c->unit_dims = __flowc_st1072; }
-  { __typeof__(c->unit_dim_list) __flowc_st1076 = sem_pv_new(); c->unit_dim_list = __flowc_st1076; }
-  { __typeof__(c->unit_canonical) __flowc_st1080 = sem_sm_new(); c->unit_canonical = __flowc_st1080; }
-  { __typeof__(c->unit_canonical_names) __flowc_st1084 = sem_sv_new(); c->unit_canonical_names = __flowc_st1084; }
-  { __typeof__(c->sy_name) __flowc_st1088 = sem_sv_new(); c->sy_name = __flowc_st1088; }
-  { __typeof__(c->sy_type) __flowc_st1092 = sem_iv_new(); c->sy_type = __flowc_st1092; }
-  { __typeof__(c->sy_kind) __flowc_st1096 = sem_iv_new(); c->sy_kind = __flowc_st1096; }
-  { __typeof__(c->sy_mut) __flowc_st1100 = sem_iv_new(); c->sy_mut = __flowc_st1100; }
-  { __typeof__(c->sy_def) __flowc_st1104 = sem_iv_new(); c->sy_def = __flowc_st1104; }
-  { __typeof__(c->sy_over) __flowc_st1108 = sem_pv_new(); c->sy_over = __flowc_st1108; }
-  { __typeof__(c->g_scope) __flowc_st1112 = sem_sm_new(); c->g_scope = __flowc_st1112; }
-  { __typeof__(c->ls_name) __flowc_st1116 = sem_sv_new(); c->ls_name = __flowc_st1116; }
-  { __typeof__(c->ls_sym) __flowc_st1120 = sem_iv_new(); c->ls_sym = __flowc_st1120; }
-  { __typeof__(c->frames) __flowc_st1124 = sem_iv_new(); c->frames = __flowc_st1124; }
-  { __typeof__(c->errors) __flowc_st1128 = sem_sv_new(); c->errors = __flowc_st1128; }
-  { __typeof__(c->err_mod) __flowc_st1132 = sem_iv_new(); c->err_mod = __flowc_st1132; }
-  { __typeof__(c->err_pos) __flowc_st1136 = sem_iv_new(); c->err_pos = __flowc_st1136; }
-  { __typeof__(c->fatal) __flowc_st1140 = sem_sv_new(); c->fatal = __flowc_st1140; }
-  { __typeof__(c->warnings) __flowc_st1144 = sem_sv_new(); c->warnings = __flowc_st1144; }
-  { __typeof__(c->warn_mod) __flowc_st1148 = sem_iv_new(); c->warn_mod = __flowc_st1148; }
-  { __typeof__(c->warn_pos) __flowc_st1152 = sem_iv_new(); c->warn_pos = __flowc_st1152; }
+  { __typeof__(c->d_kind) __flowc_st849 = sem_iv_new(); c->d_kind = __flowc_st849; }
+  { __typeof__(c->d_mod) __flowc_st853 = sem_iv_new(); c->d_mod = __flowc_st853; }
+  { __typeof__(c->d_node) __flowc_st857 = sem_iv_new(); c->d_node = __flowc_st857; }
+  { __typeof__(c->d_name) __flowc_st861 = sem_sv_new(); c->d_name = __flowc_st861; }
+  { __typeof__(c->d_info) __flowc_st865 = sem_iv_new(); c->d_info = __flowc_st865; }
+  { __typeof__(c->d_astart) __flowc_st869 = sem_iv_new(); c->d_astart = __flowc_st869; }
+  { __typeof__(c->d_alen) __flowc_st873 = sem_iv_new(); c->d_alen = __flowc_st873; }
+  { __typeof__(c->attr_pool) __flowc_st877 = sem_sv_new(); c->attr_pool = __flowc_st877; }
+  { __typeof__(c->fi_name) __flowc_st881 = sem_sv_new(); c->fi_name = __flowc_st881; }
+  { __typeof__(c->fi_mangled) __flowc_st885 = sem_sv_new(); c->fi_mangled = __flowc_st885; }
+  { __typeof__(c->fi_mod) __flowc_st889 = sem_iv_new(); c->fi_mod = __flowc_st889; }
+  { __typeof__(c->fi_node) __flowc_st893 = sem_iv_new(); c->fi_node = __flowc_st893; }
+  { __typeof__(c->fi_pstart) __flowc_st897 = sem_iv_new(); c->fi_pstart = __flowc_st897; }
+  { __typeof__(c->fi_plen) __flowc_st901 = sem_iv_new(); c->fi_plen = __flowc_st901; }
+  { __typeof__(c->fi_ret) __flowc_st905 = sem_iv_new(); c->fi_ret = __flowc_st905; }
+  { __typeof__(c->fi_astart) __flowc_st909 = sem_iv_new(); c->fi_astart = __flowc_st909; }
+  { __typeof__(c->fi_alen) __flowc_st913 = sem_iv_new(); c->fi_alen = __flowc_st913; }
+  { __typeof__(c->fi_extern) __flowc_st917 = sem_iv_new(); c->fi_extern = __flowc_st917; }
+  { __typeof__(c->fi_variadic) __flowc_st921 = sem_iv_new(); c->fi_variadic = __flowc_st921; }
+  { __typeof__(c->fi_tpstart) __flowc_st925 = sem_iv_new(); c->fi_tpstart = __flowc_st925; }
+  { __typeof__(c->fi_tplen) __flowc_st929 = sem_iv_new(); c->fi_tplen = __flowc_st929; }
+  { __typeof__(c->fi_estart) __flowc_st933 = sem_iv_new(); c->fi_estart = __flowc_st933; }
+  { __typeof__(c->fi_elen) __flowc_st937 = sem_iv_new(); c->fi_elen = __flowc_st937; }
+  { __typeof__(c->fi_body) __flowc_st941 = sem_iv_new(); c->fi_body = __flowc_st941; }
+  { __typeof__(c->fi_has_self) __flowc_st945 = sem_iv_new(); c->fi_has_self = __flowc_st945; }
+  { __typeof__(c->fp_names) __flowc_st949 = sem_sv_new(); c->fp_names = __flowc_st949; }
+  { __typeof__(c->fp_types) __flowc_st953 = sem_iv_new(); c->fp_types = __flowc_st953; }
+  { __typeof__(c->tp_names) __flowc_st957 = sem_sv_new(); c->tp_names = __flowc_st957; }
+  { __typeof__(c->tp_bounds) __flowc_st961 = sem_sv_new(); c->tp_bounds = __flowc_st961; }
+  { __typeof__(c->ef_pool) __flowc_st965 = sem_sv_new(); c->ef_pool = __flowc_st965; }
+  { __typeof__(c->im_type) __flowc_st969 = sem_sv_new(); c->im_type = __flowc_st969; }
+  { __typeof__(c->im_trait) __flowc_st973 = sem_sv_new(); c->im_trait = __flowc_st973; }
+  { __typeof__(c->im_methods) __flowc_st977 = sem_pv_new(); c->im_methods = __flowc_st977; }
+  { __typeof__(c->se_name) __flowc_st981 = sem_sv_new(); c->se_name = __flowc_st981; }
+  { __typeof__(c->se_kind) __flowc_st985 = sem_iv_new(); c->se_kind = __flowc_st985; }
+  { __typeof__(c->se_fstart) __flowc_st989 = sem_iv_new(); c->se_fstart = __flowc_st989; }
+  { __typeof__(c->se_flen) __flowc_st993 = sem_iv_new(); c->se_flen = __flowc_st993; }
+  { __typeof__(c->se_base) __flowc_st997 = sem_iv_new(); c->se_base = __flowc_st997; }
+  { __typeof__(c->se_tpstart) __flowc_st1001 = sem_iv_new(); c->se_tpstart = __flowc_st1001; }
+  { __typeof__(c->se_tplen) __flowc_st1005 = sem_iv_new(); c->se_tplen = __flowc_st1005; }
+  { __typeof__(c->se_decl) __flowc_st1009 = sem_iv_new(); c->se_decl = __flowc_st1009; }
+  { __typeof__(c->sf_names) __flowc_st1013 = sem_sv_new(); c->sf_names = __flowc_st1013; }
+  { __typeof__(c->sf_types) __flowc_st1017 = sem_iv_new(); c->sf_types = __flowc_st1017; }
+  { __typeof__(c->sf_domains) __flowc_st1021 = sem_iv_new(); c->sf_domains = __flowc_st1021; }
+  { __typeof__(c->struct_types) __flowc_st1025 = sem_sm_new(); c->struct_types = __flowc_st1025; }
+  { __typeof__(c->generic_struct_types) __flowc_st1029 = sem_sm_new(); c->generic_struct_types = __flowc_st1029; }
+  { __typeof__(c->opaque_c_types) __flowc_st1033 = sem_sm_new(); c->opaque_c_types = __flowc_st1033; }
+  { __typeof__(c->generic_function_decls) __flowc_st1037 = sem_sm_new(); c->generic_function_decls = __flowc_st1037; }
+  { __typeof__(c->active_type_params) __flowc_st1041 = sem_sv_new(); c->active_type_params = __flowc_st1041; }
+  { __typeof__(c->effect_types) __flowc_st1045 = sem_sm_new(); c->effect_types = __flowc_st1045; }
+  { __typeof__(c->capability_types) __flowc_st1049 = sem_sm_new(); c->capability_types = __flowc_st1049; }
+  { __typeof__(c->enum_decls) __flowc_st1053 = sem_sm_new(); c->enum_decls = __flowc_st1053; }
+  { __typeof__(c->enum_variant_owner) __flowc_st1057 = sem_sm_new(); c->enum_variant_owner = __flowc_st1057; }
+  { __typeof__(c->trait_types) __flowc_st1061 = sem_sm_new(); c->trait_types = __flowc_st1061; }
+  { __typeof__(c->impl_pairs) __flowc_st1065 = sem_sm_new(); c->impl_pairs = __flowc_st1065; }
+  { __typeof__(c->impl_methods) __flowc_st1069 = sem_sm_new(); c->impl_methods = __flowc_st1069; }
+  { __typeof__(c->impl_method_lists) __flowc_st1073 = sem_pv_new(); c->impl_method_lists = __flowc_st1073; }
+  { __typeof__(c->unit_base_order) __flowc_st1077 = sem_sv_new(); c->unit_base_order = __flowc_st1077; }
+  { __typeof__(c->unit_dims) __flowc_st1081 = sem_sm_new(); c->unit_dims = __flowc_st1081; }
+  { __typeof__(c->unit_dim_list) __flowc_st1085 = sem_pv_new(); c->unit_dim_list = __flowc_st1085; }
+  { __typeof__(c->unit_canonical) __flowc_st1089 = sem_sm_new(); c->unit_canonical = __flowc_st1089; }
+  { __typeof__(c->unit_canonical_names) __flowc_st1093 = sem_sv_new(); c->unit_canonical_names = __flowc_st1093; }
+  { __typeof__(c->sy_name) __flowc_st1097 = sem_sv_new(); c->sy_name = __flowc_st1097; }
+  { __typeof__(c->sy_type) __flowc_st1101 = sem_iv_new(); c->sy_type = __flowc_st1101; }
+  { __typeof__(c->sy_kind) __flowc_st1105 = sem_iv_new(); c->sy_kind = __flowc_st1105; }
+  { __typeof__(c->sy_mut) __flowc_st1109 = sem_iv_new(); c->sy_mut = __flowc_st1109; }
+  { __typeof__(c->sy_def) __flowc_st1113 = sem_iv_new(); c->sy_def = __flowc_st1113; }
+  { __typeof__(c->sy_over) __flowc_st1117 = sem_pv_new(); c->sy_over = __flowc_st1117; }
+  { __typeof__(c->sy_init) __flowc_st1121 = sem_iv_new(); c->sy_init = __flowc_st1121; }
+  { __typeof__(c->sy_init_mod) __flowc_st1125 = sem_iv_new(); c->sy_init_mod = __flowc_st1125; }
+  { __typeof__(c->gpu_reported) __flowc_st1129 = sem_sm_new(); c->gpu_reported = __flowc_st1129; }
+  { __typeof__(c->g_scope) __flowc_st1133 = sem_sm_new(); c->g_scope = __flowc_st1133; }
+  { __typeof__(c->ls_name) __flowc_st1137 = sem_sv_new(); c->ls_name = __flowc_st1137; }
+  { __typeof__(c->ls_sym) __flowc_st1141 = sem_iv_new(); c->ls_sym = __flowc_st1141; }
+  { __typeof__(c->frames) __flowc_st1145 = sem_iv_new(); c->frames = __flowc_st1145; }
+  { __typeof__(c->errors) __flowc_st1149 = sem_sv_new(); c->errors = __flowc_st1149; }
+  { __typeof__(c->err_mod) __flowc_st1153 = sem_iv_new(); c->err_mod = __flowc_st1153; }
+  { __typeof__(c->err_pos) __flowc_st1157 = sem_iv_new(); c->err_pos = __flowc_st1157; }
+  { __typeof__(c->fatal) __flowc_st1161 = sem_sv_new(); c->fatal = __flowc_st1161; }
+  { __typeof__(c->warnings) __flowc_st1165 = sem_sv_new(); c->warnings = __flowc_st1165; }
+  { __typeof__(c->warn_mod) __flowc_st1169 = sem_iv_new(); c->warn_mod = __flowc_st1169; }
+  { __typeof__(c->warn_pos) __flowc_st1173 = sem_iv_new(); c->warn_pos = __flowc_st1173; }
   c->relax_c_strings = 0;
   c->return_sink = NULL;
-  { __typeof__(c->reason_pool) __flowc_st1164 = sem_sv_new(); c->reason_pool = __flowc_st1164; }
-  { __typeof__(c->rt_unsafe_reason) __flowc_st1168 = sem_sm_new(); c->rt_unsafe_reason = __flowc_st1168; }
-  { __typeof__(c->heap_unsafe_reason) __flowc_st1172 = sem_sm_new(); c->heap_unsafe_reason = __flowc_st1172; }
+  { __typeof__(c->reason_pool) __flowc_st1185 = sem_sv_new(); c->reason_pool = __flowc_st1185; }
+  { __typeof__(c->rt_unsafe_reason) __flowc_st1189 = sem_sm_new(); c->rt_unsafe_reason = __flowc_st1189; }
+  { __typeof__(c->heap_unsafe_reason) __flowc_st1193 = sem_sm_new(); c->heap_unsafe_reason = __flowc_st1193; }
   c->current_rt_safe_fn = NULL;
   c->current_safe_fn = NULL;
   c->rt_safe_from_domain = 0;
-  { __typeof__(c->handler_stack) __flowc_st1188 = sem_pv_new(); c->handler_stack = __flowc_st1188; }
+  { __typeof__(c->handler_stack) __flowc_st1209 = sem_pv_new(); c->handler_stack = __flowc_st1209; }
   sem_pv_push(c->handler_stack, (void*)(sem_sv_new()));
   c->current_function_name = NULL;
-  { __typeof__(c->function_effects) __flowc_st1204 = sem_sm_new(); c->function_effects = __flowc_st1204; }
-  { __typeof__(c->function_effect_lists) __flowc_st1208 = sem_pv_new(); c->function_effect_lists = __flowc_st1208; }
-  { __typeof__(c->function_decls) __flowc_st1212 = sem_sm_new(); c->function_decls = __flowc_st1212; }
-  { __typeof__(c->static_names) __flowc_st1216 = sem_sm_new(); c->static_names = __flowc_st1216; }
-  { __typeof__(c->local_storage) __flowc_st1220 = sem_sv_new(); c->local_storage = __flowc_st1220; }
-  { __typeof__(c->span_origin) __flowc_st1224 = sem_sm_new(); c->span_origin = __flowc_st1224; }
-  { __typeof__(c->heap_roots) __flowc_st1228 = sem_sm_new(); c->heap_roots = __flowc_st1228; }
-  { __typeof__(c->origin_pool) __flowc_st1232 = sem_sv_new(); c->origin_pool = __flowc_st1232; }
+  { __typeof__(c->function_effects) __flowc_st1225 = sem_sm_new(); c->function_effects = __flowc_st1225; }
+  { __typeof__(c->function_effect_lists) __flowc_st1229 = sem_pv_new(); c->function_effect_lists = __flowc_st1229; }
+  { __typeof__(c->function_decls) __flowc_st1233 = sem_sm_new(); c->function_decls = __flowc_st1233; }
+  { __typeof__(c->static_names) __flowc_st1237 = sem_sm_new(); c->static_names = __flowc_st1237; }
+  { __typeof__(c->local_storage) __flowc_st1241 = sem_sv_new(); c->local_storage = __flowc_st1241; }
+  { __typeof__(c->span_origin) __flowc_st1245 = sem_sm_new(); c->span_origin = __flowc_st1245; }
+  { __typeof__(c->heap_roots) __flowc_st1249 = sem_sm_new(); c->heap_roots = __flowc_st1249; }
+  { __typeof__(c->origin_pool) __flowc_st1253 = sem_sv_new(); c->origin_pool = __flowc_st1253; }
   c->current_return_type = (0 - 1);
-  { __typeof__(c->function_domains) __flowc_st1242 = sem_sm_new(); c->function_domains = __flowc_st1242; }
-  { __typeof__(c->static_domains) __flowc_st1246 = sem_sm_new(); c->static_domains = __flowc_st1246; }
+  { __typeof__(c->function_domains) __flowc_st1263 = sem_sm_new(); c->function_domains = __flowc_st1263; }
+  { __typeof__(c->static_domains) __flowc_st1267 = sem_sm_new(); c->static_domains = __flowc_st1267; }
   c->current_domain = (0 - 1);
-  { __typeof__(c->rdc_names) __flowc_st1256 = sem_sv_new(); c->rdc_names = __flowc_st1256; }
-  { __typeof__(c->rdc_index) __flowc_st1260 = sem_sm_new(); c->rdc_index = __flowc_st1260; }
-  { __typeof__(c->rdc_sets) __flowc_st1264 = sem_pv_new(); c->rdc_sets = __flowc_st1264; }
-  { __typeof__(c->domain_reported) __flowc_st1268 = sem_sm_new(); c->domain_reported = __flowc_st1268; }
-  { __typeof__(c->rt_site_fn) __flowc_st1272 = sem_sv_new(); c->rt_site_fn = __flowc_st1272; }
-  { __typeof__(c->rt_site_name) __flowc_st1276 = sem_sv_new(); c->rt_site_name = __flowc_st1276; }
-  { __typeof__(c->rt_site_dom) __flowc_st1280 = sem_iv_new(); c->rt_site_dom = __flowc_st1280; }
-  { __typeof__(c->rt_sum_bits) __flowc_st1284 = sem_sm_new(); c->rt_sum_bits = __flowc_st1284; }
-  { __typeof__(c->rt_sum_dom) __flowc_st1288 = sem_sm_new(); c->rt_sum_dom = __flowc_st1288; }
-  { __typeof__(c->rt_sum_prov) __flowc_st1292 = sem_sm_new(); c->rt_sum_prov = __flowc_st1292; }
-  { __typeof__(c->rt_binding_target) __flowc_st1296 = sem_sv_new(); c->rt_binding_target = __flowc_st1296; }
-  { __typeof__(c->rt_binding_fn) __flowc_st1300 = sem_sv_new(); c->rt_binding_fn = __flowc_st1300; }
+  { __typeof__(c->rdc_names) __flowc_st1277 = sem_sv_new(); c->rdc_names = __flowc_st1277; }
+  { __typeof__(c->rdc_index) __flowc_st1281 = sem_sm_new(); c->rdc_index = __flowc_st1281; }
+  { __typeof__(c->rdc_sets) __flowc_st1285 = sem_pv_new(); c->rdc_sets = __flowc_st1285; }
+  { __typeof__(c->domain_reported) __flowc_st1289 = sem_sm_new(); c->domain_reported = __flowc_st1289; }
+  { __typeof__(c->rt_site_fn) __flowc_st1293 = sem_sv_new(); c->rt_site_fn = __flowc_st1293; }
+  { __typeof__(c->rt_site_name) __flowc_st1297 = sem_sv_new(); c->rt_site_name = __flowc_st1297; }
+  { __typeof__(c->rt_site_dom) __flowc_st1301 = sem_iv_new(); c->rt_site_dom = __flowc_st1301; }
+  { __typeof__(c->rt_sum_bits) __flowc_st1305 = sem_sm_new(); c->rt_sum_bits = __flowc_st1305; }
+  { __typeof__(c->rt_sum_dom) __flowc_st1309 = sem_sm_new(); c->rt_sum_dom = __flowc_st1309; }
+  { __typeof__(c->rt_sum_prov) __flowc_st1313 = sem_sm_new(); c->rt_sum_prov = __flowc_st1313; }
+  { __typeof__(c->rt_binding_target) __flowc_st1317 = sem_sv_new(); c->rt_binding_target = __flowc_st1317; }
+  { __typeof__(c->rt_binding_fn) __flowc_st1321 = sem_sv_new(); c->rt_binding_fn = __flowc_st1321; }
   c->closure_count = 0;
-  { __typeof__(c->closure_by_key) __flowc_st1308 = sem_sm_new(); c->closure_by_key = __flowc_st1308; }
-  { __typeof__(c->closure_names) __flowc_st1312 = sem_sv_new(); c->closure_names = __flowc_st1312; }
-  { __typeof__(c->rt_cap_fn) __flowc_st1316 = sem_sv_new(); c->rt_cap_fn = __flowc_st1316; }
-  { __typeof__(c->rt_cap_name) __flowc_st1320 = sem_sv_new(); c->rt_cap_name = __flowc_st1320; }
-  { __typeof__(c->rt_cap_kind) __flowc_st1324 = sem_iv_new(); c->rt_cap_kind = __flowc_st1324; }
-  { __typeof__(c->dom_site_fn) __flowc_st1328 = sem_sv_new(); c->dom_site_fn = __flowc_st1328; }
-  { __typeof__(c->dom_site_name) __flowc_st1332 = sem_sv_new(); c->dom_site_name = __flowc_st1332; }
-  { __typeof__(c->esc_static) __flowc_st1336 = sem_sm_new(); c->esc_static = __flowc_st1336; }
-  { __typeof__(c->esc_return) __flowc_st1340 = sem_sm_new(); c->esc_return = __flowc_st1340; }
-  { __typeof__(c->prop_keys) __flowc_st1344 = sem_sv_new(); c->prop_keys = __flowc_st1344; }
-  { __typeof__(c->prop_index) __flowc_st1348 = sem_sm_new(); c->prop_index = __flowc_st1348; }
-  { __typeof__(c->prop_sets) __flowc_st1352 = sem_pv_new(); c->prop_sets = __flowc_st1352; }
-  { __typeof__(c->ref_seen) __flowc_st1356 = sem_sm_new(); c->ref_seen = __flowc_st1356; }
-  { __typeof__(c->ref_key) __flowc_st1360 = sem_sv_new(); c->ref_key = __flowc_st1360; }
-  { __typeof__(c->ref_caller) __flowc_st1364 = sem_sv_new(); c->ref_caller = __flowc_st1364; }
-  { __typeof__(c->ref_callee) __flowc_st1368 = sem_sv_new(); c->ref_callee = __flowc_st1368; }
-  { __typeof__(c->ref_idx) __flowc_st1372 = sem_iv_new(); c->ref_idx = __flowc_st1372; }
-  { __typeof__(c->ref_origin) __flowc_st1376 = sem_sv_new(); c->ref_origin = __flowc_st1376; }
-  { __typeof__(c->ref_loc) __flowc_st1380 = sem_sv_new(); c->ref_loc = __flowc_st1380; }
+  { __typeof__(c->closure_by_key) __flowc_st1329 = sem_sm_new(); c->closure_by_key = __flowc_st1329; }
+  { __typeof__(c->closure_names) __flowc_st1333 = sem_sv_new(); c->closure_names = __flowc_st1333; }
+  { __typeof__(c->rt_cap_fn) __flowc_st1337 = sem_sv_new(); c->rt_cap_fn = __flowc_st1337; }
+  { __typeof__(c->rt_cap_name) __flowc_st1341 = sem_sv_new(); c->rt_cap_name = __flowc_st1341; }
+  { __typeof__(c->rt_cap_kind) __flowc_st1345 = sem_iv_new(); c->rt_cap_kind = __flowc_st1345; }
+  { __typeof__(c->dom_site_fn) __flowc_st1349 = sem_sv_new(); c->dom_site_fn = __flowc_st1349; }
+  { __typeof__(c->dom_site_name) __flowc_st1353 = sem_sv_new(); c->dom_site_name = __flowc_st1353; }
+  { __typeof__(c->esc_static) __flowc_st1357 = sem_sm_new(); c->esc_static = __flowc_st1357; }
+  { __typeof__(c->esc_return) __flowc_st1361 = sem_sm_new(); c->esc_return = __flowc_st1361; }
+  { __typeof__(c->prop_keys) __flowc_st1365 = sem_sv_new(); c->prop_keys = __flowc_st1365; }
+  { __typeof__(c->prop_index) __flowc_st1369 = sem_sm_new(); c->prop_index = __flowc_st1369; }
+  { __typeof__(c->prop_sets) __flowc_st1373 = sem_pv_new(); c->prop_sets = __flowc_st1373; }
+  { __typeof__(c->ref_seen) __flowc_st1377 = sem_sm_new(); c->ref_seen = __flowc_st1377; }
+  { __typeof__(c->ref_key) __flowc_st1381 = sem_sv_new(); c->ref_key = __flowc_st1381; }
+  { __typeof__(c->ref_caller) __flowc_st1385 = sem_sv_new(); c->ref_caller = __flowc_st1385; }
+  { __typeof__(c->ref_callee) __flowc_st1389 = sem_sv_new(); c->ref_callee = __flowc_st1389; }
+  { __typeof__(c->ref_idx) __flowc_st1393 = sem_iv_new(); c->ref_idx = __flowc_st1393; }
+  { __typeof__(c->ref_origin) __flowc_st1397 = sem_sv_new(); c->ref_origin = __flowc_st1397; }
+  { __typeof__(c->ref_loc) __flowc_st1401 = sem_sv_new(); c->ref_loc = __flowc_st1401; }
   c->stmt_node = (0 - 1);
   c->has_cimport = 0;
-  { __typeof__(c->fork_src) __flowc_st1394 = sem_sm_new(); c->fork_src = __flowc_st1394; }
-  { __typeof__(c->fork_sigs) __flowc_st1398 = sem_sm_new(); c->fork_sigs = __flowc_st1398; }
+  { __typeof__(c->fork_src) __flowc_st1415 = sem_sm_new(); c->fork_src = __flowc_st1415; }
+  { __typeof__(c->fork_sigs) __flowc_st1419 = sem_sm_new(); c->fork_sigs = __flowc_st1419; }
   c->fork_count = 0;
   c->pos_lock = 0;
-  { __typeof__(c->cimport_headers) __flowc_st1410 = sem_sv_new(); c->cimport_headers = __flowc_st1410; }
-  { __typeof__(c->cimport_names) __flowc_st1414 = sem_sm_new(); c->cimport_names = __flowc_st1414; }
+  { __typeof__(c->cimport_headers) __flowc_st1431 = sem_sv_new(); c->cimport_headers = __flowc_st1431; }
+  { __typeof__(c->cimport_names) __flowc_st1435 = sem_sm_new(); c->cimport_names = __flowc_st1435; }
   c->cimport_unknown = 0;
   c->root_mod = (0 - 1);
   int32_t ui = sem_sym_new(c, "_ui_state", sem_ty_ptr(c->t, sem_ty_mk(c->t, TK_VOID)), SK_VARIABLE);
@@ -19086,6 +19092,8 @@ int32_t sem_sym_new(Sem* c, const char* name, int32_t ty, int32_t kind) {
   sem_iv_push(c->sy_kind, kind);
   sem_iv_push(c->sy_mut, 0);
   sem_iv_push(c->sy_def, (0 - 1));
+  sem_iv_push(c->sy_init, (0 - 1));
+  sem_iv_push(c->sy_init_mod, (0 - 1));
   sem_pv_push(c->sy_over, NULL);
   return id;
 }
@@ -19654,9 +19662,9 @@ int32_t sem_parse_type(Sem* c, int32_t pt) {
   sem_ty_add_param(t, f, sem_parse_type(c, sem_pt_arg(t, pt, i)));
 }
   if (t->pt_elem[pt] >= 0) {
-  { __typeof__(t->ret[f]) __flowc_st5191 = sem_parse_type(c, t->pt_elem[pt]); t->ret[f] = __flowc_st5191; }
+  { __typeof__(t->ret[f]) __flowc_st5226 = sem_parse_type(c, t->pt_elem[pt]); t->ret[f] = __flowc_st5226; }
 } else {
-  { __typeof__(t->ret[f]) __flowc_st5200 = sem_ty_mk(t, TK_VOID); t->ret[f] = __flowc_st5200; }
+  { __typeof__(t->ret[f]) __flowc_st5235 = sem_ty_mk(t, TK_VOID); t->ret[f] = __flowc_st5235; }
 }
   if (sem_s_starts(name, "fn_")) {
   int32_t e = 0;
@@ -19732,13 +19740,13 @@ int32_t sem_parse_type(Sem* c, int32_t pt) {
   int32_t k = sem_iv_get(c->se_kind, se);
   if (k == SE_ALIAS) {
   int32_t al = sem_ty_named(t, TK_TYPE_ALIAS, name);
-  { __typeof__(t->base[al]) __flowc_st5540 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[al] = __flowc_st5540; }
+  { __typeof__(t->base[al]) __flowc_st5575 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[al] = __flowc_st5575; }
   return al;
 }
   if (k == SE_DISTINCT) {
   int32_t di = sem_ty_named(t, TK_DISTINCT, name);
-  { __typeof__(t->base[di]) __flowc_st5564 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[di] = __flowc_st5564; }
-  { __typeof__(t->dims[di]) __flowc_st5572 = sem_unit_dims_of_name(c, name); t->dims[di] = __flowc_st5572; }
+  { __typeof__(t->base[di]) __flowc_st5599 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[di] = __flowc_st5599; }
+  { __typeof__(t->dims[di]) __flowc_st5607 = sem_unit_dims_of_name(c, name); t->dims[di] = __flowc_st5607; }
   return di;
 }
   return sem_ty_struct(t, name);
@@ -19852,7 +19860,7 @@ int32_t sem_unit_result_type(Sem* c, SemIntVec* dims) {
   name = sem_format_dims(c, d);
 }
   int32_t id = sem_ty_named(c->t, TK_DISTINCT, name);
-  { __typeof__(tys->base[id]) __flowc_st6005 = sem_ty_mk(c->t, TK_F64); tys->base[id] = __flowc_st6005; }
+  { __typeof__(tys->base[id]) __flowc_st6040 = sem_ty_mk(c->t, TK_F64); tys->base[id] = __flowc_st6040; }
   tys->dims[id] = d;
   return id;
 }
@@ -67771,6 +67779,1344 @@ bool sem_header_names(const char* header, const char* dir, SemStrMap* names) {
 }
 
 
+typedef struct GvRef {
+  int32_t m;
+  int32_t n;
+} GvRef;
+
+typedef struct GvInt {
+  bool ok;
+  int64_t v;
+} GvInt;
+
+typedef struct GvDiag {
+  const char* code;
+  const char* field;
+  const char* msg;
+} GvDiag;
+
+typedef struct GvK {
+  bool ok;
+  int64_t tex_2d;
+  int64_t tex_cube;
+  int64_t rgba8;
+  int64_t rgba16f;
+  int64_t depth32f;
+  int64_t use_sampled;
+  int64_t use_storage;
+  int64_t use_color;
+  int64_t use_depth;
+  int64_t f_nearest;
+  int64_t f_linear;
+  int64_t a_clamp;
+  int64_t a_repeat;
+  int64_t s_f32;
+  int64_t s_i32;
+  int64_t s_u32;
+  int64_t i_persp;
+  int64_t i_flat;
+  int64_t acc_sample;
+  int64_t acc_sread;
+  int64_t acc_swrite;
+  int64_t st_vertex;
+  bool has_access;
+} GvK;
+
+typedef struct GvSlice {
+  GvRef arr;
+  int32_t start;
+} GvSlice;
+
+#undef GPU_LINK_CALLS
+static const int32_t GPU_LINK_CALLS = 2;
+#undef GV_MAX_DEPTH
+static const int32_t GV_MAX_DEPTH = 32;
+const char* gpu_link_callee(int32_t i);
+const char* gpu_link_module(int32_t i);
+int32_t gpu_link_first_arg(int32_t i);
+GvRef gv_none();
+GvInt gv_unknown();
+GvInt gv_known(int64_t v);
+GvDiag gv_pass();
+GvDiag gv_fail(const char* code, const char* field, const char* msg);
+bool gv_failed(GvDiag d);
+int64_t gv_int_text(const char* txt);
+GvRef gv_resolve(Sem* c, GvRef r, int32_t depth);
+GvRef gv_struct(Sem* c, GvRef r, const char* tname, int32_t depth);
+GvRef gv_field_node(Sem* c, GvRef lit, const char* fname);
+GvRef gv_field(Sem* c, GvRef lit, const char* tname, const char* fname, int32_t depth);
+GvInt gv_int(Sem* c, GvRef r, int32_t depth);
+GvInt gv_get(Sem* c, GvRef lit, const char* tname, const char* fname);
+GvRef gv_sub(Sem* c, GvRef lit, const char* tname, const char* fname, const char* sub);
+GvInt gv_k(Sem* c, const char* name);
+int64_t gv_kv(Sem* c, const char* name, int32_t* ok);
+GvK gv_consts(Sem* c);
+const char* gv_article(const char* name);
+const char* gv_format_name(GvK k, int64_t v);
+const char* gv_scalar_name(GvK k, int64_t v);
+const char* gv_interp_name(GvK k, int64_t v);
+const char* gv_dim_name(GvK k, int64_t v);
+bool gv_has(int64_t usage, int64_t bit);
+GvDiag gv_texture_rules(Sem* c, GvK k, GvRef t);
+GvDiag gv_sampler_rules(Sem* c, GvK k, GvRef s);
+GvDiag gv_varying_rules(Sem* c, GvK k, GvRef v);
+GvDiag gv_attribute_rules(Sem* c, GvK k, GvRef a);
+bool gv_texture_broken(Sem* c, GvK k, GvRef t);
+GvDiag gv_targets_rules(Sem* c, GvK k, GvRef rt);
+GvDiag gv_pipeline_rules(Sem* c, GvK k, GvRef p);
+GvDiag gv_binding_rules(Sem* c, GvK k, GvRef b);
+bool gv_library_struct(Sem* c, const char* name);
+void gv_report(Sem* c, GvRef at, const char* msg);
+void sem_gpu_check_literal(Sem* c, int32_t e);
+GvSlice gv_slice(Sem* c, GvRef e);
+GvRef gv_elem(Sem* c, GvSlice s, int32_t i);
+int32_t gv_slice_len(Sem* c, GvSlice s);
+bool gv_stage_folds(Sem* c, GvK k, GvSlice s, int32_t n);
+int64_t gv_vf(Sem* c, GvSlice s, int32_t i, const char* field);
+GvRef gv_at(Sem* c, GvSlice s, int32_t i, GvRef arg);
+GvRef gv_arg(Sem* c, int32_t e, int32_t i);
+int32_t gv_dup(Sem* c, GvSlice s, int32_t n);
+void sem_gpu_check_call(Sem* c, int32_t e, const char* callee);
+const char* gpu_link_callee(int32_t i) {
+  if (i == 0) {
+  return "gpu_stage_links";
+}
+  return "gpu_pipeline_new";
+}
+
+const char* gpu_link_module(int32_t i) {
+  if (i == 0) {
+  return "gpu_resource_types.flow";
+}
+  return "gpu_render.flow";
+}
+
+int32_t gpu_link_first_arg(int32_t i) {
+  if (i == 0) {
+  return 0;
+}
+  return 2;
+}
+
+GvRef gv_none() {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvRef){ .m = (0 - 1), .n = (0 - 1) };
+  return *__flowc_sret;
+}
+
+GvInt gv_unknown() {
+  GvInt __flowc_sret_slot;
+  GvInt* __flowc_sret = &__flowc_sret_slot;
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvInt){ .ok = 0, .v = 0 };
+  return *__flowc_sret;
+}
+
+GvInt gv_known(int64_t v) {
+  GvInt __flowc_sret_slot;
+  GvInt* __flowc_sret = &__flowc_sret_slot;
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvInt){ .ok = 1, .v = v };
+  return *__flowc_sret;
+}
+
+GvDiag gv_pass() {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvDiag){ .code = "", .field = "", .msg = "" };
+  return *__flowc_sret;
+}
+
+GvDiag gv_fail(const char* code, const char* field, const char* msg) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvDiag){ .code = code, .field = field, .msg = msg };
+  return *__flowc_sret;
+}
+
+bool gv_failed(GvDiag d) {
+  return sem_s_len((d).code) > 0;
+}
+
+int64_t gv_int_text(const char* txt) {
+  const char* s = "";
+  int32_t i = 0;
+  for (; i < (sem_s_len(txt)); i = i + 1) {
+  if (sem_s_byte(txt, i) != 95) {
+  s = __flowc_str_concat(s, sem_s_slice(txt, i, (i + 1)));
+}
+}
+  if (sem_s_starts(s, "0x") || sem_s_starts(s, "0X")) {
+  return strtol(sem_s_from(s, 2), NULL, 16);
+}
+  if (sem_s_starts(s, "0b") || sem_s_starts(s, "0B")) {
+  return strtol(sem_s_from(s, 2), NULL, 2);
+}
+  return strtol(s, NULL, 10);
+}
+
+GvRef gv_resolve(Sem* c, GvRef r, int32_t depth) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  if ((r).n < 0 || (r).m < 0 || depth > GV_MAX_DEPTH) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  int32_t saved = c->cm;
+  sem_set_mod(c, (r).m);
+  GvRef out = r;
+  if (sem_nk(c, (r).n) == AST_IDENT) {
+  out = gv_none();
+  int32_t iv = sem_nival(c, (r).n);
+  if (iv != AST_IDENT_FORK_SRC && iv != AST_IDENT_SORT_MOD && sem_nname_is(c, (r).n, "null") == 0) {
+  int32_t s = sem_lookup(c, sem_nname(c, (r).n));
+  if (s >= 0) {
+  int32_t k = sem_sym_kind(c, s);
+  if (k == SK_CONST) {
+  int32_t d = sem_iv_get(c->sy_def, s);
+  if (d >= 0 && sem_iv_get(c->d_kind, d) == DK_CONST) {
+  int32_t dm = sem_iv_get(c->d_mod, d);
+  int32_t dn = sem_iv_get(c->d_node, d);
+  sem_set_mod(c, dm);
+  if (sem_nival(c, dn) != 2 && sem_nb(c, dn) != AST_NONE) {
+  out = gv_resolve(c, (GvRef){ .m = dm, .n = sem_nb(c, dn) }, (depth + 1));
+}
+}
+} else {
+  if (k == SK_VARIABLE) {
+  int32_t init = sem_iv_get(c->sy_init, s);
+  if (init >= 0 && sem_iv_get(c->sy_mut, s) == 0) {
+  out = gv_resolve(c, (GvRef){ .m = sem_iv_get(c->sy_init_mod, s), .n = init }, (depth + 1));
+}
+}
+}
+}
+}
+}
+  sem_set_mod(c, saved);
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = out;
+  return *__flowc_sret;
+}
+
+GvRef gv_struct(Sem* c, GvRef r, const char* tname, int32_t depth) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  GvRef lit = gv_resolve(c, r, depth);
+  if ((lit).n < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  int32_t saved = c->cm;
+  sem_set_mod(c, (lit).m);
+  GvRef out = gv_none();
+  if (sem_nk(c, (lit).n) == AST_STRUCT_LIT && sem_nb(c, (lit).n) == AST_NONE && sem_nname_is(c, (lit).n, tname)) {
+  out = lit;
+}
+  sem_set_mod(c, saved);
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = out;
+  return *__flowc_sret;
+}
+
+GvRef gv_field_node(Sem* c, GvRef lit, const char* fname) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  if ((lit).n < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  int32_t saved = c->cm;
+  sem_set_mod(c, (lit).m);
+  int32_t found = (0 - 1);
+  int32_t f = sem_na(c, (lit).n);
+  while (f != AST_NONE) {
+  if (sem_nname_is(c, f, fname)) {
+  found = f;
+}
+  f = sem_nnext(c, f);
+}
+  sem_set_mod(c, saved);
+  if (found < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvRef){ .m = (lit).m, .n = found };
+  return *__flowc_sret;
+}
+
+GvRef gv_field(Sem* c, GvRef lit, const char* tname, const char* fname, int32_t depth) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  if ((lit).n < 0 || depth > GV_MAX_DEPTH) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  GvRef fnode = gv_field_node(c, lit, fname);
+  int32_t saved = c->cm;
+  sem_set_mod(c, (lit).m);
+  GvRef out = gv_none();
+  if ((fnode).n >= 0) {
+  out = (GvRef){ .m = (lit).m, .n = sem_na(c, (fnode).n) };
+} else {
+  if (sem_ncc(c, (lit).n) != AST_NONE) {
+  GvRef base = gv_struct(c, (GvRef){ .m = (lit).m, .n = sem_ncc(c, (lit).n) }, tname, (depth + 1));
+  out = gv_field(c, base, tname, fname, (depth + 1));
+}
+}
+  sem_set_mod(c, saved);
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = out;
+  return *__flowc_sret;
+}
+
+GvInt gv_int(Sem* c, GvRef r, int32_t depth) {
+  GvInt __flowc_sret_slot;
+  GvInt* __flowc_sret = &__flowc_sret_slot;
+  if ((r).n < 0 || (r).m < 0 || depth > GV_MAX_DEPTH) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_unknown();
+  return *__flowc_sret;
+}
+  int32_t saved = c->cm;
+  sem_set_mod(c, (r).m);
+  int32_t k = sem_nk(c, (r).n);
+  GvInt out = gv_unknown();
+  if (k == AST_INT) {
+  const char* txt = sem_s_span(c->src, ((c->ar).nodes[(r).n]).name_start, ((c->ar).nodes[(r).n]).name_end);
+  if (sem_s_len(txt) == 0) {
+  out = gv_known((int64_t)(sem_nival(c, (r).n)));
+} else {
+  out = gv_known(gv_int_text(txt));
+}
+} else {
+  if (k == AST_BOOL) {
+  out = gv_known((int64_t)(sem_nival(c, (r).n)));
+} else {
+  if (k == AST_UNARY) {
+  if (sem_nival(c, (r).n) == TOK_MINUS) {
+  GvInt a = gv_int(c, (GvRef){ .m = (r).m, .n = sem_na(c, (r).n) }, (depth + 1));
+  if ((a).ok) {
+  out = gv_known((0 - (a).v));
+}
+}
+} else {
+  if (k == AST_BINOP) {
+  int32_t op = sem_nival(c, (r).n);
+  if (op == TOK_PLUS || op == TOK_MINUS || op == TOK_STAR || op == TOK_BAR || op == TOK_AMP) {
+  GvInt a2 = gv_int(c, (GvRef){ .m = (r).m, .n = sem_na(c, (r).n) }, (depth + 1));
+  GvInt b2 = gv_int(c, (GvRef){ .m = (r).m, .n = sem_nb(c, (r).n) }, (depth + 1));
+  if ((a2).ok && (b2).ok) {
+  if (op == TOK_PLUS) {
+  out = gv_known(((a2).v + (b2).v));
+} else {
+  if (op == TOK_MINUS) {
+  out = gv_known(((a2).v - (b2).v));
+} else {
+  if (op == TOK_STAR) {
+  out = gv_known(((a2).v * (b2).v));
+} else {
+  if (op == TOK_BAR) {
+  out = gv_known(((a2).v | (b2).v));
+} else {
+  out = gv_known(((a2).v & (b2).v));
+}
+}
+}
+}
+}
+}
+} else {
+  if (k == AST_CAST) {
+  out = gv_int(c, (GvRef){ .m = (r).m, .n = sem_na(c, (r).n) }, (depth + 1));
+} else {
+  if (k == AST_IDENT) {
+  GvRef d = gv_resolve(c, r, (depth + 1));
+  if ((d).n >= 0 && ((d).m != (r).m || (d).n != (r).n)) {
+  out = gv_int(c, d, (depth + 1));
+}
+} else {
+  if (k == AST_FIELD_ACCESS) {
+  GvRef base = gv_resolve(c, (GvRef){ .m = (r).m, .n = sem_na(c, (r).n) }, (depth + 1));
+  if ((base).n >= 0) {
+  sem_set_mod(c, (base).m);
+  if (sem_nk(c, (base).n) == AST_STRUCT_LIT) {
+  const char* tn = sem_nname(c, (base).n);
+  sem_set_mod(c, (r).m);
+  out = gv_int(c, gv_field(c, base, tn, sem_nname(c, (r).n), (depth + 1)), (depth + 1));
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  sem_set_mod(c, saved);
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = out;
+  return *__flowc_sret;
+}
+
+GvInt gv_get(Sem* c, GvRef lit, const char* tname, const char* fname) {
+  GvInt __flowc_sret_slot;
+  GvInt* __flowc_sret = &__flowc_sret_slot;
+  if ((lit).n < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_unknown();
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_int(c, gv_field(c, lit, tname, fname, 0), 0);
+  return *__flowc_sret;
+}
+
+GvRef gv_sub(Sem* c, GvRef lit, const char* tname, const char* fname, const char* sub) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  if ((lit).n < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_struct(c, gv_field(c, lit, tname, fname, 0), sub, 0);
+  return *__flowc_sret;
+}
+
+GvInt gv_k(Sem* c, const char* name) {
+  GvInt __flowc_sret_slot;
+  GvInt* __flowc_sret = &__flowc_sret_slot;
+  int32_t s = sem_lookup(c, name);
+  if (s < 0 || sem_sym_kind(c, s) != SK_CONST) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_unknown();
+  return *__flowc_sret;
+}
+  int32_t d = sem_iv_get(c->sy_def, s);
+  if (d < 0 || sem_iv_get(c->d_kind, d) != DK_CONST) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_unknown();
+  return *__flowc_sret;
+}
+  int32_t dm = sem_iv_get(c->d_mod, d);
+  int32_t saved = c->cm;
+  sem_set_mod(c, dm);
+  int32_t dn = sem_iv_get(c->d_node, d);
+  GvInt out = gv_unknown();
+  if (sem_nb(c, dn) != AST_NONE) {
+  out = gv_int(c, (GvRef){ .m = dm, .n = sem_nb(c, dn) }, 1);
+}
+  sem_set_mod(c, saved);
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = out;
+  return *__flowc_sret;
+}
+
+int64_t gv_kv(Sem* c, const char* name, int32_t* ok) {
+  GvInt v = gv_k(c, name);
+  if ((v).ok == 0) {
+  ok[0] = 0;
+  return 0;
+}
+  return (v).v;
+}
+
+GvK gv_consts(Sem* c) {
+  GvK __flowc_sret_slot;
+  GvK* __flowc_sret = &__flowc_sret_slot;
+  int32_t ok[1] = { 1 };
+  flow_mem_note_stack(sizeof(ok));
+  int32_t* p = (int32_t*)((int32_t*)((&ok[0])));
+  GvK k = (GvK){ .ok = 0, .tex_2d = gv_kv(c, "GPU_TEX_2D", p), .tex_cube = gv_kv(c, "GPU_TEX_CUBE", p), .rgba8 = gv_kv(c, "GPU_FORMAT_RGBA8", p), .rgba16f = gv_kv(c, "GPU_FORMAT_RGBA16F", p), .depth32f = gv_kv(c, "GPU_FORMAT_DEPTH32F", p), .use_sampled = gv_kv(c, "GPU_USE_SAMPLED", p), .use_storage = gv_kv(c, "GPU_USE_STORAGE", p), .use_color = gv_kv(c, "GPU_USE_COLOR_ATTACHMENT", p), .use_depth = gv_kv(c, "GPU_USE_DEPTH_ATTACHMENT", p), .f_nearest = gv_kv(c, "GPU_FILTER_NEAREST", p), .f_linear = gv_kv(c, "GPU_FILTER_LINEAR", p), .a_clamp = gv_kv(c, "GPU_ADDRESS_CLAMP", p), .a_repeat = gv_kv(c, "GPU_ADDRESS_REPEAT", p), .s_f32 = gv_kv(c, "GPU_SCALAR_F32", p), .s_i32 = gv_kv(c, "GPU_SCALAR_I32", p), .s_u32 = gv_kv(c, "GPU_SCALAR_U32", p), .i_persp = gv_kv(c, "GPU_INTERPOLATE_PERSPECTIVE", p), .i_flat = gv_kv(c, "GPU_INTERPOLATE_FLAT", p), .acc_sample = 0, .acc_sread = 0, .acc_swrite = 0, .st_vertex = 0, .has_access = 0 };
+  (k).ok = ok[0] == 1;
+  int32_t ok2[1] = { 1 };
+  flow_mem_note_stack(sizeof(ok2));
+  int32_t* p2 = (int32_t*)((int32_t*)((&ok2[0])));
+  (k).acc_sample = gv_kv(c, "GPU_ACCESS_SAMPLE", p2);
+  (k).acc_sread = gv_kv(c, "GPU_ACCESS_STORAGE_READ", p2);
+  (k).acc_swrite = gv_kv(c, "GPU_ACCESS_STORAGE_WRITE", p2);
+  (k).st_vertex = gv_kv(c, "GPU_STAGE_VERTEX", p2);
+  (k).has_access = ok2[0] == 1;
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = k;
+  return *__flowc_sret;
+}
+
+const char* gv_article(const char* name) {
+  int32_t b = sem_s_byte(name, 0);
+  if (b == 97 || b == 101 || b == 105 || b == 111 || b == 114) {
+  return __flowc_str_concat("an ", name);
+}
+  return __flowc_str_concat("a ", name);
+}
+
+const char* gv_format_name(GvK k, int64_t v) {
+  if (v == (k).rgba8) {
+  return "rgba8";
+}
+  if (v == (k).rgba16f) {
+  return "rgba16f";
+}
+  if (v == (k).depth32f) {
+  return "depth32f";
+}
+  return __flowc_str_concat("format ", sem_s_itoa(v));
+}
+
+const char* gv_scalar_name(GvK k, int64_t v) {
+  if (v == (k).s_f32) {
+  return "f32";
+}
+  if (v == (k).s_i32) {
+  return "i32";
+}
+  if (v == (k).s_u32) {
+  return "u32";
+}
+  return __flowc_str_concat("scalar ", sem_s_itoa(v));
+}
+
+const char* gv_interp_name(GvK k, int64_t v) {
+  if (v == (k).i_persp) {
+  return "perspective";
+}
+  if (v == (k).i_flat) {
+  return "flat";
+}
+  return __flowc_str_concat("interpolation ", sem_s_itoa(v));
+}
+
+const char* gv_dim_name(GvK k, int64_t v) {
+  if (v == (k).tex_2d) {
+  return "2d";
+}
+  if (v == (k).tex_cube) {
+  return "cube";
+}
+  return __flowc_str_concat("dimension ", sem_s_itoa(v));
+}
+
+bool gv_has(int64_t usage, int64_t bit) {
+  return (usage & bit) != 0;
+}
+
+GvDiag gv_texture_rules(Sem* c, GvK k, GvRef t) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  const char* tn = "GpuTextureDesc";
+  GvInt dim = gv_get(c, t, tn, "dimension");
+  GvInt fmt = gv_get(c, t, tn, "format");
+  GvInt w = gv_get(c, t, tn, "width");
+  GvInt h = gv_get(c, t, tn, "height");
+  GvInt layers = gv_get(c, t, tn, "layers");
+  GvInt samples = gv_get(c, t, tn, "samples");
+  GvInt usage = gv_get(c, t, tn, "usage");
+  if ((dim).ok && (dim).v != (k).tex_2d && (dim).v != (k).tex_cube) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU001", "dimension", __flowc_str_concatn(3, "unknown texture dimension ", sem_s_itoa((dim).v), " (expected GPU_TEX_2D or GPU_TEX_CUBE)"));
+  return *__flowc_sret;
+}
+  if ((w).ok && ((w).v <= 0 || (w).v > 16384)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU007", "width", __flowc_str_concatn(3, "texture width ", sem_s_itoa((w).v), " is outside 1..16384"));
+  return *__flowc_sret;
+}
+  if ((h).ok && ((h).v <= 0 || (h).v > 16384)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU007", "height", __flowc_str_concatn(3, "texture height ", sem_s_itoa((h).v), " is outside 1..16384"));
+  return *__flowc_sret;
+}
+  if ((layers).ok && ((layers).v <= 0 || (layers).v > 2048)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU007", "layers", __flowc_str_concatn(3, "texture layer count ", sem_s_itoa((layers).v), " is outside 1..2048"));
+  return *__flowc_sret;
+}
+  if ((samples).ok && (samples).v != 1 && (samples).v != 2 && (samples).v != 4 && (samples).v != 8) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU005", "samples", __flowc_str_concatn(3, "sample count ", sem_s_itoa((samples).v), " is not 1, 2, 4 or 8"));
+  return *__flowc_sret;
+}
+  if ((fmt).ok && (fmt).v != (k).rgba8 && (fmt).v != (k).rgba16f && (fmt).v != (k).depth32f) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU002", "format", __flowc_str_concatn(3, "unknown texture format ", sem_s_itoa((fmt).v), " (expected rgba8, rgba16f or depth32f)"));
+  return *__flowc_sret;
+}
+  if ((usage).ok && ((usage).v <= 0 || ((usage).v & (0 - 16)) != 0)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU003", "usage", __flowc_str_concatn(3, "usage ", sem_s_itoa((usage).v), " is not a nonempty set of GPU_USE_* bits"));
+  return *__flowc_sret;
+}
+  if ((dim).ok && (dim).v == (k).tex_cube) {
+  if ((w).ok && (h).ok && (w).v != (h).v) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU006", "height", __flowc_str_concatn(4, "a cube texture needs square faces, got ", sem_s_itoa((w).v), "x", sem_s_itoa((h).v)));
+  return *__flowc_sret;
+}
+  if ((layers).ok && ((layers).v % 6) != 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU006", "layers", __flowc_str_concat("a cube texture needs a multiple of 6 layers, got ", sem_s_itoa((layers).v)));
+  return *__flowc_sret;
+}
+  if ((samples).ok && (samples).v != 1) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU005", "samples", __flowc_str_concatn(3, "a cube texture cannot be multisampled (", sem_s_itoa((samples).v), " samples)"));
+  return *__flowc_sret;
+}
+}
+  if ((samples).ok && (samples).v > 1) {
+  if ((dim).ok && (dim).v != (k).tex_2d) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU005", "samples", __flowc_str_concat("a multisampled texture must be 2d, got ", gv_dim_name(k, (dim).v)));
+  return *__flowc_sret;
+}
+  if ((layers).ok && (layers).v != 1) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU005", "layers", __flowc_str_concat("a multisampled texture must have 1 layer, got ", sem_s_itoa((layers).v)));
+  return *__flowc_sret;
+}
+  if ((usage).ok && gv_has((usage).v, (k).use_storage)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU004", "usage", "a multisampled texture cannot have usage storage");
+  return *__flowc_sret;
+}
+}
+  if ((fmt).ok && (usage).ok) {
+  if ((fmt).v == (k).depth32f) {
+  if (gv_has((usage).v, (k).use_depth) == 0 && gv_has((usage).v, (k).use_sampled) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU004", "usage", "a depth32f texture needs usage depth_attachment or sampled");
+  return *__flowc_sret;
+}
+  if (gv_has((usage).v, (k).use_color)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU004", "usage", "a depth32f texture cannot have usage color_attachment");
+  return *__flowc_sret;
+}
+  if (gv_has((usage).v, (k).use_storage)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU004", "usage", "a depth32f texture cannot have usage storage");
+  return *__flowc_sret;
+}
+} else {
+  if (gv_has((usage).v, (k).use_depth)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU004", "usage", __flowc_str_concat(gv_article(gv_format_name(k, (fmt).v)), " texture cannot have usage depth_attachment (only depth32f can)"));
+  return *__flowc_sret;
+}
+}
+}
+  if ((samples).ok && (samples).v > 1 && (usage).ok && gv_has((usage).v, ((k).use_color | (k).use_depth)) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU005", "usage", "a multisampled texture needs usage color_attachment or depth_attachment");
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+GvDiag gv_sampler_rules(Sem* c, GvK k, GvRef s) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  const char* tn = "GpuSamplerDesc";
+  const char* filters[2] = { "min_filter", "mag_filter" };
+  flow_mem_note_stack(sizeof(filters));
+  int32_t i = 0;
+  for (; i < (2); i = i + 1) {
+  GvInt f = gv_get(c, s, tn, filters[i]);
+  if ((f).ok && (f).v != (k).f_nearest && (f).v != (k).f_linear) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU010", filters[i], __flowc_str_concatn(3, "unknown filter ", sem_s_itoa((f).v), " (expected GPU_FILTER_NEAREST or GPU_FILTER_LINEAR)"));
+  return *__flowc_sret;
+}
+}
+  const char* modes[3] = { "address_u", "address_v", "address_w" };
+  flow_mem_note_stack(sizeof(modes));
+  i = 0;
+  for (; i < (3); i = i + 1) {
+  GvInt a = gv_get(c, s, tn, modes[i]);
+  if ((a).ok && (a).v != (k).a_clamp && (a).v != (k).a_repeat) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU011", modes[i], __flowc_str_concatn(3, "unknown address mode ", sem_s_itoa((a).v), " (expected GPU_ADDRESS_CLAMP or GPU_ADDRESS_REPEAT)"));
+  return *__flowc_sret;
+}
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+GvDiag gv_varying_rules(Sem* c, GvK k, GvRef v) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  const char* tn = "GpuVarying";
+  GvInt loc = gv_get(c, v, tn, "location");
+  GvInt comps = gv_get(c, v, tn, "components");
+  GvInt scalar = gv_get(c, v, tn, "scalar");
+  GvInt interp = gv_get(c, v, tn, "interpolation");
+  if ((loc).ok && ((loc).v < 0 || (loc).v > 31)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU020", "location", __flowc_str_concatn(3, "varying location ", sem_s_itoa((loc).v), " is outside 0..31"));
+  return *__flowc_sret;
+}
+  if ((comps).ok && ((comps).v <= 0 || (comps).v > 4)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU021", "components", __flowc_str_concat("a varying has 1 to 4 components, got ", sem_s_itoa((comps).v)));
+  return *__flowc_sret;
+}
+  if ((scalar).ok && (scalar).v != (k).s_f32 && (scalar).v != (k).s_i32 && (scalar).v != (k).s_u32) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU022", "scalar", __flowc_str_concatn(3, "unknown varying scalar type ", sem_s_itoa((scalar).v), " (expected f32, i32 or u32)"));
+  return *__flowc_sret;
+}
+  if ((interp).ok && (interp).v != (k).i_persp && (interp).v != (k).i_flat) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU022", "interpolation", __flowc_str_concatn(3, "unknown interpolation ", sem_s_itoa((interp).v), " (expected perspective or flat)"));
+  return *__flowc_sret;
+}
+  if ((scalar).ok && (interp).ok && (scalar).v != (k).s_f32 && (interp).v != (k).i_flat) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU023", "interpolation", __flowc_str_concat(gv_article(gv_scalar_name(k, (scalar).v)), " varying must use flat interpolation"));
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+GvDiag gv_attribute_rules(Sem* c, GvK k, GvRef a) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  const char* tn = "GpuVertexAttribute";
+  GvInt loc = gv_get(c, a, tn, "location");
+  GvInt comps = gv_get(c, a, tn, "components");
+  GvInt sb = gv_get(c, a, tn, "scalar_bytes");
+  GvInt stride = gv_get(c, a, tn, "stride");
+  GvInt off = gv_get(c, a, tn, "offset");
+  if ((loc).ok && ((loc).v < 0 || (loc).v > 31)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU031", "location", __flowc_str_concatn(3, "attribute location ", sem_s_itoa((loc).v), " is outside 0..31"));
+  return *__flowc_sret;
+}
+  if ((comps).ok && ((comps).v < 1 || (comps).v > 4)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU031", "components", __flowc_str_concat("an attribute has 1 to 4 components, got ", sem_s_itoa((comps).v)));
+  return *__flowc_sret;
+}
+  if ((sb).ok && (sb).v != 2 && (sb).v != 4) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU031", "scalar_bytes", __flowc_str_concat("attribute scalars are 2 or 4 bytes, got ", sem_s_itoa((sb).v)));
+  return *__flowc_sret;
+}
+  if ((stride).ok && ((stride).v <= 0 || (stride).v > 2048)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU031", "stride", __flowc_str_concatn(3, "vertex stride ", sem_s_itoa((stride).v), " is outside 1..2048"));
+  return *__flowc_sret;
+}
+  if ((off).ok && (off).v < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU031", "offset", __flowc_str_concatn(3, "attribute offset ", sem_s_itoa((off).v), " is negative"));
+  return *__flowc_sret;
+}
+  if ((sb).ok && (comps).ok && (stride).ok && (off).ok) {
+  int64_t bytes = ((sb).v * (comps).v);
+  if (bytes > (stride).v || (off).v > ((stride).v - bytes)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU030", "offset", __flowc_str_concatn(7, "an attribute of ", sem_s_itoa(bytes), " bytes at offset ", sem_s_itoa((off).v), " does not fit the ", sem_s_itoa((stride).v), "-byte stride"));
+  return *__flowc_sret;
+}
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+bool gv_texture_broken(Sem* c, GvK k, GvRef t) {
+  return (t).n >= 0 && gv_failed(gv_texture_rules(c, k, t));
+}
+
+GvDiag gv_targets_rules(Sem* c, GvK k, GvRef rt) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  const char* tn = "GpuRenderTargets";
+  GvRef color = gv_sub(c, rt, tn, "color", "GpuTextureDesc");
+  GvRef depth = gv_sub(c, rt, tn, "depth", "GpuTextureDesc");
+  GvInt has_depth = gv_get(c, rt, tn, "has_depth");
+  const char* td = "GpuTextureDesc";
+  if (gv_texture_broken(c, k, color) == 0) {
+  GvInt cu = gv_get(c, color, td, "usage");
+  GvInt cf = gv_get(c, color, td, "format");
+  if ((cu).ok && gv_has((cu).v, (k).use_color) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU040", "color", "the color target texture lacks usage color_attachment");
+  return *__flowc_sret;
+}
+  if ((cf).ok && (cf).v == (k).depth32f) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU040", "color", "the color target cannot be depth32f");
+  return *__flowc_sret;
+}
+}
+  if ((has_depth).ok && (has_depth).v != 0 && gv_texture_broken(c, k, depth) == 0 && gv_texture_broken(c, k, color) == 0) {
+  GvInt df = gv_get(c, depth, td, "format");
+  GvInt du = gv_get(c, depth, td, "usage");
+  if ((df).ok && (df).v != (k).depth32f) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU041", "depth", __flowc_str_concat("the depth target must be depth32f, got ", gv_format_name(k, (df).v)));
+  return *__flowc_sret;
+}
+  if ((du).ok && gv_has((du).v, (k).use_depth) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU041", "depth", "the depth target texture lacks usage depth_attachment");
+  return *__flowc_sret;
+}
+  GvInt dw = gv_get(c, depth, td, "width");
+  GvInt dh = gv_get(c, depth, td, "height");
+  GvInt cw = gv_get(c, color, td, "width");
+  GvInt ch = gv_get(c, color, td, "height");
+  if ((dw).ok && (dh).ok && (cw).ok && (ch).ok && ((dw).v != (cw).v || (dh).v != (ch).v)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU042", "depth", __flowc_str_concatn(8, "the depth target is ", sem_s_itoa((dw).v), "x", sem_s_itoa((dh).v), " but the color target is ", sem_s_itoa((cw).v), "x", sem_s_itoa((ch).v)));
+  return *__flowc_sret;
+}
+  if ((dw).ok && (cw).ok && (dw).v != (cw).v) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU042", "depth", __flowc_str_concatn(4, "the depth target width ", sem_s_itoa((dw).v), " differs from the color target width ", sem_s_itoa((cw).v)));
+  return *__flowc_sret;
+}
+  if ((dh).ok && (ch).ok && (dh).v != (ch).v) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU042", "depth", __flowc_str_concatn(4, "the depth target height ", sem_s_itoa((dh).v), " differs from the color target height ", sem_s_itoa((ch).v)));
+  return *__flowc_sret;
+}
+  GvInt ds = gv_get(c, depth, td, "samples");
+  GvInt cs = gv_get(c, color, td, "samples");
+  if ((ds).ok && (cs).ok && (ds).v != (cs).v) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU042", "depth", __flowc_str_concatn(4, "the depth target sample count ", sem_s_itoa((ds).v), " differs from the color target sample count ", sem_s_itoa((cs).v)));
+  return *__flowc_sret;
+}
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+GvDiag gv_pipeline_rules(Sem* c, GvK k, GvRef p) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  const char* tn = "GpuSampledPipeline";
+  const char* td = "GpuTextureDesc";
+  GvRef tex = gv_sub(c, p, tn, "texture", td);
+  if ((tex).n >= 0 && gv_texture_broken(c, k, tex) == 0) {
+  GvInt u = gv_get(c, tex, td, "usage");
+  GvInt s = gv_get(c, tex, td, "samples");
+  GvInt f = gv_get(c, tex, td, "format");
+  if ((u).ok && gv_has((u).v, (k).use_sampled) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU050", "texture", "the sampled texture lacks usage sampled");
+  return *__flowc_sret;
+}
+  if ((s).ok && (s).v != 1) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU051", "texture", __flowc_str_concatn(3, "cannot sample a multisampled texture (", sem_s_itoa((s).v), " samples)"));
+  return *__flowc_sret;
+}
+  if ((f).ok && (f).v == (k).depth32f) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU051", "texture", "cannot sample a depth32f texture as color");
+  return *__flowc_sret;
+}
+}
+  GvRef v = gv_sub(c, p, tn, "varying", "GpuVarying");
+  if ((v).n >= 0 && gv_failed(gv_varying_rules(c, k, v)) == 0) {
+  const char* vt = "GpuVarying";
+  GvInt loc = gv_get(c, v, vt, "location");
+  GvInt sc = gv_get(c, v, vt, "scalar");
+  GvInt co = gv_get(c, v, vt, "components");
+  GvInt ip = gv_get(c, v, vt, "interpolation");
+  if ((loc).ok && (loc).v != 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU052", "varying", __flowc_str_concat("the texture coordinate varying must be at location 0, got ", sem_s_itoa((loc).v)));
+  return *__flowc_sret;
+}
+  if ((sc).ok && (sc).v != (k).s_f32) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU052", "varying", __flowc_str_concat("the texture coordinate varying must be f32, got ", gv_scalar_name(k, (sc).v)));
+  return *__flowc_sret;
+}
+  GvInt dim = gv_get(c, tex, td, "dimension");
+  if ((co).ok && (dim).ok && (tex).n >= 0 && gv_texture_broken(c, k, tex) == 0) {
+  int64_t want = 2;
+  if ((dim).v == (k).tex_cube) {
+  want = 3;
+}
+  if ((co).v != want) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU052", "varying", __flowc_str_concatn(6, "a ", gv_dim_name(k, (dim).v), " texture needs a ", sem_s_itoa(want), "-component coordinate varying, got ", sem_s_itoa((co).v)));
+  return *__flowc_sret;
+}
+}
+  if ((ip).ok && (ip).v != (k).i_persp) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU052", "varying", __flowc_str_concat("the texture coordinate varying must use perspective interpolation, got ", gv_interp_name(k, (ip).v)));
+  return *__flowc_sret;
+}
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+GvDiag gv_binding_rules(Sem* c, GvK k, GvRef b) {
+  GvDiag __flowc_sret_slot;
+  GvDiag* __flowc_sret = &__flowc_sret_slot;
+  if ((k).has_access == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+  const char* tn = "GpuTextureBinding";
+  const char* td = "GpuTextureDesc";
+  GvInt slot = gv_get(c, b, tn, "slot");
+  GvInt stages = gv_get(c, b, tn, "stages");
+  GvInt access = gv_get(c, b, tn, "access");
+  GvRef tex = gv_sub(c, b, tn, "texture", td);
+  if ((slot).ok && ((slot).v < 0 || (slot).v > 15)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU058", "slot", __flowc_str_concatn(3, "binding slot ", sem_s_itoa((slot).v), " is outside 0..15"));
+  return *__flowc_sret;
+}
+  if ((stages).ok && ((stages).v <= 0 || ((stages).v & (0 - 8)) != 0)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU058", "stages", __flowc_str_concatn(3, "stages ", sem_s_itoa((stages).v), " is not a nonempty set of GPU_STAGE_* bits"));
+  return *__flowc_sret;
+}
+  if ((access).ok && (access).v != (k).acc_sample && (access).v != (k).acc_sread && (access).v != (k).acc_swrite) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU058", "access", __flowc_str_concatn(3, "unknown access ", sem_s_itoa((access).v), " (expected GPU_ACCESS_SAMPLE, GPU_ACCESS_STORAGE_READ or GPU_ACCESS_STORAGE_WRITE)"));
+  return *__flowc_sret;
+}
+  if ((access).ok == 0 || gv_texture_broken(c, k, tex)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+  GvInt u = gv_get(c, tex, td, "usage");
+  GvInt s = gv_get(c, tex, td, "samples");
+  GvInt f = gv_get(c, tex, td, "format");
+  GvInt d = gv_get(c, tex, td, "dimension");
+  if ((access).v == (k).acc_sample) {
+  if ((u).ok && gv_has((u).v, (k).use_sampled) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU055", "access", "a sample binding needs a texture with usage sampled");
+  return *__flowc_sret;
+}
+  if ((s).ok && (s).v != 1) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU056", "access", __flowc_str_concatn(3, "a sample binding cannot read a multisampled texture (", sem_s_itoa((s).v), " samples)"));
+  return *__flowc_sret;
+}
+  if ((f).ok && (f).v == (k).depth32f) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU056", "access", "a sample binding cannot read a depth32f texture as color");
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+  const char* what = "storage_read";
+  if ((access).v == (k).acc_swrite) {
+  what = "storage_write";
+}
+  if ((u).ok && gv_has((u).v, (k).use_storage) == 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU055", "access", __flowc_str_concatn(3, "a ", what, " binding needs a texture with usage storage"));
+  return *__flowc_sret;
+}
+  if ((s).ok && (s).v != 1) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU056", "access", __flowc_str_concatn(5, "a ", what, " binding needs a single-sample texture, got ", sem_s_itoa((s).v), " samples"));
+  return *__flowc_sret;
+}
+  if ((f).ok && (f).v == (k).depth32f) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU056", "access", __flowc_str_concatn(3, "a ", what, " binding cannot use a depth32f texture"));
+  return *__flowc_sret;
+}
+  if ((d).ok && (d).v != (k).tex_2d) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU056", "access", __flowc_str_concatn(4, "a ", what, " binding needs a 2d texture, got ", gv_dim_name(k, (d).v)));
+  return *__flowc_sret;
+}
+  if ((access).v == (k).acc_swrite && (stages).ok && gv_has((stages).v, (k).st_vertex)) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_fail("GPU057", "stages", "the vertex stage cannot write a storage texture");
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_pass();
+  return *__flowc_sret;
+}
+
+bool gv_library_struct(Sem* c, const char* name) {
+  int32_t se = sem_struct_entry(c, name);
+  if (se < 0) {
+  return 0;
+}
+  int32_t d = sem_iv_get(c->se_decl, se);
+  if (d < 0) {
+  return 0;
+}
+  const char* p = c->m_path[sem_iv_get(c->d_mod, d)];
+  if ((uint8_t*)(p) == NULL) {
+  return 0;
+}
+  return sem_s_ends(p, "gpu_resource_types.flow") || sem_s_ends(p, "gpu_stage_codegen.flow");
+}
+
+void gv_report(Sem* c, GvRef at, const char* msg) {
+  const char* key = __flowc_str_concatn(5, sem_s_itoa((int64_t)((at).m)), ":", sem_s_itoa((int64_t)((at).n)), ":", msg);
+  int32_t prev = sem_sm_get(c->gpu_reported, key);
+  if (prev >= 0 && prev < sem_sv_len(c->errors) && sem_s_eq(sem_sv_get(c->errors, prev), msg)) {
+  return;
+}
+  int32_t saved_pos = c->pos;
+  int32_t saved_mod = c->cm;
+  if ((at).n >= 0 && (at).m == c->cm && c->pos_lock == 0) {
+  int32_t p = sem_nstart(c, (at).n);
+  if (p > 0) {
+  c->pos = p;
+} else {
+  if (((c->ar).nodes[(at).n]).name_start > 0) {
+  c->pos = ((c->ar).nodes[(at).n]).name_start;
+}
+}
+}
+  sem_sm_put(c->gpu_reported, key, sem_sv_len(c->errors));
+  sem_err(c, msg);
+  sem_sv_add(c->fatal, msg);
+  c->pos = saved_pos;
+  sem_set_mod(c, saved_mod);
+}
+
+void sem_gpu_check_literal(Sem* c, int32_t e) {
+  if (sem_nk(c, e) != AST_STRUCT_LIT || sem_nb(c, e) != AST_NONE) {
+  return;
+}
+  const char* name = sem_nname(c, e);
+  int32_t kind = 0;
+  const char* kinds[7] = { "GpuTextureDesc", "GpuSamplerDesc", "GpuVarying", "GpuVertexAttribute", "GpuRenderTargets", "GpuSampledPipeline", "GpuTextureBinding" };
+  flow_mem_note_stack(sizeof(kinds));
+  int32_t ki = 0;
+  for (; ki < (7); ki = ki + 1) {
+  if (sem_s_eq(name, kinds[ki])) {
+  kind = (ki + 1);
+}
+}
+  if (kind == 0 || gv_library_struct(c, name) == 0) {
+  return;
+}
+  GvK k = gv_consts(c);
+  if ((k).ok == 0) {
+  return;
+}
+  GvRef lit = (GvRef){ .m = c->cm, .n = e };
+  GvDiag d = gv_pass();
+  if (kind == 1) {
+  d = gv_texture_rules(c, k, lit);
+} else {
+  if (kind == 2) {
+  d = gv_sampler_rules(c, k, lit);
+} else {
+  if (kind == 3) {
+  d = gv_varying_rules(c, k, lit);
+} else {
+  if (kind == 4) {
+  d = gv_attribute_rules(c, k, lit);
+} else {
+  if (kind == 5) {
+  d = gv_targets_rules(c, k, lit);
+} else {
+  if (kind == 6) {
+  d = gv_pipeline_rules(c, k, lit);
+} else {
+  d = gv_binding_rules(c, k, lit);
+}
+}
+}
+}
+}
+}
+  if (gv_failed(d) == 0) {
+  return;
+}
+  GvRef at = gv_field_node(c, lit, (d).field);
+  if ((at).n < 0) {
+  at = lit;
+}
+  gv_report(c, at, __flowc_str_concatn(8, "[", (d).code, "] ", name, " field '", (d).field, "': ", (d).msg));
+}
+
+GvSlice gv_slice(Sem* c, GvRef e) {
+  GvSlice __flowc_sret_slot;
+  GvSlice* __flowc_sret = &__flowc_sret_slot;
+  GvSlice none = (GvSlice){ .arr = gv_none(), .start = 0 };
+  if ((e).n < 0) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = none;
+  return *__flowc_sret;
+}
+  int32_t saved = c->cm;
+  sem_set_mod(c, (e).m);
+  int32_t node = (e).n;
+  int64_t start = 0;
+  bool ok = 1;
+  if (sem_nk(c, node) == AST_UNARY && sem_nival(c, node) == TOK_AMP) {
+  node = sem_na(c, node);
+  if (sem_nk(c, node) == AST_INDEX && sem_nival(c, node) != 1) {
+  GvInt idx = gv_int(c, (GvRef){ .m = (e).m, .n = sem_nb(c, node) }, 0);
+  if ((idx).ok) {
+  start = (idx).v;
+} else {
+  ok = 0;
+}
+  node = sem_na(c, node);
+} else {
+  ok = 0;
+}
+}
+  GvSlice out = none;
+  if (ok) {
+  GvRef arr = gv_resolve(c, (GvRef){ .m = (e).m, .n = node }, 0);
+  if ((arr).n >= 0) {
+  sem_set_mod(c, (arr).m);
+  if (sem_nk(c, (arr).n) == AST_ARRAY_LIT && sem_nb(c, (arr).n) == AST_NONE) {
+  out = (GvSlice){ .arr = arr, .start = (int32_t)(start) };
+}
+}
+}
+  sem_set_mod(c, saved);
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = out;
+  return *__flowc_sret;
+}
+
+GvRef gv_elem(Sem* c, GvSlice s, int32_t i) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  int32_t saved = c->cm;
+  sem_set_mod(c, ((s).arr).m);
+  int32_t el = sem_na(c, ((s).arr).n);
+  int32_t j = 0;
+  while (el != AST_NONE && j < ((s).start + i)) {
+  el = sem_nnext(c, el);
+  j = (j + 1);
+}
+  sem_set_mod(c, saved);
+  if (el == AST_NONE) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvRef){ .m = ((s).arr).m, .n = el };
+  return *__flowc_sret;
+}
+
+int32_t gv_slice_len(Sem* c, GvSlice s) {
+  int32_t saved = c->cm;
+  sem_set_mod(c, ((s).arr).m);
+  int32_t n = 0;
+  int32_t el = sem_na(c, ((s).arr).n);
+  while (el != AST_NONE) {
+  n = (n + 1);
+  el = sem_nnext(c, el);
+}
+  sem_set_mod(c, saved);
+  return (n - (s).start);
+}
+
+bool gv_stage_folds(Sem* c, GvK k, GvSlice s, int32_t n) {
+  int32_t i = 0;
+  for (; i < (n); i = i + 1) {
+  GvRef v = gv_struct(c, gv_elem(c, s, i), "GpuVarying", 0);
+  if ((v).n < 0 || gv_failed(gv_varying_rules(c, k, v))) {
+  return 0;
+}
+  const char* fields[4] = { "location", "scalar", "components", "interpolation" };
+  flow_mem_note_stack(sizeof(fields));
+  int32_t f = 0;
+  for (; f < (4); f = f + 1) {
+  GvInt fv = gv_get(c, v, "GpuVarying", fields[f]);
+  if ((fv).ok == 0) {
+  return 0;
+}
+}
+}
+  return 1;
+}
+
+int64_t gv_vf(Sem* c, GvSlice s, int32_t i, const char* field) {
+  GvRef v = gv_struct(c, gv_elem(c, s, i), "GpuVarying", 0);
+  return (gv_get(c, v, "GpuVarying", field)).v;
+}
+
+GvRef gv_at(Sem* c, GvSlice s, int32_t i, GvRef arg) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  GvRef el = gv_elem(c, s, i);
+  if ((el).n >= 0 && (el).m == c->cm) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = el;
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = arg;
+  return *__flowc_sret;
+}
+
+GvRef gv_arg(Sem* c, int32_t e, int32_t i) {
+  GvRef __flowc_sret_slot;
+  GvRef* __flowc_sret = &__flowc_sret_slot;
+  int32_t a = sem_na(c, e);
+  int32_t j = 0;
+  while (a != AST_NONE && j < i) {
+  a = sem_nnext(c, a);
+  j = (j + 1);
+}
+  if (a == AST_NONE) {
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = gv_none();
+  return *__flowc_sret;
+}
+  flow_mem_note_copy(sizeof(*__flowc_sret));
+  *__flowc_sret = (GvRef){ .m = c->cm, .n = a };
+  return *__flowc_sret;
+}
+
+int32_t gv_dup(Sem* c, GvSlice s, int32_t n) {
+  int32_t i = 0;
+  for (; i < (n); i = i + 1) {
+  int32_t j = (i + 1);
+  for (; j < (n); j = j + 1) {
+  if (gv_vf(c, s, i, "location") == gv_vf(c, s, j, "location")) {
+  return j;
+}
+}
+}
+  return (0 - 1);
+}
+
+void sem_gpu_check_call(Sem* c, int32_t e, const char* callee) {
+  int32_t row = (0 - 1);
+  int32_t i = 0;
+  for (; i < (GPU_LINK_CALLS); i = i + 1) {
+  if (sem_s_eq(callee, gpu_link_callee(i))) {
+  row = i;
+}
+}
+  if (row < 0) {
+  return;
+}
+  int32_t sym = sem_lookup(c, callee);
+  if (sym < 0) {
+  return;
+}
+  int32_t fi = sem_iv_get(c->sy_def, sym);
+  if (fi < 0) {
+  return;
+}
+  const char* p = c->m_path[sem_iv_get(c->fi_mod, fi)];
+  if ((uint8_t*)(p) == NULL || sem_s_ends(p, gpu_link_module(row)) == 0) {
+  return;
+}
+  GvK k = gv_consts(c);
+  if ((k).ok == 0) {
+  return;
+}
+  int32_t first = gpu_link_first_arg(row);
+  GvRef va = gv_arg(c, e, first);
+  GvRef fa = gv_arg(c, e, (first + 2));
+  GvInt nv = gv_int(c, gv_arg(c, e, (first + 1)), 0);
+  GvInt nf = gv_int(c, gv_arg(c, e, (first + 3)), 0);
+  if ((nv).ok == 0 || (nf).ok == 0 || (nv).v < 0 || (nf).v < 0 || (nv).v > 32 || (nf).v > 32) {
+  return;
+}
+  GvSlice vs = gv_slice(c, va);
+  GvSlice fs = gv_slice(c, fa);
+  int32_t n_v = (int32_t)((nv).v);
+  int32_t n_f = (int32_t)((nf).v);
+  if (((vs).arr).n < 0 || ((fs).arr).n < 0 || (vs).start < 0 || (fs).start < 0) {
+  return;
+}
+  if (gv_slice_len(c, vs) < n_v || gv_slice_len(c, fs) < n_f) {
+  return;
+}
+  if (gv_stage_folds(c, k, vs, n_v) == 0 || gv_stage_folds(c, k, fs, n_f) == 0) {
+  return;
+}
+  const char* pre = "[GPU06";
+  int32_t dv = gv_dup(c, vs, n_v);
+  if (dv >= 0) {
+  gv_report(c, gv_at(c, vs, dv, va), __flowc_str_concatn(6, pre, "2] ", callee, ": the vertex stage declares location ", sem_s_itoa(gv_vf(c, vs, dv, "location")), " twice"));
+  return;
+}
+  int32_t fi2 = 0;
+  for (; fi2 < (n_f); fi2 = fi2 + 1) {
+  int64_t loc = gv_vf(c, fs, fi2, "location");
+  int32_t found = (0 - 1);
+  int32_t j = 0;
+  for (; j < (n_v); j = j + 1) {
+  if (gv_vf(c, vs, j, "location") == loc) {
+  found = j;
+}
+}
+  GvRef at = gv_at(c, fs, fi2, fa);
+  const char* where = __flowc_str_concatn(3, callee, ": fragment input at location ", sem_s_itoa(loc));
+  if (found < 0) {
+  gv_report(c, at, __flowc_str_concatn(4, pre, "0] ", where, " has no vertex output"));
+  return;
+}
+  int64_t fsc = gv_vf(c, fs, fi2, "scalar");
+  int64_t vsc = gv_vf(c, vs, found, "scalar");
+  if (fsc != vsc) {
+  gv_report(c, at, __flowc_str_concatn(7, pre, "1] ", where, " field 'scalar' is ", gv_scalar_name(k, fsc), " but the vertex output is ", gv_scalar_name(k, vsc)));
+  return;
+}
+  int64_t fco = gv_vf(c, fs, fi2, "components");
+  int64_t vco = gv_vf(c, vs, found, "components");
+  if (fco != vco) {
+  gv_report(c, at, __flowc_str_concatn(7, pre, "1] ", where, " field 'components' is ", sem_s_itoa(fco), " but the vertex output has ", sem_s_itoa(vco)));
+  return;
+}
+  int64_t fip = gv_vf(c, fs, fi2, "interpolation");
+  int64_t vip = gv_vf(c, vs, found, "interpolation");
+  if (fip != vip) {
+  gv_report(c, at, __flowc_str_concatn(7, pre, "1] ", where, " field 'interpolation' is ", gv_interp_name(k, fip), " but the vertex output is ", gv_interp_name(k, vip)));
+  return;
+}
+}
+  int32_t df = gv_dup(c, fs, n_f);
+  if (df >= 0) {
+  gv_report(c, gv_at(c, fs, df, fa), __flowc_str_concatn(6, pre, "2] ", callee, ": the fragment stage declares location ", sem_s_itoa(gv_vf(c, fs, df, "location")), " twice"));
+}
+}
+
+
 static const int32_t FLOWC_OVERLOAD_ARG_TYPE_CAP = 128;
 int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first_arg, int32_t* ident_type_nodes, int32_t arg_count, uint8_t* rows, int32_t* known, int32_t* literal_flags, int32_t row_cap);
 int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first_arg, int32_t* ident_type_nodes, int32_t arg_count, uint8_t* rows, int32_t* known, int32_t* literal_flags, int32_t row_cap) {
@@ -85230,7 +86576,7 @@ void sem_collect_types(Sem* c) {
   if (k == DK_ALIAS) {
   int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
   int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
-  { __typeof__(tys->base[alias_t]) __flowc_st3163 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3163; }
+  { __typeof__(tys->base[alias_t]) __flowc_st3166 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3166; }
   int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
   sem_scope_define_global(c, s2);
   int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
@@ -85322,7 +86668,7 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
 }
-  { __typeof__(tys->ret[f]) __flowc_st3606 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3606; }
+  { __typeof__(tys->ret[f]) __flowc_st3609 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3609; }
   i = 0;
   for (; i < (sem_fi_neffects(c, fi)); i = i + 1) {
   sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
@@ -87536,7 +88882,9 @@ int32_t sem_check_call(Sem* c, int32_t e, int32_t stmt) {
   return sem_check_function_call(c, nm, all, e, stmt);
 }
 }
-  return sem_check_function_call(c, nm, sem_call_args(c, sem_na(c, e)), e, stmt);
+  int32_t rt = sem_check_function_call(c, nm, sem_call_args(c, sem_na(c, e)), e, stmt);
+  sem_gpu_check_call(c, e, nm);
+  return rt;
 }
 
 const char* sem_struct_lit_name(Sem* c, int32_t e) {
@@ -87550,10 +88898,14 @@ const char* sem_struct_lit_name(Sem* c, int32_t e) {
 }
 
 int32_t sem_check_struct_literal(Sem* c, int32_t e) {
+  int32_t t = 0;
   if (sem_ncc(c, e) != AST_NONE) {
-  return sem_check_record_update(c, e);
+  t = sem_check_record_update(c, e);
+} else {
+  t = sem_check_struct_fields(c, sem_struct_lit_name(c, e), sem_na(c, e));
 }
-  return sem_check_struct_fields(c, sem_struct_lit_name(c, e), sem_na(c, e));
+  sem_gpu_check_literal(c, e);
+  return t;
 }
 
 int32_t sem_check_record_update(Sem* c, int32_t e) {
@@ -87868,7 +89220,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st15237 = sem_static_length(c, e); tys->size[sp] = __flowc_st15237; }
+  { __typeof__(tys->size[sp]) __flowc_st15260 = sem_static_length(c, e); tys->size[sp] = __flowc_st15260; }
   return sp;
 }
 
@@ -88039,7 +89391,7 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st15986 = sem_iv_new(); c->return_sink = __flowc_st15986; }
+  { __typeof__(c->return_sink) __flowc_st16009 = sem_iv_new(); c->return_sink = __flowc_st16009; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_walk_lambda_captures(c, sem_ncc(c, e), cname, mark);
@@ -88048,9 +89400,9 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   c->current_rt_safe_fn = prev_rt;
   c->rt_safe_from_domain = prev_rt_dom;
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st16036 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st16036; }
+  { __typeof__(tys->ret[f]) __flowc_st16059 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st16059; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st16045 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st16045; }
+  { __typeof__(tys->ret[f]) __flowc_st16068 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st16068; }
 }
   return f;
 }
@@ -88518,6 +89870,13 @@ int32_t sem_check_var_decl(Sem* c, int32_t s) {
 }
 }
   sem_define_var(c, name, expected2, is_mut);
+  if (is_mut == 0) {
+  int32_t vsym = sem_lookup(c, name);
+  if (vsym >= 0) {
+  sem_iv_set(c->sy_init, vsym, init);
+  sem_iv_set(c->sy_init_mod, vsym, c->cm);
+}
+}
   return expected2;
 }
 
@@ -89443,17 +90802,17 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   SemStrMap* prev_heap = (SemStrMap*)(c->heap_roots);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st22070 = sem_sv_new(); c->local_storage = __flowc_st22070; }
-  { __typeof__(c->span_origin) __flowc_st22074 = sem_sm_new(); c->span_origin = __flowc_st22074; }
-  { __typeof__(c->heap_roots) __flowc_st22078 = sem_sm_new(); c->heap_roots = __flowc_st22078; }
-  { __typeof__(c->current_return_type) __flowc_st22087 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st22087; }
+  { __typeof__(c->local_storage) __flowc_st22121 = sem_sv_new(); c->local_storage = __flowc_st22121; }
+  { __typeof__(c->span_origin) __flowc_st22125 = sem_sm_new(); c->span_origin = __flowc_st22125; }
+  { __typeof__(c->heap_roots) __flowc_st22129 = sem_sm_new(); c->heap_roots = __flowc_st22129; }
+  { __typeof__(c->current_return_type) __flowc_st22138 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st22138; }
   i = 0;
   for (; i < (sem_fi_nparams(c, fi)); i = i + 1) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
   sem_define_var(c, sem_fi_param_name(c, fi, i), pt, 0);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st22130 = sem_iv_new(); c->return_sink = __flowc_st22130; }
+  { __typeof__(c->return_sink) __flowc_st22181 = sem_iv_new(); c->return_sink = __flowc_st22181; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;

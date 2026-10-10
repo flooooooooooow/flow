@@ -1,0 +1,65 @@
+# expect: ok
+# Valid constant descriptors fold and pass every GPU rule (#811).
+import "stdlib/gpu_stage_codegen.flow"
+
+const TARGET_USE: i32 = GPU_USE_SAMPLED | GPU_USE_COLOR_ATTACHMENT
+
+function main() -> i32 {
+    let image: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA16F,
+        width: 16, height: 16, layers: 12, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 32, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        ..color, format: GPU_FORMAT_DEPTH32F, usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let resolve: GpuTextureDesc = GpuTextureDesc { ..color, samples: 1, usage: TARGET_USE }
+    let storage: GpuTextureDesc = GpuTextureDesc { ..resolve, usage: GPU_USE_STORAGE }
+    let targets: GpuRenderTargets = GpuRenderTargets {
+        color: color, depth: depth, has_depth: true
+    }
+    let p: GpuSampledPipeline = GpuSampledPipeline {
+        texture: image,
+        sampler: GpuSamplerDesc {
+            min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_NEAREST,
+            address_u: GPU_ADDRESS_REPEAT, address_v: GPU_ADDRESS_CLAMP,
+            address_w: GPU_ADDRESS_CLAMP
+        },
+        targets: targets,
+        varying: GpuVarying {
+            location: 0, scalar: GPU_SCALAR_F32,
+            components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+        }
+    }
+    let read: GpuTextureBinding = GpuTextureBinding {
+        slot: 1, stages: GPU_STAGE_VERTEX | GPU_STAGE_FRAGMENT,
+        access: GPU_ACCESS_SAMPLE, texture: resolve
+    }
+    let write: GpuTextureBinding = GpuTextureBinding {
+        slot: 2, stages: GPU_STAGE_COMPUTE,
+        access: GPU_ACCESS_STORAGE_WRITE, texture: storage
+    }
+    let attr: GpuVertexAttribute = GpuVertexAttribute {
+        location: 1, offset: 8, stride: 20, scalar_bytes: 4, components: 3
+    }
+    let uv: GpuVarying = GpuVarying {
+        location: 0, scalar: GPU_SCALAR_F32,
+        components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    let id: GpuVarying = GpuVarying {
+        location: 1, scalar: GPU_SCALAR_U32,
+        components: 1, interpolation: GPU_INTERPOLATE_FLAT
+    }
+    let vs: array<GpuVarying, 2> = [uv, id]
+    let fs: array<GpuVarying, 1> = [id]
+    if not gpu_stage_links(&vs[0], 2, &fs[0], 1) { return 1 }
+    if not gpu_sampled_pipeline_valid(p) { return 2 }
+    if not gpu_texture_binding_valid(read) or not gpu_texture_binding_valid(write) { return 3 }
+    if not gpu_vertex_attribute_valid(attr) { return 4 }
+    return 0
+}

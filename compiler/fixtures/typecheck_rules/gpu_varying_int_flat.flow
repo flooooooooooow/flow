@@ -1,0 +1,11 @@
+# expect: [GPU023] GpuVarying field 'interpolation': a u32 varying must use flat interpolation
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let v: GpuVarying = GpuVarying {
+        location: 1, scalar: GPU_SCALAR_U32,
+        components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    if gpu_varying_valid(v) { return 1 }
+    return 0
+}

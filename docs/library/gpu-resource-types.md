@@ -36,12 +36,18 @@ Run the CPU-only regression with:
 ./flow test-runtime tests/lang/test_gpu_resource_types.flow
 ```
 
-**Scope boundary:** These checks are API-level prevalidation and do **not**
-yet constitute compile-time errors for GPU source declarations, renderer
-resource lowering, a GPU-hazard DAG, or native Metal/WebGPU draw execution.
-The #811 acceptance tests (instancing, Earth, cubemaps, anti-aliasing and
-materials on both backends) remain open. Descriptor limits are conservative
-portability defaults. They are not negotiated per device.
+`GpuTextureBinding` names a texture's slot, the stages that see it and
+their access (`GPU_ACCESS_SAMPLE`, `GPU_ACCESS_STORAGE_READ`,
+`GPU_ACCESS_STORAGE_WRITE`). `gpu_texture_binding_valid` checks the access
+against the texture's usage, sample count, format and dimension.
+
+**Compile-time checks:** when a descriptor is a compile-time constant,
+flowc applies these rules while it type checks the program, and a format,
+access or stage-interface mismatch is a compile error with a code. The
+codes are listed in [GPU descriptor errors](../gpu/descriptor-errors.md).
+Descriptors built at run time are left to the validators above. Descriptor
+limits are conservative portability defaults. They are not negotiated per
+device.
 
 ## Stage code generation and draw validation
 

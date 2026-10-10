@@ -1,0 +1,20 @@
+# expect: [GPU042] GpuRenderTargets field 'depth': the depth target is 64x16 but the color target is 64x32
+import "stdlib/gpu_stage_codegen.flow"
+
+function main() -> i32 {
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 32, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 64, height: 16, layers: 1, samples: 4,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let rt: GpuRenderTargets = GpuRenderTargets {
+        color: color, depth: depth, has_depth: true
+    }
+    if gpu_targets_valid(rt) { return 1 }
+    return 0
+}

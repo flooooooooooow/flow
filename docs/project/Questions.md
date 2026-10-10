@@ -510,6 +510,28 @@ release: qualification, RC promotion and Homebrew apply to `v2.0.0`.
 **Resolved:** 2026-10-08, decided by the coordinator on the project
 owner's behalf.
 
+### 2026-10-08: GPU descriptor mismatches: compile time or run time?
+
+**Context:** Issue #811 asks that resource format/access and
+vertex/fragment interface mismatches be compile-time errors. After #1405
+the descriptor structs in `lib/stdlib/gpu_resource_types.flow` and
+`gpu_stage_codegen.flow` were checked only by library validators when the
+program ran. Moving the checks into flowc changes what programs compile,
+so it needed a design decision (AGENTS.md).
+
+**Answer:** Texture format, access and stage-interface mismatches are
+compile-time type errors in flowc when the descriptors are compile-time
+constants (fields that fold through literals, module consts, integer
+operations, record updates and immutable `let` bindings). The rules are the
+library validators, applied by `compiler/src/sem_gpu.flow` with codes
+`GPU001` to `GPU062`. The runtime validators stay as the backstop for
+descriptors built at run time. Only the library's own structs are checked.
+See [GPU descriptor errors](../gpu/descriptor-errors.md) and
+LANGUAGE_SPEC §10.6.1.
+
+**Resolved:** 2026-10-08, decided by the coordinator with the project
+owner's delegation.
+
 ### 2026-10-07: Flow 3.0 Structural Orchestration Algebra: syntax or library?
 
 **Context:** Issue #723 proposes syntax-native orchestration. PR #1393

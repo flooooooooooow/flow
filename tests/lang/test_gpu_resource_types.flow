@@ -1,6 +1,14 @@
 # Pure descriptor checks for P1 typed GPU resources (#811). No GPU required.
 import "stdlib/gpu_resource_types.flow"
 
+# Invalid descriptors pass their values through rt(), a run-time value
+# flowc does not fold, so the library validators are what reject them.
+# Constant invalid descriptors are compile errors (compiler/fixtures/
+# typecheck_rules/gpu_*.flow).
+function rt(v: i32) -> i32 {
+    return v
+}
+
 function main() -> i32 {
     let rgba: GpuTextureDesc = GpuTextureDesc {
         dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
@@ -20,7 +28,7 @@ function main() -> i32 {
 
     let bad_cube: GpuTextureDesc = GpuTextureDesc {
         dimension: GPU_TEX_CUBE, format: GPU_FORMAT_RGBA8,
-        width: 4, height: 8, layers: 5, samples: 1,
+        width: 4, height: rt(8), layers: rt(5), samples: 1,
         usage: GPU_USE_SAMPLED
     }
     if gpu_texture_valid(bad_cube) { return 5 }
@@ -34,14 +42,14 @@ function main() -> i32 {
     let bad_depth: GpuTextureDesc = GpuTextureDesc {
         dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
         width: 8, height: 8, layers: 1, samples: 4,
-        usage: GPU_USE_COLOR_ATTACHMENT
+        usage: rt(GPU_USE_COLOR_ATTACHMENT)
     }
     if gpu_texture_valid(bad_depth) { return 7 }
 
     let bad_storage: GpuTextureDesc = GpuTextureDesc {
         dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
         width: 8, height: 8, layers: 1, samples: 4,
-        usage: GPU_USE_STORAGE
+        usage: rt(GPU_USE_STORAGE)
     }
     if gpu_texture_valid(bad_storage) { return 8 }
 
@@ -52,7 +60,7 @@ function main() -> i32 {
     }
     if not gpu_sampler_valid(linear) { return 9 }
     let bad_sampler: GpuSamplerDesc = GpuSamplerDesc {
-        min_filter: 99, mag_filter: GPU_FILTER_NEAREST,
+        min_filter: rt(99), mag_filter: GPU_FILTER_NEAREST,
         address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_REPEAT,
         address_w: GPU_ADDRESS_CLAMP
     }
@@ -82,7 +90,7 @@ function main() -> i32 {
 
     let invalid_integer: GpuVarying = GpuVarying {
         location: 3, scalar: GPU_SCALAR_U32,
-        components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+        components: 1, interpolation: rt(GPU_INTERPOLATE_PERSPECTIVE)
     }
     if gpu_varying_valid(invalid_integer) { return 15 }
 
@@ -92,7 +100,7 @@ function main() -> i32 {
     }
     if not gpu_vertex_attribute_valid(attr) { return 16 }
     let bad_attr: GpuVertexAttribute = GpuVertexAttribute {
-        location: 0, offset: 16, stride: 20,
+        location: 0, offset: rt(16), stride: 20,
         scalar_bytes: 4, components: 3
     }
     if gpu_vertex_attribute_valid(bad_attr) { return 17 }

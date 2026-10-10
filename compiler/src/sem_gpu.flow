@@ -1,0 +1,1115 @@
+# @module flowc.sem_gpu
+# @means  Compile-time GPU descriptor checks (#811): texture format and
+#         usage, binding access, render targets, samplers, varyings, vertex
+#         attributes and the vertex/fragment stage interface.
+#
+# lib/stdlib/gpu_resource_types.flow and gpu_stage_codegen.flow describe
+# GPU resources as plain structs of i32 codes, and their validators run when
+# the program runs. When a descriptor is a compile-time constant (a struct
+# literal whose fields fold to integers through literals, module consts and
+# immutable `let` bindings), this pass applies the same rules while the
+# program is type checked and reports a coded error that names the struct,
+# the field and the format, usage or stage involved.
+#
+# The rules mirror the library validators exactly. A rule fires only when
+# every field it reads folds; anything built at run time (`let mut`,
+# parameters, calls) is left to the runtime validators, which stay as the
+# backstop. A struct is matched only when it is declared in one of the
+# library modules, so a user struct with the same name is not checked.
+# The codes and messages are listed in docs/gpu/descriptor-errors.md.
+
+import .ast {
+    AST_NONE, AST_INT, AST_BOOL, AST_IDENT, AST_UNARY, AST_BINOP, AST_CAST,
+    AST_FIELD_ACCESS, AST_STRUCT_LIT, AST_ARRAY_LIT, AST_INDEX,
+    AST_IDENT_FORK_SRC, AST_IDENT_SORT_MOD
+}
+import .token { TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_BAR, TOK_AMP }
+import .sem_util {
+    sem_s_len, sem_s_eq, sem_s_starts, sem_s_ends, sem_s_byte, sem_s_slice, sem_s_from, sem_s_span, sem_s_itoa,
+    sem_iv_get, sem_sv_get, sem_sv_len, sem_sv_add, sem_sm_get, sem_sm_put
+}
+import .sem_model {
+    Sem, DK_CONST, SK_CONST, SK_VARIABLE,
+    sem_set_mod, sem_nk, sem_na, sem_nb, sem_ncc, sem_nnext, sem_nival, sem_nstart,
+    sem_nname, sem_nname_is, sem_err, sem_lookup, sem_sym_kind, sem_struct_entry
+}
+
+extern {
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+}
+
+# Calls whose arguments declare a vertex/fragment stage interface:
+# (callee, suffix of the declaring module's path, index of the first of
+# the four arguments vertex_outputs, n_vertex, fragment_inputs, n_fragment).
+# Add a row here to check another stage-declaring call.
+const GPU_LINK_CALLS: i32 = 2
+
+function gpu_link_callee(i: i32) -> string {
+    if i == 0 { return "gpu_stage_links" }
+    return "gpu_pipeline_new"
+}
+
+function gpu_link_module(i: i32) -> string {
+    if i == 0 { return "gpu_resource_types.flow" }
+    return "gpu_render.flow"
+}
+
+function gpu_link_first_arg(i: i32) -> i32 {
+    if i == 0 { return 0 }
+    return 2
+}
+
+const GV_MAX_DEPTH: i32 = 32
+
+# A node in a module's arena (n = -1: nothing).
+struct GvRef {
+    m: i32,
+    n: i32
+}
+
+# A folded integer.
+struct GvInt {
+    ok: bool,
+    v: i64
+}
+
+# The first rule a descriptor breaks. code = "" when none is known to fail.
+struct GvDiag {
+    code: string,
+    field: string,
+    msg: string
+}
+
+function gv_none() -> GvRef {
+    return GvRef { m: 0 - 1, n: 0 - 1 }
+}
+
+function gv_unknown() -> GvInt {
+    return GvInt { ok: false, v: 0 }
+}
+
+function gv_known(v: i64) -> GvInt {
+    return GvInt { ok: true, v: v }
+}
+
+function gv_pass() -> GvDiag {
+    return GvDiag { code: "", field: "", msg: "" }
+}
+
+function gv_fail(code: string, field: string, msg: string) -> GvDiag {
+    return GvDiag { code: code, field: field, msg: msg }
+}
+
+function gv_failed(d: GvDiag) -> bool {
+    return sem_s_len(d.code) > 0
+}
+
+# ---------------------------------------------------------------------------
+# Folding
+# ---------------------------------------------------------------------------
+
+function gv_int_text(txt: string) -> i64 {
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < sem_s_len(txt) {
+        if sem_s_byte(txt, i) != 95 {
+            s = s + sem_s_slice(txt, i, i + 1)
+        }
+        i = i + 1
+    }
+    if sem_s_starts(s, "0x") or sem_s_starts(s, "0X") {
+        return strtol(sem_s_from(s, 2), null, 16)
+    }
+    if sem_s_starts(s, "0b") or sem_s_starts(s, "0B") {
+        return strtol(sem_s_from(s, 2), null, 2)
+    }
+    return strtol(s, null, 10)
+}
+
+# Follow identifiers (module consts, immutable lets) to the expression that
+# defines the value. Runs in module r.m and leaves c.cm unchanged.
+function gv_resolve(c: ptr<Sem>, r: GvRef, depth: i32) -> GvRef {
+    if r.n < 0 or r.m < 0 or depth > GV_MAX_DEPTH {
+        return gv_none()
+    }
+    let saved: i32 = c.cm
+    sem_set_mod(c, r.m)
+    let mut out: GvRef = r
+    if sem_nk(c, r.n) == AST_IDENT {
+        out = gv_none()
+        let iv: i32 = sem_nival(c, r.n)
+        if iv != AST_IDENT_FORK_SRC and iv != AST_IDENT_SORT_MOD and sem_nname_is(c, r.n, "null") == false {
+            let s: i32 = sem_lookup(c, sem_nname(c, r.n))
+            if s >= 0 {
+                let k: i32 = sem_sym_kind(c, s)
+                if k == SK_CONST {
+                    let d: i32 = sem_iv_get(c.sy_def, s)
+                    if d >= 0 and sem_iv_get(c.d_kind, d) == DK_CONST {
+                        let dm: i32 = sem_iv_get(c.d_mod, d)
+                        let dn: i32 = sem_iv_get(c.d_node, d)
+                        sem_set_mod(c, dm)
+                        if sem_nival(c, dn) != 2 and sem_nb(c, dn) != AST_NONE {
+                            out = gv_resolve(c, GvRef { m: dm, n: sem_nb(c, dn) }, depth + 1)
+                        }
+                    }
+                } elif k == SK_VARIABLE {
+                    let init: i32 = sem_iv_get(c.sy_init, s)
+                    if init >= 0 and sem_iv_get(c.sy_mut, s) == 0 {
+                        out = gv_resolve(c, GvRef { m: sem_iv_get(c.sy_init_mod, s), n: init }, depth + 1)
+                    }
+                }
+            }
+        }
+    }
+    sem_set_mod(c, saved)
+    return out
+}
+
+# The struct literal of type `tname` that `r` denotes, or none.
+function gv_struct(c: ptr<Sem>, r: GvRef, tname: string, depth: i32) -> GvRef {
+    let lit: GvRef = gv_resolve(c, r, depth)
+    if lit.n < 0 {
+        return gv_none()
+    }
+    let saved: i32 = c.cm
+    sem_set_mod(c, lit.m)
+    let mut out: GvRef = gv_none()
+    if sem_nk(c, lit.n) == AST_STRUCT_LIT and sem_nb(c, lit.n) == AST_NONE and sem_nname_is(c, lit.n, tname) {
+        out = lit
+    }
+    sem_set_mod(c, saved)
+    return out
+}
+
+# The AST_FIELD node that sets `fname` in the literal (the last one wins),
+# without looking into a record update's base.
+function gv_field_node(c: ptr<Sem>, lit: GvRef, fname: string) -> GvRef {
+    if lit.n < 0 {
+        return gv_none()
+    }
+    let saved: i32 = c.cm
+    sem_set_mod(c, lit.m)
+    let mut found: i32 = 0 - 1
+    let mut f: i32 = sem_na(c, lit.n)
+    while f != AST_NONE {
+        if sem_nname_is(c, f, fname) {
+            found = f
+        }
+        f = sem_nnext(c, f)
+    }
+    sem_set_mod(c, saved)
+    if found < 0 {
+        return gv_none()
+    }
+    return GvRef { m: lit.m, n: found }
+}
+
+# The expression a struct literal gives field `fname`, through a record
+# update's base when the literal does not set it.
+function gv_field(c: ptr<Sem>, lit: GvRef, tname: string, fname: string, depth: i32) -> GvRef {
+    if lit.n < 0 or depth > GV_MAX_DEPTH {
+        return gv_none()
+    }
+    let fnode: GvRef = gv_field_node(c, lit, fname)
+    let saved: i32 = c.cm
+    sem_set_mod(c, lit.m)
+    let mut out: GvRef = gv_none()
+    if fnode.n >= 0 {
+        out = GvRef { m: lit.m, n: sem_na(c, fnode.n) }
+    } elif sem_ncc(c, lit.n) != AST_NONE {
+        let base: GvRef = gv_struct(c, GvRef { m: lit.m, n: sem_ncc(c, lit.n) }, tname, depth + 1)
+        out = gv_field(c, base, tname, fname, depth + 1)
+    }
+    sem_set_mod(c, saved)
+    return out
+}
+
+function gv_int(c: ptr<Sem>, r: GvRef, depth: i32) -> GvInt {
+    if r.n < 0 or r.m < 0 or depth > GV_MAX_DEPTH {
+        return gv_unknown()
+    }
+    let saved: i32 = c.cm
+    sem_set_mod(c, r.m)
+    let k: i32 = sem_nk(c, r.n)
+    let mut out: GvInt = gv_unknown()
+    if k == AST_INT {
+        let txt: string = sem_s_span(c.src, c.ar.nodes[r.n].name_start, c.ar.nodes[r.n].name_end)
+        if sem_s_len(txt) == 0 {
+            out = gv_known(sem_nival(c, r.n) as i64)
+        } else {
+            out = gv_known(gv_int_text(txt))
+        }
+    } elif k == AST_BOOL {
+        out = gv_known(sem_nival(c, r.n) as i64)
+    } elif k == AST_UNARY {
+        if sem_nival(c, r.n) == TOK_MINUS {
+            let a: GvInt = gv_int(c, GvRef { m: r.m, n: sem_na(c, r.n) }, depth + 1)
+            if a.ok {
+                out = gv_known(0 - a.v)
+            }
+        }
+    } elif k == AST_BINOP {
+        let op: i32 = sem_nival(c, r.n)
+        if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR or op == TOK_BAR or op == TOK_AMP {
+            let a2: GvInt = gv_int(c, GvRef { m: r.m, n: sem_na(c, r.n) }, depth + 1)
+            let b2: GvInt = gv_int(c, GvRef { m: r.m, n: sem_nb(c, r.n) }, depth + 1)
+            if a2.ok and b2.ok {
+                if op == TOK_PLUS {
+                    out = gv_known(a2.v + b2.v)
+                } elif op == TOK_MINUS {
+                    out = gv_known(a2.v - b2.v)
+                } elif op == TOK_STAR {
+                    out = gv_known(a2.v * b2.v)
+                } elif op == TOK_BAR {
+                    out = gv_known(a2.v | b2.v)
+                } else {
+                    out = gv_known(a2.v & b2.v)
+                }
+            }
+        }
+    } elif k == AST_CAST {
+        out = gv_int(c, GvRef { m: r.m, n: sem_na(c, r.n) }, depth + 1)
+    } elif k == AST_IDENT {
+        let d: GvRef = gv_resolve(c, r, depth + 1)
+        if d.n >= 0 and (d.m != r.m or d.n != r.n) {
+            out = gv_int(c, d, depth + 1)
+        }
+    } elif k == AST_FIELD_ACCESS {
+        # `t.width` where t folds to a struct literal (of any type).
+        let base: GvRef = gv_resolve(c, GvRef { m: r.m, n: sem_na(c, r.n) }, depth + 1)
+        if base.n >= 0 {
+            sem_set_mod(c, base.m)
+            if sem_nk(c, base.n) == AST_STRUCT_LIT {
+                let tn: string = sem_nname(c, base.n)
+                sem_set_mod(c, r.m)
+                out = gv_int(c, gv_field(c, base, tn, sem_nname(c, r.n), depth + 1), depth + 1)
+            }
+        }
+    }
+    sem_set_mod(c, saved)
+    return out
+}
+
+# An integer field of a struct literal.
+function gv_get(c: ptr<Sem>, lit: GvRef, tname: string, fname: string) -> GvInt {
+    if lit.n < 0 {
+        return gv_unknown()
+    }
+    return gv_int(c, gv_field(c, lit, tname, fname, 0), 0)
+}
+
+# A nested struct field (`color: GpuTextureDesc`), folded to its literal.
+function gv_sub(c: ptr<Sem>, lit: GvRef, tname: string, fname: string, sub: string) -> GvRef {
+    if lit.n < 0 {
+        return gv_none()
+    }
+    return gv_struct(c, gv_field(c, lit, tname, fname, 0), sub, 0)
+}
+
+# A GPU_* const of the library, by name. Folded, so the rules never spell
+# the numbers themselves.
+function gv_k(c: ptr<Sem>, name: string) -> GvInt {
+    let s: i32 = sem_lookup(c, name)
+    if s < 0 or sem_sym_kind(c, s) != SK_CONST {
+        return gv_unknown()
+    }
+    let d: i32 = sem_iv_get(c.sy_def, s)
+    if d < 0 or sem_iv_get(c.d_kind, d) != DK_CONST {
+        return gv_unknown()
+    }
+    let dm: i32 = sem_iv_get(c.d_mod, d)
+    let saved: i32 = c.cm
+    sem_set_mod(c, dm)
+    let dn: i32 = sem_iv_get(c.d_node, d)
+    let mut out: GvInt = gv_unknown()
+    if sem_nb(c, dn) != AST_NONE {
+        out = gv_int(c, GvRef { m: dm, n: sem_nb(c, dn) }, 1)
+    }
+    sem_set_mod(c, saved)
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# The library's constants
+# ---------------------------------------------------------------------------
+
+struct GvK {
+    ok: bool,
+    tex_2d: i64,
+    tex_cube: i64,
+    rgba8: i64,
+    rgba16f: i64,
+    depth32f: i64,
+    use_sampled: i64,
+    use_storage: i64,
+    use_color: i64,
+    use_depth: i64,
+    f_nearest: i64,
+    f_linear: i64,
+    a_clamp: i64,
+    a_repeat: i64,
+    s_f32: i64,
+    s_i32: i64,
+    s_u32: i64,
+    i_persp: i64,
+    i_flat: i64,
+    acc_sample: i64,
+    acc_sread: i64,
+    acc_swrite: i64,
+    st_vertex: i64,
+    has_access: bool
+}
+
+function gv_kv(c: ptr<Sem>, name: string, ok: ptr<i32>) -> i64 {
+    let v: GvInt = gv_k(c, name)
+    if v.ok == false {
+        ok[0] = 0
+        return 0
+    }
+    return v.v
+}
+
+function gv_consts(c: ptr<Sem>) -> GvK {
+    let ok: array<i32, 1> = [1]
+    let p: ptr<i32> = &ok[0] as ptr<i32>
+    let mut k: GvK = GvK {
+        ok: false,
+        tex_2d: gv_kv(c, "GPU_TEX_2D", p),
+        tex_cube: gv_kv(c, "GPU_TEX_CUBE", p),
+        rgba8: gv_kv(c, "GPU_FORMAT_RGBA8", p),
+        rgba16f: gv_kv(c, "GPU_FORMAT_RGBA16F", p),
+        depth32f: gv_kv(c, "GPU_FORMAT_DEPTH32F", p),
+        use_sampled: gv_kv(c, "GPU_USE_SAMPLED", p),
+        use_storage: gv_kv(c, "GPU_USE_STORAGE", p),
+        use_color: gv_kv(c, "GPU_USE_COLOR_ATTACHMENT", p),
+        use_depth: gv_kv(c, "GPU_USE_DEPTH_ATTACHMENT", p),
+        f_nearest: gv_kv(c, "GPU_FILTER_NEAREST", p),
+        f_linear: gv_kv(c, "GPU_FILTER_LINEAR", p),
+        a_clamp: gv_kv(c, "GPU_ADDRESS_CLAMP", p),
+        a_repeat: gv_kv(c, "GPU_ADDRESS_REPEAT", p),
+        s_f32: gv_kv(c, "GPU_SCALAR_F32", p),
+        s_i32: gv_kv(c, "GPU_SCALAR_I32", p),
+        s_u32: gv_kv(c, "GPU_SCALAR_U32", p),
+        i_persp: gv_kv(c, "GPU_INTERPOLATE_PERSPECTIVE", p),
+        i_flat: gv_kv(c, "GPU_INTERPOLATE_FLAT", p),
+        acc_sample: 0,
+        acc_sread: 0,
+        acc_swrite: 0,
+        st_vertex: 0,
+        has_access: false
+    }
+    k.ok = ok[0] == 1
+    let ok2: array<i32, 1> = [1]
+    let p2: ptr<i32> = &ok2[0] as ptr<i32>
+    k.acc_sample = gv_kv(c, "GPU_ACCESS_SAMPLE", p2)
+    k.acc_sread = gv_kv(c, "GPU_ACCESS_STORAGE_READ", p2)
+    k.acc_swrite = gv_kv(c, "GPU_ACCESS_STORAGE_WRITE", p2)
+    k.st_vertex = gv_kv(c, "GPU_STAGE_VERTEX", p2)
+    k.has_access = ok2[0] == 1
+    return k
+}
+
+# "a" or "an" before a name, by how it is spoken (an rgba8, an i32, a u32).
+function gv_article(name: string) -> string {
+    let b: i32 = sem_s_byte(name, 0)
+    if b == 97 or b == 101 or b == 105 or b == 111 or b == 114 {
+        return "an " + name
+    }
+    return "a " + name
+}
+
+function gv_format_name(k: GvK, v: i64) -> string {
+    if v == k.rgba8 { return "rgba8" }
+    if v == k.rgba16f { return "rgba16f" }
+    if v == k.depth32f { return "depth32f" }
+    return "format " + sem_s_itoa(v)
+}
+
+function gv_scalar_name(k: GvK, v: i64) -> string {
+    if v == k.s_f32 { return "f32" }
+    if v == k.s_i32 { return "i32" }
+    if v == k.s_u32 { return "u32" }
+    return "scalar " + sem_s_itoa(v)
+}
+
+function gv_interp_name(k: GvK, v: i64) -> string {
+    if v == k.i_persp { return "perspective" }
+    if v == k.i_flat { return "flat" }
+    return "interpolation " + sem_s_itoa(v)
+}
+
+function gv_dim_name(k: GvK, v: i64) -> string {
+    if v == k.tex_2d { return "2d" }
+    if v == k.tex_cube { return "cube" }
+    return "dimension " + sem_s_itoa(v)
+}
+
+function gv_has(usage: i64, bit: i64) -> bool {
+    return (usage & bit) != 0
+}
+
+# ---------------------------------------------------------------------------
+# Rules, in the order of the library validators
+# ---------------------------------------------------------------------------
+
+# gpu_texture_valid
+function gv_texture_rules(c: ptr<Sem>, k: GvK, t: GvRef) -> GvDiag {
+    let tn: string = "GpuTextureDesc"
+    let dim: GvInt = gv_get(c, t, tn, "dimension")
+    let fmt: GvInt = gv_get(c, t, tn, "format")
+    let w: GvInt = gv_get(c, t, tn, "width")
+    let h: GvInt = gv_get(c, t, tn, "height")
+    let layers: GvInt = gv_get(c, t, tn, "layers")
+    let samples: GvInt = gv_get(c, t, tn, "samples")
+    let usage: GvInt = gv_get(c, t, tn, "usage")
+    if dim.ok and dim.v != k.tex_2d and dim.v != k.tex_cube {
+        return gv_fail("GPU001", "dimension", "unknown texture dimension " + sem_s_itoa(dim.v) + " (expected GPU_TEX_2D or GPU_TEX_CUBE)")
+    }
+    if w.ok and (w.v <= 0 or w.v > 16384) {
+        return gv_fail("GPU007", "width", "texture width " + sem_s_itoa(w.v) + " is outside 1..16384")
+    }
+    if h.ok and (h.v <= 0 or h.v > 16384) {
+        return gv_fail("GPU007", "height", "texture height " + sem_s_itoa(h.v) + " is outside 1..16384")
+    }
+    if layers.ok and (layers.v <= 0 or layers.v > 2048) {
+        return gv_fail("GPU007", "layers", "texture layer count " + sem_s_itoa(layers.v) + " is outside 1..2048")
+    }
+    if samples.ok and samples.v != 1 and samples.v != 2 and samples.v != 4 and samples.v != 8 {
+        return gv_fail("GPU005", "samples", "sample count " + sem_s_itoa(samples.v) + " is not 1, 2, 4 or 8")
+    }
+    if fmt.ok and fmt.v != k.rgba8 and fmt.v != k.rgba16f and fmt.v != k.depth32f {
+        return gv_fail("GPU002", "format", "unknown texture format " + sem_s_itoa(fmt.v) + " (expected rgba8, rgba16f or depth32f)")
+    }
+    if usage.ok and (usage.v <= 0 or (usage.v & (0 - 16)) != 0) {
+        return gv_fail("GPU003", "usage", "usage " + sem_s_itoa(usage.v) + " is not a nonempty set of GPU_USE_* bits")
+    }
+    if dim.ok and dim.v == k.tex_cube {
+        if w.ok and h.ok and w.v != h.v {
+            return gv_fail("GPU006", "height", "a cube texture needs square faces, got " + sem_s_itoa(w.v) + "x" + sem_s_itoa(h.v))
+        }
+        if layers.ok and layers.v % 6 != 0 {
+            return gv_fail("GPU006", "layers", "a cube texture needs a multiple of 6 layers, got " + sem_s_itoa(layers.v))
+        }
+        if samples.ok and samples.v != 1 {
+            return gv_fail("GPU005", "samples", "a cube texture cannot be multisampled (" + sem_s_itoa(samples.v) + " samples)")
+        }
+    }
+    if samples.ok and samples.v > 1 {
+        if dim.ok and dim.v != k.tex_2d {
+            return gv_fail("GPU005", "samples", "a multisampled texture must be 2d, got " + gv_dim_name(k, dim.v))
+        }
+        if layers.ok and layers.v != 1 {
+            return gv_fail("GPU005", "layers", "a multisampled texture must have 1 layer, got " + sem_s_itoa(layers.v))
+        }
+        if usage.ok and gv_has(usage.v, k.use_storage) {
+            return gv_fail("GPU004", "usage", "a multisampled texture cannot have usage storage")
+        }
+    }
+    if fmt.ok and usage.ok {
+        if fmt.v == k.depth32f {
+            if gv_has(usage.v, k.use_depth) == false and gv_has(usage.v, k.use_sampled) == false {
+                return gv_fail("GPU004", "usage", "a depth32f texture needs usage depth_attachment or sampled")
+            }
+            if gv_has(usage.v, k.use_color) {
+                return gv_fail("GPU004", "usage", "a depth32f texture cannot have usage color_attachment")
+            }
+            if gv_has(usage.v, k.use_storage) {
+                return gv_fail("GPU004", "usage", "a depth32f texture cannot have usage storage")
+            }
+        } elif gv_has(usage.v, k.use_depth) {
+            return gv_fail("GPU004", "usage", gv_article(gv_format_name(k, fmt.v)) + " texture cannot have usage depth_attachment (only depth32f can)")
+        }
+    }
+    if samples.ok and samples.v > 1 and usage.ok and gv_has(usage.v, k.use_color | k.use_depth) == false {
+        return gv_fail("GPU005", "usage", "a multisampled texture needs usage color_attachment or depth_attachment")
+    }
+    return gv_pass()
+}
+
+# gpu_sampler_valid
+function gv_sampler_rules(c: ptr<Sem>, k: GvK, s: GvRef) -> GvDiag {
+    let tn: string = "GpuSamplerDesc"
+    let filters: array<string, 2> = ["min_filter", "mag_filter"]
+    let mut i: i32 = 0
+    while i < 2 {
+        let f: GvInt = gv_get(c, s, tn, filters[i])
+        if f.ok and f.v != k.f_nearest and f.v != k.f_linear {
+            return gv_fail("GPU010", filters[i], "unknown filter " + sem_s_itoa(f.v) + " (expected GPU_FILTER_NEAREST or GPU_FILTER_LINEAR)")
+        }
+        i = i + 1
+    }
+    let modes: array<string, 3> = ["address_u", "address_v", "address_w"]
+    i = 0
+    while i < 3 {
+        let a: GvInt = gv_get(c, s, tn, modes[i])
+        if a.ok and a.v != k.a_clamp and a.v != k.a_repeat {
+            return gv_fail("GPU011", modes[i], "unknown address mode " + sem_s_itoa(a.v) + " (expected GPU_ADDRESS_CLAMP or GPU_ADDRESS_REPEAT)")
+        }
+        i = i + 1
+    }
+    return gv_pass()
+}
+
+# gpu_varying_valid
+function gv_varying_rules(c: ptr<Sem>, k: GvK, v: GvRef) -> GvDiag {
+    let tn: string = "GpuVarying"
+    let loc: GvInt = gv_get(c, v, tn, "location")
+    let comps: GvInt = gv_get(c, v, tn, "components")
+    let scalar: GvInt = gv_get(c, v, tn, "scalar")
+    let interp: GvInt = gv_get(c, v, tn, "interpolation")
+    if loc.ok and (loc.v < 0 or loc.v > 31) {
+        return gv_fail("GPU020", "location", "varying location " + sem_s_itoa(loc.v) + " is outside 0..31")
+    }
+    if comps.ok and (comps.v <= 0 or comps.v > 4) {
+        return gv_fail("GPU021", "components", "a varying has 1 to 4 components, got " + sem_s_itoa(comps.v))
+    }
+    if scalar.ok and scalar.v != k.s_f32 and scalar.v != k.s_i32 and scalar.v != k.s_u32 {
+        return gv_fail("GPU022", "scalar", "unknown varying scalar type " + sem_s_itoa(scalar.v) + " (expected f32, i32 or u32)")
+    }
+    if interp.ok and interp.v != k.i_persp and interp.v != k.i_flat {
+        return gv_fail("GPU022", "interpolation", "unknown interpolation " + sem_s_itoa(interp.v) + " (expected perspective or flat)")
+    }
+    if scalar.ok and interp.ok and scalar.v != k.s_f32 and interp.v != k.i_flat {
+        return gv_fail("GPU023", "interpolation", gv_article(gv_scalar_name(k, scalar.v)) + " varying must use flat interpolation")
+    }
+    return gv_pass()
+}
+
+# gpu_vertex_attribute_valid
+function gv_attribute_rules(c: ptr<Sem>, k: GvK, a: GvRef) -> GvDiag {
+    let tn: string = "GpuVertexAttribute"
+    let loc: GvInt = gv_get(c, a, tn, "location")
+    let comps: GvInt = gv_get(c, a, tn, "components")
+    let sb: GvInt = gv_get(c, a, tn, "scalar_bytes")
+    let stride: GvInt = gv_get(c, a, tn, "stride")
+    let off: GvInt = gv_get(c, a, tn, "offset")
+    if loc.ok and (loc.v < 0 or loc.v > 31) {
+        return gv_fail("GPU031", "location", "attribute location " + sem_s_itoa(loc.v) + " is outside 0..31")
+    }
+    if comps.ok and (comps.v < 1 or comps.v > 4) {
+        return gv_fail("GPU031", "components", "an attribute has 1 to 4 components, got " + sem_s_itoa(comps.v))
+    }
+    if sb.ok and sb.v != 2 and sb.v != 4 {
+        return gv_fail("GPU031", "scalar_bytes", "attribute scalars are 2 or 4 bytes, got " + sem_s_itoa(sb.v))
+    }
+    if stride.ok and (stride.v <= 0 or stride.v > 2048) {
+        return gv_fail("GPU031", "stride", "vertex stride " + sem_s_itoa(stride.v) + " is outside 1..2048")
+    }
+    if off.ok and off.v < 0 {
+        return gv_fail("GPU031", "offset", "attribute offset " + sem_s_itoa(off.v) + " is negative")
+    }
+    if sb.ok and comps.ok and stride.ok and off.ok {
+        let bytes: i64 = sb.v * comps.v
+        if bytes > stride.v or off.v > stride.v - bytes {
+            return gv_fail("GPU030", "offset", "an attribute of " + sem_s_itoa(bytes) + " bytes at offset " + sem_s_itoa(off.v) + " does not fit the " + sem_s_itoa(stride.v) + "-byte stride")
+        }
+    }
+    return gv_pass()
+}
+
+# A nested descriptor that breaks its own rules is reported at its own
+# literal; the composite rules below then stay quiet about it.
+function gv_texture_broken(c: ptr<Sem>, k: GvK, t: GvRef) -> bool {
+    return t.n >= 0 and gv_failed(gv_texture_rules(c, k, t))
+}
+
+# gpu_targets_valid. `field` prefixes the message when the targets are
+# themselves a field of a sampled pipeline.
+function gv_targets_rules(c: ptr<Sem>, k: GvK, rt: GvRef) -> GvDiag {
+    let tn: string = "GpuRenderTargets"
+    let color: GvRef = gv_sub(c, rt, tn, "color", "GpuTextureDesc")
+    let depth: GvRef = gv_sub(c, rt, tn, "depth", "GpuTextureDesc")
+    let has_depth: GvInt = gv_get(c, rt, tn, "has_depth")
+    let td: string = "GpuTextureDesc"
+    if gv_texture_broken(c, k, color) == false {
+        let cu: GvInt = gv_get(c, color, td, "usage")
+        let cf: GvInt = gv_get(c, color, td, "format")
+        if cu.ok and gv_has(cu.v, k.use_color) == false {
+            return gv_fail("GPU040", "color", "the color target texture lacks usage color_attachment")
+        }
+        if cf.ok and cf.v == k.depth32f {
+            return gv_fail("GPU040", "color", "the color target cannot be depth32f")
+        }
+    }
+    if has_depth.ok and has_depth.v != 0 and gv_texture_broken(c, k, depth) == false and gv_texture_broken(c, k, color) == false {
+        let df: GvInt = gv_get(c, depth, td, "format")
+        let du: GvInt = gv_get(c, depth, td, "usage")
+        if df.ok and df.v != k.depth32f {
+            return gv_fail("GPU041", "depth", "the depth target must be depth32f, got " + gv_format_name(k, df.v))
+        }
+        if du.ok and gv_has(du.v, k.use_depth) == false {
+            return gv_fail("GPU041", "depth", "the depth target texture lacks usage depth_attachment")
+        }
+        let dw: GvInt = gv_get(c, depth, td, "width")
+        let dh: GvInt = gv_get(c, depth, td, "height")
+        let cw: GvInt = gv_get(c, color, td, "width")
+        let ch: GvInt = gv_get(c, color, td, "height")
+        if dw.ok and dh.ok and cw.ok and ch.ok and (dw.v != cw.v or dh.v != ch.v) {
+            return gv_fail("GPU042", "depth", "the depth target is " + sem_s_itoa(dw.v) + "x" + sem_s_itoa(dh.v) + " but the color target is " + sem_s_itoa(cw.v) + "x" + sem_s_itoa(ch.v))
+        }
+        if dw.ok and cw.ok and dw.v != cw.v {
+            return gv_fail("GPU042", "depth", "the depth target width " + sem_s_itoa(dw.v) + " differs from the color target width " + sem_s_itoa(cw.v))
+        }
+        if dh.ok and ch.ok and dh.v != ch.v {
+            return gv_fail("GPU042", "depth", "the depth target height " + sem_s_itoa(dh.v) + " differs from the color target height " + sem_s_itoa(ch.v))
+        }
+        let ds: GvInt = gv_get(c, depth, td, "samples")
+        let cs: GvInt = gv_get(c, color, td, "samples")
+        if ds.ok and cs.ok and ds.v != cs.v {
+            return gv_fail("GPU042", "depth", "the depth target sample count " + sem_s_itoa(ds.v) + " differs from the color target sample count " + sem_s_itoa(cs.v))
+        }
+    }
+    return gv_pass()
+}
+
+# gpu_sampled_pipeline_valid
+function gv_pipeline_rules(c: ptr<Sem>, k: GvK, p: GvRef) -> GvDiag {
+    let tn: string = "GpuSampledPipeline"
+    let td: string = "GpuTextureDesc"
+    let tex: GvRef = gv_sub(c, p, tn, "texture", td)
+    if tex.n >= 0 and gv_texture_broken(c, k, tex) == false {
+        let u: GvInt = gv_get(c, tex, td, "usage")
+        let s: GvInt = gv_get(c, tex, td, "samples")
+        let f: GvInt = gv_get(c, tex, td, "format")
+        if u.ok and gv_has(u.v, k.use_sampled) == false {
+            return gv_fail("GPU050", "texture", "the sampled texture lacks usage sampled")
+        }
+        if s.ok and s.v != 1 {
+            return gv_fail("GPU051", "texture", "cannot sample a multisampled texture (" + sem_s_itoa(s.v) + " samples)")
+        }
+        if f.ok and f.v == k.depth32f {
+            return gv_fail("GPU051", "texture", "cannot sample a depth32f texture as color")
+        }
+    }
+    let v: GvRef = gv_sub(c, p, tn, "varying", "GpuVarying")
+    if v.n >= 0 and gv_failed(gv_varying_rules(c, k, v)) == false {
+        let vt: string = "GpuVarying"
+        let loc: GvInt = gv_get(c, v, vt, "location")
+        let sc: GvInt = gv_get(c, v, vt, "scalar")
+        let co: GvInt = gv_get(c, v, vt, "components")
+        let ip: GvInt = gv_get(c, v, vt, "interpolation")
+        if loc.ok and loc.v != 0 {
+            return gv_fail("GPU052", "varying", "the texture coordinate varying must be at location 0, got " + sem_s_itoa(loc.v))
+        }
+        if sc.ok and sc.v != k.s_f32 {
+            return gv_fail("GPU052", "varying", "the texture coordinate varying must be f32, got " + gv_scalar_name(k, sc.v))
+        }
+        let dim: GvInt = gv_get(c, tex, td, "dimension")
+        if co.ok and dim.ok and tex.n >= 0 and gv_texture_broken(c, k, tex) == false {
+            let mut want: i64 = 2
+            if dim.v == k.tex_cube {
+                want = 3
+            }
+            if co.v != want {
+                return gv_fail("GPU052", "varying", "a " + gv_dim_name(k, dim.v) + " texture needs a " + sem_s_itoa(want) + "-component coordinate varying, got " + sem_s_itoa(co.v))
+            }
+        }
+        if ip.ok and ip.v != k.i_persp {
+            return gv_fail("GPU052", "varying", "the texture coordinate varying must use perspective interpolation, got " + gv_interp_name(k, ip.v))
+        }
+    }
+    return gv_pass()
+}
+
+# gpu_texture_binding_valid
+function gv_binding_rules(c: ptr<Sem>, k: GvK, b: GvRef) -> GvDiag {
+    if k.has_access == false {
+        return gv_pass()
+    }
+    let tn: string = "GpuTextureBinding"
+    let td: string = "GpuTextureDesc"
+    let slot: GvInt = gv_get(c, b, tn, "slot")
+    let stages: GvInt = gv_get(c, b, tn, "stages")
+    let access: GvInt = gv_get(c, b, tn, "access")
+    let tex: GvRef = gv_sub(c, b, tn, "texture", td)
+    if slot.ok and (slot.v < 0 or slot.v > 15) {
+        return gv_fail("GPU058", "slot", "binding slot " + sem_s_itoa(slot.v) + " is outside 0..15")
+    }
+    if stages.ok and (stages.v <= 0 or (stages.v & (0 - 8)) != 0) {
+        return gv_fail("GPU058", "stages", "stages " + sem_s_itoa(stages.v) + " is not a nonempty set of GPU_STAGE_* bits")
+    }
+    if access.ok and access.v != k.acc_sample and access.v != k.acc_sread and access.v != k.acc_swrite {
+        return gv_fail("GPU058", "access", "unknown access " + sem_s_itoa(access.v) + " (expected GPU_ACCESS_SAMPLE, GPU_ACCESS_STORAGE_READ or GPU_ACCESS_STORAGE_WRITE)")
+    }
+    if access.ok == false or gv_texture_broken(c, k, tex) {
+        return gv_pass()
+    }
+    let u: GvInt = gv_get(c, tex, td, "usage")
+    let s: GvInt = gv_get(c, tex, td, "samples")
+    let f: GvInt = gv_get(c, tex, td, "format")
+    let d: GvInt = gv_get(c, tex, td, "dimension")
+    if access.v == k.acc_sample {
+        if u.ok and gv_has(u.v, k.use_sampled) == false {
+            return gv_fail("GPU055", "access", "a sample binding needs a texture with usage sampled")
+        }
+        if s.ok and s.v != 1 {
+            return gv_fail("GPU056", "access", "a sample binding cannot read a multisampled texture (" + sem_s_itoa(s.v) + " samples)")
+        }
+        if f.ok and f.v == k.depth32f {
+            return gv_fail("GPU056", "access", "a sample binding cannot read a depth32f texture as color")
+        }
+        return gv_pass()
+    }
+    let mut what: string = "storage_read"
+    if access.v == k.acc_swrite {
+        what = "storage_write"
+    }
+    if u.ok and gv_has(u.v, k.use_storage) == false {
+        return gv_fail("GPU055", "access", "a " + what + " binding needs a texture with usage storage")
+    }
+    if s.ok and s.v != 1 {
+        return gv_fail("GPU056", "access", "a " + what + " binding needs a single-sample texture, got " + sem_s_itoa(s.v) + " samples")
+    }
+    if f.ok and f.v == k.depth32f {
+        return gv_fail("GPU056", "access", "a " + what + " binding cannot use a depth32f texture")
+    }
+    if d.ok and d.v != k.tex_2d {
+        return gv_fail("GPU056", "access", "a " + what + " binding needs a 2d texture, got " + gv_dim_name(k, d.v))
+    }
+    if access.v == k.acc_swrite and stages.ok and gv_has(stages.v, k.st_vertex) {
+        return gv_fail("GPU057", "stages", "the vertex stage cannot write a storage texture")
+    }
+    return gv_pass()
+}
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+# True when struct `name` is declared in a module whose path ends with one
+# of the GPU library files.
+function gv_library_struct(c: ptr<Sem>, name: string) -> bool {
+    let se: i32 = sem_struct_entry(c, name)
+    if se < 0 {
+        return false
+    }
+    let d: i32 = sem_iv_get(c.se_decl, se)
+    if d < 0 {
+        return false
+    }
+    let p: string = c.m_path[sem_iv_get(c.d_mod, d)]
+    if p as ptr<u8> == null {
+        return false
+    }
+    return sem_s_ends(p, "gpu_resource_types.flow") or sem_s_ends(p, "gpu_stage_codegen.flow")
+}
+
+# Report once per (node, code): a quiet re-check that truncated the error
+# list does not suppress the real report.
+function gv_report(c: ptr<Sem>, at: GvRef, msg: string) {
+    let key: string = sem_s_itoa(at.m as i64) + ":" + sem_s_itoa(at.n as i64) + ":" + msg
+    let prev: i32 = sem_sm_get(c.gpu_reported, key)
+    if prev >= 0 and prev < sem_sv_len(c.errors) and sem_s_eq(sem_sv_get(c.errors, prev), msg) {
+        return
+    }
+    let saved_pos: i32 = c.pos
+    let saved_mod: i32 = c.cm
+    if at.n >= 0 and at.m == c.cm and c.pos_lock == false {
+        let p: i32 = sem_nstart(c, at.n)
+        if p > 0 {
+            c.pos = p
+        } elif c.ar.nodes[at.n].name_start > 0 {
+            c.pos = c.ar.nodes[at.n].name_start
+        }
+    }
+    sem_sm_put(c.gpu_reported, key, sem_sv_len(c.errors))
+    sem_err(c, msg)
+    # A compile-time error in lenient mode too (`flow run`, `flow compile`):
+    # the decision of 2026-10-08 makes these type errors, never warnings.
+    sem_sv_add(c.fatal, msg)
+    c.pos = saved_pos
+    sem_set_mod(c, saved_mod)
+}
+
+# Check a struct literal of one of the GPU descriptor types (e in c.cm).
+export function sem_gpu_check_literal(c: ptr<Sem>, e: i32) {
+    if sem_nk(c, e) != AST_STRUCT_LIT or sem_nb(c, e) != AST_NONE {
+        return
+    }
+    let name: string = sem_nname(c, e)
+    let mut kind: i32 = 0
+    let kinds: array<string, 7> = ["GpuTextureDesc", "GpuSamplerDesc", "GpuVarying", "GpuVertexAttribute", "GpuRenderTargets", "GpuSampledPipeline", "GpuTextureBinding"]
+    let mut ki: i32 = 0
+    while ki < 7 {
+        if sem_s_eq(name, kinds[ki]) {
+            kind = ki + 1
+        }
+        ki = ki + 1
+    }
+    if kind == 0 or gv_library_struct(c, name) == false {
+        return
+    }
+    let k: GvK = gv_consts(c)
+    if k.ok == false {
+        return
+    }
+    let lit: GvRef = GvRef { m: c.cm, n: e }
+    let mut d: GvDiag = gv_pass()
+    if kind == 1 {
+        d = gv_texture_rules(c, k, lit)
+    } elif kind == 2 {
+        d = gv_sampler_rules(c, k, lit)
+    } elif kind == 3 {
+        d = gv_varying_rules(c, k, lit)
+    } elif kind == 4 {
+        d = gv_attribute_rules(c, k, lit)
+    } elif kind == 5 {
+        d = gv_targets_rules(c, k, lit)
+    } elif kind == 6 {
+        d = gv_pipeline_rules(c, k, lit)
+    } else {
+        d = gv_binding_rules(c, k, lit)
+    }
+    if gv_failed(d) == false {
+        return
+    }
+    let mut at: GvRef = gv_field_node(c, lit, d.field)
+    if at.n < 0 {
+        at = lit
+    }
+    gv_report(c, at, "[" + d.code + "] " + name + " field '" + d.field + "': " + d.msg)
+}
+
+# ---------------------------------------------------------------------------
+# Stage interface
+# ---------------------------------------------------------------------------
+
+# `&arr[i]` (or `arr`) where arr folds to an array literal: the literal and
+# the start index. n = -1 when it does not fold.
+struct GvSlice {
+    arr: GvRef,
+    start: i32
+}
+
+function gv_slice(c: ptr<Sem>, e: GvRef) -> GvSlice {
+    let none: GvSlice = GvSlice { arr: gv_none(), start: 0 }
+    if e.n < 0 {
+        return none
+    }
+    let saved: i32 = c.cm
+    sem_set_mod(c, e.m)
+    let mut node: i32 = e.n
+    let mut start: i64 = 0
+    let mut ok: bool = true
+    if sem_nk(c, node) == AST_UNARY and sem_nival(c, node) == TOK_AMP {
+        node = sem_na(c, node)
+        if sem_nk(c, node) == AST_INDEX and sem_nival(c, node) != 1 {
+            let idx: GvInt = gv_int(c, GvRef { m: e.m, n: sem_nb(c, node) }, 0)
+            if idx.ok {
+                start = idx.v
+            } else {
+                ok = false
+            }
+            node = sem_na(c, node)
+        } else {
+            ok = false
+        }
+    }
+    let mut out: GvSlice = none
+    if ok {
+        let arr: GvRef = gv_resolve(c, GvRef { m: e.m, n: node }, 0)
+        if arr.n >= 0 {
+            sem_set_mod(c, arr.m)
+            if sem_nk(c, arr.n) == AST_ARRAY_LIT and sem_nb(c, arr.n) == AST_NONE {
+                out = GvSlice { arr: arr, start: start as i32 }
+            }
+        }
+    }
+    sem_set_mod(c, saved)
+    return out
+}
+
+function gv_elem(c: ptr<Sem>, s: GvSlice, i: i32) -> GvRef {
+    let saved: i32 = c.cm
+    sem_set_mod(c, s.arr.m)
+    let mut el: i32 = sem_na(c, s.arr.n)
+    let mut j: i32 = 0
+    while el != AST_NONE and j < s.start + i {
+        el = sem_nnext(c, el)
+        j = j + 1
+    }
+    sem_set_mod(c, saved)
+    if el == AST_NONE {
+        return gv_none()
+    }
+    return GvRef { m: s.arr.m, n: el }
+}
+
+function gv_slice_len(c: ptr<Sem>, s: GvSlice) -> i32 {
+    let saved: i32 = c.cm
+    sem_set_mod(c, s.arr.m)
+    let mut n: i32 = 0
+    let mut el: i32 = sem_na(c, s.arr.n)
+    while el != AST_NONE {
+        n = n + 1
+        el = sem_nnext(c, el)
+    }
+    sem_set_mod(c, saved)
+    return n - s.start
+}
+
+# Every element folds to a GpuVarying literal whose rules hold and whose
+# location, scalar, components and interpolation all fold.
+function gv_stage_folds(c: ptr<Sem>, k: GvK, s: GvSlice, n: i32) -> bool {
+    let mut i: i32 = 0
+    while i < n {
+        let v: GvRef = gv_struct(c, gv_elem(c, s, i), "GpuVarying", 0)
+        if v.n < 0 or gv_failed(gv_varying_rules(c, k, v)) {
+            return false
+        }
+        let fields: array<string, 4> = ["location", "scalar", "components", "interpolation"]
+        let mut f: i32 = 0
+        while f < 4 {
+            let fv: GvInt = gv_get(c, v, "GpuVarying", fields[f])
+            if fv.ok == false {
+                return false
+            }
+            f = f + 1
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function gv_vf(c: ptr<Sem>, s: GvSlice, i: i32, field: string) -> i64 {
+    let v: GvRef = gv_struct(c, gv_elem(c, s, i), "GpuVarying", 0)
+    return gv_get(c, v, "GpuVarying", field).v
+}
+
+# The element node to point at, or the argument when it lives elsewhere.
+function gv_at(c: ptr<Sem>, s: GvSlice, i: i32, arg: GvRef) -> GvRef {
+    let el: GvRef = gv_elem(c, s, i)
+    if el.n >= 0 and el.m == c.cm {
+        return el
+    }
+    return arg
+}
+
+# The i-th argument node of a call (e in c.cm).
+function gv_arg(c: ptr<Sem>, e: i32, i: i32) -> GvRef {
+    let mut a: i32 = sem_na(c, e)
+    let mut j: i32 = 0
+    while a != AST_NONE and j < i {
+        a = sem_nnext(c, a)
+        j = j + 1
+    }
+    if a == AST_NONE {
+        return gv_none()
+    }
+    return GvRef { m: c.cm, n: a }
+}
+
+function gv_dup(c: ptr<Sem>, s: GvSlice, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        let mut j: i32 = i + 1
+        while j < n {
+            if gv_vf(c, s, i, "location") == gv_vf(c, s, j, "location") {
+                return j
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# gpu_stage_links and the calls in GPU_LINK_CALLS: every fragment input
+# needs exactly one matching vertex output; locations are unique per stage.
+export function sem_gpu_check_call(c: ptr<Sem>, e: i32, callee: string) {
+    let mut row: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < GPU_LINK_CALLS {
+        if sem_s_eq(callee, gpu_link_callee(i)) {
+            row = i
+        }
+        i = i + 1
+    }
+    if row < 0 {
+        return
+    }
+    let sym: i32 = sem_lookup(c, callee)
+    if sym < 0 {
+        return
+    }
+    let fi: i32 = sem_iv_get(c.sy_def, sym)
+    if fi < 0 {
+        return
+    }
+    let p: string = c.m_path[sem_iv_get(c.fi_mod, fi)]
+    if p as ptr<u8> == null or sem_s_ends(p, gpu_link_module(row)) == false {
+        return
+    }
+    let k: GvK = gv_consts(c)
+    if k.ok == false {
+        return
+    }
+    let first: i32 = gpu_link_first_arg(row)
+    let va: GvRef = gv_arg(c, e, first)
+    let fa: GvRef = gv_arg(c, e, first + 2)
+    let nv: GvInt = gv_int(c, gv_arg(c, e, first + 1), 0)
+    let nf: GvInt = gv_int(c, gv_arg(c, e, first + 3), 0)
+    if nv.ok == false or nf.ok == false or nv.v < 0 or nf.v < 0 or nv.v > 32 or nf.v > 32 {
+        return
+    }
+    let vs: GvSlice = gv_slice(c, va)
+    let fs: GvSlice = gv_slice(c, fa)
+    let n_v: i32 = nv.v as i32
+    let n_f: i32 = nf.v as i32
+    if vs.arr.n < 0 or fs.arr.n < 0 or vs.start < 0 or fs.start < 0 {
+        return
+    }
+    if gv_slice_len(c, vs) < n_v or gv_slice_len(c, fs) < n_f {
+        return
+    }
+    if gv_stage_folds(c, k, vs, n_v) == false or gv_stage_folds(c, k, fs, n_f) == false {
+        return
+    }
+    let pre: string = "[GPU06"
+    let dv: i32 = gv_dup(c, vs, n_v)
+    if dv >= 0 {
+        gv_report(c, gv_at(c, vs, dv, va), pre + "2] " + callee + ": the vertex stage declares location " + sem_s_itoa(gv_vf(c, vs, dv, "location")) + " twice")
+        return
+    }
+    let mut fi2: i32 = 0
+    while fi2 < n_f {
+        let loc: i64 = gv_vf(c, fs, fi2, "location")
+        let mut found: i32 = 0 - 1
+        let mut j: i32 = 0
+        while j < n_v {
+            if gv_vf(c, vs, j, "location") == loc {
+                found = j
+            }
+            j = j + 1
+        }
+        let at: GvRef = gv_at(c, fs, fi2, fa)
+        let where: string = callee + ": fragment input at location " + sem_s_itoa(loc)
+        if found < 0 {
+            gv_report(c, at, pre + "0] " + where + " has no vertex output")
+            return
+        }
+        let fsc: i64 = gv_vf(c, fs, fi2, "scalar")
+        let vsc: i64 = gv_vf(c, vs, found, "scalar")
+        if fsc != vsc {
+            gv_report(c, at, pre + "1] " + where + " field 'scalar' is " + gv_scalar_name(k, fsc) + " but the vertex output is " + gv_scalar_name(k, vsc))
+            return
+        }
+        let fco: i64 = gv_vf(c, fs, fi2, "components")
+        let vco: i64 = gv_vf(c, vs, found, "components")
+        if fco != vco {
+            gv_report(c, at, pre + "1] " + where + " field 'components' is " + sem_s_itoa(fco) + " but the vertex output has " + sem_s_itoa(vco))
+            return
+        }
+        let fip: i64 = gv_vf(c, fs, fi2, "interpolation")
+        let vip: i64 = gv_vf(c, vs, found, "interpolation")
+        if fip != vip {
+            gv_report(c, at, pre + "1] " + where + " field 'interpolation' is " + gv_interp_name(k, fip) + " but the vertex output is " + gv_interp_name(k, vip))
+            return
+        }
+        fi2 = fi2 + 1
+    }
+    let df: i32 = gv_dup(c, fs, n_f)
+    if df >= 0 {
+        gv_report(c, gv_at(c, fs, df, fa), pre + "2] " + callee + ": the fragment stage declares location " + sem_s_itoa(gv_vf(c, fs, df, "location")) + " twice")
+    }
+}

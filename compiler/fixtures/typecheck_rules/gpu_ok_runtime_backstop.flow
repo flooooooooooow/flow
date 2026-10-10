@@ -1,0 +1,34 @@
+# expect: ok
+# Descriptors built at run time do not fold. flowc accepts them and the
+# library validators reject them when the program runs (#811).
+import "stdlib/gpu_resource_types.flow"
+
+function depth_texture(usage: i32) -> GpuTextureDesc {
+    return GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 8, height: 8, layers: 1, samples: 1,
+        usage: usage
+    }
+}
+
+function main() -> i32 {
+    let bad: GpuTextureDesc = depth_texture(GPU_USE_COLOR_ATTACHMENT)
+    if gpu_texture_valid(bad) { return 1 }
+    let mut usage: i32 = GPU_USE_SAMPLED
+    usage = GPU_USE_COLOR_ATTACHMENT
+    let mixed: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 8, height: 8, layers: 1, samples: 1,
+        usage: usage
+    }
+    if gpu_texture_valid(mixed) { return 2 }
+    let a: GpuVarying = GpuVarying {
+        location: 1, scalar: GPU_SCALAR_F32,
+        components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    let mut outs: array<GpuVarying, 1> = [a]
+    let ins: array<GpuVarying, 1> = [a]
+    outs[0] = GpuVarying { ..a, components: 3 }
+    if gpu_stage_links(&outs[0], 1, &ins[0], 1) { return 3 }
+    return 0
+}

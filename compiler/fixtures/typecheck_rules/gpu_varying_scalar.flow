@@ -1,0 +1,11 @@
+# expect: [GPU022] GpuVarying field 'scalar': unknown varying scalar type 7 (expected f32, i32 or u32)
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let v: GpuVarying = GpuVarying {
+        location: 0, scalar: 7,
+        components: 2, interpolation: GPU_INTERPOLATE_FLAT
+    }
+    if gpu_varying_valid(v) { return 1 }
+    return 0
+}

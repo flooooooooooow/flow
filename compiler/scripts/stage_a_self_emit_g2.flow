@@ -67,7 +67,7 @@ function main() -> i32 {
     # matches.
     outln("=== fixed-point cmp self_*.c vs g2_*.c ===")
     let mut fp_fail: bool = false
-    let fp_mods: ptr<ProcStrs> = s_words("token ast lexer fileio bytebuf field_dsl dynamics_dsl flow_blocks shader_dsl effects attributes ordering_hints sort_plans sort_sites parser proof_lower type_id region noalias cgen rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_check profile resolve")
+    let fp_mods: ptr<ProcStrs> = s_words("token ast lexer fileio bytebuf field_dsl dynamics_dsl flow_blocks shader_dsl effects attributes ordering_hints sort_plans sort_sites parser proof_lower type_id region noalias cgen rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_gpu sem_check profile resolve")
     let mut k: i32 = 0
     while k < sl_len(fp_mods) {
         let m: string = sl_get(fp_mods, k)

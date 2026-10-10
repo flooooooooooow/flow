@@ -1,0 +1,15 @@
+# expect: [GPU056] GpuTextureBinding field 'access': a sample binding cannot read a depth32f texture as color
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 64, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED | GPU_USE_DEPTH_ATTACHMENT
+    }
+    let b: GpuTextureBinding = GpuTextureBinding {
+        slot: 0, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: t
+    }
+    if gpu_texture_binding_valid(b) { return 1 }
+    return 0
+}

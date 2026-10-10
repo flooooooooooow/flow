@@ -1,0 +1,12 @@
+# expect: [GPU004] GpuTextureDesc field 'usage': an rgba16f texture cannot have usage depth_attachment (only depth32f can)
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA16F,
+        width: 8, height: 8, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    if gpu_texture_valid(t) { return 1 }
+    return 0
+}

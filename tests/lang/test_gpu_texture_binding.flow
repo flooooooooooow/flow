@@ -1,0 +1,47 @@
+# Texture binding access checks (#811). The descriptors pass through a
+# function parameter, so flowc cannot fold them and the runtime validator
+# is what decides. No GPU required.
+import "stdlib/gpu_resource_types.flow"
+
+function tex(format: i32, samples: i32, usage: i32) -> GpuTextureDesc {
+    return GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: format,
+        width: 8, height: 8, layers: 1, samples: samples,
+        usage: usage
+    }
+}
+
+function binding(stages: i32, access: i32, t: GpuTextureDesc) -> GpuTextureBinding {
+    return GpuTextureBinding { slot: 0, stages: stages, access: access, texture: t }
+}
+
+function main() -> i32 {
+    let sampled: GpuTextureDesc = tex(GPU_FORMAT_RGBA8, 1, GPU_USE_SAMPLED)
+    let storage: GpuTextureDesc = tex(GPU_FORMAT_RGBA8, 1, GPU_USE_STORAGE)
+    let both: GpuTextureDesc = tex(GPU_FORMAT_RGBA16F, 1, GPU_USE_SAMPLED | GPU_USE_COLOR_ATTACHMENT)
+    let msaa: GpuTextureDesc = tex(GPU_FORMAT_RGBA8, 4, GPU_USE_COLOR_ATTACHMENT)
+    let depth: GpuTextureDesc = tex(GPU_FORMAT_DEPTH32F, 1, GPU_USE_SAMPLED | GPU_USE_DEPTH_ATTACHMENT)
+
+    if not gpu_texture_binding_valid(binding(GPU_STAGE_FRAGMENT, GPU_ACCESS_SAMPLE, sampled)) { return 1 }
+    if not gpu_texture_binding_valid(binding(GPU_STAGE_FRAGMENT, GPU_ACCESS_SAMPLE, both)) { return 2 }
+    if not gpu_texture_binding_valid(binding(GPU_STAGE_COMPUTE, GPU_ACCESS_STORAGE_WRITE, storage)) { return 3 }
+    if not gpu_texture_binding_valid(binding(GPU_STAGE_VERTEX, GPU_ACCESS_STORAGE_READ, storage)) { return 4 }
+
+    # Access the texture was not created for.
+    if gpu_texture_binding_valid(binding(GPU_STAGE_FRAGMENT, GPU_ACCESS_SAMPLE, storage)) { return 5 }
+    if gpu_texture_binding_valid(binding(GPU_STAGE_COMPUTE, GPU_ACCESS_STORAGE_READ, sampled)) { return 6 }
+    # Multisampled and depth textures cannot be sampled as color.
+    if gpu_texture_binding_valid(binding(GPU_STAGE_FRAGMENT, GPU_ACCESS_SAMPLE, msaa)) { return 7 }
+    if gpu_texture_binding_valid(binding(GPU_STAGE_FRAGMENT, GPU_ACCESS_SAMPLE, depth)) { return 8 }
+    # A vertex stage cannot write a storage texture.
+    if gpu_texture_binding_valid(binding(GPU_STAGE_VERTEX, GPU_ACCESS_STORAGE_WRITE, storage)) { return 9 }
+    # Unknown access, empty stage set, slot out of range.
+    if gpu_texture_binding_valid(binding(GPU_STAGE_FRAGMENT, 9, sampled)) { return 10 }
+    if gpu_texture_binding_valid(binding(0, GPU_ACCESS_SAMPLE, sampled)) { return 11 }
+    let far: GpuTextureBinding = GpuTextureBinding {
+        slot: 16 + (sampled.width - 8), stages: GPU_STAGE_FRAGMENT,
+        access: GPU_ACCESS_SAMPLE, texture: sampled
+    }
+    if gpu_texture_binding_valid(far) { return 12 }
+    return 0
+}

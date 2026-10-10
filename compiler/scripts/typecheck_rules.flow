@@ -9,7 +9,10 @@
 #   # warn: <the first warning message>     (the check passes and warns)
 #   # env: VAR=value ...                    (optional: FLOW_PROFILE=safety,
 #                                            FLOWC_STRICT_EFFECTS=1,
-#                                            FLOWC_WERROR=1)
+#                                            FLOWC_WERROR=1,
+#                                            FLOWC_LENIENT=1 compiles with
+#                                            --lenient, where only fatal
+#                                            errors stop the program)
 #
 # and is compiled the way `flowc_emit.flow --strict` compiles it, stopping after
 # the type check. The expected messages were recorded from the Python checker
@@ -79,7 +82,13 @@ function main() -> i32 {
         let want_msg: string = header_value(head, 1, "# expect: ")
         let envline: string = header_value(head, 2, "# env: ")
         let log: string = work + "/" + name + ".log"
-        let argv: ptr<ProcStrs> = sl_of3(gl_flowc_emit_bin(), "--strict", f)
+        # `# env: FLOWC_LENIENT=1` checks the program the way `flow run` and
+        # `flow compile` do: only the fatal errors stop it.
+        let mut mode: string = "--strict"
+        if s_contains(envline, "FLOWC_LENIENT=1") {
+            mode = "--lenient"
+        }
+        let argv: ptr<ProcStrs> = sl_of3(gl_flowc_emit_bin(), mode, f)
         sl_push(argv, work + "/" + name + ".c")
         let c: ptr<ProcCmd> = gl_cmd(argv)
         let envs: ptr<ProcStrs> = s_words(envline)

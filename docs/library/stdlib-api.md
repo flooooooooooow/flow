@@ -1869,7 +1869,7 @@ First-class GPU / unified memory  CPU heap stays in stdlib/memory.flow.
 
 Resource and stage-interface contracts for the cross-backend GPU IR (#811). These are backend-independent descriptor checks. Shader source comes from gpu_stage_codegen. Callers validate before constructing render/compute passes.
 
-**Structs:** `GpuTextureDesc`, `GpuSamplerDesc`, `GpuVarying`, `GpuVertexAttribute`
+**Structs:** `GpuTextureDesc`, `GpuSamplerDesc`, `GpuVarying`, `GpuVertexAttribute`, `GpuTextureBinding`
 
 **Constants:**
 
@@ -1891,6 +1891,12 @@ Resource and stage-interface contracts for the cross-backend GPU IR (#811). Thes
 - `GPU_SCALAR_U32: i32`
 - `GPU_INTERPOLATE_PERSPECTIVE: i32`
 - `GPU_INTERPOLATE_FLAT: i32`
+- `GPU_ACCESS_SAMPLE: i32`
+- `GPU_ACCESS_STORAGE_READ: i32`
+- `GPU_ACCESS_STORAGE_WRITE: i32`
+- `GPU_STAGE_VERTEX: i32`
+- `GPU_STAGE_FRAGMENT: i32`
+- `GPU_STAGE_COMPUTE: i32`
 
 **Functions:**
 
@@ -1904,6 +1910,7 @@ Resource and stage-interface contracts for the cross-backend GPU IR (#811). Thes
 | `gpu_stage_links` | `(vertex: ptr<GpuVarying>, nv: i32,
                                 fragment: ptr<GpuVarying>, nf: i32) -> bool` | Every fragment input needs one precisely matching vertex output; extra vertex outputs are legal. Duplicate locations are rejected on both sides. |
 | `gpu_vertex_attribute_valid` | `(a: GpuVertexAttribute) -> bool` | - |
+| `gpu_texture_binding_valid` | `(b: GpuTextureBinding) -> bool` | The binding's access must be one the texture was created for. Sampling needs GPU_USE_SAMPLED and a single-sample color texture. Storage access needs GPU_USE_STORAGE on a single-sample 2D color texture, and a vertex stage cannot write a storage texture. |
 
 ### `gpu_sim.flow`
 
