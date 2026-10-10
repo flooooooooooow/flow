@@ -14,14 +14,29 @@ let s: string = "a" + "b" + "c" + "d"
 let n = 1; let m = 2; let t: string = "x=" + n + " y=" + m
 ```
 
-The C backend emits `__flowc_str_concatn`. The MLIR backend emits one
-`malloc` plus one `memcpy` per part (strcat lowering), not nested pairwise
-joins. Two-part joins stay `__flowc_str_concat` / `__flow_str_concat`.
-Numeric and bool leaves are formatted first (`__flowc_str_of_*`, or
-`"true"` / `"false"`).
+The general C backend path emits `__flowc_str_concatn`. The MLIR backend
+emits one `malloc` plus one `memcpy` per part (strcat lowering), not nested
+pairwise joins. Two-part joins stay `__flowc_str_concat` /
+`__flow_str_concat`. Numeric and bool leaves are formatted first
+(`__flowc_str_of_*`, or `"true"` / `"false"`).
 
-Results are process-lifetime heap strings (not freed). That is a remaining
-gap. Chains still copy each part once.
+The C backend has one deliberately narrow non-escaping optimization (#1447).
+For a local concat immediately cast to a local `ptr<u8>`, when the original
+string is never used again and every remaining pointer use is an indexed
+**read** in the same lexical statement chain, cgen supplies a 128-byte local
+buffer to `__flowc_str_concatn_into`. If the joined bytes fit, there is no
+heap allocation. If they do not fit, the helper falls back to the ordinary
+heap allocation.
+
+This is a lifetime proof, not a general small-string representation. Passing
+or returning the string/pointer, storing it, capturing it, rebinding/shadowing
+the alias, writing through the alias, or any use cgen cannot prove local keeps
+the process-lifetime heap path. Thus an escaping string never points into a
+dead stack frame. The optimized path still copies each part once.
+
+General concat results remain process-lifetime heap strings (not freed).
+Removing that lifetime-wide ownership gap is separate from the local
+non-escaping optimization.
 
 ## Parse and format
 

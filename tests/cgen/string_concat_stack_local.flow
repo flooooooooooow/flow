@@ -1,0 +1,32 @@
+# #1447: a concat local whose only alias is a ptr<u8> used for indexed
+# reads in the same lexical block may use bounded stack storage.
+
+function escaping(a: string, b: string, c: string) -> string {
+    return a + b + c
+}
+
+function passed_after_alias(a: string, b: string, c: string) -> i32 {
+    let s: string = a + b + c
+    let p: ptr<u8> = s as ptr<u8>
+    println(s)
+    return p[0] as i32
+}
+
+function main() -> i32 {
+    let a: string = "key_"
+    let b: string = "000"
+    let c: string = "=value"
+    let s: string = a + b + c
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = 0
+    let mut checksum: i32 = 0
+    while p[n] != 0 {
+        checksum = checksum + (p[n] as i32)
+        n = n + 1
+    }
+    let kept: string = escaping("x", "y", "z")
+    if kept != "xyz" { return 1 }
+    if passed_after_alias("x", "y", "z") != 120 { return 2 }
+    if checksum == 0 { return 3 }
+    return 0
+}
