@@ -579,6 +579,20 @@ contract, together with rule LD5. #1358 merges after #1369.
 
 **Resolved:** 2026-10-07, decided by the project owner.
 
+### 2026-10-10: Stores through unbounded pointer parameters
+
+**Context:** PR #1472 follows issue #684. A function with a declared
+lifetime domain can store a frame-local reference through an unannotated
+pointer or span parameter. The callee cannot establish how long the
+caller-owned pointee remains live.
+
+**Answer:** Reject that store when the value contains a reference rooted in
+the writing frame. An explicit field `@lifetime(D)` contract permits the
+store when `D` is the same or shorter-lived than the writer. This applies
+to field stores and whole-composite assignment through the parameter.
+
+**Resolved:** 2026-10-10, decided by the project owner.
+
 ### 2026-10-07: Last-use moves without a `move` keyword or COW
 
 **Context:** Issue #696 asks for value semantics with compiler-inferred

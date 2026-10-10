@@ -114,11 +114,32 @@ function build() -> Holder {
 }
 ```
 
+## Pointer-parameter targets fail closed
+
+A pointer/span parameter is caller-owned storage whose pointee lifetime is
+not bounded by the callee. A domain-local reference therefore cannot be
+stored through an **unannotated** parameter target:
+
+```flow expect-error
+struct Holder { view: ptr<i32> }
+
+@lifetime(callback)
+function fill(out: ptr<Holder>) -> void {
+    let scratch: array<i32, 4> = [1, 2, 3, 4]
+    out[0].view = &scratch
+}
+
+function main() -> i32 { return 0 }
+```
+
+The same rule covers a whole-composite assignment such as
+`out[0] = Holder { view: &scratch }`. An explicit field contract at the
+same or shorter domain remains legal: for example an
+`@lifetime(callback) view: ptr<i32>` field can receive a callback-local
+reference through `ptr<BoundHolder>`.
+
 ## What is still not checked
 
-- A store into an unannotated field of a struct reached only through a
-  pointer parameter. The checker cannot prove that struct outlives the
-  writing frame.
 - Copying a local struct that was previously filled with a short-lived
   reference (`holder = local`) without a literal on the right-hand side.
 - Escape through a closure, a function pointer, the heap, or pointer
