@@ -61,6 +61,16 @@ function fill_from_static() -> i32 {
     return 0
 }
 
+@lifetime(callback)
+function fill_param_same_domain(out: ptr<BoundHolder>) -> i32 {
+    let scratch: array<i32, 2> = [12, 13]
+    out[0].view = &scratch
+    if out[0].view[1] != 13 {
+        return 6
+    }
+    return 0
+}
+
 @lifetime(session)
 function fill_shorter_field() -> i32 {
     let mut h: BoundHolder = BoundHolder { view: null }
@@ -88,6 +98,11 @@ function main() -> i32 {
     let d: i32 = fill_shorter_field()
     if d != 0 {
         return d
+    }
+    let mut h: BoundHolder = BoundHolder { view: null }
+    let e: i32 = fill_param_same_domain(&h)
+    if e != 0 {
+        return e
     }
     return 0
 }
