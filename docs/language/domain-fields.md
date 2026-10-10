@@ -128,6 +128,8 @@ function fill(out: ptr<Holder>) -> void {
     let scratch: array<i32, 4> = [1, 2, 3, 4]
     out[0].view = &scratch
 }
+
+function main() -> i32 { return 0 }
 ```
 
 The same rule covers a whole-composite assignment such as
