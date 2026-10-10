@@ -1,12 +1,232 @@
-# perf_scorecard tool
-# Orchestrates performance benchmarks for Epic #727.
+# @module tools.perf_scorecard
+# @means  Local-only per-workload performance verdicts for #727.
 #
-# Usage:
-#   flow tool perf_scorecard
+# Input is the JSON written by ./flow tool bench_harness --out RESULTS.json.
+# No benchmark is run here; no old results or different hardware are compared.
+# A row is scored only with verified parity, positive measured medians,
+# >=3 repetitions, and sufficiently stable samples. Unknown is not a win.
+#
+# ./flow tool perf_scorecard RESULTS.json [--strict] [--out SCORECARD.json]
+# --strict returns 1 if there are any losses, native taxes or unscored rows.
 
-import std.process { proc_cmd, proc_arg, proc_run }
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/json.flow" {
+    Json, json_parse, json_error, json_kind, json_kind_string,
+    json_kind_number, json_kind_array, json_get, json_first, json_next,
+    json_str, json_quote, json_free
+}
+import std.process { proc_argc, proc_argv }
+
+extern {
+    function atof(s: string) -> f64
+}
+
+function field_text(j: ptr<Json>, node: i32, name: string) -> string {
+    let at: i32 = json_get(j, node, name)
+    if at < 0 or json_kind(j, at) != json_kind_string() {
+        return ""
+    }
+    return json_str(j, at)
+}
+
+# -1 is the missing/bad sentinel, while zero is valid for dispersion.
+function number(j: ptr<Json>, node: i32, name: string) -> f64 {
+    let at: i32 = json_get(j, node, name)
+    if at < 0 or json_kind(j, at) != json_kind_number() {
+        return 0.0 - 1.0
+    }
+    let v: f64 = atof(json_str(j, at))
+    # Reject unbounded/overflow values; NaN also fails both comparisons.
+    if not (v >= 0.0 and v <= 1000000000000.0) {
+        return 0.0 - 1.0
+    }
+    return v
+}
+
+function metric(j: ptr<Json>, row: i32, group: string, key: string) -> f64 {
+    return number(j, json_get(j, row, group), key)
+}
+
+function ratio_text(j: ptr<Json>, row: i32, key: string) -> string {
+    let attribution: i32 = json_get(j, row, "attribution")
+    let at: i32 = json_get(j, attribution, key)
+    if at < 0 or json_kind(j, at) != json_kind_number() {
+        return "null"
+    }
+    let v: f64 = atof(json_str(j, at))
+    if not (v > 0.0 and v <= 1000000000000.0) {
+        return "null"
+    }
+    return json_str(j, at)
+}
+
+# A 5% speed edge is required; 5% less RSS at performance parity is
+# recorded separately as memory_win. 10% relative sample dispersion is
+# a conservative local noise gate, not a claim of statistical significance.
+function verdict(j: ptr<Json>, row: i32) -> string {
+    if not s_eq(field_text(j, row, "semantic_parity_status"), "verified") {
+        return "unresolved_parity"
+    }
+    let scope: string = field_text(j, row, "timing_scope")
+    if not s_eq(scope, "compile_and_execute") and
+       not s_eq(scope, "precompiled_exec_to_exit") and
+       not s_eq(scope, "precompiled_workload") {
+        return "unresolved_scope"
+    }
+    if number(j, row, "repeats") < 3.0 {
+        return "insufficient_repetitions"
+    }
+    let fm: f64 = metric(j, row, "flow_metrics", "median")
+    let pm: f64 = metric(j, row, "python_metrics", "median")
+    if fm <= 0.0 {
+        return "no_flow_data"
+    }
+    if pm <= 0.0 {
+        return "no_python_data"
+    }
+    let fd: f64 = metric(j, row, "flow_metrics", "dispersion")
+    let pd: f64 = metric(j, row, "python_metrics", "dispersion")
+    if fd < 0.0 or pd < 0.0 {
+        return "no_dispersion_data"
+    }
+    if fd > fm * 0.10 or pd > pm * 0.10 {
+        return "noisy"
+    }
+    if fm * 1.05 <= pm {
+        return "win"
+    }
+    if fm > pm * 1.05 {
+        return "loss"
+    }
+    let frss: f64 = metric(j, row, "flow_metrics", "median_rss_kb")
+    let prss: f64 = metric(j, row, "python_metrics", "median_rss_kb")
+    if frss > 0.0 and prss > 0.0 and frss * 1.05 <= prss {
+        return "memory_win"
+    }
+    return "tie"
+}
+
+function native_tax(j: ptr<Json>, row: i32) -> string {
+    let att: i32 = json_get(j, row, "attribution")
+    let v: f64 = number(j, att, "flow_vs_native")
+    if v <= 0.0 {
+        return "no_native"
+    }
+    if v > 1.05 {
+        return "tax"
+    }
+    return "ok"
+}
 
 function main() -> i32 {
-    let rc: i32 = 0
-    return rc
+    let mut input: string = ""
+    let mut dest: string = ""
+    let mut strict: bool = false
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        let arg: string = proc_argv(i)
+        if s_eq(arg, "--strict") {
+            strict = true
+        } elif s_eq(arg, "--out") {
+            i = i + 1
+            if i >= proc_argc() {
+                errln("perf_scorecard: --out needs a path")
+                return 2
+            }
+            dest = proc_argv(i)
+        } elif s_eq(arg, "--help") or s_eq(arg, "-h") {
+            outln("usage: ./flow tool perf_scorecard RESULTS.json [--strict] [--out SCORECARD.json]")
+            return 0
+        } elif s_starts(arg, "-") or s_len(input) > 0 {
+            errln("perf_scorecard: unexpected argument " + arg)
+            return 2
+        } else {
+            input = arg
+        }
+        i = i + 1
+    }
+    if s_len(input) == 0 or not is_file(input) {
+        errln("perf_scorecard: expected an existing bench_harness JSON file")
+        return 2
+    }
+    let source: string = read_text(input)
+    let j: ptr<Json> = json_parse(source)
+    if s_len(json_error(j)) > 0 {
+        errln("perf_scorecard: invalid JSON: " + json_error(j))
+        json_free(j)
+        return 2
+    }
+    let system: i32 = json_get(j, 0, "system")
+    let sha: string = field_text(j, system, "git_sha")
+    let os: string = field_text(j, system, "os")
+    let cpu: string = field_text(j, system, "cpu")
+    let rows: i32 = json_get(j, 0, "benchmarks")
+    if s_len(sha) == 0 or s_len(os) == 0 or s_len(cpu) == 0 or
+       rows < 0 or json_kind(j, rows) != json_kind_array() {
+        errln("perf_scorecard: missing system git_sha/os/cpu or benchmarks array")
+        json_free(j)
+        return 2
+    }
+
+    let mut report: string = "{\n  \"schema\": \"flow-perf-scorecard/1\",\n"
+    report = report + "  \"source_sha\": " + json_quote(sha) + ",\n"
+    report = report + "  \"os\": " + json_quote(os) + ",\n"
+    report = report + "  \"cpu\": " + json_quote(cpu) + ",\n  \"rows\": [\n"
+    let mut wins: i32 = 0
+    let mut memory_wins: i32 = 0
+    let mut ties: i32 = 0
+    let mut losses: i32 = 0
+    let mut unscored: i32 = 0
+    let mut taxes: i32 = 0
+    let mut row: i32 = json_first(j, rows)
+    let mut first: bool = true
+    while row >= 0 {
+        let name: string = field_text(j, row, "workload_id")
+        let v: string = verdict(j, row)
+        let tax: string = native_tax(j, row)
+        if s_eq(v, "win") {
+            wins = wins + 1
+        } elif s_eq(v, "memory_win") {
+            memory_wins = memory_wins + 1
+        } elif s_eq(v, "tie") {
+            ties = ties + 1
+        } elif s_eq(v, "loss") {
+            losses = losses + 1
+        } else {
+            unscored = unscored + 1
+        }
+        if s_eq(tax, "tax") {
+            taxes = taxes + 1
+        }
+        if not first {
+            report = report + ",\n"
+        }
+        first = false
+        report = report + "    {\"workload_id\": " + json_quote(name)
+        report = report + ", \"timing_scope\": " + json_quote(field_text(j, row, "timing_scope"))
+        report = report + ", \"verdict\": " + json_quote(v)
+        report = report + ", \"flow_vs_python\": " + ratio_text(j, row, "flow_vs_python")
+        report = report + ", \"flow_vs_native\": " + ratio_text(j, row, "flow_vs_native")
+        report = report + ", \"native_tax\": " + json_quote(tax) + "}"
+        row = json_next(j, row)
+    }
+    report = report + "\n  ],\n  \"summary\": {\"wins\": " + s_itoa(wins)
+    report = report + ", \"memory_wins\": " + s_itoa(memory_wins)
+    report = report + ", \"ties\": " + s_itoa(ties)
+    report = report + ", \"losses\": " + s_itoa(losses)
+    report = report + ", \"unscored\": " + s_itoa(unscored)
+    report = report + ", \"native_taxes\": " + s_itoa(taxes) + "}\n}\n"
+    json_free(j)
+    if s_len(dest) > 0 {
+        if not write_text(dest, report) {
+            errln("perf_scorecard: cannot write " + dest)
+            return 2
+        }
+    } else {
+        out(report)
+    }
+    if strict and (losses > 0 or unscored > 0 or taxes > 0) {
+        return 1
+    }
+    return 0
 }
