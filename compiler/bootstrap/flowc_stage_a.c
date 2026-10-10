@@ -86906,6 +86906,7 @@ const char* sem_node_key(Sem* c, int32_t node);
 bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char* target, int32_t target_type);
 bool sem_domain_escape_to_field(Sem* c, int32_t stmt, int32_t value, int32_t lhs, int32_t target_type);
 bool sem_domain_escape_to_named_field(Sem* c, int32_t stmt, int32_t value, const char* field_name, int32_t field_domain);
+bool sem_domain_escape_to_param_target(Sem* c, int32_t stmt, int32_t value, int32_t lhs);
 bool sem_is_heap_alloc_expr(Sem* c, int32_t e);
 bool sem_name_is_heap_root(Sem* c, const char* name);
 bool sem_expr_is_heap_root(Sem* c, int32_t e);
@@ -88399,6 +88400,31 @@ bool sem_domain_escape_to_named_field(Sem* c, int32_t stmt, int32_t value, const
 }
   sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
   sem_err(c, __flowc_str_concatn(10, "lifetime domain escape: `", origin, "` lives in the `", sem_domain_name(c->current_domain), "` domain but is stored in field `", field_name, "`, which is declared to live in the `", sem_domain_name(field_domain), "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)", sem_location_suffix(c, stmt)));
+  return 1;
+}
+
+bool sem_domain_escape_to_param_target(Sem* c, int32_t stmt, int32_t value, int32_t lhs) {
+  if (c->current_domain < 0 || lhs < 0) {
+  return 0;
+}
+  if (sem_lhs_field_domain(c, lhs) >= 0) {
+  return 0;
+}
+  int32_t pi = sem_root_parameter_index(c, lhs);
+  if (pi < 0 || (uint8_t*)(c->current_function_name) == NULL) {
+  return 0;
+}
+  const char* origin = sem_composite_domain_root(c, value);
+  if ((uint8_t*)(origin) == NULL) {
+  return 0;
+}
+  int32_t fi = sem_sm_get(c->function_decls, c->current_function_name);
+  const char* pname = "parameter";
+  if (fi >= 0 && pi < sem_fi_nparams(c, fi)) {
+  pname = sem_fi_param_name(c, fi, pi);
+}
+  sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
+  sem_err(c, __flowc_str_concatn(9, "lifetime domain escape: `", origin, "` lives in the `", sem_domain_name(c->current_domain), "` domain but is stored through parameter `", pname, "`, whose pointee lifetime is not proven to end within this call ", "(add an explicit field lifetime contract or keep the composite local)", sem_location_suffix(c, stmt)));
   return 1;
 }
 
@@ -91023,6 +91049,9 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
 }
   if (reported == 0) {
   reported = sem_domain_escape_to_field(c, s, value, lhs, tt);
+}
+  if (reported == 0) {
+  reported = sem_domain_escape_to_param_target(c, s, value, lhs);
 }
   if (reported == 0 && (uint8_t*)(base) != NULL && sem_sm_has(c->static_names, base) == 0) {
   reported = sem_domain_escape_to_heap(c, s, value, base, tt);
