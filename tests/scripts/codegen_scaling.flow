@@ -1,0 +1,124 @@
+# Proof for #1445: C code generation time grows linearly with module size.
+#
+# cgen and the noalias pass used to answer "the function named X", "how
+# many overloads X has" or "is X exported" by scanning the whole AST arena
+# at every call site, so emit time grew with (calls x nodes). On
+# compiler/src/main.flow that was 61 s of codegen. The test emits two
+# generated modules, one 8 times the size of the other, and checks that
+# the codegen phase grows by much less than the 64 times a quadratic pass
+# would take.
+#
+# The modules are chains of functions with two pointer parameters, each
+# calling the one before, which drives the call-site paths: callee lookup,
+# overload counting, and the noalias specialisation checks.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, proc_env }
+
+const SMALL_N: i32 = 400
+const SCALE: i32 = 8
+# Linear growth gives about SCALE, quadratic about SCALE * SCALE.
+const MAX_RATIO: i32 = 32
+
+function host_bin() -> string {
+    let c: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    let _r: i32 = t_run(c)
+    if t_rc() != 0 {
+        return ""
+    }
+    return s_chomp_all(read_text(t_out()))
+}
+
+function chain_source(n: i32) -> string {
+    let lines: ptr<ProcStrs> = sl_new()
+    sl_push(lines, "function f0(p: ptr<i32>, q: ptr<i32>) -> i32 {")
+    sl_push(lines, "    return p[0] + q[0]")
+    sl_push(lines, "}")
+    let mut k: i32 = 1
+    while k < n {
+        sl_push(lines, "function f" + s_itoa(k) + "(p: ptr<i32>, q: ptr<i32>) -> i32 {")
+        sl_push(lines, "    let a: i32 = f" + s_itoa(k - 1) + "(p, q)")
+        sl_push(lines, "    return a + 1")
+        sl_push(lines, "}")
+        k = k + 1
+    }
+    sl_push(lines, "function main() -> i32 {")
+    sl_push(lines, "    return 0")
+    sl_push(lines, "}")
+    return sl_join(lines, "\n") + "\n"
+}
+
+# Microseconds of the codegen phase from a `[flow-profile]` JSON line, or
+# -1 when it is missing.
+function codegen_us(err: string) -> i32 {
+    let key: string = "\"name\": \"codegen\", \"ms\": "
+    let at: i32 = s_find(err, key, 0)
+    if at < 0 {
+        return 0 - 1
+    }
+    let us_key: string = "\"us\": "
+    let u: i32 = s_find(err, us_key, at + s_len(key))
+    if u < 0 {
+        return 0 - 1
+    }
+    let start: i32 = u + s_len(us_key)
+    let mut end: i32 = start
+    while end < s_len(err) and s_byte(err, end) >= 48 and s_byte(err, end) <= 57 {
+        end = end + 1
+    }
+    return s_atoi(s_slice(err, start, end), 0 - 1)
+}
+
+function emit_codegen_us(host: string, n: i32) -> i32 {
+    let input: string = t_tmp() + "/chain_" + s_itoa(n) + ".flow"
+    let _w: bool = write_text(input, chain_source(n))
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", input)
+    proc_env(c, "FLOWC_OUT", t_tmp() + "/chain_" + s_itoa(n) + ".c")
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_DIR", t_tmp())
+    proc_env(c, "FLOWC_PROFILE", "json")
+    proc_env(c, "FLOW_CACHE_SALT", "1445-" + t_tmp())
+    if t_run(c) != 0 {
+        outln("flowc emit failed for n=" + s_itoa(n))
+        t_cat(t_err())
+        return 0 - 1
+    }
+    return codegen_us(read_text(t_err()))
+}
+
+function check_codegen_linear() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let small: i32 = emit_codegen_us(host, SMALL_N)
+    let large: i32 = emit_codegen_us(host, SMALL_N * SCALE)
+    outln("codegen us: n=" + s_itoa(SMALL_N) + " " + s_itoa(small) + ", n=" + s_itoa(SMALL_N * SCALE) + " " + s_itoa(large))
+    if small < 0 or large < 0 {
+        return T_FAIL
+    }
+    # Below 5 ms timer noise and fixed costs, not the pass, set the ratio.
+    let mut base: i32 = small
+    if base < 5000 {
+        base = 5000
+    }
+    if large > base * MAX_RATIO {
+        outln("codegen grew " + s_itoa(large / base) + "x for " + s_itoa(SCALE) + "x the functions")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("codegen_scaling")
+    t_start()
+    t_end("codegen_linear", check_codegen_linear())
+    t_done()
+    return 0
+}

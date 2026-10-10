@@ -20,7 +20,13 @@ import .ast {
     flowc_ast_enum_of_const,
     AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_EXPORTED, AST_ATTR_HAS_ARGS,
-    AST_SORT_UNIQUE, AST_SORT_UNSTABLE, AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND
+    AST_SORT_UNIQUE, AST_SORT_UNSTABLE, AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND,
+    AstIndex, AST_ENUM_VARIANT
+}
+import .ast_index {
+    flowc_ast_index_build, flowc_ast_index_free, flowc_ast_ix,
+    flowc_ast_ix_shape, flowc_ast_ix_find, flowc_ast_ix_find_next,
+    flowc_ast_ix_range_first, flowc_ast_ix_range_end, flowc_ast_ix_node
 }
 import .sort_plans {
     PlanFacts, PlanChoice, PlanText, flowc_plan_select, flowc_plan_name, flowc_plan_text_new,
@@ -217,11 +223,18 @@ export struct CgenBuf {
     na_clone: i32,
     # #732 destination-passing: 0 none, 1 hidden `T* __flowc_sret` parameter
     # (single-module pointer ABI), 2 callee-local sret slot (bundle-safe).
-    sret: i32
+    sret: i32,
+    # Key index over `sigs` (flowc_cgen_sigix_build, #1445): sig_off[e] is
+    # the key offset of entry e, entries hash into sig_head buckets and
+    # chain through sig_next in table order. Null when there is none.
+    sig_head: ptr<i32>,
+    sig_next: ptr<i32>,
+    sig_off: ptr<i32>,
+    sig_mask: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0, sret: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0, sret: 0, sig_head: null, sig_next: null, sig_off: null, sig_mask: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -589,7 +602,7 @@ function flowc_cgen_expr_is_named(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
             }
             return 0
         }
-        let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        let off: i32 = flowc_cgen_wsig_find(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         if off >= 0 {
             return flowc_cgen_sig_ctype_is(w, off, name)
         }
@@ -2212,6 +2225,16 @@ function flowc_cgen_is_struct_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
     }
     let ts: i32 = arena.nodes[ty].name_start
     let te: i32 = arena.nodes[ty].name_end
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and te > ts and ts >= 0 {
+        if flowc_ast_ix_find(ix, arena, AST_STRUCT, ts, te) != AST_NONE {
+            return 1
+        }
+        if flowc_ast_ix_find(ix, arena, AST_TYPE_ALIAS, ts, te) != AST_NONE {
+            return 1
+        }
+        return 0
+    }
     let mut i: i32 = 0
     while i < arena.len {
         if arena.nodes[i].kind == AST_STRUCT or arena.nodes[i].kind == AST_TYPE_ALIAS {
@@ -2317,7 +2340,7 @@ function flowc_cgen_fn_returns_array(arena: AstArena, src: ptr<u8>, fn: i32) -> 
 # 1 if a call to a function from another bundle module returns a sized
 # array: its signature-table C type is an __flowc_arr_ wrapper.
 function flowc_cgen_sig_returns_array(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
-    let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, ns, ne)
+    let off: i32 = flowc_cgen_wsig_find(w, src, ns, ne)
     if off < 0 {
         return 0
     }
@@ -2338,7 +2361,7 @@ function flowc_cgen_sig_returns_array(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne
 
 # 1 if an imported function's signature returns a pointer type.
 function flowc_cgen_sig_returns_ptr(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
-    let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, ns, ne)
+    let off: i32 = flowc_cgen_wsig_find(w, src, ns, ne)
     if off < 0 {
         return 0
     }
@@ -2753,6 +2776,10 @@ function flowc_cgen_find_fn(arena: AstArena, src: ptr<u8>, start: i32, end: i32)
     if end <= start {
         return AST_NONE
     }
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and start >= 0 {
+        return flowc_ast_ix_find(ix, arena, AST_FN, start, end)
+    }
     let mut i: i32 = 0
     while i < arena.len {
         if arena.nodes[i].kind == AST_FN {
@@ -2769,6 +2796,17 @@ function flowc_cgen_find_fn(arena: AstArena, src: ptr<u8>, start: i32, end: i32)
 # Forward declarations (no body) are not counted as overloads.
 function flowc_cgen_count_overloads(arena: AstArena, src: ptr<u8>, start: i32, end: i32) -> i32 {
     let mut count: i32 = 0
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and end > start and start >= 0 {
+        let mut f: i32 = flowc_ast_ix_find(ix, arena, AST_FN, start, end)
+        while f != AST_NONE {
+            if arena.nodes[f].c != AST_NONE {
+                count = count + 1
+            }
+            f = flowc_ast_ix_find_next(ix, arena, f)
+        }
+        return count
+    }
     let mut i: i32 = 0
     while i < arena.len {
         if arena.nodes[i].kind == AST_FN {
@@ -3203,7 +3241,12 @@ function flowc_cgen_put_imported_overload(w: ptr<CgenBuf>, arena: AstArena, src:
     let mut best: i32 = 0 - 1
     let mut best_score: i32 = 0 - 1
     let mut best_exact: i32 = 0
+    # Walk only the index candidates for `!name` when there is an index.
+    let mut e: i32 = flowc_cgen_sigix_first(w, 33, src, cs, cs + nlen)
     let mut p: i32 = 0
+    if e != 0 - 2 {
+        p = flowc_cgen_sigix_pos(w, e)
+    }
     while p < blen {
         let mut k: i32 = 0
         while p + k < blen and buf[p + k] != 0 {
@@ -3270,7 +3313,12 @@ function flowc_cgen_put_imported_overload(w: ptr<CgenBuf>, arena: AstArena, src:
                     }
                 }
             }
-            p = v + 1
+            if e == 0 - 2 {
+                p = v + 1
+            } else {
+                e = flowc_cgen_sigix_next(w, e)
+                p = flowc_cgen_sigix_pos(w, e)
+            }
         }
     }
     if best < 0 {
@@ -3354,10 +3402,173 @@ function flowc_cgen_sig_find(buf: ptr<u8>, blen: i32, src: ptr<u8>, start: i32, 
     return 0 - 1
 }
 
+# --- signature-table key index (#1445) --------------------------------------
+# Every call site used to walk the whole `key\0value\0` table to find its
+# callee, which on a large bundle module was most of codegen. The index
+# hashes each key once per module. Lookups walk only the candidates in a
+# bucket, in table order, and each caller still checks the key bytes, so
+# the answer is what the full walk gave.
+
+function flowc_cgen_sigix_hash_byte(h: i64, b: i32) -> i64 {
+    return (h * 33 + (b as i64)) & 2147483647
+}
+
+# Build the index for w.sigs. Leaves it null when the table is empty or
+# memory runs out; lookups then walk the table.
+function flowc_cgen_sigix_build(w: ptr<CgenBuf>) {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return
+    }
+    # Count entries the way flowc_cgen_sig_find walks them.
+    let mut n: i32 = 0
+    let mut p: i32 = 0
+    while p < blen {
+        let mut k: i32 = 0
+        while p + k < blen and buf[p + k] != 0 {
+            k = k + 1
+        }
+        let vpos: i32 = p + k + 1
+        if vpos >= blen {
+            p = blen
+        } else {
+            n = n + 1
+            let mut v: i32 = vpos
+            while v < blen and buf[v] != 0 {
+                v = v + 1
+            }
+            p = v + 1
+        }
+    }
+    if n == 0 {
+        return
+    }
+    let mut buckets: i32 = 256
+    while buckets < n * 2 and buckets < 1073741824 {
+        buckets = buckets * 2
+    }
+    let head: ptr<i32> = malloc(buckets * 4) as ptr<i32>
+    let next: ptr<i32> = malloc(n * 4) as ptr<i32>
+    let offs: ptr<i32> = malloc(n * 4) as ptr<i32>
+    if head == null or next == null or offs == null {
+        return
+    }
+    let mut b: i32 = 0
+    while b < buckets {
+        head[b] = 0 - 1
+        b = b + 1
+    }
+    let mut e: i32 = 0
+    p = 0
+    while p < blen and e < n {
+        offs[e] = p
+        let mut k: i32 = 0
+        while p + k < blen and buf[p + k] != 0 {
+            k = k + 1
+        }
+        let mut v: i32 = p + k + 1
+        while v < blen and buf[v] != 0 {
+            v = v + 1
+        }
+        p = v + 1
+        e = e + 1
+    }
+    # Push in reverse so every chain runs in table order.
+    e = n - 1
+    while e >= 0 {
+        let mut h: i64 = 5381
+        let mut q: i32 = offs[e]
+        while q < blen and buf[q] != 0 {
+            h = flowc_cgen_sigix_hash_byte(h, buf[q])
+            q = q + 1
+        }
+        let bk: i32 = (h as i32) & (buckets - 1)
+        next[e] = head[bk]
+        head[bk] = e
+        e = e - 1
+    }
+    w[0].sig_head = head
+    w[0].sig_next = next
+    w[0].sig_off = offs
+    w[0].sig_mask = buckets - 1
+}
+
+function flowc_cgen_sigix_free(w: ptr<CgenBuf>) {
+    if w[0].sig_head != null {
+        free(w[0].sig_head as ptr<u8>)
+        free(w[0].sig_next as ptr<u8>)
+        free(w[0].sig_off as ptr<u8>)
+    }
+    w[0].sig_head = null
+    w[0].sig_next = null
+    w[0].sig_off = null
+}
+
+# First candidate entry for key `<prefix>src[ns..ne]` (prefix < 0: no
+# prefix byte), -1 when the bucket is empty, -2 when there is no index.
+function flowc_cgen_sigix_first(w: ptr<CgenBuf>, prefix: i32, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    if w[0].sig_head == null {
+        return 0 - 2
+    }
+    let mut h: i64 = 5381
+    if prefix >= 0 {
+        h = flowc_cgen_sigix_hash_byte(h, prefix)
+    }
+    let mut i: i32 = ns
+    while i < ne {
+        h = flowc_cgen_sigix_hash_byte(h, src[i])
+        i = i + 1
+    }
+    return w[0].sig_head[(h as i32) & w[0].sig_mask]
+}
+
+# Table offset where a walk over candidates `e` (from sigix_first or
+# sigix_next) resumes: the entry's key, or the table end when none is left.
+function flowc_cgen_sigix_pos(w: ptr<CgenBuf>, e: i32) -> i32 {
+    if e < 0 {
+        return w[0].sigs_len
+    }
+    return w[0].sig_off[e]
+}
+
+function flowc_cgen_sigix_next(w: ptr<CgenBuf>, e: i32) -> i32 {
+    return w[0].sig_next[e]
+}
+
+# flowc_cgen_sig_find on w's own table, through the index when there is one.
+function flowc_cgen_wsig_find(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let mut e: i32 = flowc_cgen_sigix_first(w, 0 - 1, src, start, end)
+    if e == 0 - 2 {
+        return flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, start, end)
+    }
+    let nlen: i32 = end - start
+    if w[0].sigs == null or nlen <= 0 {
+        return 0 - 1
+    }
+    let buf: ptr<u8> = w[0].sigs
+    while e >= 0 {
+        let p: i32 = w[0].sig_off[e]
+        let mut hit: i32 = 1
+        let mut j: i32 = 0
+        while j < nlen and hit == 1 {
+            if buf[p + j] != src[start + j] {
+                hit = 0
+            }
+            j = j + 1
+        }
+        if hit == 1 and buf[p + nlen] == 0 {
+            return p + nlen + 1
+        }
+        e = w[0].sig_next[e]
+    }
+    return 0 - 1
+}
+
 # Write the C type recorded for a call's callee. 1 if written, else 0.
 function flowc_cgen_write_sig_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
-    let off: i32 = flowc_cgen_sig_find(
-        w[0].sigs, w[0].sigs_len, src,
+    let off: i32 = flowc_cgen_wsig_find(
+        w, src,
         arena.nodes[call].name_start, arena.nodes[call].name_end
     )
     if off < 0 {
@@ -3492,8 +3703,8 @@ function flowc_cgen_type_is_string(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
 
 # 1 if the signature table records `const char*` for this call's callee.
 function flowc_cgen_sig_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
-    let off: i32 = flowc_cgen_sig_find(
-        w[0].sigs, w[0].sigs_len, src,
+    let off: i32 = flowc_cgen_wsig_find(
+        w, src,
         arena.nodes[call].name_start, arena.nodes[call].name_end
     )
     if off < 0 {
@@ -4219,8 +4430,8 @@ function flowc_cgen_expr_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if fn != AST_NONE {
             return flowc_cgen_prim_of_type(arena, src, arena.nodes[fn].b)
         }
-        let off: i32 = flowc_cgen_sig_find(
-            w[0].sigs, w[0].sigs_len, src,
+        let off: i32 = flowc_cgen_wsig_find(
+            w, src,
             arena.nodes[id].name_start, arena.nodes[id].name_end
         )
         if off < 0 {
@@ -5430,9 +5641,6 @@ function flowc_cgen_is_captured(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32)
     return 0
 }
 
-# Check if an identifier span matches any enum variant name.
-# Returns the enum name span as a packed (start, end) pair in ival,
-# or AST_NONE if no match. Scans all AST_ENUM nodes in the arena.
 # Declared type of an AST_PARAM or AST_LET. A lambda parameter keeps its
 # type in b.
 function flowc_cgen_var_decl_ty(arena: AstArena, decl: i32) -> i32 {
@@ -5442,11 +5650,39 @@ function flowc_cgen_var_decl_ty(arena: AstArena, decl: i32) -> i32 {
     return arena.nodes[decl].a
 }
 
-# Check if an identifier refers to a span-typed variable. The declaration in
-# the function being emitted decides, so a span parameter in one function
-# never makes a same-named ptr<T> in another index through `.data` (#1443).
-# Outside a function body, or for a name the scoped lookup cannot see, fall
-# back to scanning every AST_PARAM and AST_LET with that name.
+# The next binding in arena order from the two indexed name chains.
+function flowc_cgen_min_binding(p: i32, l: i32) -> i32 {
+    if l == AST_NONE or (p != AST_NONE and p < l) {
+        return p
+    }
+    return l
+}
+
+function flowc_cgen_binding_type(arena: AstArena, i: i32) -> i32 {
+    if arena.nodes[i].kind == AST_PARAM and arena.nodes[i].a == AST_NONE {
+        return arena.nodes[i].b
+    }
+    return arena.nodes[i].a
+}
+
+function flowc_cgen_binding_is_span(arena: AstArena, src: ptr<u8>, i: i32) -> i32 {
+    let ty: i32 = flowc_cgen_binding_type(arena, i)
+    if ty != AST_NONE {
+        let tns: i32 = arena.nodes[ty].name_start
+        let tne: i32 = arena.nodes[ty].name_end
+        if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
+            return 1
+        }
+        let inner: i32 = arena.nodes[ty].a
+        if inner != AST_NONE and tns == 0 and tne == 0 and arena.nodes[ty].c != AST_TYPE_FIXED_ARRAY {
+            return 1
+        }
+    }
+    return 0
+}
+
+# The declaration in the function being emitted decides, so a same-named
+# pointer in another function cannot be mistaken for a span (#1443).
 function flowc_cgen_is_span_var(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
     if decl != AST_NONE {
@@ -5454,28 +5690,29 @@ function flowc_cgen_is_span_var(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     }
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and ne > ns and ns >= 0 {
+        let mut p: i32 = flowc_ast_ix_find(ix, arena, AST_PARAM, ns, ne)
+        while p != AST_NONE {
+            if flowc_cgen_binding_is_span(arena, src, p) == 1 {
+                return 1
+            }
+            p = flowc_ast_ix_find_next(ix, arena, p)
+        }
+        let mut l: i32 = flowc_ast_ix_find(ix, arena, AST_LET, ns, ne)
+        while l != AST_NONE {
+            if flowc_cgen_binding_is_span(arena, src, l) == 1 {
+                return 1
+            }
+            l = flowc_ast_ix_find_next(ix, arena, l)
+        }
+        return 0
+    }
     let mut i: i32 = 0
     while i < arena.len {
-        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
-            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                # AST_PARAM stores type in a (regular params) or b (lambda params);
-                # AST_LET stores type in a.
-                let mut ty: i32 = arena.nodes[i].a
-                if arena.nodes[i].kind == AST_PARAM and arena.nodes[i].a == AST_NONE {
-                    ty = arena.nodes[i].b
-                }
-                if ty != AST_NONE {
-                    let tns: i32 = arena.nodes[ty].name_start
-                    let tne: i32 = arena.nodes[ty].name_end
-                    if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
-                        return 1
-                    }
-                    # &[T] or &mut [T] sugar: nameless type with inner type
-                    let inner: i32 = arena.nodes[ty].a
-                    if inner != AST_NONE and tns == 0 and tne == 0 and arena.nodes[ty].c != AST_TYPE_FIXED_ARRAY {
-                        return 1
-                    }
-                }
+        if (arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET) and flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+            if flowc_cgen_binding_is_span(arena, src, i) == 1 {
+                return 1
             }
         }
         i = i + 1
@@ -5488,44 +5725,52 @@ function flowc_cgen_is_span_var(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
 # shapes. Slice lowering needs this: without it the element type of xs[a..b]
 # was unknown and every slice was built as flowc_span_int32_t, so slicing a
 # ptr<f64> produced a span struct that was never declared.
+function flowc_cgen_binding_elem_type(arena: AstArena, src: ptr<u8>, i: i32) -> i32 {
+    let ty: i32 = flowc_cgen_binding_type(arena, i)
+    if ty != AST_NONE {
+        let tns: i32 = arena.nodes[ty].name_start
+        let tne: i32 = arena.nodes[ty].name_end
+        let inner: i32 = arena.nodes[ty].a
+        if inner != AST_NONE {
+            if flowc_cgen_span_is(src, tns, tne, "ptr") == 1 or flowc_cgen_span_is(src, tns, tne, "span") == 1 or flowc_cgen_ty_is_array(arena, src, ty) == 1 or (tns == 0 and tne == 0) {
+                return inner
+            }
+        }
+    }
+    return AST_NONE
+}
+
 function flowc_cgen_var_elem_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
+    if decl != AST_NONE {
+        return flowc_cgen_binding_elem_type(arena, src, decl)
+    }
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
-    # The declaration in the function being emitted decides (#1443).
-    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
-    let mut i: i32 = 0
-    let mut stop: i32 = arena.len
-    if decl != AST_NONE {
-        i = decl
-        stop = decl + 1
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and ne > ns and ns >= 0 {
+        let mut p: i32 = flowc_ast_ix_find(ix, arena, AST_PARAM, ns, ne)
+        let mut l: i32 = flowc_ast_ix_find(ix, arena, AST_LET, ns, ne)
+        while p != AST_NONE or l != AST_NONE {
+            let b: i32 = flowc_cgen_min_binding(p, l)
+            if b == p {
+                p = flowc_ast_ix_find_next(ix, arena, p)
+            } else {
+                l = flowc_ast_ix_find_next(ix, arena, l)
+            }
+            let et: i32 = flowc_cgen_binding_elem_type(arena, src, b)
+            if et != AST_NONE {
+                return et
+            }
+        }
+        return AST_NONE
     }
-    while i < stop {
-        if arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET {
-            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                let mut ty: i32 = arena.nodes[i].a
-                if arena.nodes[i].kind == AST_PARAM and arena.nodes[i].a == AST_NONE {
-                    ty = arena.nodes[i].b
-                }
-                if ty != AST_NONE {
-                    let tns: i32 = arena.nodes[ty].name_start
-                    let tne: i32 = arena.nodes[ty].name_end
-                    let inner: i32 = arena.nodes[ty].a
-                    if inner != AST_NONE {
-                        if flowc_cgen_span_is(src, tns, tne, "ptr") == 1 {
-                            return inner
-                        }
-                        if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
-                            return inner
-                        }
-                        if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
-                            return inner
-                        }
-                        # &[T] and &mut [T] sugar: no name, inner type only.
-                        if tns == 0 and tne == 0 {
-                            return inner
-                        }
-                    }
-                }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if (arena.nodes[i].kind == AST_PARAM or arena.nodes[i].kind == AST_LET) and flowc_cgen_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+            let et: i32 = flowc_cgen_binding_elem_type(arena, src, i)
+            if et != AST_NONE {
+                return et
             }
         }
         i = i + 1
@@ -5647,6 +5892,22 @@ function flowc_cgen_array_var_size(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 }
 
 function flowc_cgen_find_enum_variant(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    # The lowest-numbered enum listing a variant of this name, as the scan
+    # below finds it. enum_exact is 0 when some enum lists a node that is
+    # not an AST_ENUM_VARIANT; then scan.
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and ix[0].enum_exact == 1 and ne > ns and ns >= 0 {
+        let mut best: i32 = AST_NONE
+        let mut v: i32 = flowc_ast_ix_find(ix, arena, AST_ENUM_VARIANT, ns, ne)
+        while v != AST_NONE {
+            let e: i32 = ix[0].enum_of[v]
+            if e != AST_NONE and (best == AST_NONE or e < best) {
+                best = e
+            }
+            v = flowc_ast_ix_find_next(ix, arena, v)
+        }
+        return best
+    }
     let mut i: i32 = 0
     while i < arena.len {
         if arena.nodes[i].kind == AST_ENUM {
@@ -6787,7 +7048,12 @@ function flowc_cgen_sig_fat_param(w: ptr<CgenBuf>, src: ptr<u8>, call_ns: i32, c
         return 0
     }
     let nlen: i32 = call_ne - call_ns
+    # Walk only the index candidates for `^name` when there is an index.
+    let mut e: i32 = flowc_cgen_sigix_first(w, 94, src, call_ns, call_ne)
     let mut p: i32 = 0
+    if e != 0 - 2 {
+        p = flowc_cgen_sigix_pos(w, e)
+    }
     while p < blen {
         let mut k: i32 = 0
         while p + k < blen and buf[p + k] != 0 {
@@ -6843,7 +7109,12 @@ function flowc_cgen_sig_fat_param(w: ptr<CgenBuf>, src: ptr<u8>, call_ns: i32, c
         while v < blen and buf[v] != 0 {
             v = v + 1
         }
-        p = v + 1
+        if e == 0 - 2 {
+            p = v + 1
+        } else {
+            e = flowc_cgen_sigix_next(w, e)
+            p = flowc_cgen_sigix_pos(w, e)
+        }
     }
     return 0
 }
@@ -6892,6 +7163,13 @@ function flowc_cgen_emit_fat_thunks(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 # The first identifier naming the function emits it.
                 let mut j: i32 = 0
                 let mut seen: i32 = 0
+                let ixf: ptr<AstIndex> = flowc_ast_ix(arena, src)
+                if ixf != null and arena.nodes[i].name_end > arena.nodes[i].name_start and arena.nodes[i].name_start >= 0 {
+                    if flowc_ast_ix_find(ixf, arena, AST_IDENT, arena.nodes[i].name_start, arena.nodes[i].name_end) != i {
+                        seen = 1
+                    }
+                    j = i
+                }
                 while j < i and seen == 0 {
                     if arena.nodes[j].kind == AST_IDENT and flowc_cgen_span_eq(src, arena.nodes[i].name_start, arena.nodes[i].name_end, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
                         seen = 1
@@ -8331,7 +8609,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         # gpu_thread_id() with no Flow definition: the Python host's host
         # stub for @gpu kernels, thread 0.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "gpu_thread_id") == 1 and arena.nodes[id].a == AST_NONE {
-            if flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 and flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end) < 0 {
+            if flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 and flowc_cgen_wsig_find(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) < 0 {
                 flowc_cgen_puts(w, "((int32_t)0)")
                 return
             }
@@ -8550,7 +8828,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "find") == 1 {
             if flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end) != AST_NONE {
                 user_find = 1
-            } elif flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end) >= 0 {
+            } elif flowc_cgen_wsig_find(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) >= 0 {
                 user_find = 1
             }
         }
@@ -8753,7 +9031,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     }
                 }
                 if is_f32_math == 0 and is_c64_math == 0 {
-                    let soff: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                    let soff: i32 = flowc_cgen_wsig_find(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
                     if soff >= 0 {
                         if flowc_cgen_sig_ctype_is(w, soff, "float") == 1 {
                             is_f32_math = 1
@@ -13100,13 +13378,30 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     let mut want_noinline: i32 = 0
     let mut external: i32 = 0
     let mut target: string = ""
+    # With an index, walk only the attributes on `id`, still in id order.
+    let ix: ptr<AstIndex> = flowc_ast_ix_shape(arena)
     let mut i: i32 = 0
+    if ix != null {
+        i = ix[0].attr_first[id]
+        if i == AST_NONE {
+            i = id
+        }
+    }
     while i < id {
-        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == id {
+        let at: i32 = i
+        if ix != null {
+            i = ix[0].attr_next[i]
+            if i == AST_NONE {
+                i = id
+            }
+        } else {
+            i = i + 1
+        }
+        if arena.nodes[at].kind == AST_ATTR and arena.nodes[at].b == id {
             any = 1
-            let ns: i32 = arena.nodes[i].name_start
-            let ne: i32 = arena.nodes[i].name_end
-            if (arena.nodes[i].ival & AST_ATTR_EXPORTED) != 0 {
+            let ns: i32 = arena.nodes[at].name_start
+            let ne: i32 = arena.nodes[at].name_end
+            if (arena.nodes[at].ival & AST_ATTR_EXPORTED) != 0 {
                 external = 1
             }
             if flowc_cgen_span_is(src, ns, ne, "inline") == 1 {
@@ -13118,15 +13413,14 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
             } elif flowc_cgen_span_is(src, ns, ne, "flow_api") == 1 {
                 external = 1
             } elif flowc_cgen_span_is(src, ns, ne, "target") == 1 {
-                if (arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
-                    let args: string = flowc_attr_args_from_span(src, arena.nodes[i].start, arena.nodes[i].end)
+                if (arena.nodes[at].ival & AST_ATTR_HAS_ARGS) != 0 {
+                    let args: string = flowc_attr_args_from_span(src, arena.nodes[at].start, arena.nodes[at].end)
                     if strlen(args) > 0 {
                         target = flowc_normalize_target_spec(args)
                     }
                 }
             }
         }
-        i = i + 1
     }
     if any == 0 {
         return
@@ -13394,14 +13688,17 @@ function flowc_cgen_has_self_tail_call(arena: AstArena, src: ptr<u8>, fn: i32) -
     }
     let lo: i32 = arena.nodes[fn].start
     let hi: i32 = arena.nodes[fn].end
-    let mut i: i32 = 0
-    while i < arena.len {
+    let ix: ptr<AstIndex> = flowc_ast_ix_shape(arena)
+    let mut k: i32 = flowc_ast_ix_range_first(ix, arena, lo)
+    let k_end: i32 = flowc_ast_ix_range_end(ix, arena, lo, hi)
+    while k < k_end {
+        let i: i32 = flowc_ast_ix_node(ix, k)
+        k = k + 1
         if arena.nodes[i].kind == AST_RETURN and arena.nodes[i].start >= lo and arena.nodes[i].start < hi {
             if flowc_cgen_is_self_call(arena, src, fn, arena.nodes[i].a) == 1 {
                 return 1
             }
         }
-        i = i + 1
     }
     return 0
 }
@@ -15011,9 +15308,30 @@ export function flowc_cgen_emit_sigs(
         return 0 - 1
     }
     flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_low)
+    # From here on cgen only reads the arena, so lookups go through tables
+    # built once for this module (#1445). A failed build leaves ix null
+    # and every lookup scans.
+    let mut ixa: AstArena = arena
+    ixa.ix = flowc_ast_index_build(arena, src)
+    let rc: i32 = flowc_cgen_emit_module(ixa, root, src, out, out_cap, flags, sigs, sigs_len)
+    flowc_ast_index_free(ixa.ix)
+    return rc
+}
+
+function flowc_cgen_emit_module(
+    arena: AstArena,
+    root: i32,
+    src: ptr<u8>,
+    out: ptr<u8>,
+    out_cap: i32,
+    flags: i32,
+    sigs: ptr<u8>,
+    sigs_len: i32
+) -> i32 {
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
     w.sigs = sigs
     w.sigs_len = sigs_len
+    flowc_cgen_sigix_build(&w)
     w.root = root
     # Effect table: effects of earlier bundle modules ride in the signature
     # table; this module's own are appended.
@@ -15960,6 +16278,7 @@ while item != AST_NONE {
     if w.eff != null {
         free(w.eff)
     }
+    flowc_cgen_sigix_free(&w)
     if w.err != 0 {
         return 0 - 1
     }
