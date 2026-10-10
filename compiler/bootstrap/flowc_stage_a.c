@@ -76377,11 +76377,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st28376 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st28376; }
-  { __typeof__((w[0]).plan_has) __flowc_st28388 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st28388; }
-  { __typeof__((w[0]).plan_seen) __flowc_st28400 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st28400; }
-  { __typeof__((w[0]).plan_lo) __flowc_st28412 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st28412; }
-  { __typeof__((w[0]).plan_hi) __flowc_st28424 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st28424; }
+  { __typeof__((w[0]).plan_order) __flowc_st28385 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st28385; }
+  { __typeof__((w[0]).plan_has) __flowc_st28397 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st28397; }
+  { __typeof__((w[0]).plan_seen) __flowc_st28409 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st28409; }
+  { __typeof__((w[0]).plan_lo) __flowc_st28421 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st28421; }
+  { __typeof__((w[0]).plan_hi) __flowc_st28433 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st28433; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
