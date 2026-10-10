@@ -49,6 +49,132 @@
         "webgpu"
       ],
       "model": "depth"
+    },
+    {
+      "id": "instanced_rendering",
+      "upstream": "https://vgpu.sh/examples/instanced-rendering",
+      "source": "examples/gpu/vgpu/instanced_rendering.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 1.5,
+      "reference": "examples/gpu/vgpu/refs/instanced_rendering_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "batch_rendering",
+      "upstream": "https://vgpu.sh/examples/batch-rendering",
+      "source": "examples/gpu/vgpu/batch_rendering.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 0.0,
+      "reference": "examples/gpu/vgpu/refs/batch_rendering_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "environment_map",
+      "upstream": "https://vgpu.sh/examples/environment-map",
+      "source": "examples/gpu/vgpu/environment_map.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 0.0,
+      "reference": "examples/gpu/vgpu/refs/environment_map_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "earth",
+      "upstream": "https://vgpu.sh/examples/earth",
+      "source": "examples/gpu/vgpu/earth.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 0.0,
+      "reference": "examples/gpu/vgpu/refs/earth_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "anti_aliasing",
+      "upstream": "https://vgpu.sh/examples/anti-aliasing",
+      "source": "examples/gpu/vgpu/anti_aliasing.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 0.0,
+      "reference": "examples/gpu/vgpu/refs/anti_aliasing_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "clipping",
+      "upstream": "https://vgpu.sh/examples/clipping",
+      "source": "examples/gpu/vgpu/clipping.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 0.0,
+      "reference": "examples/gpu/vgpu/refs/clipping_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "transmission",
+      "upstream": "https://vgpu.sh/examples/transmission",
+      "source": "examples/gpu/vgpu/transmission.flow",
+      "renderer": "render-job",
+      "width": 128,
+      "height": 72,
+      "time": 0.0,
+      "reference": "examples/gpu/vgpu/refs/transmission_128x72.rgba8.hex",
+      "comparison": {
+        "mode": "tolerance",
+        "channelTolerance": 3
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
     }
   ]
 }

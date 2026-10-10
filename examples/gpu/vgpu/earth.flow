@@ -1,0 +1,341 @@
+# vgpu compatibility case: https://vgpu.sh/examples/earth
+#
+# A procedural planet with albedo, night lights, atmosphere and bloom.
+# This program paints the albedo (ocean mask in alpha) and the city
+# lights into two equirectangular textures from 3D value noise on the
+# sphere. Pass 1 draws the planet and an additive atmosphere shell into
+# an rgba16f target, so night lights and the sun glint can exceed 1.
+# Pass 2 samples that target, adds a bloom of everything above 1 and tone
+# maps into the rgba8 output.
+#
+#   ./flow run examples/gpu/vgpu/earth.flow
+import "stdlib/gpu_render_host.flow"
+import "stdlib/gpu_scene.flow"
+
+const W: i32 = 128
+const H: i32 = 72
+const TW: i32 = 256
+const TH: i32 = 128
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function floorf(x: f32) -> f32
+}
+
+function hash3(x: i32, y: i32, z: i32) -> f32 {
+    let mut h: u32 = (x as u32) * 374761393 + (y as u32) * 668265263 + (z as u32) * 2147483647
+    h = (h ^ (h >> 13)) * 1274126177
+    h = h ^ (h >> 16)
+    return ((h & 65535) as f32) / 65535.0
+}
+
+function smooth(t: f32) -> f32 {
+    return t * t * (3.0 - 2.0 * t)
+}
+
+function lerp(a: f32, b: f32, t: f32) -> f32 {
+    return a + (b - a) * t
+}
+
+function noise3(x: f32, y: f32, z: f32) -> f32 {
+    let fx: f32 = floorf(x)
+    let fy: f32 = floorf(y)
+    let fz: f32 = floorf(z)
+    let ix: i32 = fx as i32
+    let iy: i32 = fy as i32
+    let iz: i32 = fz as i32
+    let tx: f32 = smooth(x - fx)
+    let ty: f32 = smooth(y - fy)
+    let tz: f32 = smooth(z - fz)
+    let a: f32 = lerp(hash3(ix, iy, iz), hash3(ix + 1, iy, iz), tx)
+    let b: f32 = lerp(hash3(ix, iy + 1, iz), hash3(ix + 1, iy + 1, iz), tx)
+    let c: f32 = lerp(hash3(ix, iy, iz + 1), hash3(ix + 1, iy, iz + 1), tx)
+    let d: f32 = lerp(hash3(ix, iy + 1, iz + 1), hash3(ix + 1, iy + 1, iz + 1), tx)
+    return lerp(lerp(a, b, ty), lerp(c, d, ty), tz)
+}
+
+function fbm(x: f32, y: f32, z: f32) -> f32 {
+    let mut s: f32 = 0.0
+    let mut amp: f32 = 0.5
+    let mut f: f32 = 1.0
+    let mut k: i32 = 0
+    while k < 5 {
+        s = s + amp * noise3(x * f + 11.0, y * f + 7.0, z * f + 3.0)
+        amp = amp * 0.5
+        f = f * 2.0
+        k = k + 1
+    }
+    return s
+}
+
+function unorm(x: f32) -> u8 {
+    let mut v: f32 = x
+    if v < 0.0 { v = 0.0 }
+    if v > 1.0 { v = 1.0 }
+    return (v * 255.0 + 0.5) as u8
+}
+
+# Albedo (rgb, ocean mask in alpha) and night lights, sampled by the
+# sphere mesh's uv: u around the axis, v from the north pole.
+function paint(albedo: ptr<u8>, lights: ptr<u8>) {
+    let mut j: i32 = 0
+    while j < TH {
+        let mut i: i32 = 0
+        while i < TW {
+            let u: f32 = ((i as f32) + 0.5) / (TW as f32)
+            let v: f32 = ((j as f32) + 0.5) / (TH as f32)
+            let theta: f32 = v * GPU_PI
+            let phi: f32 = u * 2.0 * GPU_PI
+            let x: f32 = sinf(theta) * sinf(phi)
+            let y: f32 = cosf(theta)
+            let z: f32 = sinf(theta) * cosf(phi)
+            let h: f32 = fbm(x * 1.8, y * 1.8, z * 1.8)
+            let o: i32 = (j * TW + i) * 4
+            let lat: f32 = y * y
+            if h < 0.5 {
+                let deep: f32 = (0.5 - h) * 2.0
+                albedo[o] = unorm(0.02 + 0.03 * (1.0 - deep))
+                albedo[o + 1] = unorm(0.10 + 0.12 * (1.0 - deep))
+                albedo[o + 2] = unorm(0.28 + 0.15 * (1.0 - deep))
+                albedo[o + 3] = 255
+                lights[o] = 0
+                lights[o + 1] = 0
+                lights[o + 2] = 0
+            } else {
+                let dry: f32 = fbm(x * 4.0 + 5.0, y * 4.0, z * 4.0)
+                albedo[o] = unorm(0.18 + 0.35 * dry)
+                albedo[o + 1] = unorm(0.30 + 0.12 * dry)
+                albedo[o + 2] = unorm(0.10 + 0.05 * dry)
+                albedo[o + 3] = 0
+                let city: f32 = noise3(x * 40.0, y * 40.0, z * 40.0)
+                let mut glow: f32 = 0.0
+                if city > 0.72 and h > 0.53 { glow = (city - 0.72) * 3.5 }
+                lights[o] = unorm(glow)
+                lights[o + 1] = unorm(glow * 0.75)
+                lights[o + 2] = unorm(glow * 0.4)
+            }
+            if lat > 0.8 {
+                albedo[o] = 235
+                albedo[o + 1] = 240
+                albedo[o + 2] = 245
+                albedo[o + 3] = 0
+            }
+            lights[o + 3] = 255
+            i = i + 1
+        }
+        j = j + 1
+    }
+}
+
+function main() -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("earth", W, H, gpu_job_root())
+
+    let hdr: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA16F,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT | GPU_USE_SAMPLED
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let ldr: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let map: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: TW, height: TH, layers: 1, samples: 1,
+        usage: GPU_USE_SAMPLED
+    }
+    let albedo_b: GpuTextureBinding = GpuTextureBinding { slot: 0, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: map }
+    let lights_b: GpuTextureBinding = GpuTextureBinding { slot: 1, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: map }
+    let scene_b: GpuTextureBinding = GpuTextureBinding { slot: 0, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: hdr }
+    let wrap: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_LINEAR,
+        address_u: GPU_ADDRESS_REPEAT, address_v: GPU_ADDRESS_CLAMP, address_w: GPU_ADDRESS_CLAMP
+    }
+    let clamp: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_LINEAR,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_CLAMP, address_w: GPU_ADDRESS_CLAMP
+    }
+    let scene_targets: GpuRenderTargets = GpuRenderTargets { color: hdr, depth: depth, has_depth: true }
+    let out_targets: GpuRenderTargets = GpuRenderTargets { color: ldr, depth: depth, has_depth: false }
+
+    let a_pos: GpuVertexAttribute = GpuVertexAttribute { location: 0, offset: 0, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_uv: GpuVertexAttribute = GpuVertexAttribute { location: 1, offset: 24, stride: 32, scalar_bytes: 4, components: 2 }
+
+    # Planet: world position, world normal, texture uv.
+    let world_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let normal_v: GpuVarying = GpuVarying { location: 1, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let uv_v: GpuVarying = GpuVarying { location: 2, scalar: GPU_SCALAR_F32, components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let planet_out: array<GpuVarying, 3> = [world_v, normal_v, uv_v]
+    let planet_in: array<GpuVarying, 3> = [world_v, normal_v, uv_v]
+    let planet: ptr<GpuPipeline> = gpu_pipeline_new(job, "planet", &planet_out[0], 3, &planet_in[0], 3)
+    gpu_pipeline_targets(planet, scene_targets)
+    gpu_pipeline_state(planet, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_BACK, GPU_DEPTH_WRITE, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(planet, 10)
+    gpu_pipeline_texture(planet, albedo_b)
+    gpu_pipeline_texture(planet, lights_b)
+    gpu_pipeline_vertex_buffer(planet, 0, 32, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(planet, 0, a_pos)
+    gpu_pipeline_attribute(planet, 0, a_uv)
+    # Uniforms: view-projection 0..3, model 4..7, sun 8, eye 9.
+    let pvs: ptr<GxFn> = gpu_pipeline_vs(planet)
+    let model_m: GxExpr = gx_umat(pvs, 4)
+    let local: GxExpr = gx_let(pvs, gx_attr(pvs, 0))
+    let world: GxExpr = gx_let(pvs, gx_xyz(gx_mul(model_m, gx_vec4_of(local, gx_f(1.0)))))
+    gx_out_position(pvs, gx_mul(gx_umat(pvs, 0), gx_vec4_of(world, gx_f(1.0))))
+    gx_out(pvs, 0, world)
+    gx_out(pvs, 1, gx_xyz(gx_mul(model_m, gx_vec4_of(local, gx_f(0.0)))))
+    gx_out(pvs, 2, gx_attr(pvs, 1))
+    let pfs: ptr<GxFn> = gpu_pipeline_fs(planet)
+    let n: GxExpr = gx_let(pfs, gx_normalize(gx_in(pfs, 1)))
+    let sun: GxExpr = gx_let(pfs, gx_normalize(gx_xyz(gx_uvec(pfs, 8))))
+    let v: GxExpr = gx_let(pfs, gx_normalize(gx_sub(gx_xyz(gx_uvec(pfs, 9)), gx_in(pfs, 0))))
+    let ndl: GxExpr = gx_let(pfs, gx_dot(n, sun))
+    let albedo: GxExpr = gx_let(pfs, gx_sample(pfs, 0, gx_in(pfs, 2)))
+    let lights: GxExpr = gx_xyz(gx_sample(pfs, 1, gx_in(pfs, 2)))
+    let day: GxExpr = gx_mul(gx_xyz(albedo), gx_add(gx_f(0.03), gx_mul(gx_f(1.6), gx_max(ndl, gx_f(0.0)))))
+    let night: GxExpr = gx_mul(lights, gx_mul(gx_f(2.5), gx_smoothstep(gx_f(0.15), gx_f(0.0 - 0.2), ndl)))
+    let half: GxExpr = gx_normalize(gx_add(sun, v))
+    let glint: GxExpr = gx_mul(gx_mul(gx_pow(gx_max(gx_dot(n, half), gx_f(0.0)), gx_f(60.0)), gx_w(albedo)),
+        gx_mul(gx_f(3.0), gx_step(gx_f(0.0), ndl)))
+    let rim: GxExpr = gx_pow(gx_sub(gx_f(1.0), gx_max(gx_dot(n, v), gx_f(0.0))), gx_f(3.0))
+    let air: GxExpr = gx_mul(gx_vec3(gx_f(0.3), gx_f(0.55), gx_f(1.0)),
+        gx_mul(rim, gx_clamp(gx_add(ndl, gx_f(0.3)), gx_f(0.0), gx_f(1.0))))
+    let lit: GxExpr = gx_add(gx_add(day, night), gx_add(gx_splat(GX_VEC3, glint), air))
+    gx_out_color(pfs, gx_vec4_of(lit, gx_f(1.0)))
+    let _planet_id: i32 = gpu_pipeline_finish(planet)
+
+    # Atmosphere shell: a slightly larger sphere, added on top, brightest
+    # where the view grazes it on the day side.
+    let shell_out: array<GpuVarying, 2> = [world_v, normal_v]
+    let shell_in: array<GpuVarying, 2> = [world_v, normal_v]
+    let shell: ptr<GpuPipeline> = gpu_pipeline_new(job, "atmosphere", &shell_out[0], 2, &shell_in[0], 2)
+    gpu_pipeline_targets(shell, scene_targets)
+    gpu_pipeline_state(shell, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_BACK, GPU_DEPTH_TEST, GPU_BLEND_ADD)
+    gpu_pipeline_uniforms(shell, 10)
+    gpu_pipeline_vertex_buffer(shell, 0, 32, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(shell, 0, a_pos)
+    let svs: ptr<GxFn> = gpu_pipeline_vs(shell)
+    let shell_local: GxExpr = gx_let(svs, gx_mul(gx_attr(svs, 0), gx_f(1.06)))
+    gx_out_position(svs, gx_mul(gx_umat(svs, 0), gx_vec4_of(shell_local, gx_f(1.0))))
+    gx_out(svs, 0, shell_local)
+    gx_out(svs, 1, gx_attr(svs, 0))
+    let sfs: ptr<GxFn> = gpu_pipeline_fs(shell)
+    let sn: GxExpr = gx_let(sfs, gx_normalize(gx_in(sfs, 1)))
+    let sv: GxExpr = gx_normalize(gx_sub(gx_xyz(gx_uvec(sfs, 9)), gx_in(sfs, 0)))
+    let edge: GxExpr = gx_pow(gx_sub(gx_f(1.0), gx_max(gx_dot(sn, sv), gx_f(0.0))), gx_f(4.0))
+    let sunlit: GxExpr = gx_clamp(gx_add(gx_dot(sn, gx_normalize(gx_xyz(gx_uvec(sfs, 8)))), gx_f(0.4)), gx_f(0.0), gx_f(1.0))
+    let glow: GxExpr = gx_mul(gx_vec3(gx_f(0.25), gx_f(0.5), gx_f(1.0)), gx_mul(gx_mul(edge, sunlit), gx_f(0.9)))
+    gx_out_color(sfs, gx_vec4_of(glow, gx_f(1.0)))
+    let _shell_id: i32 = gpu_pipeline_finish(shell)
+
+    # Composite: bloom and tone map.
+    let uv2_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let post_out: array<GpuVarying, 1> = [uv2_v]
+    let post_in: array<GpuVarying, 1> = [uv2_v]
+    let post: ptr<GpuPipeline> = gpu_pipeline_new(job, "bloom", &post_out[0], 1, &post_in[0], 1)
+    gpu_pipeline_targets(post, out_targets)
+    gpu_pipeline_state(post, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_NONE, GPU_DEPTH_ALWAYS, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(post, 1)
+    gpu_pipeline_texture(post, scene_b)
+    let qvs: ptr<GxFn> = gpu_pipeline_vs(post)
+    let vid: GxExpr = gx_vertex_index(qvs)
+    let cx: GxExpr = gx_let(qvs, gx_sub(gx_mul(gx_f32_of(gx_u32_mod(vid, 2)), gx_f(4.0)), gx_f(1.0)))
+    let cy: GxExpr = gx_let(qvs, gx_sub(gx_mul(gx_f32_of(gx_u32_div(vid, 2)), gx_f(4.0)), gx_f(1.0)))
+    gx_out_position(qvs, gx_vec4(cx, cy, gx_f(0.0), gx_f(1.0)))
+    gx_out(qvs, 0, gx_vec2(gx_add(gx_mul(cx, gx_f(0.5)), gx_f(0.5)), gx_sub(gx_f(0.5), gx_mul(cy, gx_f(0.5)))))
+    let qfs: ptr<GxFn> = gpu_pipeline_fs(post)
+    let uv: GxExpr = gx_let(qfs, gx_in(qfs, 0))
+    let texel: GxExpr = gx_let(qfs, gx_xy(gx_uvec(qfs, 0)))
+    let base: GxExpr = gx_let(qfs, gx_xyz(gx_sample(qfs, 0, uv)))
+    # Twelve taps on two rings; only light above 1 blooms.
+    let mut bloom: GxExpr = gx_splat(GX_VEC3, gx_f(0.0))
+    let mut k: i32 = 0
+    while k < 12 {
+        let ang: f32 = (k as f32) * 0.5235988
+        let mut rad: f32 = 2.0
+        if k % 2 == 1 { rad = 4.0 }
+        let off: GxExpr = gx_mul(texel, gx_vec2(gx_f(rad * cosf(ang)), gx_f(rad * sinf(ang))))
+        let tap: GxExpr = gx_xyz(gx_sample(qfs, 0, gx_add(uv, off)))
+        bloom = gx_let(qfs, gx_add(bloom, gx_max(gx_sub(tap, gx_splat(GX_VEC3, gx_f(1.0))), gx_f(0.0))))
+        k = k + 1
+    }
+    let hdr_c: GxExpr = gx_add(base, gx_mul(bloom, gx_f(0.12)))
+    let mapped: GxExpr = gx_sub(gx_splat(GX_VEC3, gx_f(1.0)), gx_exp(gx_mul(hdr_c, gx_f(0.0 - 1.4))))
+    gx_out_color(qfs, gx_vec4_of(mapped, gx_f(1.0)))
+    let _post_id: i32 = gpu_pipeline_finish(post)
+
+    # Resources.
+    let albedo_px: ptr<u8> = calloc((TW * TH * 4) as i64, 1) as ptr<u8>
+    let lights_px: ptr<u8> = calloc((TW * TH * 4) as i64, 1) as ptr<u8>
+    paint(albedo_px, lights_px)
+    let albedo_t: i32 = gpu_texture(job, map, albedo_px)
+    let lights_t: i32 = gpu_texture(job, map, lights_px)
+    let wrap_s: i32 = gpu_sampler(job, wrap)
+    let clamp_s: i32 = gpu_sampler(job, clamp)
+
+    let mesh: ptr<GpuMesh> = gpu_mesh_new()
+    gpu_mesh_uv_sphere(mesh, 1.0, 48, 96, 0)
+    let vb: i32 = gpu_vertex_buffer(job, mesh[0].v, mesh[0].nv * GPU_MESH_STRIDE)
+    let ib: i32 = gpu_index_buffer(job, mesh[0].idx, mesh[0].ni)
+
+    let ex: f32 = 0.0
+    let ey: f32 = 0.6
+    let ez: f32 = 3.4
+    let proj: ptr<f32> = gpu_m4_new()
+    let view: ptr<f32> = gpu_m4_new()
+    let vp: ptr<f32> = gpu_m4_new()
+    gpu_m4_perspective(proj, 0.75, (W as f32) / (H as f32), 0.1, 20.0)
+    gpu_m4_look_at(view, ex, ey, ez, 0.0, 0.0, 0.0)
+    gpu_m4_mul(vp, proj, view)
+    let spin: ptr<f32> = gpu_m4_new()
+    let tilt: ptr<f32> = gpu_m4_new()
+    let model: ptr<f32> = gpu_m4_new()
+    gpu_m4_rotate_y(spin, 2.2)
+    gpu_m4_rotate_x(tilt, 0.41)
+    gpu_m4_mul(model, tilt, spin)
+    let u: ptr<f32> = calloc(40, 4) as ptr<f32>
+    gpu_m4_store(u, 0, vp)
+    gpu_m4_store(u, 4, model)
+    gpu_v4_store(u, 8, 1.0, 0.25, 0.35, 0.0)
+    gpu_v4_store(u, 9, ex, ey, ez, 1.0)
+    let ub: i32 = gpu_uniform_buffer(job, u, 10)
+    let planet_g: i32 = gpu_group(job, planet, ub)
+    gpu_group_texture(job, planet, planet_g, 0, albedo_t, wrap_s)
+    gpu_group_texture(job, planet, planet_g, 1, lights_t, wrap_s)
+    let shell_g: i32 = gpu_group(job, shell, ub)
+
+    let pu: ptr<f32> = calloc(4, 4) as ptr<f32>
+    gpu_v4_store(pu, 0, 1.0 / (W as f32), 1.0 / (H as f32), 0.0, 0.0)
+    let post_u: i32 = gpu_uniform_buffer(job, pu, 1)
+
+    let hdr_t: i32 = gpu_texture(job, hdr, null)
+    let depth_t: i32 = gpu_texture(job, depth, null)
+    let out_t: i32 = gpu_texture(job, ldr, null)
+    let post_g: i32 = gpu_group(job, post, post_u)
+    gpu_group_texture(job, post, post_g, 0, hdr_t, clamp_s)
+
+    let vbs: array<i32, 1> = [vb]
+    gpu_pass(job, hdr_t, 0 - 1, depth_t, 0.0, 0.0, 0.01, 1.0)
+    gpu_draw_indexed(job, planet, planet_g, &vbs[0], 1, ib, mesh[0].ni, 1, 0, 0, 0)
+    gpu_draw_indexed(job, shell, shell_g, &vbs[0], 1, ib, mesh[0].ni, 1, 0, 0, 0)
+    gpu_pass(job, out_t, 0 - 1, 0 - 1, 0.0, 0.0, 0.0, 1.0)
+    gpu_draw(job, post, post_g, &vbs[0], 0, 3, 1, 0, 0)
+    gpu_output(job, out_t)
+
+    # Space stays black; the sun glint saturates; the lit ocean is blue;
+    # a city on the night side glows warm against the dark land around it.
+    gpu_probe_pixel(job, "space", 2, 2, 0, 0, 4, 255, 2)
+    gpu_probe_pixel(job, "sun-glint", 81, 33, 254, 255, 255, 255, 3)
+    gpu_probe_dominant(job, "day-ocean", 65, 40, 2, 30)
+    gpu_probe_dominant(job, "night-city", 44, 54, 0, 20)
+    gpu_probe_brighter(job, "city-over-night", 44, 54, 44, 40, 300)
+    return gpu_job_run(job)
+}

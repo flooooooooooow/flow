@@ -36,12 +36,18 @@ Run the CPU-only regression with:
 ./flow test-runtime tests/lang/test_gpu_resource_types.flow
 ```
 
-**Scope boundary:** These checks are API-level prevalidation and do **not**
-yet constitute compile-time errors for GPU source declarations, renderer
-resource lowering, a GPU-hazard DAG, or native Metal/WebGPU draw execution.
-The #811 acceptance tests (instancing, Earth, cubemaps, anti-aliasing and
-materials on both backends) remain open. Descriptor limits are conservative
-portability defaults. They are not negotiated per device.
+`GpuTextureBinding` names a texture's slot, the stages that see it and
+their access (`GPU_ACCESS_SAMPLE`, `GPU_ACCESS_STORAGE_READ`,
+`GPU_ACCESS_STORAGE_WRITE`). `gpu_texture_binding_valid` checks the access
+against the texture's usage, sample count, format and dimension.
+
+**Compile-time checks:** when a descriptor is a compile-time constant,
+flowc applies these rules while it type checks the program, and a format,
+access or stage-interface mismatch is a compile error with a code. The
+codes are listed in [GPU descriptor errors](../gpu/descriptor-errors.md).
+Descriptors built at run time are left to the validators above. Descriptor
+limits are conservative portability defaults. They are not negotiated per
+device.
 
 ## Stage code generation and draw validation
 
@@ -66,12 +72,10 @@ Regression programs (do not require a GPU):
 ./flow run tests/lang/test_gpu_stage_codegen.flow
 ```
 
-These are **not yet** language-level compile-time diagnostics for arbitrary
-render source. A working Metal/WebGPU pipeline host must still create render
-pipelines, configure vertex/index/instance bindings, build and bind textures
-and samplers, create depth/MSAA targets, submit draws and read back images.
-The full instancing, Earth, cubemap and materials compatibility corpus from
-#811 remains unverified; generated source alone is not GPU rendering parity.
+These two emitters cover one fixed sampled-quad stage pair. General stages,
+pipelines and draws on both backends are in
+[GPU render jobs](gpu-render.md), which builds vertex and fragment stages
+from typed expressions and runs them on Metal and WebGPU.
 
 ## Browser WebGPU draw/readback host
 
@@ -115,11 +119,10 @@ Host-side mocks and strict invalid-input tests:
 node --test tests/webgpu/sampled-draw.test.mjs
 ```
 
-**Not yet complete:** A compiler-driven glue layer from arbitrary Flow
-render-stage declarations to these descriptors, WebGPU/Metal feature
-negotiation beyond the portable baseline, and frozen upstream vgpu
-reference-image comparisons on live devices remain. Real shader execution
-is not the same as established vgpu pixel parity.
+This host draws the fixed sampled quad in a browser. The render-job host
+for general pipelines under Deno is `tools/gpu_render/webgpu_host.mjs`
+([GPU render jobs](gpu-render.md)). Feature negotiation beyond the
+portable baseline is not done: the descriptor limits stay conservative.
 
 ## Flow-generated WebGPU textured draw smoke test
 
@@ -150,9 +153,6 @@ The generated shader modules live under
 they are absent, rather than substituting an inline shader. The reference
 is a deterministic single-color texture. It is not an upstream vgpu screenshot.
 
-A unit-test/mock-device result must not be mistaken for evidence of
-physical WebGPU rendering. The remaining #811 acceptance work includes
-driver/device runs, a native Metal render host, general indexed vertex
-layouts and material/lighting pipelines, upstream vgpu reference images
-for instancing/Earth/cubemaps/clipping/transmission, and compile-time
-diagnostics integrated into arbitrary Flow GPU declarations.
+A mock-device result is not evidence of rendering on a device. The
+render-job cases in [GPU render jobs](gpu-render.md) are drawn on the Metal
+device and on a WebGPU adapter and compared pixel by pixel.

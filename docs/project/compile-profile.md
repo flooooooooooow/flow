@@ -70,7 +70,7 @@ Cold hello / tiny-job compile-to-result is a tracked [#727](https://github.com/f
 | Phase | Typical where | Follow-up |
 |---|---|---|
 | `import_resolution`, `parse`, `source_read`, `incremental_cache`, `typecheck`, `monomorphize` | Tiny jobs and warm incremental rebuilds | [#736](https://github.com/flooooooooooow/flow/issues/736) incremental AST / frontend cache |
-| `codegen`, `lowering`, `emit` | Large modules | [#729](https://github.com/flooooooooooow/flow/issues/729) codegen taxes |
+| `codegen`, `lowering`, `emit` | Large modules | [#1445](https://github.com/flooooooooooow/flow/issues/1445) code generation time (per-module lookup tables); [#729](https://github.com/flooooooooooow/flow/issues/729) covers the speed of the generated code |
 | `cc` / external compile and link | Compile-to-result, especially hello | [#728](https://github.com/flooooooooooow/flow/issues/728) compiler suite (C toolchain launch) |
 | `startup`, `run` / process launch | Hello and one-shot CLIs | [#746](https://github.com/flooooooooooow/flow/issues/746) compiled-program cold start |
 | MLIR/JIT beyond `codegen` | JIT first result | [#748](https://github.com/flooooooooooow/flow/issues/748) |

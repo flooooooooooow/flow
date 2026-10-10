@@ -1,0 +1,540 @@
+# Run a render job on Metal and WebGPU and check the frames (#811).
+#
+# gpu_job_run writes the job, replays it on each backend named in
+# FLOW_GPU_BACKENDS (default "metal,webgpu"), and checks every frame
+# three ways:
+#
+#   probes     the pixel facts the program stated with gpu_probe_*
+#   backends   Metal and WebGPU agree (per-channel tolerance)
+#   reference  the frozen frame in examples/gpu/vgpu/refs/NAME_WxH.rgba8.hex
+#
+# The Metal host is runtime/gpu_render_metal.m, built with xcrun clang on
+# first use. The WebGPU host is tools/gpu_render/webgpu_host.mjs run by
+# Deno. A backend whose toolchain or device is missing reports UNSUPPORTED
+# and does not fail the run, so the examples also run on Linux CI.
+#
+# Environment:
+#   FLOW_GPU_BACKENDS   metal,webgpu (default), or one of them
+#   FLOW_GPU_CAPTURE=1  rewrite the reference from the first backend that renders
+#   FLOW_GPU_REQUIRE=1  fail when no backend could run
+#   FLOW_GPU_JOB_ROOT   where jobs go (default build/gpu_render)
+#   FLOW_REPO_ROOT      repository root (default: the working directory)
+#
+# One line per backend:
+#   GPU_RENDER <name> [<backend>] PASS|FAIL|UNSUPPORTED maxError=<n> reason=<why>
+
+import "stdlib/gpu_render.flow"
+import "stdlib/io.flow"
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_getenv, proc_which, proc_pid }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+    function access(path: string, mode: i32) -> i32
+    function atoi(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function rename(old_path: string, new_path: string) -> i32
+}
+
+# Two frames agree when no channel differs by more than this, except for
+# at most GPU_EDGE_PIXELS pixels (triangle edges may rasterize a sample
+# differently when the two compilers round a vertex differently).
+export const GPU_CHANNEL_TOL: i32 = 3
+export const GPU_EDGE_PIXELS: i32 = 24
+
+let mut gpu_metal_built: bool = false
+
+export struct GpuFrame {
+    data: ptr<u8>,
+    len: i32,
+    ok: bool
+}
+
+export struct GpuFrameCmp {
+    max_err: i32,
+    over: i32,
+    ok: bool
+}
+
+# String equality by content (see #1464 for why not ==).
+export function gpu_str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+export function gpu_repo_root() -> string {
+    let r: string = proc_getenv("FLOW_REPO_ROOT")
+    if strlen(r) > 0 { return r }
+    return "."
+}
+
+export function gpu_job_root() -> string {
+    let r: string = proc_getenv("FLOW_GPU_JOB_ROOT")
+    if strlen(r) > 0 { return r }
+    return gpu_repo_root() + "/build/gpu_render"
+}
+
+function gpu_exists(path: string) -> bool {
+    return access(path, 0) == 0
+}
+
+export function gpu_frame_read(path: string, want: i32) -> GpuFrame {
+    let f: FileRead = io_read_file(path)
+    if not f.ok or f.len != (want as i64) {
+        return GpuFrame { data: null, len: 0, ok: false }
+    }
+    return GpuFrame { data: f.data as ptr<u8>, len: want, ok: true }
+}
+
+# Per-channel comparison: the largest difference and the number of pixels
+# with a channel off by more than GPU_CHANNEL_TOL.
+export function gpu_frame_compare(a: GpuFrame, b: GpuFrame) -> GpuFrameCmp {
+    if not a.ok or not b.ok or a.len != b.len {
+        return GpuFrameCmp { max_err: 255, over: 0 - 1, ok: false }
+    }
+    let mut max_err: i32 = 0
+    let mut over: i32 = 0
+    let mut i: i32 = 0
+    while i < a.len {
+        let mut worst: i32 = 0
+        let mut c: i32 = 0
+        while c < 4 {
+            let mut d: i32 = (a.data[i + c] as i32) - (b.data[i + c] as i32)
+            if d < 0 { d = 0 - d }
+            if d > worst { worst = d }
+            c = c + 1
+        }
+        if worst > max_err { max_err = worst }
+        if worst > GPU_CHANNEL_TOL { over = over + 1 }
+        i = i + 4
+    }
+    return GpuFrameCmp { max_err: max_err, over: over, ok: over <= GPU_EDGE_PIXELS }
+}
+
+# ---------------------------------------------------------------------------
+# Hex references (the format tools/gpu_test reads)
+# ---------------------------------------------------------------------------
+
+function gpu_hex_val(c: i32) -> i32 {
+    if c >= 48 and c <= 57 { return c - 48 }
+    if c >= 97 and c <= 102 { return c - 87 }
+    if c >= 65 and c <= 70 { return c - 55 }
+    return 0 - 1
+}
+
+export function gpu_hex_read(path: string, want: i32) -> GpuFrame {
+    let f: FileRead = io_read_file(path)
+    if not f.ok { return GpuFrame { data: null, len: 0, ok: false } }
+    let p: ptr<u8> = f.data as ptr<u8>
+    let n: i32 = f.len as i32
+    let out: ptr<u8> = malloc((n / 2 + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut hi: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 35 {
+            while i < n and p[i] != 10 { i = i + 1 }
+        } elif c == 32 or c == 9 or c == 10 or c == 13 {
+            i = i + 1
+        } else {
+            let v: i32 = gpu_hex_val(c)
+            if v < 0 { return GpuFrame { data: null, len: 0, ok: false } }
+            if hi < 0 {
+                hi = v
+            } else {
+                out[o] = (hi * 16 + v) as u8
+                o = o + 1
+                hi = 0 - 1
+            }
+            i = i + 1
+        }
+    }
+    if o != want { return GpuFrame { data: null, len: 0, ok: false } }
+    return GpuFrame { data: out, len: o, ok: true }
+}
+
+export function gpu_hex_write(path: string, header: string, fr: GpuFrame) -> bool {
+    let n: i32 = fr.len
+    let digits: string = "0123456789abcdef"
+    let d: ptr<u8> = digits as ptr<u8>
+    let hl: i32 = strlen(header) as i32
+    let lines: i32 = n / 64 + 1
+    let total: i32 = hl + n * 2 + lines + 1
+    let buf: ptr<u8> = malloc(total as i64) as ptr<u8>
+    let hp: ptr<u8> = header as ptr<u8>
+    let mut o: i32 = 0
+    while o < hl {
+        buf[o] = hp[o]
+        o = o + 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        let v: i32 = fr.data[i] as i32
+        buf[o] = d[v / 16]
+        buf[o + 1] = d[v % 16]
+        o = o + 2
+        i = i + 1
+        if i % 64 == 0 or i == n {
+            buf[o] = 10
+            o = o + 1
+        }
+    }
+    return io_write_bytes(path, buf, o as i64)
+}
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+
+function gpu_px(fr: GpuFrame, w: i32, x: i32, y: i32, c: i32) -> i32 {
+    return fr.data[(y * w + x) * 4 + c] as i32
+}
+
+function gpu_sum3(fr: GpuFrame, w: i32, x: i32, y: i32) -> i32 {
+    return gpu_px(fr, w, x, y, 0) + gpu_px(fr, w, x, y, 1) + gpu_px(fr, w, x, y, 2)
+}
+
+function gpu_rgba_text(fr: GpuFrame, w: i32, x: i32, y: i32) -> string {
+    return "(" + gpu_itoa(gpu_px(fr, w, x, y, 0)) + "," + gpu_itoa(gpu_px(fr, w, x, y, 1)) + "," +
+        gpu_itoa(gpu_px(fr, w, x, y, 2)) + "," + gpu_itoa(gpu_px(fr, w, x, y, 3)) + ")"
+}
+
+# Split one probe line into whitespace-separated words.
+function gpu_words(line: string, out: ptr<string>, cap: i32) -> i32 {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = strlen(line) as i32
+    let mut k: i32 = 0
+    let mut i: i32 = 0
+    while i < n and k < cap {
+        while i < n and p[i] == 32 { i = i + 1 }
+        if i >= n { return k }
+        let s: i32 = i
+        while i < n and p[i] != 32 { i = i + 1 }
+        let w: ptr<u8> = malloc((i - s + 1) as i64) as ptr<u8>
+        let mut q: i32 = 0
+        while q < i - s {
+            w[q] = p[s + q]
+            q = q + 1
+        }
+        w[i - s] = 0
+        out[k] = w as string
+        k = k + 1
+    }
+    return k
+}
+
+# Check every probe; "" when all hold, otherwise the first that fails.
+export function gpu_probes_check(probes: string, fr: GpuFrame, w: i32) -> string {
+    let p: ptr<u8> = probes as ptr<u8>
+    let n: i32 = strlen(probes) as i32
+    let words: ptr<string> = calloc(16, sizeof<string>()) as ptr<string>
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 10 {
+            if i > start {
+                let line: ptr<u8> = malloc((i - start + 1) as i64) as ptr<u8>
+                let mut q: i32 = 0
+                while q < i - start {
+                    line[q] = p[start + q]
+                    q = q + 1
+                }
+                line[i - start] = 0
+                let k: i32 = gpu_words(line as string, words, 16)
+                let why: string = gpu_probe_one(words, k, fr, w)
+                if strlen(why) > 0 { return why }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+function gpu_probe_one(wd: ptr<string>, k: i32, fr: GpuFrame, w: i32) -> string {
+    let kind: string = wd[0]
+    let label: string = wd[1]
+    if kind == "pixel" and k == 9 {
+        let x: i32 = atoi(wd[2])
+        let y: i32 = atoi(wd[3])
+        let tol: i32 = atoi(wd[8])
+        let mut c: i32 = 0
+        while c < 4 {
+            let mut d: i32 = gpu_px(fr, w, x, y, c) - atoi(wd[4 + c])
+            if d < 0 { d = 0 - d }
+            if d > tol {
+                return "probe " + label + ": pixel (" + wd[2] + "," + wd[3] + ") is " + gpu_rgba_text(fr, w, x, y) +
+                    ", expected (" + wd[4] + "," + wd[5] + "," + wd[6] + "," + wd[7] + ") within " + wd[8]
+            }
+            c = c + 1
+        }
+        return ""
+    }
+    if kind == "dominant" and k == 6 {
+        let x2: i32 = atoi(wd[2])
+        let y2: i32 = atoi(wd[3])
+        let ch: i32 = atoi(wd[4])
+        let margin: i32 = atoi(wd[5])
+        let v: i32 = gpu_px(fr, w, x2, y2, ch)
+        let mut c2: i32 = 0
+        while c2 < 3 {
+            if c2 != ch and v - gpu_px(fr, w, x2, y2, c2) < margin {
+                return "probe " + label + ": pixel (" + wd[2] + "," + wd[3] + ") is " + gpu_rgba_text(fr, w, x2, y2) +
+                    ", channel " + wd[4] + " does not lead by " + wd[5]
+            }
+            c2 = c2 + 1
+        }
+        return ""
+    }
+    if (kind == "differ" or kind == "brighter") and k == 7 {
+        let ax: i32 = atoi(wd[2])
+        let ay: i32 = atoi(wd[3])
+        let bx: i32 = atoi(wd[4])
+        let by: i32 = atoi(wd[5])
+        let need: i32 = atoi(wd[6])
+        if kind == "differ" {
+            let mut sum: i32 = 0
+            let mut c3: i32 = 0
+            while c3 < 3 {
+                let mut d3: i32 = gpu_px(fr, w, ax, ay, c3) - gpu_px(fr, w, bx, by, c3)
+                if d3 < 0 { d3 = 0 - d3 }
+                sum = sum + d3
+                c3 = c3 + 1
+            }
+            if sum < need {
+                return "probe " + label + ": " + gpu_rgba_text(fr, w, ax, ay) + " and " + gpu_rgba_text(fr, w, bx, by) +
+                    " differ by " + gpu_itoa(sum) + ", expected at least " + wd[6]
+            }
+            return ""
+        }
+        if gpu_sum3(fr, w, ax, ay) - gpu_sum3(fr, w, bx, by) < need {
+            return "probe " + label + ": " + gpu_rgba_text(fr, w, ax, ay) + " is not brighter than " +
+                gpu_rgba_text(fr, w, bx, by) + " by " + wd[6]
+        }
+        return ""
+    }
+    if kind == "between" and k == 10 {
+        let x0: i32 = atoi(wd[2])
+        let y0: i32 = atoi(wd[3])
+        let x1: i32 = atoi(wd[4])
+        let y1: i32 = atoi(wd[5])
+        let lo: i32 = atoi(wd[6])
+        let hi: i32 = atoi(wd[7])
+        let mut count: i32 = 0
+        let mut y: i32 = y0
+        while y < y1 {
+            let mut x: i32 = x0
+            while x < x1 {
+                let r: i32 = gpu_px(fr, w, x, y, 0)
+                if r > lo and r < hi { count = count + 1 }
+                x = x + 1
+            }
+            y = y + 1
+        }
+        if count < atoi(wd[8]) or count > atoi(wd[9]) {
+            return "probe " + label + ": " + gpu_itoa(count) + " pixels have red in (" + wd[6] + "," + wd[7] +
+                "), expected " + wd[8] + ".." + wd[9]
+        }
+        return ""
+    }
+    return "probe " + label + ": malformed probe " + kind
+}
+
+# ---------------------------------------------------------------------------
+# Backends
+# ---------------------------------------------------------------------------
+
+function gpu_report(name: string, backend: string, verdict: string, max_err: string, reason: string) {
+    let mut line: string = "GPU_RENDER " + name + " [" + backend + "] " + verdict + " maxError=" + max_err
+    if strlen(reason) > 0 { line = line + " reason=" + reason }
+    println(line)
+}
+
+# Path of the Metal host, or "" when unavailable. It is rebuilt from
+# runtime/gpu_render_metal.m once per process (about a second), so an edit
+# to the host never meets a stale binary. Each process builds its own
+# copy and renames it into place, so concurrent runs do not collide.
+function gpu_metal_host(root: string) -> string {
+    let bin: string = root + "/build/gpu_render/gpu_render_metal"
+    let src: string = root + "/runtime/gpu_render_metal.m"
+    if gpu_metal_built { return bin }
+    let tmp: string = bin + "." + gpu_itoa(proc_pid())
+    if strlen(proc_which("xcrun")) == 0 { return "" }
+    let c: ptr<ProcCmd> = proc_cmd("xcrun")
+    proc_arg(c, "clang")
+    proc_arg(c, "-O2")
+    proc_arg(c, "-fobjc-arc")
+    proc_arg(c, src)
+    proc_arg(c, "-framework")
+    proc_arg(c, "Metal")
+    proc_arg(c, "-framework")
+    proc_arg(c, "Foundation")
+    proc_arg(c, "-o")
+    proc_arg(c, tmp)
+    proc_timeout_ms(c, 120000)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.exit_code != 0 {
+        println("gpu_render: building the Metal host failed: " + r.stderr)
+        return ""
+    }
+    if rename(tmp, bin) != 0 { return "" }
+    gpu_metal_built = true
+    return bin
+}
+
+# Render on one backend. Returns 0 rendered, 3 unsupported, 1 failed;
+# the reason goes to `why[0]`.
+function gpu_backend_render(backend: string, root: string, dir: string, out: string, why: ptr<string>) -> i32 {
+    let mut c: ptr<ProcCmd> = null
+    if backend == "metal" {
+        let host: string = gpu_metal_host(root)
+        if strlen(host) == 0 {
+            why[0] = "no-metal-toolchain"
+            return 3
+        }
+        c = proc_cmd(host)
+    } elif backend == "webgpu" {
+        if strlen(proc_which("deno")) == 0 {
+            why[0] = "no-deno"
+            return 3
+        }
+        c = proc_cmd("deno")
+        proc_arg(c, "run")
+        proc_arg(c, "--quiet")
+        proc_arg(c, "--allow-read")
+        proc_arg(c, "--allow-write")
+        proc_arg(c, root + "/tools/gpu_render/webgpu_host.mjs")
+    } else {
+        why[0] = "unknown-backend"
+        return 1
+    }
+    proc_arg(c, dir)
+    proc_arg(c, out)
+    proc_timeout_ms(c, 120000)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.exit_code == 3 {
+        why[0] = "no-device"
+        return 3
+    }
+    if r.exit_code != 0 {
+        println(r.stdout)
+        println(r.stderr)
+        why[0] = "host-exit-" + gpu_itoa(r.exit_code)
+        return 1
+    }
+    return 0
+}
+
+function gpu_backend_listed(list: string, b: string) -> bool {
+    let p: ptr<u8> = list as ptr<u8>
+    let q: ptr<u8> = b as ptr<u8>
+    let n: i32 = strlen(list) as i32
+    let m: i32 = strlen(b) as i32
+    let mut i: i32 = 0
+    while i + m <= n {
+        let mut k: i32 = 0
+        while k < m and p[i + k] == q[k] { k = k + 1 }
+        if k == m and (i + m == n or p[i + m] == 44) and (i == 0 or p[i - 1] == 44) { return true }
+        i = i + 1
+    }
+    return false
+}
+
+# Write, render and check a job. Returns 0 when every backend that ran
+# passed (and, with FLOW_GPU_REQUIRE=1, at least one ran).
+export function gpu_job_run(j: ptr<GpuJob>) -> i32 {
+    if not gpu_job_write(j) {
+        println("GPU_RENDER " + j[0].name + " [job] FAIL maxError=- reason=" + gpu_job_error(j))
+        return 1
+    }
+    let root: string = gpu_repo_root()
+    let mut list: string = proc_getenv("FLOW_GPU_BACKENDS")
+    if strlen(list) == 0 { list = "metal,webgpu" }
+    let size: i32 = j[0].width * j[0].height * 4
+    let ref_path: string = root + "/examples/gpu/vgpu/refs/" + j[0].name + "_" + gpu_itoa(j[0].width) + "x" +
+        gpu_itoa(j[0].height) + ".rgba8.hex"
+    let capture: bool = gpu_str_eq(proc_getenv("FLOW_GPU_CAPTURE"), "1")
+    let mut reference: GpuFrame = gpu_hex_read(ref_path, size)
+    let mut first: GpuFrame = GpuFrame { data: null, len: 0, ok: false }
+    let mut first_name: string = ""
+    let mut failed: bool = false
+    let mut ran: i32 = 0
+    let mut captured: bool = false
+    let backends: array<string, 2> = ["metal", "webgpu"]
+    let mut b: i32 = 0
+    while b < 2 {
+        let backend: string = backends[b]
+        b = b + 1
+        if not gpu_backend_listed(list, backend) { continue }
+        let out: string = j[0].dir + "/out_" + backend + ".rgba"
+        let mut why: string = ""
+        let rc: i32 = gpu_backend_render(backend, root, j[0].dir, out, &why)
+        if rc == 3 {
+            gpu_report(j[0].name, backend, "UNSUPPORTED", "-", why)
+            continue
+        }
+        if rc != 0 {
+            gpu_report(j[0].name, backend, "FAIL", "-", why)
+            failed = true
+            continue
+        }
+        let fr: GpuFrame = gpu_frame_read(out, size)
+        if not fr.ok {
+            gpu_report(j[0].name, backend, "FAIL", "-", "short-frame")
+            failed = true
+            continue
+        }
+        ran = ran + 1
+        let probe_why: string = gpu_probes_check(j[0].probes, fr, j[0].width)
+        if strlen(probe_why) > 0 {
+            gpu_report(j[0].name, backend, "FAIL", "-", "probe")
+            println("  " + probe_why)
+            failed = true
+            continue
+        }
+        if capture and not captured {
+            let header: string = "# vgpu-rgba8unorm w=" + gpu_itoa(j[0].width) + " h=" + gpu_itoa(j[0].height) +
+                " time=0 source=" + j[0].name + " backend=" + backend + "\n"
+            if gpu_hex_write(ref_path, header, fr) {
+                reference = fr
+                captured = true
+                println("gpu_render: captured " + ref_path)
+            }
+        }
+        let mut max_err: i32 = 0
+        if first.ok {
+            let cb: GpuFrameCmp = gpu_frame_compare(fr, first)
+            if cb.max_err > max_err { max_err = cb.max_err }
+            if not cb.ok {
+                gpu_report(j[0].name, backend, "FAIL", gpu_itoa(cb.max_err), "differs-from-" + first_name)
+                println("  " + gpu_itoa(cb.over) + " pixels differ by more than " + gpu_itoa(GPU_CHANNEL_TOL))
+                failed = true
+                continue
+            }
+        } else {
+            first = fr
+            first_name = backend
+        }
+        if reference.ok {
+            let cr: GpuFrameCmp = gpu_frame_compare(fr, reference)
+            if cr.max_err > max_err { max_err = cr.max_err }
+            if not cr.ok {
+                gpu_report(j[0].name, backend, "FAIL", gpu_itoa(cr.max_err), "reference")
+                println("  " + gpu_itoa(cr.over) + " pixels differ from " + ref_path + " by more than " +
+                    gpu_itoa(GPU_CHANNEL_TOL))
+                failed = true
+                continue
+            }
+            gpu_report(j[0].name, backend, "PASS", gpu_itoa(max_err), "")
+        } else {
+            gpu_report(j[0].name, backend, "PASS", gpu_itoa(max_err), "no-reference")
+        }
+    }
+    if failed { return 1 }
+    if ran == 0 and gpu_str_eq(proc_getenv("FLOW_GPU_REQUIRE"), "1") {
+        println("GPU_RENDER " + j[0].name + " no backend could run")
+        return 1
+    }
+    return 0
+}

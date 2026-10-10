@@ -536,7 +536,74 @@ function run_model_webgpu(c: ptr<Case>, trace: string) -> i32 {
     return 0
 }
 
+# The value after `key=` in a verdict line, up to the next space.
+function line_field(line: string, key: string) -> string {
+    let at: i32 = t_find(line, " " + key + "=")
+    if at < 0 {
+        return ""
+    }
+    let start: i32 = at + t_len(key) + 2
+    let mut end: i32 = start
+    while end < t_len(line) and t_at(line, end) != 32 {
+        end = end + 1
+    }
+    return t_sub(line, start, end)
+}
+
+# A render-job case (#811): the Flow program writes a render job, replays
+# it on the backend's GPU host (runtime/gpu_render_metal.m or
+# tools/gpu_render/webgpu_host.mjs), checks its own probes and compares
+# the frame with the reference in examples/gpu/vgpu/refs. Its verdict line
+# is `GPU_RENDER <id> [<backend>] PASS|FAIL|UNSUPPORTED maxError=<n>`.
+function run_job_case(c: ptr<Case>, backend: string, capture: bool) -> i32 {
+    ensure_dir("build")
+    ensure_dir("build/vgpu")
+    let out_path: string = "build/vgpu/" + c[0].id + "_" + backend + ".out"
+    let err_path: string = "build/vgpu/" + c[0].id + "_" + backend + ".err"
+    let args: TList = tl_new()
+    tl_push(&args, "env")
+    tl_push(&args, "FLOW_GPU_BACKENDS=" + backend)
+    if capture {
+        tl_push(&args, "FLOW_GPU_CAPTURE=1")
+    }
+    tl_push(&args, "./flow")
+    tl_push(&args, "run")
+    tl_push(&args, c[0].source)
+    let p: Proc = spawn(&args, cwd(), "", out_path, err_path, 300.0)
+    let lines: TList = t_split_lines(t_read_file(out_path))
+    let prefix: string = "GPU_RENDER " + c[0].id + " [" + backend + "] "
+    let mut i: i32 = 0
+    while i < lines.len {
+        let line: string = tl_get(&lines, i)
+        if t_starts_with(line, prefix) {
+            let rest: string = t_from(line, t_len(prefix))
+            let max_err: string = line_field(line, "maxError")
+            let reason: string = line_field(line, "reason")
+            if t_starts_with(rest, "PASS") and p.code == 0 {
+                if t_eq(max_err, "0") {
+                    report(c, backend, "EXACT", max_err, reason)
+                } else {
+                    report(c, backend, "TOLERANCE", max_err, reason)
+                }
+                return 0
+            }
+            if t_starts_with(rest, "UNSUPPORTED") {
+                report(c, backend, "UNSUPPORTED", "-", reason)
+                return 0
+            }
+            report(c, backend, "FAIL", dash(max_err), dash(reason))
+            return 1
+        }
+        i = i + 1
+    }
+    report(c, backend, "FAIL", "-", "no-verdict (see " + out_path + ")")
+    return 1
+}
+
 function run_one(c: ptr<Case>, backend: string, capture: bool) -> i32 {
+    if t_eq(c[0].renderer, "render-job") {
+        return run_job_case(c, backend, capture)
+    }
     if not backend_listed(c, backend) {
         report(c, backend, "UNSUPPORTED", "-", "backend")
         return 0

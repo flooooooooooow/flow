@@ -1,0 +1,162 @@
+# Render jobs (#811): the run-time checks a job makes on values flowc
+# cannot fold, the job file it writes, and the frame checks. No GPU
+# required: nothing here starts a backend.
+import "stdlib/gpu_render_host.flow"
+import "stdlib/io.flow"
+
+extern {
+    function strstr(h: string, n: string) -> ptr<u8>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+const ROOT: string = "build/test_gpu_render"
+
+function has(s: string, part: string) -> bool {
+    return strstr(s, part) != null
+}
+
+function tex(w: i32, h: i32, format: i32, samples: i32, usage: i32) -> GpuTextureDesc {
+    return GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: format,
+        width: w, height: h, layers: 1, samples: samples, usage: usage
+    }
+}
+
+function targets(color: GpuTextureDesc) -> GpuRenderTargets {
+    return GpuRenderTargets { color: color, depth: color, has_depth: false }
+}
+
+# A pipeline that draws a constant colour from a vec2 attribute.
+function flat(job: ptr<GpuJob>, name: string, t: GpuRenderTargets) -> ptr<GpuPipeline> {
+    let none: array<GpuVarying, 1> = [GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE }]
+    let p: ptr<GpuPipeline> = gpu_pipeline_new(job, name, &none[0], 0, &none[0], 0)
+    gpu_pipeline_targets(p, t)
+    gpu_pipeline_vertex_buffer(p, 0, 8, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(p, 0, GpuVertexAttribute { location: 0, offset: 0, stride: 8, scalar_bytes: 4, components: 2 })
+    let vs: ptr<GxFn> = gpu_pipeline_vs(p)
+    gx_out_position(vs, gx_vec4(gx_x(gx_attr(vs, 0)), gx_y(gx_attr(vs, 0)), gx_f(0.0), gx_f(1.0)))
+    let fs: ptr<GxFn> = gpu_pipeline_fs(p)
+    gx_out_color(fs, gx_vec4(gx_f(1.0), gx_f(0.0), gx_f(0.0), gx_f(1.0)))
+    let _id: i32 = gpu_pipeline_finish(p)
+    return p
+}
+
+function tri(job: ptr<GpuJob>) -> i32 {
+    let v: ptr<f32> = calloc(6, 4) as ptr<f32>
+    v[0] = 0.0 - 1.0
+    v[1] = 0.0 - 1.0
+    v[2] = 3.0
+    v[3] = 0.0 - 1.0
+    v[4] = 0.0 - 1.0
+    v[5] = 3.0
+    return gpu_vertex_buffer(job, v, 6)
+}
+
+function main() -> i32 {
+    let rgba: GpuTextureDesc = tex(4, 2, GPU_FORMAT_RGBA8, 1, GPU_USE_COLOR_ATTACHMENT | GPU_USE_SAMPLED)
+    let rgba4: GpuTextureDesc = tex(4, 2, GPU_FORMAT_RGBA8, 4, GPU_USE_COLOR_ATTACHMENT)
+
+    # A good job writes job.txt and the emitted shaders.
+    let ok: ptr<GpuJob> = gpu_job_new("ok", 4, 2, ROOT)
+    let p: ptr<GpuPipeline> = flat(ok, "flat", targets(rgba))
+    let vb: i32 = tri(ok)
+    let t: i32 = gpu_texture(ok, rgba, null)
+    gpu_pass(ok, t, 0 - 1, 0 - 1, 0.0, 0.0, 0.0, 1.0)
+    let vbs: array<i32, 1> = [vb]
+    gpu_draw(ok, p, 0 - 1, &vbs[0], 1, 3, 1, 0, 0)
+    gpu_output(ok, t)
+    gpu_probe_pixel(ok, "red", 1, 1, 255, 0, 0, 255, 0)
+    if not gpu_job_write(ok) { return 1 }
+    let job: FileRead = io_read_file(ROOT + "/ok/job.txt")
+    if not job.ok { return 2 }
+    if not has(job.data, "pipeline p0 sh0 tri none none none 1 rgba8 0") { return 3 }
+    if not has(job.data, "draw p0 - - - 3 1 0 0 0 b0") { return 4 }
+    if not has(job.data, "output t0") { return 5 }
+    let wgsl: FileRead = io_read_file(ROOT + "/ok/sh0_flat.wgsl")
+    if not wgsl.ok or not has(wgsl.data, "@fragment fn fs_main") { return 6 }
+
+    # A pipeline built for 4x MSAA drawn into a single-sample pass.
+    let j2: ptr<GpuJob> = gpu_job_new("samples", 4, 2, ROOT)
+    let p4: ptr<GpuPipeline> = flat(j2, "msaa", targets(rgba4))
+    let vb2: i32 = tri(j2)
+    let t2: i32 = gpu_texture(j2, rgba, null)
+    gpu_pass(j2, t2, 0 - 1, 0 - 1, 0.0, 0.0, 0.0, 1.0)
+    let vbs2: array<i32, 1> = [vb2]
+    gpu_draw(j2, p4, 0 - 1, &vbs2[0], 1, 3, 1, 0, 0)
+    if not has(gpu_job_error(j2), "renders rgba8 x4 but the pass target is rgba8 x1") { return 7 }
+
+    # Stage interfaces that only differ at run time.
+    let mut comps: i32 = 3
+    if job.len > 0 { comps = 2 }
+    let j3: ptr<GpuJob> = gpu_job_new("link", 4, 2, ROOT)
+    let outs: array<GpuVarying, 1> = [GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }]
+    let mut ins: array<GpuVarying, 1> = [GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }]
+    ins[0].components = comps
+    let _p3: ptr<GpuPipeline> = gpu_pipeline_new(j3, "mismatch", &outs[0], 1, &ins[0], 1)
+    if not has(gpu_job_error(j3), "the vertex outputs do not link to the fragment inputs") { return 8 }
+
+    # Sampling the texture the pass renders into.
+    let j4: ptr<GpuJob> = gpu_job_new("feedback", 4, 2, ROOT)
+    let none: array<GpuVarying, 1> = [GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE }]
+    let ps: ptr<GpuPipeline> = gpu_pipeline_new(j4, "sampler", &none[0], 0, &none[0], 0)
+    gpu_pipeline_targets(ps, targets(rgba))
+    gpu_pipeline_texture(ps, GpuTextureBinding { slot: 0, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: rgba })
+    let svs: ptr<GxFn> = gpu_pipeline_vs(ps)
+    gx_out_position(svs, gx_vec4(gx_f(0.0), gx_f(0.0), gx_f(0.0), gx_f(1.0)))
+    let sfs: ptr<GxFn> = gpu_pipeline_fs(ps)
+    gx_out_color(sfs, gx_sample(sfs, 0, gx_vec2(gx_f(0.5), gx_f(0.5))))
+    let _ps: i32 = gpu_pipeline_finish(ps)
+    let t4: i32 = gpu_texture(j4, rgba, null)
+    let s4: i32 = gpu_sampler(j4, GpuSamplerDesc { min_filter: GPU_FILTER_NEAREST, mag_filter: GPU_FILTER_NEAREST, address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_CLAMP, address_w: GPU_ADDRESS_CLAMP })
+    let g4: i32 = gpu_group(j4, ps, 0 - 1)
+    gpu_group_texture(j4, ps, g4, 0, t4, s4)
+    gpu_pass(j4, t4, 0 - 1, 0 - 1, 0.0, 0.0, 0.0, 1.0)
+    let novb: array<i32, 1> = [0]
+    gpu_draw(j4, ps, g4, &novb[0], 0, 3, 1, 0, 0)
+    if not has(gpu_job_error(j4), "samples t0 while the pass renders into it") { return 9 }
+
+    # A shader stage that never writes its colour.
+    let j5: ptr<GpuJob> = gpu_job_new("stage", 4, 2, ROOT)
+    let pe: ptr<GpuPipeline> = gpu_pipeline_new(j5, "silent", &none[0], 0, &none[0], 0)
+    gpu_pipeline_targets(pe, targets(rgba))
+    let evs: ptr<GxFn> = gpu_pipeline_vs(pe)
+    gx_out_position(evs, gx_vec4(gx_f(0.0), gx_f(0.0), gx_f(0.0), gx_f(1.0)))
+    if gpu_pipeline_finish(pe) != 0 - 1 { return 10 }
+    if not has(gpu_job_error(j5), "fragment stage: colour is never written") { return 11 }
+
+    # Frame checks on a hand-made 2x1 frame.
+    let px: ptr<u8> = calloc(8, 1) as ptr<u8>
+    px[0] = 250
+    px[1] = 10
+    px[2] = 10
+    px[3] = 255
+    px[4] = 20
+    px[5] = 20
+    px[6] = 200
+    px[7] = 255
+    let fr: GpuFrame = GpuFrame { data: px, len: 8, ok: true }
+    let w: i32 = 2
+    if strlen(gpu_probes_check("pixel a 0 0 250 10 10 255 0\n", fr, w)) != 0 { return 12 }
+    if not has(gpu_probes_check("pixel a 0 0 240 10 10 255 3\n", fr, w), "probe a: pixel (0,0) is (250,10,10,255)") { return 13 }
+    if strlen(gpu_probes_check("dominant r 0 0 0 100\ndominant b 1 0 2 100\n", fr, w)) != 0 { return 14 }
+    if strlen(gpu_probes_check("between e 0 0 2 1 15 240 1 1\n", fr, w)) != 0 { return 15 }
+    if not has(gpu_probes_check("brighter x 1 0 0 0 1\n", fr, w), "is not brighter than") { return 16 }
+
+    let px2: ptr<u8> = calloc(8, 1) as ptr<u8>
+    let mut i: i32 = 0
+    while i < 8 {
+        px2[i] = px[i]
+        i = i + 1
+    }
+    px2[6] = 196
+    let near: GpuFrameCmp = gpu_frame_compare(fr, GpuFrame { data: px2, len: 8, ok: true })
+    if near.max_err != 4 or near.over != 1 { return 17 }
+
+    # The hex reference round trip.
+    if not gpu_hex_write(ROOT + "/frame.hex", "# test\n", fr) { return 18 }
+    let back: GpuFrame = gpu_hex_read(ROOT + "/frame.hex", 8)
+    if not back.ok or gpu_frame_compare(fr, back).max_err != 0 { return 19 }
+    if gpu_hex_read(ROOT + "/frame.hex", 12).ok { return 20 }
+    return 0
+}

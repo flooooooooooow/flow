@@ -1,0 +1,16 @@
+# expect: [GPU061] gpu_stage_links: fragment input at location 1 field 'scalar' is f32 but the vertex output is i32
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let uv: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let vs: array<GpuVarying, 2> = [
+        uv,
+        GpuVarying { location: 1, scalar: GPU_SCALAR_I32, components: 1, interpolation: GPU_INTERPOLATE_FLAT }
+    ]
+    let fs: array<GpuVarying, 2> = [
+        uv,
+        GpuVarying { location: 1, scalar: GPU_SCALAR_F32, components: 1, interpolation: GPU_INTERPOLATE_FLAT }
+    ]
+    if gpu_stage_links(&vs[0], 2, &fs[0], 2) { return 1 }
+    return 0
+}

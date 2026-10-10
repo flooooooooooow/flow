@@ -64,6 +64,7 @@ import .rt_summary {
     flowc_rt_unknown_only
 }
 import .type_id { flowc_type_transport_blocker }
+import .sem_gpu { sem_gpu_check_literal, sem_gpu_check_call }
 import .region {
     flowc_region_check_on, flowc_region_call_unproven, flowc_region_call_why,
     flowc_region_fn_of_node, RI_WHY_SAME, RI_WHY_UNKNOWN
@@ -2935,7 +2936,10 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
             return sem_check_function_call(c, nm, all, e, stmt)
         }
     }
-    return sem_check_function_call(c, nm, sem_call_args(c, sem_na(c, e)), e, stmt)
+    let rt: i32 = sem_check_function_call(c, nm, sem_call_args(c, sem_na(c, e)), e, stmt)
+    # A GPU stage-interface declaration (#811).
+    sem_gpu_check_call(c, e, nm)
+    return rt
 }
 
 # ---------------------------------------------------------------------------
@@ -2954,10 +2958,15 @@ function sem_struct_lit_name(c: ptr<Sem>, e: i32) -> string {
 
 # _check_struct_literal
 function sem_check_struct_literal(c: ptr<Sem>, e: i32) -> i32 {
+    let mut t: i32 = 0
     if sem_ncc(c, e) != AST_NONE {
-        return sem_check_record_update(c, e)
+        t = sem_check_record_update(c, e)
+    } else {
+        t = sem_check_struct_fields(c, sem_struct_lit_name(c, e), sem_na(c, e))
     }
-    return sem_check_struct_fields(c, sem_struct_lit_name(c, e), sem_na(c, e))
+    # Compile-time GPU descriptor rules (#811), after the field types.
+    sem_gpu_check_literal(c, e)
+    return t
 }
 
 # _check_record_update: `Point { ..p, x: 3 }` (the literal's c is the base).
@@ -3988,6 +3997,13 @@ function sem_check_var_decl(c: ptr<Sem>, s: i32) -> i32 {
         sem_sv_add(c.local_storage, name)
     }
     sem_define_var(c, name, expected2, is_mut)
+    if is_mut == false {
+        let vsym: i32 = sem_lookup(c, name)
+        if vsym >= 0 {
+            sem_iv_set(c.sy_init, vsym, init)
+            sem_iv_set(c.sy_init_mod, vsym, c.cm)
+        }
+    }
     return expected2
 }
 

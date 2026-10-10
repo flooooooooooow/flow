@@ -1,0 +1,835 @@
+# Render jobs: textured, instanced, depth-tested and multisampled geometry
+# from Flow on Metal and WebGPU (#811).
+#
+# A program describes one frame as typed resources (gpu_resource_types),
+# pipelines whose two stages are built with typed shader expressions
+# (gpu_shader), and passes of draws. gpu_job_write stores the frame as a
+# job directory:
+#
+#   job.txt          one command per line (format below)
+#   *.wgsl, *.metal  the stages, emitted from the Flow description
+#   *.bin            vertex, index, uniform and texture bytes
+#   probes.txt       pixel checks the program states about its own output
+#
+# runtime/gpu_render_metal.m replays a job on Metal and
+# tools/gpu_render/webgpu_host.mjs on WebGPU. gpu_render_host.flow runs
+# them and checks the pixels.
+#
+# Every call validates its descriptors with the gpu_resource_types
+# validators, so a descriptor built at run time is checked here even when
+# flowc could not fold it. The first error stops the job; gpu_job_error
+# returns it.
+#
+# job.txt commands (ids are b<n> buffers, t<n> textures, s<n> samplers,
+# sh<n> shaders, p<n> pipelines, g<n> bind groups):
+#
+#   flowjob 1
+#   size W H
+#   buffer ID FILE BYTES vertex|index|uniform
+#   texture ID 2d|cube rgba8|rgba16f|depth32f W H LAYERS SAMPLES USAGE FILE|-
+#   sampler ID MIN MAG U V W
+#   shader ID WGSL_FILE METAL_FILE
+#   pipeline ID SHADER tri|line none|back|front none|test|write none|alpha|add SAMPLES FORMAT HAS_DEPTH
+#   vbuf PIPE SLOT STRIDE vertex|instance
+#   vattr PIPE SLOT LOCATION f32xN OFFSET
+#   pbind PIPE uniform STAGES | pbind PIPE tex SLOT 2d|cube STAGES
+#   group ID PIPE UNIFORM_BUFFER|-
+#   gtex GROUP SLOT TEXTURE SAMPLER
+#   pass COLOR RESOLVE|- DEPTH|- clear|load R G B A DEPTH_CLEAR
+#   bundle-begin / bundle-end
+#   draw PIPE GROUP|- IBUF|- u16|u32|- COUNT INSTANCES FIRST BASE_VERTEX FIRST_INSTANCE VB...
+#   output TEXTURE
+
+import "stdlib/gpu_resource_types.flow"
+import "stdlib/gpu_stage_codegen.flow"
+import "stdlib/gpu_shader.flow"
+import "stdlib/io.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function malloc(size: i64) -> ptr<void>
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function strlen(s: string) -> i64
+    function mkdir(path: string, mode: i32) -> i32
+}
+
+export const GPU_CULL_NONE: i32 = 0
+export const GPU_CULL_BACK: i32 = 1
+export const GPU_CULL_FRONT: i32 = 2
+
+# Depth state of a pipeline that has a depth target.
+export const GPU_DEPTH_ALWAYS: i32 = 0
+export const GPU_DEPTH_TEST: i32 = 1
+export const GPU_DEPTH_WRITE: i32 = 2
+
+export const GPU_BLEND_NONE: i32 = 0
+export const GPU_BLEND_ALPHA: i32 = 1
+export const GPU_BLEND_ADD: i32 = 2
+
+export const GPU_STEP_VERTEX: i32 = 1
+export const GPU_STEP_INSTANCE: i32 = 2
+
+export const GPU_BUFFER_VERTEX: i32 = 1
+export const GPU_BUFFER_INDEX: i32 = 2
+export const GPU_BUFFER_UNIFORM: i32 = 3
+
+export const GPU_JOB_MAX: i32 = 64
+
+export struct GpuJob {
+    name: string,
+    dir: string,
+    width: i32,
+    height: i32,
+    text: string,
+    probes: string,
+    err: string,
+    nbuf: i32,
+    buf_bytes: array<i64, 64>,
+    buf_kind: array<i32, 64>,
+    buf_index_fmt: array<i32, 64>,
+    ntex: i32,
+    tex: array<GpuTextureDesc, 64>,
+    nsmp: i32,
+    nshader: i32,
+    npipe: i32,
+    ngroup: i32,
+    group_pipe: array<i32, 64>,
+    group_ntex: array<i32, 64>,
+    group_tex: array<i32, 256>,
+    in_pass: bool,
+    pass_color: i32,
+    pass_resolve: i32,
+    pass_depth: i32,
+    in_bundle: bool,
+    output: i32,
+    draws: i32
+}
+
+export struct GpuPipeline {
+    job: ptr<GpuJob>,
+    id: i32,
+    name: string,
+    iface: ptr<GxIface>,
+    vs: ptr<GxFn>,
+    fs: ptr<GxFn>,
+    topology: i32,
+    cull: i32,
+    depth: i32,
+    blend: i32,
+    targets: GpuRenderTargets,
+    has_targets: bool,
+    nvb: i32,
+    vb_stride: array<i32, 4>,
+    vb_step: array<i32, 4>,
+    ntexb: i32,
+    texb: array<GpuTextureBinding, 4>,
+    lines: string,
+    finished: bool
+}
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+export function gpu_itoa(v: i32) -> string {
+    let buf: ptr<u8> = malloc(16) as ptr<u8>
+    snprintf(buf, 16, "%d", v)
+    return buf as string
+}
+
+function gpu_ftoa(v: f32) -> string {
+    let buf: ptr<u8> = malloc(48) as ptr<u8>
+    snprintf(buf, 48, "%.9g", v as f64)
+    return buf as string
+}
+
+function gpu_mkdirs(path: string) {
+    let n: i32 = strlen(path) as i32
+    let p: ptr<u8> = path as ptr<u8>
+    let mut i: i32 = 1
+    while i <= n {
+        if i == n or p[i] == 47 {
+            let part: ptr<u8> = malloc((i + 1) as i64) as ptr<u8>
+            let mut k: i32 = 0
+            while k < i {
+                part[k] = p[k]
+                k = k + 1
+            }
+            part[i] = 0
+            let _r: i32 = mkdir(part as string, 493)
+        }
+        i = i + 1
+    }
+}
+
+function gpu_job_fail(j: ptr<GpuJob>, msg: string) {
+    if strlen(j[0].err) == 0 {
+        j[0].err = j[0].name + ": " + msg
+    }
+}
+
+export function gpu_job_ok(j: ptr<GpuJob>) -> bool {
+    return strlen(j[0].err) == 0
+}
+
+export function gpu_job_error(j: ptr<GpuJob>) -> string {
+    return j[0].err
+}
+
+function gpu_line(j: ptr<GpuJob>, s: string) {
+    j[0].text = j[0].text + s + "\n"
+}
+
+function gpu_format_name(f: i32) -> string {
+    if f == GPU_FORMAT_RGBA8 { return "rgba8" }
+    if f == GPU_FORMAT_RGBA16F { return "rgba16f" }
+    return "depth32f"
+}
+
+function gpu_dim_name(d: i32) -> string {
+    if d == GPU_TEX_CUBE { return "cube" }
+    return "2d"
+}
+
+# ---------------------------------------------------------------------------
+# Jobs and resources
+# ---------------------------------------------------------------------------
+
+# A job whose files go to build/gpu_render/NAME (or $FLOW_GPU_JOB_ROOT/NAME).
+export function gpu_job_new(name: string, width: i32, height: i32, root: string) -> ptr<GpuJob> {
+    let j: ptr<GpuJob> = calloc(1, sizeof<GpuJob>()) as ptr<GpuJob>
+    j[0].name = name
+    j[0].dir = root + "/" + name
+    j[0].width = width
+    j[0].height = height
+    j[0].text = "flowjob 1\nsize " + gpu_itoa(width) + " " + gpu_itoa(height) + "\n"
+    j[0].probes = ""
+    j[0].err = ""
+    j[0].output = 0 - 1
+    j[0].pass_color = 0 - 1
+    if width <= 0 or height <= 0 or width > 4096 or height > 4096 {
+        gpu_job_fail(j, "frame size must be 1..4096 on each side")
+    }
+    gpu_mkdirs(j[0].dir)
+    return j
+}
+
+function gpu_blob(j: ptr<GpuJob>, file: string, data: ptr<u8>, n: i64) -> bool {
+    if not io_write_bytes(j[0].dir + "/" + file, data, n) {
+        gpu_job_fail(j, "cannot write " + j[0].dir + "/" + file)
+        return false
+    }
+    return true
+}
+
+function gpu_buffer_bytes(j: ptr<GpuJob>, data: ptr<u8>, n: i64, kind: i32, index_fmt: i32) -> i32 {
+    if not gpu_job_ok(j) { return 0 - 1 }
+    if j[0].nbuf >= GPU_JOB_MAX { gpu_job_fail(j, "too many buffers"); return 0 - 1 }
+    if n <= 0 or data == null { gpu_job_fail(j, "empty buffer"); return 0 - 1 }
+    if n > 268435456 { gpu_job_fail(j, "buffer larger than 256 MiB"); return 0 - 1 }
+    let id: i32 = j[0].nbuf
+    let file: string = "b" + gpu_itoa(id) + ".bin"
+    if not gpu_blob(j, file, data, n) { return 0 - 1 }
+    let mut usage: string = "vertex"
+    if kind == GPU_BUFFER_INDEX { usage = "index" }
+    if kind == GPU_BUFFER_UNIFORM { usage = "uniform" }
+    let buf: ptr<u8> = malloc(32) as ptr<u8>
+    snprintf(buf, 32, "%lld", n)
+    gpu_line(j, "buffer b" + gpu_itoa(id) + " " + file + " " + (buf as string) + " " + usage)
+    j[0].buf_bytes[id] = n
+    j[0].buf_kind[id] = kind
+    j[0].buf_index_fmt[id] = index_fmt
+    j[0].nbuf = id + 1
+    return id
+}
+
+# A vertex buffer of `n` floats.
+export function gpu_vertex_buffer(j: ptr<GpuJob>, data: ptr<f32>, n: i32) -> i32 {
+    return gpu_buffer_bytes(j, data as ptr<u8>, (n as i64) * 4, GPU_BUFFER_VERTEX, GPU_INDEX_NONE)
+}
+
+# An index buffer of `n` u32 indices.
+export function gpu_index_buffer(j: ptr<GpuJob>, data: ptr<u32>, n: i32) -> i32 {
+    return gpu_buffer_bytes(j, data as ptr<u8>, (n as i64) * 4, GPU_BUFFER_INDEX, GPU_INDEX_U32)
+}
+
+# A uniform block of `nvec4` vec4s (4 floats each).
+export function gpu_uniform_buffer(j: ptr<GpuJob>, data: ptr<f32>, nvec4: i32) -> i32 {
+    return gpu_buffer_bytes(j, data as ptr<u8>, (nvec4 as i64) * 16, GPU_BUFFER_UNIFORM, GPU_INDEX_NONE)
+}
+
+# A texture. `data` holds every layer's rgba8 texels, or null for a render
+# target.
+export function gpu_texture(j: ptr<GpuJob>, d: GpuTextureDesc, data: ptr<u8>) -> i32 {
+    if not gpu_job_ok(j) { return 0 - 1 }
+    if not gpu_texture_valid(d) {
+        gpu_job_fail(j, "texture descriptor is invalid (format, usage, samples or shape)")
+        return 0 - 1
+    }
+    if j[0].ntex >= GPU_JOB_MAX { gpu_job_fail(j, "too many textures"); return 0 - 1 }
+    let id: i32 = j[0].ntex
+    let mut file: string = "-"
+    if data != null {
+        if d.format != GPU_FORMAT_RGBA8 or d.samples != 1 {
+            gpu_job_fail(j, "only single-sample rgba8 textures take initial data")
+            return 0 - 1
+        }
+        file = "t" + gpu_itoa(id) + ".bin"
+        let n: i64 = (d.width as i64) * (d.height as i64) * (d.layers as i64) * 4
+        if not gpu_blob(j, file, data, n) { return 0 - 1 }
+    }
+    gpu_line(j, "texture t" + gpu_itoa(id) + " " + gpu_dim_name(d.dimension) + " " +
+        gpu_format_name(d.format) + " " + gpu_itoa(d.width) + " " + gpu_itoa(d.height) + " " +
+        gpu_itoa(d.layers) + " " + gpu_itoa(d.samples) + " " + gpu_itoa(d.usage) + " " + file)
+    j[0].tex[id] = d
+    j[0].ntex = id + 1
+    return id
+}
+
+export function gpu_sampler(j: ptr<GpuJob>, d: GpuSamplerDesc) -> i32 {
+    if not gpu_job_ok(j) { return 0 - 1 }
+    if not gpu_sampler_valid(d) { gpu_job_fail(j, "sampler descriptor is invalid"); return 0 - 1 }
+    let id: i32 = j[0].nsmp
+    let mut s: string = "sampler s" + gpu_itoa(id)
+    let mut f: string = " nearest"
+    if d.min_filter == GPU_FILTER_LINEAR { f = " linear" }
+    s = s + f
+    f = " nearest"
+    if d.mag_filter == GPU_FILTER_LINEAR { f = " linear" }
+    s = s + f
+    let mut a: string = " clamp"
+    if d.address_u == GPU_ADDRESS_REPEAT { a = " repeat" }
+    s = s + a
+    a = " clamp"
+    if d.address_v == GPU_ADDRESS_REPEAT { a = " repeat" }
+    s = s + a
+    a = " clamp"
+    if d.address_w == GPU_ADDRESS_REPEAT { a = " repeat" }
+    gpu_line(j, s + a)
+    j[0].nsmp = id + 1
+    return id
+}
+
+# ---------------------------------------------------------------------------
+# Pipelines
+# ---------------------------------------------------------------------------
+
+# A pipeline whose vertex stage writes `vs_out` and whose fragment stage
+# reads `fs_in`. The two lists must link (gpu_stage_links): flowc checks
+# this at compile time when both are constant arrays, and this call checks
+# it again at run time.
+export function gpu_pipeline_new(j: ptr<GpuJob>, name: string,
+                                 vs_out: ptr<GpuVarying>, nv: i32,
+                                 fs_in: ptr<GpuVarying>, nf: i32) -> ptr<GpuPipeline> {
+    let p: ptr<GpuPipeline> = calloc(1, sizeof<GpuPipeline>()) as ptr<GpuPipeline>
+    p[0].job = j
+    p[0].name = name
+    p[0].lines = ""
+    p[0].id = j[0].npipe
+    p[0].iface = gx_iface_new()
+    p[0].vs = gx_fn_new(p[0].iface, GPU_STAGE_VERTEX)
+    p[0].fs = gx_fn_new(p[0].iface, GPU_STAGE_FRAGMENT)
+    p[0].topology = GPU_TOPOLOGY_TRIANGLES
+    j[0].npipe = j[0].npipe + 1
+    if nv > GX_MAX_VARYINGS or nf > GX_MAX_VARYINGS {
+        gpu_job_fail(j, "pipeline " + name + ": more than 16 varyings")
+        return p
+    }
+    if not gpu_stage_links(vs_out, nv, fs_in, nf) {
+        gpu_job_fail(j, "pipeline " + name + ": the vertex outputs do not link to the fragment inputs")
+        return p
+    }
+    # The interface carries the fragment inputs, plus vertex outputs the
+    # fragment stage ignores (written by the vertex stage, unread).
+    let ifc: ptr<GxIface> = p[0].iface
+    let mut i: i32 = 0
+    while i < nv {
+        ifc[0].vary[ifc[0].nvary] = vs_out[i]
+        ifc[0].nvary = ifc[0].nvary + 1
+        i = i + 1
+    }
+    return p
+}
+
+export function gpu_pipeline_vs(p: ptr<GpuPipeline>) -> ptr<GxFn> {
+    return p[0].vs
+}
+
+export function gpu_pipeline_fs(p: ptr<GpuPipeline>) -> ptr<GxFn> {
+    return p[0].fs
+}
+
+function gpu_pipe_fail(p: ptr<GpuPipeline>, msg: string) {
+    gpu_job_fail(p[0].job, "pipeline " + p[0].name + ": " + msg)
+}
+
+export function gpu_pipeline_state(p: ptr<GpuPipeline>, topology: i32, cull: i32, depth: i32, blend: i32) {
+    if topology != GPU_TOPOLOGY_TRIANGLES and topology != GPU_TOPOLOGY_LINES {
+        gpu_pipe_fail(p, "unknown topology")
+    }
+    if cull < GPU_CULL_NONE or cull > GPU_CULL_FRONT { gpu_pipe_fail(p, "unknown cull mode") }
+    if depth < GPU_DEPTH_ALWAYS or depth > GPU_DEPTH_WRITE { gpu_pipe_fail(p, "unknown depth mode") }
+    if blend < GPU_BLEND_NONE or blend > GPU_BLEND_ADD { gpu_pipe_fail(p, "unknown blend mode") }
+    p[0].topology = topology
+    p[0].cull = cull
+    p[0].depth = depth
+    p[0].blend = blend
+}
+
+export function gpu_pipeline_targets(p: ptr<GpuPipeline>, t: GpuRenderTargets) {
+    if not gpu_targets_valid(t) {
+        gpu_pipe_fail(p, "render targets are invalid (colour or depth format, usage, size or samples)")
+        return
+    }
+    p[0].targets = t
+    p[0].has_targets = true
+}
+
+export function gpu_pipeline_uniforms(p: ptr<GpuPipeline>, nvec4: i32) {
+    if nvec4 < 0 or nvec4 > 256 { gpu_pipe_fail(p, "uniform block must hold 0..256 vec4s"); return }
+    p[0].iface[0].uniform_vec4s = nvec4
+}
+
+# Declare vertex buffer `slot` with its byte stride and step rate.
+export function gpu_pipeline_vertex_buffer(p: ptr<GpuPipeline>, slot: i32, stride: i32, step: i32) {
+    if slot != p[0].nvb or slot >= 4 { gpu_pipe_fail(p, "vertex buffer slots are declared in order 0..3"); return }
+    if step != GPU_STEP_VERTEX and step != GPU_STEP_INSTANCE { gpu_pipe_fail(p, "unknown step mode"); return }
+    if stride <= 0 or stride > 2048 or stride % 4 != 0 { gpu_pipe_fail(p, "stride must be 4..2048 and a multiple of 4"); return }
+    p[0].vb_stride[slot] = stride
+    p[0].vb_step[slot] = step
+    p[0].nvb = slot + 1
+    let mut s: string = "vertex"
+    if step == GPU_STEP_INSTANCE { s = "instance" }
+    p[0].lines = p[0].lines + "vbuf p" + gpu_itoa(p[0].id) + " " + gpu_itoa(slot) + " " + gpu_itoa(stride) + " " + s + "\n"
+}
+
+# Declare an f32 attribute read from vertex buffer `slot`.
+export function gpu_pipeline_attribute(p: ptr<GpuPipeline>, slot: i32, a: GpuVertexAttribute) {
+    if slot < 0 or slot >= p[0].nvb { gpu_pipe_fail(p, "attribute names an undeclared vertex buffer"); return }
+    if not gpu_vertex_attribute_valid(a) { gpu_pipe_fail(p, "vertex attribute does not fit its stride"); return }
+    if a.scalar_bytes != 4 { gpu_pipe_fail(p, "only f32 attributes are supported"); return }
+    if a.stride != p[0].vb_stride[slot] {
+        gpu_pipe_fail(p, "attribute " + gpu_itoa(a.location) + " stride differs from vertex buffer " + gpu_itoa(slot))
+        return
+    }
+    let ifc: ptr<GxIface> = p[0].iface
+    let mut i: i32 = 0
+    while i < ifc[0].nattr {
+        if ifc[0].attr_loc[i] == a.location { gpu_pipe_fail(p, "two attributes at location " + gpu_itoa(a.location)); return }
+        i = i + 1
+    }
+    if ifc[0].nattr >= GX_MAX_ATTRS { gpu_pipe_fail(p, "more than 8 attributes"); return }
+    ifc[0].attr_loc[ifc[0].nattr] = a.location
+    ifc[0].attr_ty[ifc[0].nattr] = a.components
+    ifc[0].nattr = ifc[0].nattr + 1
+    p[0].lines = p[0].lines + "vattr p" + gpu_itoa(p[0].id) + " " + gpu_itoa(slot) + " " + gpu_itoa(a.location) +
+        " f32x" + gpu_itoa(a.components) + " " + gpu_itoa(a.offset) + "\n"
+}
+
+# Bind a texture (with a sampler of the same slot) for sampling.
+export function gpu_pipeline_texture(p: ptr<GpuPipeline>, b: GpuTextureBinding) {
+    if not gpu_texture_binding_valid(b) {
+        gpu_pipe_fail(p, "texture binding at slot " + gpu_itoa(b.slot) + " is invalid for its access")
+        return
+    }
+    if b.access != GPU_ACCESS_SAMPLE {
+        gpu_pipe_fail(p, "render pipelines sample their textures; storage access is for compute")
+        return
+    }
+    if (b.stages & GPU_STAGE_COMPUTE) != 0 { gpu_pipe_fail(p, "render pipelines have no compute stage"); return }
+    let ifc: ptr<GxIface> = p[0].iface
+    let mut i: i32 = 0
+    while i < ifc[0].ntex {
+        if ifc[0].tex_slot[i] == b.slot { gpu_pipe_fail(p, "two textures at slot " + gpu_itoa(b.slot)); return }
+        i = i + 1
+    }
+    if ifc[0].ntex >= GX_MAX_TEXTURES { gpu_pipe_fail(p, "more than 4 textures"); return }
+    let k: i32 = ifc[0].ntex
+    ifc[0].tex_slot[k] = b.slot
+    let mut cube: i32 = 0
+    if b.texture.dimension == GPU_TEX_CUBE { cube = 1 }
+    ifc[0].tex_cube[k] = cube
+    ifc[0].tex_stages[k] = b.stages
+    ifc[0].ntex = k + 1
+    p[0].texb[k] = b
+    p[0].ntexb = k + 1
+}
+
+# Emit both stages and register the pipeline. Returns its id, or -1.
+export function gpu_pipeline_finish(p: ptr<GpuPipeline>) -> i32 {
+    let j: ptr<GpuJob> = p[0].job
+    if not gpu_job_ok(j) { return 0 - 1 }
+    if not p[0].has_targets { gpu_pipe_fail(p, "no render targets declared"); return 0 - 1 }
+    let why: string = gx_check(p[0].vs, p[0].fs)
+    if strlen(why) > 0 { gpu_pipe_fail(p, why); return 0 - 1 }
+    let wgsl: string = gx_emit_wgsl(p[0].vs, p[0].fs)
+    let metal: string = gx_emit_metal(p[0].vs, p[0].fs)
+    let base: string = "sh" + gpu_itoa(j[0].nshader) + "_" + p[0].name
+    let sid: string = "sh" + gpu_itoa(j[0].nshader)
+    j[0].nshader = j[0].nshader + 1
+    if not gpu_blob(j, base + ".wgsl", wgsl as ptr<u8>, strlen(wgsl)) { return 0 - 1 }
+    if not gpu_blob(j, base + ".metal", metal as ptr<u8>, strlen(metal)) { return 0 - 1 }
+    gpu_line(j, "shader " + sid + " " + base + ".wgsl " + base + ".metal")
+    let mut topo: string = "tri"
+    if p[0].topology == GPU_TOPOLOGY_LINES { topo = "line" }
+    let mut cull: string = "none"
+    if p[0].cull == GPU_CULL_BACK { cull = "back" }
+    if p[0].cull == GPU_CULL_FRONT { cull = "front" }
+    let mut depth: string = "none"
+    if p[0].depth == GPU_DEPTH_TEST { depth = "test" }
+    if p[0].depth == GPU_DEPTH_WRITE { depth = "write" }
+    let mut blend: string = "none"
+    if p[0].blend == GPU_BLEND_ALPHA { blend = "alpha" }
+    if p[0].blend == GPU_BLEND_ADD { blend = "add" }
+    let t: GpuRenderTargets = p[0].targets
+    let mut hd: string = "0"
+    if t.has_depth { hd = "1" }
+    let pid: string = "p" + gpu_itoa(p[0].id)
+    gpu_line(j, "pipeline " + pid + " " + sid + " " + topo + " " + cull + " " + depth + " " + blend + " " +
+        gpu_itoa(t.color.samples) + " " + gpu_format_name(t.color.format) + " " + hd)
+    j[0].text = j[0].text + p[0].lines
+    if p[0].iface[0].uniform_vec4s > 0 {
+        gpu_line(j, "pbind " + pid + " uniform 3")
+    }
+    let ifc: ptr<GxIface> = p[0].iface
+    let mut i: i32 = 0
+    while i < ifc[0].ntex {
+        let mut dim: string = "2d"
+        if ifc[0].tex_cube[i] != 0 { dim = "cube" }
+        gpu_line(j, "pbind " + pid + " tex " + gpu_itoa(ifc[0].tex_slot[i]) + " " + dim + " " +
+            gpu_itoa(ifc[0].tex_stages[i]))
+        i = i + 1
+    }
+    p[0].finished = true
+    return p[0].id
+}
+
+# ---------------------------------------------------------------------------
+# Bind groups
+# ---------------------------------------------------------------------------
+
+# A bind group for pipeline `p`: its uniform buffer (or -1) and, through
+# gpu_group_texture, one texture and sampler per declared slot.
+export function gpu_group(j: ptr<GpuJob>, p: ptr<GpuPipeline>, uniform: i32) -> i32 {
+    if not gpu_job_ok(j) { return 0 - 1 }
+    if not p[0].finished { gpu_job_fail(j, "bind group for an unfinished pipeline " + p[0].name); return 0 - 1 }
+    if j[0].ngroup >= GPU_JOB_MAX { gpu_job_fail(j, "too many bind groups"); return 0 - 1 }
+    let needs: bool = p[0].iface[0].uniform_vec4s > 0
+    let mut u: string = "-"
+    if needs {
+        if uniform < 0 or uniform >= j[0].nbuf or j[0].buf_kind[uniform] != GPU_BUFFER_UNIFORM {
+            gpu_job_fail(j, "pipeline " + p[0].name + " needs a uniform buffer")
+            return 0 - 1
+        }
+        if j[0].buf_bytes[uniform] < (p[0].iface[0].uniform_vec4s as i64) * 16 {
+            gpu_job_fail(j, "uniform buffer is smaller than pipeline " + p[0].name + "'s uniform block")
+            return 0 - 1
+        }
+        u = "b" + gpu_itoa(uniform)
+    }
+    let id: i32 = j[0].ngroup
+    gpu_line(j, "group g" + gpu_itoa(id) + " p" + gpu_itoa(p[0].id) + " " + u)
+    j[0].group_pipe[id] = p[0].id
+    j[0].group_ntex[id] = 0
+    j[0].ngroup = id + 1
+    return id
+}
+
+# Put texture `tex` and sampler `smp` in `slot` of group `g`. The texture
+# must be the kind the pipeline declared for that slot.
+export function gpu_group_texture(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, slot: i32, tex: i32, smp: i32) {
+    if not gpu_job_ok(j) { return }
+    if g < 0 or g >= j[0].ngroup or j[0].group_pipe[g] != p[0].id {
+        gpu_job_fail(j, "texture added to a group of another pipeline")
+        return
+    }
+    if tex < 0 or tex >= j[0].ntex or smp < 0 or smp >= j[0].nsmp {
+        gpu_job_fail(j, "unknown texture or sampler")
+        return
+    }
+    let mut k: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < p[0].ntexb {
+        if p[0].texb[i].slot == slot { k = i }
+        i = i + 1
+    }
+    if k < 0 { gpu_job_fail(j, "pipeline " + p[0].name + " declares no texture at slot " + gpu_itoa(slot)); return }
+    let want: GpuTextureDesc = p[0].texb[k].texture
+    let got: GpuTextureDesc = j[0].tex[tex]
+    if want.dimension != got.dimension or want.format != got.format {
+        gpu_job_fail(j, "slot " + gpu_itoa(slot) + " of pipeline " + p[0].name + " expects a " +
+            gpu_dim_name(want.dimension) + " " + gpu_format_name(want.format) + " texture, got " +
+            gpu_dim_name(got.dimension) + " " + gpu_format_name(got.format))
+        return
+    }
+    if (got.usage & GPU_USE_SAMPLED) == 0 or got.samples != 1 {
+        gpu_job_fail(j, "texture t" + gpu_itoa(tex) + " cannot be sampled (usage or samples)")
+        return
+    }
+    let n: i32 = j[0].group_ntex[g]
+    if n >= 4 { gpu_job_fail(j, "more than 4 textures in a group"); return }
+    j[0].group_tex[g * 4 + n] = tex
+    j[0].group_ntex[g] = n + 1
+    gpu_line(j, "gtex g" + gpu_itoa(g) + " " + gpu_itoa(slot) + " t" + gpu_itoa(tex) + " s" + gpu_itoa(smp))
+}
+
+# ---------------------------------------------------------------------------
+# Passes and draws
+# ---------------------------------------------------------------------------
+
+function gpu_tex_ok(j: ptr<GpuJob>, t: i32) -> bool {
+    return t >= 0 and t < j[0].ntex
+}
+
+# Begin a pass that renders into `color` (resolving into `resolve` when
+# multisampled, -1 otherwise) with optional `depth` (-1 for none). The
+# colour is cleared to (r, g, b, a) and depth to 1.
+export function gpu_pass(j: ptr<GpuJob>, color: i32, resolve: i32, depth: i32,
+                         r: f32, g: f32, b: f32, a: f32) {
+    if not gpu_job_ok(j) { return }
+    if j[0].in_bundle { gpu_job_fail(j, "pass begun inside a render bundle"); return }
+    if not gpu_tex_ok(j, color) { gpu_job_fail(j, "pass colour texture is unknown"); return }
+    let c: GpuTextureDesc = j[0].tex[color]
+    if (c.usage & GPU_USE_COLOR_ATTACHMENT) == 0 or c.format == GPU_FORMAT_DEPTH32F or c.dimension != GPU_TEX_2D {
+        gpu_job_fail(j, "texture t" + gpu_itoa(color) + " is not a 2d colour attachment")
+        return
+    }
+    let mut rs: string = "-"
+    if c.samples > 1 {
+        if not gpu_tex_ok(j, resolve) { gpu_job_fail(j, "a multisampled pass needs a resolve texture"); return }
+        let rt: GpuTextureDesc = j[0].tex[resolve]
+        if rt.samples != 1 or rt.format != c.format or rt.width != c.width or rt.height != c.height or
+           (rt.usage & GPU_USE_COLOR_ATTACHMENT) == 0 {
+            gpu_job_fail(j, "resolve texture must be a single-sample colour attachment of the same size and format")
+            return
+        }
+        rs = "t" + gpu_itoa(resolve)
+    } elif resolve >= 0 {
+        gpu_job_fail(j, "a single-sample pass has nothing to resolve")
+        return
+    }
+    let mut ds: string = "-"
+    if depth >= 0 {
+        if not gpu_tex_ok(j, depth) { gpu_job_fail(j, "pass depth texture is unknown"); return }
+        let dt: GpuTextureDesc = j[0].tex[depth]
+        if dt.format != GPU_FORMAT_DEPTH32F or (dt.usage & GPU_USE_DEPTH_ATTACHMENT) == 0 or
+           dt.width != c.width or dt.height != c.height or dt.samples != c.samples {
+            gpu_job_fail(j, "depth texture must be a depth32f attachment with the colour target's size and samples")
+            return
+        }
+        ds = "t" + gpu_itoa(depth)
+    }
+    gpu_line(j, "pass t" + gpu_itoa(color) + " " + rs + " " + ds + " clear " + gpu_ftoa(r) + " " +
+        gpu_ftoa(g) + " " + gpu_ftoa(b) + " " + gpu_ftoa(a) + " 1")
+    j[0].in_pass = true
+    j[0].pass_color = color
+    j[0].pass_resolve = resolve
+    j[0].pass_depth = depth
+}
+
+# Draws between these two calls are recorded once as a render bundle on
+# WebGPU and encoded directly on Metal.
+export function gpu_bundle_begin(j: ptr<GpuJob>) {
+    if not j[0].in_pass { gpu_job_fail(j, "render bundle outside a pass"); return }
+    gpu_line(j, "bundle-begin")
+    j[0].in_bundle = true
+}
+
+export function gpu_bundle_end(j: ptr<GpuJob>) {
+    if not j[0].in_bundle { gpu_job_fail(j, "bundle_end without bundle_begin"); return }
+    gpu_line(j, "bundle-end")
+    j[0].in_bundle = false
+}
+
+function gpu_draw_common(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, vbs: ptr<i32>, nvb: i32) -> bool {
+    if not gpu_job_ok(j) { return false }
+    if not j[0].in_pass { gpu_job_fail(j, "draw outside a pass"); return false }
+    if not p[0].finished { gpu_job_fail(j, "draw with unfinished pipeline " + p[0].name); return false }
+    let c: GpuTextureDesc = j[0].tex[j[0].pass_color]
+    let t: GpuRenderTargets = p[0].targets
+    if t.color.format != c.format or t.color.samples != c.samples {
+        gpu_job_fail(j, "pipeline " + p[0].name + " renders " + gpu_format_name(t.color.format) + " x" +
+            gpu_itoa(t.color.samples) + " but the pass target is " + gpu_format_name(c.format) + " x" + gpu_itoa(c.samples))
+        return false
+    }
+    if t.has_depth != (j[0].pass_depth >= 0) {
+        gpu_job_fail(j, "pipeline " + p[0].name + " and its pass disagree about a depth target")
+        return false
+    }
+    if nvb != p[0].nvb {
+        gpu_job_fail(j, "pipeline " + p[0].name + " takes " + gpu_itoa(p[0].nvb) + " vertex buffers, draw gives " + gpu_itoa(nvb))
+        return false
+    }
+    let mut i: i32 = 0
+    while i < nvb {
+        let b: i32 = vbs[i]
+        if b < 0 or b >= j[0].nbuf or j[0].buf_kind[b] != GPU_BUFFER_VERTEX {
+            gpu_job_fail(j, "draw vertex buffer " + gpu_itoa(i) + " is not a vertex buffer")
+            return false
+        }
+        i = i + 1
+    }
+    let needs_group: bool = p[0].iface[0].uniform_vec4s > 0 or p[0].ntexb > 0
+    if needs_group {
+        if g < 0 or g >= j[0].ngroup or j[0].group_pipe[g] != p[0].id {
+            gpu_job_fail(j, "pipeline " + p[0].name + " needs its own bind group")
+            return false
+        }
+        if j[0].group_ntex[g] != p[0].ntexb {
+            gpu_job_fail(j, "bind group g" + gpu_itoa(g) + " leaves a texture slot of " + p[0].name + " empty")
+            return false
+        }
+        # A pass cannot sample a texture it renders into.
+        let mut k: i32 = 0
+        while k < j[0].group_ntex[g] {
+            let tex: i32 = j[0].group_tex[g * 4 + k]
+            if tex == j[0].pass_color or tex == j[0].pass_resolve or tex == j[0].pass_depth {
+                gpu_job_fail(j, "pipeline " + p[0].name + " samples t" + gpu_itoa(tex) + " while the pass renders into it")
+                return false
+            }
+            k = k + 1
+        }
+    }
+    return true
+}
+
+function gpu_vb_list(vbs: ptr<i32>, nvb: i32) -> string {
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < nvb {
+        s = s + " b" + gpu_itoa(vbs[i])
+        i = i + 1
+    }
+    return s
+}
+
+function gpu_group_name(g: i32) -> string {
+    if g < 0 { return "-" }
+    return "g" + gpu_itoa(g)
+}
+
+# A non-indexed draw of `count` vertices and `instances` instances.
+export function gpu_draw(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, vbs: ptr<i32>, nvb: i32,
+                         count: i32, instances: i32, first: i32, first_instance: i32) {
+    if not gpu_draw_common(j, p, g, vbs, nvb) { return }
+    let d: GpuDrawDesc = GpuDrawDesc {
+        vertex_count: count, index_count: 0, instance_count: instances,
+        first_vertex: first, first_instance: first_instance,
+        index_format: GPU_INDEX_NONE, index_bytes: 0, topology: p[0].topology
+    }
+    if not gpu_draw_valid(d) { gpu_job_fail(j, "draw counts are invalid"); return }
+    gpu_line(j, "draw p" + gpu_itoa(p[0].id) + " " + gpu_group_name(g) + " - - " + gpu_itoa(count) + " " +
+        gpu_itoa(instances) + " " + gpu_itoa(first) + " 0 " + gpu_itoa(first_instance) + gpu_vb_list(vbs, nvb))
+    j[0].draws = j[0].draws + 1
+}
+
+# An indexed draw of `count` indices from `first`, with `base_vertex`
+# added to each index.
+export function gpu_draw_indexed(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, vbs: ptr<i32>, nvb: i32,
+                                 ibuf: i32, count: i32, instances: i32, first: i32,
+                                 base_vertex: i32, first_instance: i32) {
+    if not gpu_draw_common(j, p, g, vbs, nvb) { return }
+    if ibuf < 0 or ibuf >= j[0].nbuf or j[0].buf_kind[ibuf] != GPU_BUFFER_INDEX {
+        gpu_job_fail(j, "indexed draw without an index buffer")
+        return
+    }
+    if first < 0 or base_vertex < 0 { gpu_job_fail(j, "negative index offset"); return }
+    let fmt: i32 = j[0].buf_index_fmt[ibuf]
+    let avail: i64 = j[0].buf_bytes[ibuf] - (first as i64) * (fmt as i64)
+    let d: GpuDrawDesc = GpuDrawDesc {
+        vertex_count: 1, index_count: count, instance_count: instances,
+        first_vertex: base_vertex, first_instance: first_instance,
+        index_format: fmt, index_bytes: avail, topology: p[0].topology
+    }
+    if not gpu_draw_valid(d) { gpu_job_fail(j, "indexed draw reads past its index buffer or has bad counts"); return }
+    let mut f: string = "u32"
+    if fmt == GPU_INDEX_U16 { f = "u16" }
+    gpu_line(j, "draw p" + gpu_itoa(p[0].id) + " " + gpu_group_name(g) + " b" + gpu_itoa(ibuf) + " " + f + " " +
+        gpu_itoa(count) + " " + gpu_itoa(instances) + " " + gpu_itoa(first) + " " + gpu_itoa(base_vertex) + " " +
+        gpu_itoa(first_instance) + gpu_vb_list(vbs, nvb))
+    j[0].draws = j[0].draws + 1
+}
+
+# The texture the hosts read back: a single-sample 2d rgba8 texture of the
+# job's size.
+export function gpu_output(j: ptr<GpuJob>, tex: i32) {
+    if not gpu_job_ok(j) { return }
+    if not gpu_tex_ok(j, tex) { gpu_job_fail(j, "unknown output texture"); return }
+    let t: GpuTextureDesc = j[0].tex[tex]
+    if t.format != GPU_FORMAT_RGBA8 or t.samples != 1 or t.dimension != GPU_TEX_2D or
+       t.width != j[0].width or t.height != j[0].height {
+        gpu_job_fail(j, "output must be a single-sample 2d rgba8 texture of the frame size")
+        return
+    }
+    j[0].output = tex
+}
+
+# ---------------------------------------------------------------------------
+# Probes: what the program expects of its own frame
+# ---------------------------------------------------------------------------
+
+function gpu_probe_xy(j: ptr<GpuJob>, x: i32, y: i32) -> bool {
+    if x < 0 or y < 0 or x >= j[0].width or y >= j[0].height {
+        gpu_job_fail(j, "probe outside the frame")
+        return false
+    }
+    return true
+}
+
+# Pixel (x, y) has every channel within `tol` of (r, g, b, a) in 0..255.
+export function gpu_probe_pixel(j: ptr<GpuJob>, label: string, x: i32, y: i32,
+                                r: i32, g: i32, b: i32, a: i32, tol: i32) {
+    if not gpu_probe_xy(j, x, y) { return }
+    j[0].probes = j[0].probes + "pixel " + label + " " + gpu_itoa(x) + " " + gpu_itoa(y) + " " + gpu_itoa(r) + " " +
+        gpu_itoa(g) + " " + gpu_itoa(b) + " " + gpu_itoa(a) + " " + gpu_itoa(tol) + "\n"
+}
+
+# Channel `ch` (0 r, 1 g, 2 b) of pixel (x, y) exceeds both others by
+# at least `margin`.
+export function gpu_probe_dominant(j: ptr<GpuJob>, label: string, x: i32, y: i32, ch: i32, margin: i32) {
+    if not gpu_probe_xy(j, x, y) { return }
+    j[0].probes = j[0].probes + "dominant " + label + " " + gpu_itoa(x) + " " + gpu_itoa(y) + " " +
+        gpu_itoa(ch) + " " + gpu_itoa(margin) + "\n"
+}
+
+# The summed channel difference of two pixels is at least `min_diff`.
+export function gpu_probe_differ(j: ptr<GpuJob>, label: string, x0: i32, y0: i32, x1: i32, y1: i32, min_diff: i32) {
+    if not gpu_probe_xy(j, x0, y0) or not gpu_probe_xy(j, x1, y1) { return }
+    j[0].probes = j[0].probes + "differ " + label + " " + gpu_itoa(x0) + " " + gpu_itoa(y0) + " " +
+        gpu_itoa(x1) + " " + gpu_itoa(y1) + " " + gpu_itoa(min_diff) + "\n"
+}
+
+# Pixel (x, y) is brighter (sum of r, g, b) than pixel (x1, y1) by `margin`.
+export function gpu_probe_brighter(j: ptr<GpuJob>, label: string, x0: i32, y0: i32, x1: i32, y1: i32, margin: i32) {
+    if not gpu_probe_xy(j, x0, y0) or not gpu_probe_xy(j, x1, y1) { return }
+    j[0].probes = j[0].probes + "brighter " + label + " " + gpu_itoa(x0) + " " + gpu_itoa(y0) + " " +
+        gpu_itoa(x1) + " " + gpu_itoa(y1) + " " + gpu_itoa(margin) + "\n"
+}
+
+# In the rectangle [x0, x1) x [y0, y1), the number of pixels whose red
+# channel lies strictly between `lo` and `hi` is within [min_n, max_n].
+# Used to count partially covered edge pixels.
+export function gpu_probe_between(j: ptr<GpuJob>, label: string, x0: i32, y0: i32, x1: i32, y1: i32,
+                                  lo: i32, hi: i32, min_n: i32, max_n: i32) {
+    if not gpu_probe_xy(j, x0, y0) or not gpu_probe_xy(j, x1 - 1, y1 - 1) { return }
+    j[0].probes = j[0].probes + "between " + label + " " + gpu_itoa(x0) + " " + gpu_itoa(y0) + " " +
+        gpu_itoa(x1) + " " + gpu_itoa(y1) + " " + gpu_itoa(lo) + " " + gpu_itoa(hi) + " " +
+        gpu_itoa(min_n) + " " + gpu_itoa(max_n) + "\n"
+}
+
+# ---------------------------------------------------------------------------
+# Writing the job
+# ---------------------------------------------------------------------------
+
+# Write job.txt and probes.txt. False (with gpu_job_error) when any step
+# of the job failed.
+export function gpu_job_write(j: ptr<GpuJob>) -> bool {
+    if j[0].in_bundle { gpu_job_fail(j, "render bundle left open") }
+    if j[0].output < 0 { gpu_job_fail(j, "no output texture") }
+    if j[0].draws == 0 { gpu_job_fail(j, "no draws") }
+    if not gpu_job_ok(j) { return false }
+    let text: string = j[0].text + "output t" + gpu_itoa(j[0].output) + "\n"
+    if not gpu_blob(j, "job.txt", text as ptr<u8>, strlen(text)) { return false }
+    if not gpu_blob(j, "probes.txt", j[0].probes as ptr<u8>, strlen(j[0].probes)) { return false }
+    return true
+}

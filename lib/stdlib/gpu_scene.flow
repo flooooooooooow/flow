@@ -1,0 +1,425 @@
+# Scene helpers for render jobs (#811): column-major 4x4 matrices in the
+# Metal and WebGPU clip convention (depth 0..1, +y up, counter-clockwise
+# front faces) and indexed meshes with a position, normal, uv layout.
+#
+# A matrix is 16 f32 values, column-major, so it can be copied straight
+# into a uniform block and read by gx_umat.
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function tanf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+}
+
+export const GPU_PI: f32 = 3.14159265
+
+# Floats per mesh vertex: position xyz, normal xyz, uv.
+export const GPU_MESH_STRIDE: i32 = 8
+
+export struct GpuMesh {
+    v: ptr<f32>,
+    nv: i32,
+    vcap: i32,
+    idx: ptr<u32>,
+    ni: i32,
+    icap: i32
+}
+
+# ---------------------------------------------------------------------------
+# Matrices
+# ---------------------------------------------------------------------------
+
+export function gpu_m4_new() -> ptr<f32> {
+    let m: ptr<f32> = calloc(16, 4) as ptr<f32>
+    m[0] = 1.0
+    m[5] = 1.0
+    m[10] = 1.0
+    m[15] = 1.0
+    return m
+}
+
+export function gpu_m4_identity(m: ptr<f32>) {
+    let mut i: i32 = 0
+    while i < 16 {
+        m[i] = 0.0
+        i = i + 1
+    }
+    m[0] = 1.0
+    m[5] = 1.0
+    m[10] = 1.0
+    m[15] = 1.0
+}
+
+# out = a * b (out may alias neither).
+export function gpu_m4_mul(out: ptr<f32>, a: ptr<f32>, b: ptr<f32>) {
+    let mut c: i32 = 0
+    while c < 4 {
+        let mut r: i32 = 0
+        while r < 4 {
+            let mut s: f32 = 0.0
+            let mut k: i32 = 0
+            while k < 4 {
+                s = s + a[k * 4 + r] * b[c * 4 + k]
+                k = k + 1
+            }
+            out[c * 4 + r] = s
+            r = r + 1
+        }
+        c = c + 1
+    }
+}
+
+# Right-handed perspective onto depth 0..1.
+export function gpu_m4_perspective(m: ptr<f32>, fovy: f32, aspect: f32, near: f32, far: f32) {
+    gpu_m4_identity(m)
+    let f: f32 = 1.0 / tanf(fovy * 0.5)
+    m[0] = f / aspect
+    m[5] = f
+    m[10] = far / (near - far)
+    m[11] = 0.0 - 1.0
+    m[14] = near * far / (near - far)
+    m[15] = 0.0
+}
+
+export function gpu_m4_look_at(m: ptr<f32>, ex: f32, ey: f32, ez: f32,
+                               tx: f32, ty: f32, tz: f32) {
+    let mut fx: f32 = tx - ex
+    let mut fy: f32 = ty - ey
+    let mut fz: f32 = tz - ez
+    let fl: f32 = sqrtf(fx * fx + fy * fy + fz * fz)
+    fx = fx / fl
+    fy = fy / fl
+    fz = fz / fl
+    # s = f x up, up = (0, 1, 0)
+    let mut sx: f32 = 0.0 - fz
+    let sy: f32 = 0.0
+    let mut sz: f32 = fx
+    let sl: f32 = sqrtf(sx * sx + sz * sz)
+    sx = sx / sl
+    sz = sz / sl
+    # u = s x f
+    let ux: f32 = sy * fz - sz * fy
+    let uy: f32 = sz * fx - sx * fz
+    let uz: f32 = sx * fy - sy * fx
+    gpu_m4_identity(m)
+    m[0] = sx
+    m[4] = sy
+    m[8] = sz
+    m[1] = ux
+    m[5] = uy
+    m[9] = uz
+    m[2] = 0.0 - fx
+    m[6] = 0.0 - fy
+    m[10] = 0.0 - fz
+    m[12] = 0.0 - (sx * ex + sy * ey + sz * ez)
+    m[13] = 0.0 - (ux * ex + uy * ey + uz * ez)
+    m[14] = fx * ex + fy * ey + fz * ez
+}
+
+export function gpu_m4_translate(m: ptr<f32>, x: f32, y: f32, z: f32) {
+    gpu_m4_identity(m)
+    m[12] = x
+    m[13] = y
+    m[14] = z
+}
+
+export function gpu_m4_rotate_y(m: ptr<f32>, a: f32) {
+    gpu_m4_identity(m)
+    let c: f32 = cosf(a)
+    let s: f32 = sinf(a)
+    m[0] = c
+    m[2] = 0.0 - s
+    m[8] = s
+    m[10] = c
+}
+
+export function gpu_m4_rotate_x(m: ptr<f32>, a: f32) {
+    gpu_m4_identity(m)
+    let c: f32 = cosf(a)
+    let s: f32 = sinf(a)
+    m[5] = c
+    m[6] = s
+    m[9] = 0.0 - s
+    m[10] = c
+}
+
+export function gpu_m4_scale(m: ptr<f32>, x: f32, y: f32, z: f32) {
+    gpu_m4_identity(m)
+    m[0] = x
+    m[5] = y
+    m[10] = z
+}
+
+# Copy a matrix into a float block at vec4 index `at` (4 vec4s).
+export function gpu_m4_store(dst: ptr<f32>, at: i32, m: ptr<f32>) {
+    let mut i: i32 = 0
+    while i < 16 {
+        dst[at * 4 + i] = m[i]
+        i = i + 1
+    }
+}
+
+export function gpu_v4_store(dst: ptr<f32>, at: i32, x: f32, y: f32, z: f32, w: f32) {
+    dst[at * 4] = x
+    dst[at * 4 + 1] = y
+    dst[at * 4 + 2] = z
+    dst[at * 4 + 3] = w
+}
+
+# Apply a matrix to the point (x, y, z, 1); the result's xyzw is in out[0..3].
+export function gpu_m4_apply(out: ptr<f32>, m: ptr<f32>, x: f32, y: f32, z: f32) {
+    let mut r: i32 = 0
+    while r < 4 {
+        out[r] = m[r] * x + m[4 + r] * y + m[8 + r] * z + m[12 + r]
+        r = r + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Meshes
+# ---------------------------------------------------------------------------
+
+export function gpu_mesh_new() -> ptr<GpuMesh> {
+    let m: ptr<GpuMesh> = calloc(1, sizeof<GpuMesh>()) as ptr<GpuMesh>
+    m[0].vcap = 64
+    m[0].icap = 192
+    m[0].v = calloc((m[0].vcap * GPU_MESH_STRIDE) as i64, 4) as ptr<f32>
+    m[0].idx = calloc(m[0].icap as i64, 4) as ptr<u32>
+    return m
+}
+
+# Append a vertex; returns its index.
+export function gpu_mesh_vertex(m: ptr<GpuMesh>, x: f32, y: f32, z: f32,
+                                nx: f32, ny: f32, nz: f32, u: f32, v: f32) -> i32 {
+    if m[0].nv == m[0].vcap {
+        m[0].vcap = m[0].vcap * 2
+        m[0].v = realloc(m[0].v as ptr<void>, (m[0].vcap * GPU_MESH_STRIDE * 4) as i64) as ptr<f32>
+    }
+    let o: i32 = m[0].nv * GPU_MESH_STRIDE
+    m[0].v[o] = x
+    m[0].v[o + 1] = y
+    m[0].v[o + 2] = z
+    m[0].v[o + 3] = nx
+    m[0].v[o + 4] = ny
+    m[0].v[o + 5] = nz
+    m[0].v[o + 6] = u
+    m[0].v[o + 7] = v
+    m[0].nv = m[0].nv + 1
+    return m[0].nv - 1
+}
+
+export function gpu_mesh_tri(m: ptr<GpuMesh>, a: i32, b: i32, c: i32) {
+    if m[0].ni + 3 > m[0].icap {
+        m[0].icap = m[0].icap * 2
+        m[0].idx = realloc(m[0].idx as ptr<void>, (m[0].icap * 4) as i64) as ptr<u32>
+    }
+    m[0].idx[m[0].ni] = a as u32
+    m[0].idx[m[0].ni + 1] = b as u32
+    m[0].idx[m[0].ni + 2] = c as u32
+    m[0].ni = m[0].ni + 3
+}
+
+# A flat-shaded triangle from three points (counter-clockwise seen from
+# its front); indices are relative to `base` so ranges can share a mesh.
+export function gpu_mesh_face3(m: ptr<GpuMesh>, base: i32,
+                               ax: f32, ay: f32, az: f32,
+                               bx: f32, by: f32, bz: f32,
+                               cx: f32, cy: f32, cz: f32) {
+    let ux: f32 = bx - ax
+    let uy: f32 = by - ay
+    let uz: f32 = bz - az
+    let vx: f32 = cx - ax
+    let vy: f32 = cy - ay
+    let vz: f32 = cz - az
+    let mut nx: f32 = uy * vz - uz * vy
+    let mut ny: f32 = uz * vx - ux * vz
+    let mut nz: f32 = ux * vy - uy * vx
+    let l: f32 = sqrtf(nx * nx + ny * ny + nz * nz)
+    nx = nx / l
+    ny = ny / l
+    nz = nz / l
+    let a: i32 = gpu_mesh_vertex(m, ax, ay, az, nx, ny, nz, 0.0, 0.0) - base
+    let b: i32 = gpu_mesh_vertex(m, bx, by, bz, nx, ny, nz, 1.0, 0.0) - base
+    let c: i32 = gpu_mesh_vertex(m, cx, cy, cz, nx, ny, nz, 0.0, 1.0) - base
+    gpu_mesh_tri(m, a, b, c)
+}
+
+function gpu_mesh_quad(m: ptr<GpuMesh>, base: i32, nx: f32, ny: f32, nz: f32,
+                       ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32,
+                       cx: f32, cy: f32, cz: f32, dx: f32, dy: f32, dz: f32) {
+    let a: i32 = gpu_mesh_vertex(m, ax, ay, az, nx, ny, nz, 0.0, 1.0) - base
+    let b: i32 = gpu_mesh_vertex(m, bx, by, bz, nx, ny, nz, 1.0, 1.0) - base
+    let c: i32 = gpu_mesh_vertex(m, cx, cy, cz, nx, ny, nz, 1.0, 0.0) - base
+    let d: i32 = gpu_mesh_vertex(m, dx, dy, dz, nx, ny, nz, 0.0, 0.0) - base
+    gpu_mesh_tri(m, a, b, c)
+    gpu_mesh_tri(m, a, c, d)
+}
+
+# An axis-aligned cube of half-size h centred at the origin, 24 vertices
+# with face normals. Indices are relative to `base`.
+export function gpu_mesh_cube(m: ptr<GpuMesh>, h: f32, base: i32) {
+    let n: f32 = 0.0 - h
+    gpu_mesh_quad(m, base, 0.0, 0.0, 1.0, n, n, h, h, n, h, h, h, h, n, h, h)
+    gpu_mesh_quad(m, base, 0.0, 0.0, 0.0 - 1.0, h, n, n, n, n, n, n, h, n, h, h, n)
+    gpu_mesh_quad(m, base, 1.0, 0.0, 0.0, h, n, h, h, n, n, h, h, n, h, h, h)
+    gpu_mesh_quad(m, base, 0.0 - 1.0, 0.0, 0.0, n, n, n, n, n, h, n, h, h, n, h, n)
+    gpu_mesh_quad(m, base, 0.0, 1.0, 0.0, n, h, h, h, h, h, h, h, n, n, h, n)
+    gpu_mesh_quad(m, base, 0.0, 0.0 - 1.0, 0.0, n, n, n, h, n, n, h, n, h, n, n, h)
+}
+
+# A square in the xz plane at height y, facing +y.
+export function gpu_mesh_plane(m: ptr<GpuMesh>, h: f32, y: f32, base: i32) {
+    let n: f32 = 0.0 - h
+    gpu_mesh_quad(m, base, 0.0, 1.0, 0.0, n, y, h, h, y, h, h, y, n, n, y, n)
+}
+
+# A UV sphere of radius r with smooth normals.
+export function gpu_mesh_uv_sphere(m: ptr<GpuMesh>, r: f32, rings: i32, segments: i32, base: i32) {
+    let start: i32 = m[0].nv - base
+    let mut i: i32 = 0
+    while i <= rings {
+        let v: f32 = (i as f32) / (rings as f32)
+        let theta: f32 = v * GPU_PI
+        let mut k: i32 = 0
+        while k <= segments {
+            let u: f32 = (k as f32) / (segments as f32)
+            let phi: f32 = u * 2.0 * GPU_PI
+            let x: f32 = sinf(theta) * sinf(phi)
+            let y: f32 = cosf(theta)
+            let z: f32 = sinf(theta) * cosf(phi)
+            let _vi: i32 = gpu_mesh_vertex(m, r * x, r * y, r * z, x, y, z, u, v)
+            k = k + 1
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < rings {
+        let mut k2: i32 = 0
+        while k2 < segments {
+            let a: i32 = start + i * (segments + 1) + k2
+            let b: i32 = a + segments + 1
+            gpu_mesh_tri(m, a, b, a + 1)
+            gpu_mesh_tri(m, a + 1, b, b + 1)
+            k2 = k2 + 1
+        }
+        i = i + 1
+    }
+}
+
+function gpu_ico_push(pts: ptr<f32>, n: i32, x: f32, y: f32, z: f32) -> i32 {
+    let l: f32 = sqrtf(x * x + y * y + z * z)
+    pts[n * 3] = x / l
+    pts[n * 3 + 1] = y / l
+    pts[n * 3 + 2] = z / l
+    return n + 1
+}
+
+# An icosphere of radius r: an icosahedron with each face split into
+# 4^level faces, pushed onto the sphere, flat-shaded.
+export function gpu_mesh_icosphere(m: ptr<GpuMesh>, r: f32, level: i32, base: i32) {
+    let t: f32 = (1.0 + sqrtf(5.0)) / 2.0
+    let pts: ptr<f32> = calloc(36, 4) as ptr<f32>
+    let mut n: i32 = 0
+    let o: f32 = 1.0
+    let z: f32 = 0.0
+    n = gpu_ico_push(pts, n, 0.0 - o, t, z)
+    n = gpu_ico_push(pts, n, o, t, z)
+    n = gpu_ico_push(pts, n, 0.0 - o, 0.0 - t, z)
+    n = gpu_ico_push(pts, n, o, 0.0 - t, z)
+    n = gpu_ico_push(pts, n, z, 0.0 - o, t)
+    n = gpu_ico_push(pts, n, z, o, t)
+    n = gpu_ico_push(pts, n, z, 0.0 - o, 0.0 - t)
+    n = gpu_ico_push(pts, n, z, o, 0.0 - t)
+    n = gpu_ico_push(pts, n, t, z, 0.0 - o)
+    n = gpu_ico_push(pts, n, t, z, o)
+    n = gpu_ico_push(pts, n, 0.0 - t, z, 0.0 - o)
+    n = gpu_ico_push(pts, n, 0.0 - t, z, o)
+    let faces: array<i32, 60> = [0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
+                                 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+                                 3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
+                                 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1]
+    let mut f: i32 = 0
+    while f < 20 {
+        let a: i32 = faces[f * 3]
+        let b: i32 = faces[f * 3 + 1]
+        let c: i32 = faces[f * 3 + 2]
+        gpu_ico_tri(m, r, level, base,
+            pts[a * 3], pts[a * 3 + 1], pts[a * 3 + 2],
+            pts[b * 3], pts[b * 3 + 1], pts[b * 3 + 2],
+            pts[c * 3], pts[c * 3 + 1], pts[c * 3 + 2])
+        f = f + 1
+    }
+}
+
+function gpu_ico_tri(m: ptr<GpuMesh>, r: f32, level: i32, base: i32,
+                     ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32,
+                     cx: f32, cy: f32, cz: f32) {
+    if level <= 0 {
+        gpu_mesh_face3(m, base, r * ax, r * ay, r * az, r * bx, r * by, r * bz, r * cx, r * cy, r * cz)
+        return
+    }
+    let mut abx: f32 = (ax + bx) * 0.5
+    let mut aby: f32 = (ay + by) * 0.5
+    let mut abz: f32 = (az + bz) * 0.5
+    let l1: f32 = sqrtf(abx * abx + aby * aby + abz * abz)
+    abx = abx / l1
+    aby = aby / l1
+    abz = abz / l1
+    let mut bcx: f32 = (bx + cx) * 0.5
+    let mut bcy: f32 = (by + cy) * 0.5
+    let mut bcz: f32 = (bz + cz) * 0.5
+    let l2: f32 = sqrtf(bcx * bcx + bcy * bcy + bcz * bcz)
+    bcx = bcx / l2
+    bcy = bcy / l2
+    bcz = bcz / l2
+    let mut cax: f32 = (cx + ax) * 0.5
+    let mut cay: f32 = (cy + ay) * 0.5
+    let mut caz: f32 = (cz + az) * 0.5
+    let l3: f32 = sqrtf(cax * cax + cay * cay + caz * caz)
+    cax = cax / l3
+    cay = cay / l3
+    caz = caz / l3
+    let lv: i32 = level - 1
+    gpu_ico_tri(m, r, lv, base, ax, ay, az, abx, aby, abz, cax, cay, caz)
+    gpu_ico_tri(m, r, lv, base, bx, by, bz, bcx, bcy, bcz, abx, aby, abz)
+    gpu_ico_tri(m, r, lv, base, cx, cy, cz, cax, cay, caz, bcx, bcy, bcz)
+    gpu_ico_tri(m, r, lv, base, abx, aby, abz, bcx, bcy, bcz, cax, cay, caz)
+}
+
+# A square pyramid of half-size h, apex up.
+export function gpu_mesh_pyramid(m: ptr<GpuMesh>, h: f32, base: i32) {
+    let n: f32 = 0.0 - h
+    gpu_mesh_quad(m, base, 0.0, 0.0 - 1.0, 0.0, n, n, n, h, n, n, h, n, h, n, n, h)
+    gpu_mesh_face3(m, base, n, n, h, h, n, h, 0.0, h, 0.0)
+    gpu_mesh_face3(m, base, h, n, h, h, n, n, 0.0, h, 0.0)
+    gpu_mesh_face3(m, base, h, n, n, n, n, n, 0.0, h, 0.0)
+    gpu_mesh_face3(m, base, n, n, n, n, n, h, 0.0, h, 0.0)
+}
+
+# A regular octahedron of radius h.
+export function gpu_mesh_octahedron(m: ptr<GpuMesh>, h: f32, base: i32) {
+    let n: f32 = 0.0 - h
+    let z: f32 = 0.0
+    gpu_mesh_face3(m, base, h, z, z, z, h, z, z, z, h)
+    gpu_mesh_face3(m, base, z, z, h, z, h, z, n, z, z)
+    gpu_mesh_face3(m, base, n, z, z, z, h, z, z, z, n)
+    gpu_mesh_face3(m, base, z, z, n, z, h, z, h, z, z)
+    gpu_mesh_face3(m, base, h, z, z, z, z, h, z, n, z)
+    gpu_mesh_face3(m, base, z, z, h, n, z, z, z, n, z)
+    gpu_mesh_face3(m, base, n, z, z, z, z, n, z, n, z)
+    gpu_mesh_face3(m, base, z, z, n, h, z, z, z, n, z)
+}
+
+# A triangular prism of half-size h along z.
+export function gpu_mesh_prism(m: ptr<GpuMesh>, h: f32, base: i32) {
+    let n: f32 = 0.0 - h
+    let z: f32 = 0.0
+    gpu_mesh_face3(m, base, n, n, h, h, n, h, z, h, h)
+    gpu_mesh_face3(m, base, h, n, n, n, n, n, z, h, n)
+    gpu_mesh_quad(m, base, 0.0, 0.0 - 1.0, 0.0, n, n, n, h, n, n, h, n, h, n, n, h)
+    gpu_mesh_quad(m, base, 0.894427, 0.447214, 0.0, h, n, h, h, n, n, z, h, n, z, h, h)
+    gpu_mesh_quad(m, base, 0.0 - 0.894427, 0.447214, 0.0, n, n, n, n, n, h, z, h, h, z, h, n)
+}

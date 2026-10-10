@@ -1,0 +1,12 @@
+# expect: [GPU010] GpuSamplerDesc field 'min_filter': unknown filter 5 (expected GPU_FILTER_NEAREST or GPU_FILTER_LINEAR)
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let s: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: 5, mag_filter: GPU_FILTER_LINEAR,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_REPEAT,
+        address_w: GPU_ADDRESS_CLAMP
+    }
+    if gpu_sampler_valid(s) { return 1 }
+    return 0
+}

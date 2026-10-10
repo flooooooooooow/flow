@@ -1,0 +1,193 @@
+# vgpu compatibility case: https://vgpu.sh/examples/clipping
+#
+# A plane slices a rotating icosphere. The fragment stage evaluates the
+# signed distance of each fragment to the plane and discards the side in
+# front of it. Front faces are lit; back faces seen through the cut are
+# shaded as the interior. A disk fitted to the cut (radius from the
+# sphere radius and the plane offset) closes the cross-section. The
+# frame is fixed at one rotation and plane offset.
+#
+#   ./flow run examples/gpu/vgpu/clipping.flow
+import "stdlib/gpu_render_host.flow"
+import "stdlib/gpu_scene.flow"
+
+const W: i32 = 128
+const H: i32 = 72
+const SEGMENTS: i32 = 64
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+    function sqrtf(x: f32) -> f32
+}
+
+function main() -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("clipping", W, H, gpu_job_root())
+
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let resolved: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: W, height: H, layers: 1, samples: 4,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let targets: GpuRenderTargets = GpuRenderTargets { color: color, depth: depth, has_depth: true }
+    let a_pos: GpuVertexAttribute = GpuVertexAttribute { location: 0, offset: 0, stride: 32, scalar_bytes: 4, components: 3 }
+    let a_nrm: GpuVertexAttribute = GpuVertexAttribute { location: 1, offset: 12, stride: 32, scalar_bytes: 4, components: 3 }
+
+    let world_v: GpuVarying = GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let normal_v: GpuVarying = GpuVarying { location: 1, scalar: GPU_SCALAR_F32, components: 3, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+    let vs_out: array<GpuVarying, 2> = [world_v, normal_v]
+    let fs_in: array<GpuVarying, 2> = [world_v, normal_v]
+
+    # Uniforms: view-projection 0..3, model 4..7, plane (n, d) 8, light 9.
+    let ball: ptr<GpuPipeline> = gpu_pipeline_new(job, "clipped", &vs_out[0], 2, &fs_in[0], 2)
+    gpu_pipeline_targets(ball, targets)
+    gpu_pipeline_state(ball, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_NONE, GPU_DEPTH_WRITE, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(ball, 10)
+    gpu_pipeline_vertex_buffer(ball, 0, 32, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(ball, 0, a_pos)
+    gpu_pipeline_attribute(ball, 0, a_nrm)
+    let vs: ptr<GxFn> = gpu_pipeline_vs(ball)
+    let model: GxExpr = gx_umat(vs, 4)
+    let world: GxExpr = gx_let(vs, gx_xyz(gx_mul(model, gx_vec4_of(gx_attr(vs, 0), gx_f(1.0)))))
+    gx_out_position(vs, gx_mul(gx_umat(vs, 0), gx_vec4_of(world, gx_f(1.0))))
+    gx_out(vs, 0, world)
+    gx_out(vs, 1, gx_xyz(gx_mul(model, gx_vec4_of(gx_attr(vs, 1), gx_f(0.0)))))
+    let fs: ptr<GxFn> = gpu_pipeline_fs(ball)
+    let plane: GxExpr = gx_let(fs, gx_uvec(fs, 8))
+    let dist: GxExpr = gx_sub(gx_dot(gx_in(fs, 0), gx_xyz(plane)), gx_w(plane))
+    gx_discard_if(fs, gx_gt(dist, gx_f(0.0)))
+    let n: GxExpr = gx_let(fs, gx_normalize(gx_in(fs, 1)))
+    let light: GxExpr = gx_normalize(gx_xyz(gx_uvec(fs, 9)))
+    let front: GxExpr = gx_mul(gx_vec3(gx_f(0.2), gx_f(0.68), gx_f(0.72)),
+        gx_add(gx_f(0.25), gx_mul(gx_f(0.75), gx_max(gx_dot(n, light), gx_f(0.0)))))
+    let inside: GxExpr = gx_mul(gx_vec3(gx_f(0.55), gx_f(0.22), gx_f(0.1)),
+        gx_add(gx_f(0.4), gx_mul(gx_f(0.6), gx_max(gx_dot(gx_neg(n), light), gx_f(0.0)))))
+    gx_out_color(fs, gx_vec4_of(gx_select(gx_front_facing(fs), front, inside), gx_f(1.0)))
+    let _ball_id: i32 = gpu_pipeline_finish(ball)
+
+    # The cross-section disk: drawn in world space, a bright ring at its rim.
+    let disk_out: array<GpuVarying, 1> = [world_v]
+    let disk_in: array<GpuVarying, 1> = [world_v]
+    let disk: ptr<GpuPipeline> = gpu_pipeline_new(job, "section", &disk_out[0], 1, &disk_in[0], 1)
+    gpu_pipeline_targets(disk, targets)
+    gpu_pipeline_state(disk, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_NONE, GPU_DEPTH_WRITE, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(disk, 10)
+    gpu_pipeline_vertex_buffer(disk, 0, 12, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(disk, 0, GpuVertexAttribute { location: 0, offset: 0, stride: 12, scalar_bytes: 4, components: 3 })
+    let dvs: ptr<GxFn> = gpu_pipeline_vs(disk)
+    let dp: GxExpr = gx_let(dvs, gx_attr(dvs, 0))
+    gx_out_position(dvs, gx_mul(gx_umat(dvs, 0), gx_vec4_of(dp, gx_f(1.0))))
+    gx_out(dvs, 0, dp)
+    let dfs: ptr<GxFn> = gpu_pipeline_fs(disk)
+    let pl: GxExpr = gx_let(dfs, gx_uvec(dfs, 8))
+    let centre: GxExpr = gx_mul(gx_xyz(pl), gx_w(pl))
+    let r: GxExpr = gx_length(gx_sub(gx_in(dfs, 0), centre))
+    let ring: GxExpr = gx_smoothstep(gx_f(0.8), gx_f(0.95), gx_div(r, gx_x(gx_uvec(dfs, 9))))
+    let cap: GxExpr = gx_mix(gx_vec3(gx_f(0.95), gx_f(0.55), gx_f(0.2)), gx_vec3(gx_f(1.0), gx_f(0.9), gx_f(0.6)), ring)
+    gx_out_color(dfs, gx_vec4_of(cap, gx_f(1.0)))
+    let _disk_id: i32 = gpu_pipeline_finish(disk)
+
+    # Scene values.
+    let radius: f32 = 1.0
+    let mut nx: f32 = 0.75
+    let mut ny: f32 = 0.6
+    let mut nz: f32 = 0.3
+    let nl: f32 = sqrtf(nx * nx + ny * ny + nz * nz)
+    nx = nx / nl
+    ny = ny / nl
+    nz = nz / nl
+    let d: f32 = 0.1
+    let disk_r: f32 = sqrtf(radius * radius - d * d)
+
+    let proj: ptr<f32> = gpu_m4_new()
+    let view: ptr<f32> = gpu_m4_new()
+    let vp: ptr<f32> = gpu_m4_new()
+    gpu_m4_perspective(proj, 0.7, (W as f32) / (H as f32), 0.1, 20.0)
+    gpu_m4_look_at(view, 0.3, 1.1, 3.6, 0.0, 0.0, 0.0)
+    gpu_m4_mul(vp, proj, view)
+    let ry: ptr<f32> = gpu_m4_new()
+    let rx: ptr<f32> = gpu_m4_new()
+    let model_m: ptr<f32> = gpu_m4_new()
+    gpu_m4_rotate_y(ry, 0.8)
+    gpu_m4_rotate_x(rx, 0.3)
+    gpu_m4_mul(model_m, rx, ry)
+    let u: ptr<f32> = calloc(40, 4) as ptr<f32>
+    gpu_m4_store(u, 0, vp)
+    gpu_m4_store(u, 4, model_m)
+    gpu_v4_store(u, 8, nx, ny, nz, d)
+    gpu_v4_store(u, 9, 0.0 - 0.5, 0.2, 0.85, 0.0)
+    let ub: i32 = gpu_uniform_buffer(job, u, 10)
+    # The disk reads its radius from uniform 9.x, so it gets its own block.
+    let du: ptr<f32> = calloc(40, 4) as ptr<f32>
+    gpu_m4_store(du, 0, vp)
+    gpu_m4_store(du, 4, model_m)
+    gpu_v4_store(du, 8, nx, ny, nz, d)
+    gpu_v4_store(du, 9, disk_r, 0.0, 0.0, 0.0)
+    let dub: i32 = gpu_uniform_buffer(job, du, 10)
+
+    let mesh: ptr<GpuMesh> = gpu_mesh_new()
+    gpu_mesh_icosphere(mesh, radius, 2, 0)
+    let vb: i32 = gpu_vertex_buffer(job, mesh[0].v, mesh[0].nv * GPU_MESH_STRIDE)
+    let ib: i32 = gpu_index_buffer(job, mesh[0].idx, mesh[0].ni)
+
+    # Disk fan: two vectors spanning the plane.
+    let mut ax: f32 = 0.0 - nz
+    let ay: f32 = 0.0
+    let mut az: f32 = nx
+    let al: f32 = sqrtf(ax * ax + az * az)
+    ax = ax / al
+    az = az / al
+    let bx: f32 = ny * az - nz * ay
+    let by: f32 = nz * ax - nx * az
+    let bz: f32 = nx * ay - ny * ax
+    let fan: ptr<f32> = calloc((SEGMENTS * 9) as i64, 4) as ptr<f32>
+    let mut k: i32 = 0
+    while k < SEGMENTS {
+        let t0: f32 = (k as f32) * 2.0 * GPU_PI / (SEGMENTS as f32)
+        let t1: f32 = ((k + 1) as f32) * 2.0 * GPU_PI / (SEGMENTS as f32)
+        let o: i32 = k * 9
+        fan[o] = nx * d
+        fan[o + 1] = ny * d
+        fan[o + 2] = nz * d
+        fan[o + 3] = nx * d + disk_r * (cosf(t0) * ax + sinf(t0) * bx)
+        fan[o + 4] = ny * d + disk_r * (cosf(t0) * ay + sinf(t0) * by)
+        fan[o + 5] = nz * d + disk_r * (cosf(t0) * az + sinf(t0) * bz)
+        fan[o + 6] = nx * d + disk_r * (cosf(t1) * ax + sinf(t1) * bx)
+        fan[o + 7] = ny * d + disk_r * (cosf(t1) * ay + sinf(t1) * by)
+        fan[o + 8] = nz * d + disk_r * (cosf(t1) * az + sinf(t1) * bz)
+        k = k + 1
+    }
+    let fan_b: i32 = gpu_vertex_buffer(job, fan, SEGMENTS * 9)
+
+    let ball_g: i32 = gpu_group(job, ball, ub)
+    let disk_g: i32 = gpu_group(job, disk, dub)
+    let color_t: i32 = gpu_texture(job, color, null)
+    let resolved_t: i32 = gpu_texture(job, resolved, null)
+    let depth_t: i32 = gpu_texture(job, depth, null)
+    gpu_pass(job, color_t, resolved_t, depth_t, 0.1, 0.1, 0.12, 1.0)
+    let vbs: array<i32, 1> = [vb]
+    gpu_draw_indexed(job, ball, ball_g, &vbs[0], 1, ib, mesh[0].ni, 1, 0, 0, 0)
+    let fbs: array<i32, 1> = [fan_b]
+    gpu_draw(job, disk, disk_g, &fbs[0], 1, SEGMENTS * 3, 1, 0, 0)
+    gpu_output(job, resolved_t)
+
+    # The cut face is orange with a bright rim; the uncut side is teal; the
+    # part of the sphere in front of the plane is gone, showing background.
+    gpu_probe_pixel(job, "background", 2, 2, 26, 26, 31, 255, 1)
+    gpu_probe_dominant(job, "section", 64, 36, 0, 80)
+    gpu_probe_brighter(job, "rim", 79, 56, 64, 36, 100)
+    gpu_probe_dominant(job, "sphere-side", 44, 40, 2, 5)
+    gpu_probe_pixel(job, "clipped-away", 85, 30, 26, 26, 31, 255, 1)
+    return gpu_job_run(job)
+}

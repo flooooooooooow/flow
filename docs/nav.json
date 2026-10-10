@@ -773,6 +773,10 @@
           "path": "library/gpu-resource-types.md"
         },
         {
+          "label": "GPU Render Jobs",
+          "path": "library/gpu-render.md"
+        },
+        {
           "label": "GPU Tensors",
           "path": "library/gpu-tensor.md"
         },
@@ -849,6 +853,10 @@
         {
           "label": "vgpu conformance",
           "path": "gpu/vgpu-conformance.md"
+        },
+        {
+          "label": "GPU descriptor errors",
+          "path": "gpu/descriptor-errors.md"
         },
         {
           "label": "WebGPU persistent compute",

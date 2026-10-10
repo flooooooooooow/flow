@@ -1,0 +1,11 @@
+# expect: [GPU021] GpuVarying field 'components': a varying has 1 to 4 components, got 5
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let v: GpuVarying = GpuVarying {
+        location: 0, scalar: GPU_SCALAR_F32,
+        components: 5, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+    }
+    if gpu_varying_valid(v) { return 1 }
+    return 0
+}

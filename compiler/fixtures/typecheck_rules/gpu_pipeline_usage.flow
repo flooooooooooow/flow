@@ -1,0 +1,35 @@
+# expect: [GPU050] GpuSampledPipeline field 'texture': the sampled texture lacks usage sampled
+import "stdlib/gpu_stage_codegen.flow"
+
+function main() -> i32 {
+    let image: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_STORAGE
+    }
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 64, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let none: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: 64, height: 32, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let p: GpuSampledPipeline = GpuSampledPipeline {
+        texture: image,
+        sampler: GpuSamplerDesc {
+            min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_LINEAR,
+            address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_CLAMP,
+            address_w: GPU_ADDRESS_CLAMP
+        },
+        targets: GpuRenderTargets { color: color, depth: none, has_depth: false },
+        varying: GpuVarying {
+            location: 0, scalar: GPU_SCALAR_F32,
+            components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE
+        }
+    }
+    if gpu_sampled_pipeline_valid(p) { return 1 }
+    return 0
+}

@@ -17,8 +17,10 @@
 
 import .ast {
     AstArena, AST_NONE, AST_PROGRAM, AST_EXPORT, AST_FN, AST_TYPE,
-    AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_EFFECT_ROW
+    AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_EFFECT_ROW,
+    AstIndex
 }
+import .ast_index { flowc_ast_ix_shape }
 
 extern {
     function strlen(s: string) -> i64
@@ -111,6 +113,11 @@ function flowc_eff_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
 export function flowc_eff_row_of(arena: AstArena, owner: i32) -> i32 {
     if owner == AST_NONE {
         return AST_NONE
+    }
+    # cgen attaches an index (#1445): the lowest-id row owned by `owner`.
+    let ix: ptr<AstIndex> = flowc_ast_ix_shape(arena)
+    if ix != null and owner >= 0 and owner < arena.len {
+        return ix[0].row_of[owner]
     }
     let mut i: i32 = 0
     while i < arena.len {

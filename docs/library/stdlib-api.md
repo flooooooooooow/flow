@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**124** modules scanned.
+**128** modules scanned.
 
 ## Modules
 
@@ -1865,11 +1865,106 @@ First-class GPU / unified memory  CPU heap stays in stdlib/memory.flow.
 | `unified_allocate` | `(size: i64) -> GpuBuffer` | - |
 | `gpu_model_dispatch_count` | `() -> i64` | Only completed device-side tensor dispatches count as GPU execution proof. |
 
+### `gpu_render.flow`
+
+Render jobs: textured, instanced, depth-tested and multisampled geometry from Flow on Metal and WebGPU (#811).
+
+**Structs:** `GpuJob`, `GpuPipeline`
+
+**Constants:**
+
+- `GPU_CULL_NONE: i32`
+- `GPU_CULL_BACK: i32`
+- `GPU_CULL_FRONT: i32`
+- `GPU_DEPTH_ALWAYS: i32`
+- `GPU_DEPTH_TEST: i32`
+- `GPU_DEPTH_WRITE: i32`
+- `GPU_BLEND_NONE: i32`
+- `GPU_BLEND_ALPHA: i32`
+- `GPU_BLEND_ADD: i32`
+- `GPU_STEP_VERTEX: i32`
+- `GPU_STEP_INSTANCE: i32`
+- `GPU_BUFFER_VERTEX: i32`
+- `GPU_BUFFER_INDEX: i32`
+- `GPU_BUFFER_UNIFORM: i32`
+- `GPU_JOB_MAX: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_itoa` | `(v: i32) -> string` | Small helpers |
+| `gpu_job_ok` | `(j: ptr<GpuJob>) -> bool` | - |
+| `gpu_job_error` | `(j: ptr<GpuJob>) -> string` | - |
+| `gpu_job_new` | `(name: string, width: i32, height: i32, root: string) -> ptr<GpuJob>` | A job whose files go to build/gpu_render/NAME (or $FLOW_GPU_JOB_ROOT/NAME). |
+| `gpu_vertex_buffer` | `(j: ptr<GpuJob>, data: ptr<f32>, n: i32) -> i32` | A vertex buffer of `n` floats. |
+| `gpu_index_buffer` | `(j: ptr<GpuJob>, data: ptr<u32>, n: i32) -> i32` | An index buffer of `n` u32 indices. |
+| `gpu_uniform_buffer` | `(j: ptr<GpuJob>, data: ptr<f32>, nvec4: i32) -> i32` | A uniform block of `nvec4` vec4s (4 floats each). |
+| `gpu_texture` | `(j: ptr<GpuJob>, d: GpuTextureDesc, data: ptr<u8>) -> i32` | A texture. `data` holds every layer's rgba8 texels, or null for a render target. |
+| `gpu_sampler` | `(j: ptr<GpuJob>, d: GpuSamplerDesc) -> i32` | - |
+| `gpu_pipeline_new` | `(j: ptr<GpuJob>, name: string,
+                                 vs_out: ptr<GpuVarying>, nv: i32,
+                                 fs_in: ptr<GpuVarying>, nf: i32) -> ptr<GpuPipeline>` | A pipeline whose vertex stage writes `vs_out` and whose fragment stage reads `fs_in`. The two lists must link (gpu_stage_links): flowc checks this at compile time when both are constant arrays, and this call checks it again at run time. |
+| `gpu_pipeline_vs` | `(p: ptr<GpuPipeline>) -> ptr<GxFn>` | - |
+| `gpu_pipeline_fs` | `(p: ptr<GpuPipeline>) -> ptr<GxFn>` | - |
+| `gpu_pipeline_state` | `(p: ptr<GpuPipeline>, topology: i32, cull: i32, depth: i32, blend: i32) -> void` | - |
+| `gpu_pipeline_targets` | `(p: ptr<GpuPipeline>, t: GpuRenderTargets) -> void` | - |
+| `gpu_pipeline_uniforms` | `(p: ptr<GpuPipeline>, nvec4: i32) -> void` | - |
+| `gpu_pipeline_vertex_buffer` | `(p: ptr<GpuPipeline>, slot: i32, stride: i32, step: i32) -> void` | Declare vertex buffer `slot` with its byte stride and step rate. |
+| `gpu_pipeline_attribute` | `(p: ptr<GpuPipeline>, slot: i32, a: GpuVertexAttribute) -> void` | Declare an f32 attribute read from vertex buffer `slot`. |
+| `gpu_pipeline_texture` | `(p: ptr<GpuPipeline>, b: GpuTextureBinding) -> void` | Bind a texture (with a sampler of the same slot) for sampling. |
+| `gpu_pipeline_finish` | `(p: ptr<GpuPipeline>) -> i32` | Emit both stages and register the pipeline. Returns its id, or -1. |
+| `gpu_group` | `(j: ptr<GpuJob>, p: ptr<GpuPipeline>, uniform: i32) -> i32` | A bind group for pipeline `p`: its uniform buffer (or -1) and, through gpu_group_texture, one texture and sampler per declared slot. |
+| `gpu_group_texture` | `(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, slot: i32, tex: i32, smp: i32) -> void` | Put texture `tex` and sampler `smp` in `slot` of group `g`. The texture must be the kind the pipeline declared for that slot. |
+| `gpu_pass` | `(j: ptr<GpuJob>, color: i32, resolve: i32, depth: i32,
+                         r: f32, g: f32, b: f32, a: f32) -> void` | Begin a pass that renders into `color` (resolving into `resolve` when multisampled, -1 otherwise) with optional `depth` (-1 for none). The colour is cleared to (r, g, b, a) and depth to 1. |
+| `gpu_bundle_begin` | `(j: ptr<GpuJob>) -> void` | Draws between these two calls are recorded once as a render bundle on WebGPU and encoded directly on Metal. |
+| `gpu_bundle_end` | `(j: ptr<GpuJob>) -> void` | - |
+| `gpu_draw` | `(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, vbs: ptr<i32>, nvb: i32,
+                         count: i32, instances: i32, first: i32, first_instance: i32) -> void` | A non-indexed draw of `count` vertices and `instances` instances. |
+| `gpu_draw_indexed` | `(j: ptr<GpuJob>, p: ptr<GpuPipeline>, g: i32, vbs: ptr<i32>, nvb: i32,
+                                 ibuf: i32, count: i32, instances: i32, first: i32,
+                                 base_vertex: i32, first_instance: i32) -> void` | An indexed draw of `count` indices from `first`, with `base_vertex` added to each index. |
+| `gpu_output` | `(j: ptr<GpuJob>, tex: i32) -> void` | The texture the hosts read back: a single-sample 2d rgba8 texture of the job's size. |
+| `gpu_probe_pixel` | `(j: ptr<GpuJob>, label: string, x: i32, y: i32,
+                                r: i32, g: i32, b: i32, a: i32, tol: i32) -> void` | Pixel (x, y) has every channel within `tol` of (r, g, b, a) in 0..255. |
+| `gpu_probe_dominant` | `(j: ptr<GpuJob>, label: string, x: i32, y: i32, ch: i32, margin: i32) -> void` | Channel `ch` (0 r, 1 g, 2 b) of pixel (x, y) exceeds both others by at least `margin`. |
+| `gpu_probe_differ` | `(j: ptr<GpuJob>, label: string, x0: i32, y0: i32, x1: i32, y1: i32, min_diff: i32) -> void` | The summed channel difference of two pixels is at least `min_diff`. |
+| `gpu_probe_brighter` | `(j: ptr<GpuJob>, label: string, x0: i32, y0: i32, x1: i32, y1: i32, margin: i32) -> void` | Pixel (x, y) is brighter (sum of r, g, b) than pixel (x1, y1) by `margin`. |
+| `gpu_probe_between` | `(j: ptr<GpuJob>, label: string, x0: i32, y0: i32, x1: i32, y1: i32,
+                                  lo: i32, hi: i32, min_n: i32, max_n: i32) -> void` | In the rectangle [x0, x1) x [y0, y1), the number of pixels whose red channel lies strictly between `lo` and `hi` is within [min_n, max_n]. Used to count partially covered edge pixels. |
+| `gpu_job_write` | `(j: ptr<GpuJob>) -> bool` | Write job.txt and probes.txt. False (with gpu_job_error) when any step of the job failed. |
+
+### `gpu_render_host.flow`
+
+Run a render job on Metal and WebGPU and check the frames (#811).  gpu_job_run writes the job, replays it on each backend named in
+
+**Structs:** `GpuFrame`, `GpuFrameCmp`
+
+**Constants:**
+
+- `GPU_CHANNEL_TOL: i32`
+- `GPU_EDGE_PIXELS: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_str_eq` | `(a: string, b: string) -> bool` | String equality by content (see #1464 for why not ==). |
+| `gpu_repo_root` | `() -> string` | - |
+| `gpu_job_root` | `() -> string` | - |
+| `gpu_frame_read` | `(path: string, want: i32) -> GpuFrame` | - |
+| `gpu_frame_compare` | `(a: GpuFrame, b: GpuFrame) -> GpuFrameCmp` | Per-channel comparison: the largest difference and the number of pixels with a channel off by more than GPU_CHANNEL_TOL. |
+| `gpu_hex_read` | `(path: string, want: i32) -> GpuFrame` | - |
+| `gpu_hex_write` | `(path: string, header: string, fr: GpuFrame) -> bool` | - |
+| `gpu_probes_check` | `(probes: string, fr: GpuFrame, w: i32) -> string` | Check every probe; "" when all hold, otherwise the first that fails. |
+| `gpu_job_run` | `(j: ptr<GpuJob>) -> i32` | Write, render and check a job. Returns 0 when every backend that ran passed (and, with FLOW_GPU_REQUIRE=1, at least one ran). |
+
 ### `gpu_resource_types.flow`
 
 Resource and stage-interface contracts for the cross-backend GPU IR (#811). These are backend-independent descriptor checks. Shader source comes from gpu_stage_codegen. Callers validate before constructing render/compute passes.
 
-**Structs:** `GpuTextureDesc`, `GpuSamplerDesc`, `GpuVarying`, `GpuVertexAttribute`
+**Structs:** `GpuTextureDesc`, `GpuSamplerDesc`, `GpuVarying`, `GpuVertexAttribute`, `GpuTextureBinding`
 
 **Constants:**
 
@@ -1891,6 +1986,12 @@ Resource and stage-interface contracts for the cross-backend GPU IR (#811). Thes
 - `GPU_SCALAR_U32: i32`
 - `GPU_INTERPOLATE_PERSPECTIVE: i32`
 - `GPU_INTERPOLATE_FLAT: i32`
+- `GPU_ACCESS_SAMPLE: i32`
+- `GPU_ACCESS_STORAGE_READ: i32`
+- `GPU_ACCESS_STORAGE_WRITE: i32`
+- `GPU_STAGE_VERTEX: i32`
+- `GPU_STAGE_FRAGMENT: i32`
+- `GPU_STAGE_COMPUTE: i32`
 
 **Functions:**
 
@@ -1904,6 +2005,151 @@ Resource and stage-interface contracts for the cross-backend GPU IR (#811). Thes
 | `gpu_stage_links` | `(vertex: ptr<GpuVarying>, nv: i32,
                                 fragment: ptr<GpuVarying>, nf: i32) -> bool` | Every fragment input needs one precisely matching vertex output; extra vertex outputs are legal. Duplicate locations are rejected on both sides. |
 | `gpu_vertex_attribute_valid` | `(a: GpuVertexAttribute) -> bool` | - |
+| `gpu_texture_binding_valid` | `(b: GpuTextureBinding) -> bool` | The binding's access must be one the texture was created for. Sampling needs GPU_USE_SAMPLED and a single-sample color texture. Storage access needs GPU_USE_STORAGE on a single-sample 2D color texture, and a vertex stage cannot write a storage texture. |
+
+### `gpu_scene.flow`
+
+Scene helpers for render jobs (#811): column-major 4x4 matrices in the Metal and WebGPU clip convention (depth 0..1, +y up, counter-clockwise front faces) and indexed meshes with a position, normal, uv layout.
+
+**Structs:** `GpuMesh`
+
+**Constants:**
+
+- `GPU_PI: f32`
+- `GPU_MESH_STRIDE: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_m4_new` | `() -> ptr<f32>` | Matrices |
+| `gpu_m4_identity` | `(m: ptr<f32>) -> void` | - |
+| `gpu_m4_mul` | `(out: ptr<f32>, a: ptr<f32>, b: ptr<f32>) -> void` | out = a * b (out may alias neither). |
+| `gpu_m4_perspective` | `(m: ptr<f32>, fovy: f32, aspect: f32, near: f32, far: f32) -> void` | Right-handed perspective onto depth 0..1. |
+| `gpu_m4_look_at` | `(m: ptr<f32>, ex: f32, ey: f32, ez: f32,
+                               tx: f32, ty: f32, tz: f32) -> void` | - |
+| `gpu_m4_translate` | `(m: ptr<f32>, x: f32, y: f32, z: f32) -> void` | - |
+| `gpu_m4_rotate_y` | `(m: ptr<f32>, a: f32) -> void` | - |
+| `gpu_m4_rotate_x` | `(m: ptr<f32>, a: f32) -> void` | - |
+| `gpu_m4_scale` | `(m: ptr<f32>, x: f32, y: f32, z: f32) -> void` | - |
+| `gpu_m4_store` | `(dst: ptr<f32>, at: i32, m: ptr<f32>) -> void` | Copy a matrix into a float block at vec4 index `at` (4 vec4s). |
+| `gpu_v4_store` | `(dst: ptr<f32>, at: i32, x: f32, y: f32, z: f32, w: f32) -> void` | - |
+| `gpu_m4_apply` | `(out: ptr<f32>, m: ptr<f32>, x: f32, y: f32, z: f32) -> void` | Apply a matrix to the point (x, y, z, 1); the result's xyzw is in out[0..3]. |
+| `gpu_mesh_new` | `() -> ptr<GpuMesh>` | Meshes |
+| `gpu_mesh_vertex` | `(m: ptr<GpuMesh>, x: f32, y: f32, z: f32,
+                                nx: f32, ny: f32, nz: f32, u: f32, v: f32) -> i32` | Append a vertex; returns its index. |
+| `gpu_mesh_tri` | `(m: ptr<GpuMesh>, a: i32, b: i32, c: i32) -> void` | - |
+| `gpu_mesh_face3` | `(m: ptr<GpuMesh>, base: i32,
+                               ax: f32, ay: f32, az: f32,
+                               bx: f32, by: f32, bz: f32,
+                               cx: f32, cy: f32, cz: f32) -> void` | A flat-shaded triangle from three points (counter-clockwise seen from its front); indices are relative to `base` so ranges can share a mesh. |
+| `gpu_mesh_cube` | `(m: ptr<GpuMesh>, h: f32, base: i32) -> void` | An axis-aligned cube of half-size h centred at the origin, 24 vertices with face normals. Indices are relative to `base`. |
+| `gpu_mesh_plane` | `(m: ptr<GpuMesh>, h: f32, y: f32, base: i32) -> void` | A square in the xz plane at height y, facing +y. |
+| `gpu_mesh_uv_sphere` | `(m: ptr<GpuMesh>, r: f32, rings: i32, segments: i32, base: i32) -> void` | A UV sphere of radius r with smooth normals. |
+| `gpu_mesh_icosphere` | `(m: ptr<GpuMesh>, r: f32, level: i32, base: i32) -> void` | An icosphere of radius r: an icosahedron with each face split into 4^level faces, pushed onto the sphere, flat-shaded. |
+| `gpu_mesh_pyramid` | `(m: ptr<GpuMesh>, h: f32, base: i32) -> void` | A square pyramid of half-size h, apex up. |
+| `gpu_mesh_octahedron` | `(m: ptr<GpuMesh>, h: f32, base: i32) -> void` | A regular octahedron of radius h. |
+| `gpu_mesh_prism` | `(m: ptr<GpuMesh>, h: f32, base: i32) -> void` | A triangular prism of half-size h along z. |
+
+### `gpu_shader.flow`
+
+Typed shader expressions for render stages (#811).  A Flow program builds a vertex or fragment stage out of typed
+
+**Structs:** `GxExpr`, `GxIface`, `GxFn`
+
+**Constants:**
+
+- `GX_ERR: i32`
+- `GX_F32: i32`
+- `GX_VEC2: i32`
+- `GX_VEC3: i32`
+- `GX_VEC4: i32`
+- `GX_MAT4: i32`
+- `GX_BOOL: i32`
+- `GX_U32: i32`
+- `GX_MAX_ATTRS: i32`
+- `GX_MAX_VARYINGS: i32`
+- `GX_MAX_TEXTURES: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gx_iface_new` | `() -> ptr<GxIface>` | Construction |
+| `gx_fn_new` | `(iface: ptr<GxIface>, stage: i32) -> ptr<GxFn>` | - |
+| `gx_ok` | `(f: ptr<GxFn>) -> bool` | - |
+| `gx_error` | `(f: ptr<GxFn>) -> string` | - |
+| `gx_bad` | `(msg: string) -> GxExpr` | - |
+| `gx_type_name` | `(ty: i32) -> string` | - |
+| `gx_varying_type` | `(v: GpuVarying) -> i32` | The GPU type of a varying, or GX_ERR when the builder cannot carry it. |
+| `gx_f` | `(v: f32) -> GxExpr` | A float literal. Both languages read "%.9g" with a forced decimal point as the same f32. |
+| `gx_u` | `(v: i32) -> GxExpr` | - |
+| `gx_uvec` | `(f: ptr<GxFn>, i: i32) -> GxExpr` | Uniform vec4 number `i` of the pipeline's uniform block. |
+| `gx_umat` | `(f: ptr<GxFn>, i: i32) -> GxExpr` | The mat4 whose columns are uniform vec4s i .. i+3. |
+| `gx_attr` | `(f: ptr<GxFn>, location: i32) -> GxExpr` | Vertex attribute at `location` (vertex stage only). |
+| `gx_vertex_index` | `(f: ptr<GxFn>) -> GxExpr` | - |
+| `gx_instance_index` | `(f: ptr<GxFn>) -> GxExpr` | - |
+| `gx_front_facing` | `(f: ptr<GxFn>) -> GxExpr` | - |
+| `gx_frag_coord` | `(f: ptr<GxFn>) -> GxExpr` | Framebuffer position of the fragment (pixel centres at +0.5). |
+| `gx_in` | `(f: ptr<GxFn>, location: i32) -> GxExpr` | Fragment input at `location`. |
+| `gx_add` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_sub` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_mul` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_div` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_neg` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_lt` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_gt` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_and` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_or` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_not` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_select` | `(cond: GxExpr, t: GxExpr, f: GxExpr) -> GxExpr` | cond ? t : f, for two values of one type and a bool. |
+| `gx_vec2` | `(x: GxExpr, y: GxExpr) -> GxExpr` | - |
+| `gx_vec3` | `(x: GxExpr, y: GxExpr, z: GxExpr) -> GxExpr` | - |
+| `gx_vec4` | `(x: GxExpr, y: GxExpr, z: GxExpr, w: GxExpr) -> GxExpr` | - |
+| `gx_vec4_of` | `(v: GxExpr, w: GxExpr) -> GxExpr` | vec4(v.xyz, w). |
+| `gx_splat` | `(ty: i32, s: GxExpr) -> GxExpr` | A vector of `ty` with every component s. |
+| `gx_f32_of` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_u32_mod` | `(a: GxExpr, n: i32) -> GxExpr` | - |
+| `gx_u32_div` | `(a: GxExpr, n: i32) -> GxExpr` | - |
+| `gx_swz` | `(v: GxExpr, pattern: string) -> GxExpr` | v.xyz, v.zx, v.w ... over x y z w (or r g b a). |
+| `gx_x` | `(v: GxExpr) -> GxExpr` | - |
+| `gx_y` | `(v: GxExpr) -> GxExpr` | - |
+| `gx_z` | `(v: GxExpr) -> GxExpr` | - |
+| `gx_w` | `(v: GxExpr) -> GxExpr` | - |
+| `gx_xy` | `(v: GxExpr) -> GxExpr` | - |
+| `gx_xyz` | `(v: GxExpr) -> GxExpr` | - |
+| `gx_abs` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_sin` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_cos` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_exp` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_sqrt` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_floor` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_fract` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_acos` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_asin` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_normalize` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_length` | `(a: GxExpr) -> GxExpr` | - |
+| `gx_dot` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_cross` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_reflect` | `(i: GxExpr, n: GxExpr) -> GxExpr` | - |
+| `gx_refract` | `(i: GxExpr, n: GxExpr, eta: GxExpr) -> GxExpr` | - |
+| `gx_min` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_max` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_pow` | `(a: GxExpr, b: GxExpr) -> GxExpr` | - |
+| `gx_step` | `(edge: GxExpr, x: GxExpr) -> GxExpr` | - |
+| `gx_atan2` | `(y: GxExpr, x: GxExpr) -> GxExpr` | - |
+| `gx_clamp` | `(x: GxExpr, lo: GxExpr, hi: GxExpr) -> GxExpr` | - |
+| `gx_mix` | `(a: GxExpr, b: GxExpr, t: GxExpr) -> GxExpr` | - |
+| `gx_smoothstep` | `(e0: GxExpr, e1: GxExpr, x: GxExpr) -> GxExpr` | - |
+| `gx_sample` | `(f: ptr<GxFn>, slot: i32, coord: GxExpr) -> GxExpr` | Sample the texture bound at `slot` (fragment stage only). A 2D texture takes a vec2 coordinate and a cube map a vec3 direction. |
+| `gx_let` | `(f: ptr<GxFn>, e: GxExpr) -> GxExpr` | Bind `e` to a fresh name and return the name, so a value used several times is computed once. |
+| `gx_out_position` | `(f: ptr<GxFn>, e: GxExpr) -> void` | Write the clip-space position (vertex stage). |
+| `gx_out` | `(f: ptr<GxFn>, location: i32, e: GxExpr) -> void` | Write the varying at `location` (vertex stage). Its type must be the declared one. |
+| `gx_out_color` | `(f: ptr<GxFn>, e: GxExpr) -> void` | Write the fragment colour. |
+| `gx_discard_if` | `(f: ptr<GxFn>, cond: GxExpr) -> void` | Discard the fragment when `cond` holds. |
+| `gx_check` | `(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string` | Why the stage pair cannot be emitted, or "". |
+| `gx_emit_wgsl` | `(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string` | WGSL module with entry points vs_main and fs_main, or "" with the reason in the stage error. |
+| `gx_emit_metal` | `(vs: ptr<GxFn>, fs: ptr<GxFn>) -> string` | Metal module with entry points vs_main and fs_main, or "". |
 
 ### `gpu_sim.flow`
 

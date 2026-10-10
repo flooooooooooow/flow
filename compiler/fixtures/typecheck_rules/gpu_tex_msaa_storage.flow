@@ -1,0 +1,12 @@
+# expect: [GPU004] GpuTextureDesc field 'usage': a multisampled texture cannot have usage storage
+import "stdlib/gpu_resource_types.flow"
+
+function main() -> i32 {
+    let t: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: 8, height: 8, layers: 1, samples: 4,
+        usage: GPU_USE_STORAGE | GPU_USE_COLOR_ATTACHMENT
+    }
+    if gpu_texture_valid(t) { return 1 }
+    return 0
+}

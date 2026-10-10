@@ -1,0 +1,189 @@
+# vgpu compatibility case: https://vgpu.sh/examples/anti-aliasing
+#
+# The same pinwheel of thin wedges rendered four ways and shown in four
+# quadrants: no anti-aliasing (top left), MSAA 4x resolved (top right),
+# SSAA 2x (bottom left: drawn at twice the size, box-filtered by one
+# linear sample per output pixel), and an FXAA-style luma edge blend of
+# the aliased image (bottom right). A composite pass samples the three
+# render targets.
+#
+# The scene has two colours only, so a pixel strictly between them is
+# partial edge coverage. The probes count those pixels in each quadrant:
+# none without anti-aliasing, many with each method.
+#
+#   ./flow run examples/gpu/vgpu/anti_aliasing.flow
+import "stdlib/gpu_render_host.flow"
+import "stdlib/gpu_scene.flow"
+
+const W: i32 = 128
+const H: i32 = 72
+const CW: i32 = 64
+const CH: i32 = 36
+const WEDGES: i32 = 12
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sinf(x: f32) -> f32
+    function cosf(x: f32) -> f32
+}
+
+function scene_pipeline(job: ptr<GpuJob>, name: string, targets: GpuRenderTargets) -> ptr<GpuPipeline> {
+    let a_pos: GpuVertexAttribute = GpuVertexAttribute { location: 0, offset: 0, stride: 8, scalar_bytes: 4, components: 2 }
+    let none: array<GpuVarying, 1> = [GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE }]
+    let p: ptr<GpuPipeline> = gpu_pipeline_new(job, name, &none[0], 0, &none[0], 0)
+    gpu_pipeline_targets(p, targets)
+    gpu_pipeline_state(p, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_NONE, GPU_DEPTH_ALWAYS, GPU_BLEND_NONE)
+    gpu_pipeline_vertex_buffer(p, 0, 8, GPU_STEP_VERTEX)
+    gpu_pipeline_attribute(p, 0, a_pos)
+    let vs: ptr<GxFn> = gpu_pipeline_vs(p)
+    gx_out_position(vs, gx_vec4(gx_x(gx_attr(vs, 0)), gx_y(gx_attr(vs, 0)), gx_f(0.0), gx_f(1.0)))
+    let fs: ptr<GxFn> = gpu_pipeline_fs(p)
+    gx_out_color(fs, gx_vec4(gx_f(0.92), gx_f(0.94), gx_f(0.9), gx_f(1.0)))
+    let _id: i32 = gpu_pipeline_finish(p)
+    return p
+}
+
+function main() -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("anti_aliasing", W, H, gpu_job_root())
+
+    let cell: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: CW, height: CH, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT | GPU_USE_SAMPLED
+    }
+    let cell4: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: CW, height: CH, layers: 1, samples: 4,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let big: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT | GPU_USE_SAMPLED
+    }
+    let out: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: W, height: H, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let no_depth: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_DEPTH32F,
+        width: CW, height: CH, layers: 1, samples: 1,
+        usage: GPU_USE_DEPTH_ATTACHMENT
+    }
+    let t1: GpuRenderTargets = GpuRenderTargets { color: cell, depth: no_depth, has_depth: false }
+    let t4: GpuRenderTargets = GpuRenderTargets { color: cell4, depth: no_depth, has_depth: false }
+    let tout: GpuRenderTargets = GpuRenderTargets { color: out, depth: no_depth, has_depth: false }
+
+    let aliased: ptr<GpuPipeline> = scene_pipeline(job, "scene_x1", t1)
+    let msaa: ptr<GpuPipeline> = scene_pipeline(job, "scene_x4", t4)
+
+    # Composite: pick the quadrant from the fragment position.
+    let off_b: GpuTextureBinding = GpuTextureBinding { slot: 0, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: cell }
+    let msaa_b: GpuTextureBinding = GpuTextureBinding { slot: 1, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: cell }
+    let ssaa_b: GpuTextureBinding = GpuTextureBinding { slot: 2, stages: GPU_STAGE_FRAGMENT, access: GPU_ACCESS_SAMPLE, texture: big }
+    let none: array<GpuVarying, 1> = [GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 1, interpolation: GPU_INTERPOLATE_PERSPECTIVE }]
+    let comp: ptr<GpuPipeline> = gpu_pipeline_new(job, "composite", &none[0], 0, &none[0], 0)
+    gpu_pipeline_targets(comp, tout)
+    gpu_pipeline_state(comp, GPU_TOPOLOGY_TRIANGLES, GPU_CULL_NONE, GPU_DEPTH_ALWAYS, GPU_BLEND_NONE)
+    gpu_pipeline_uniforms(comp, 1)
+    gpu_pipeline_texture(comp, off_b)
+    gpu_pipeline_texture(comp, msaa_b)
+    gpu_pipeline_texture(comp, ssaa_b)
+    let cvs: ptr<GxFn> = gpu_pipeline_vs(comp)
+    let vid: GxExpr = gx_vertex_index(cvs)
+    let cx: GxExpr = gx_sub(gx_mul(gx_f32_of(gx_u32_mod(vid, 2)), gx_f(4.0)), gx_f(1.0))
+    let cy: GxExpr = gx_sub(gx_mul(gx_f32_of(gx_u32_div(vid, 2)), gx_f(4.0)), gx_f(1.0))
+    gx_out_position(cvs, gx_vec4(cx, cy, gx_f(0.0), gx_f(1.0)))
+    let fs: ptr<GxFn> = gpu_pipeline_fs(comp)
+    let px: GxExpr = gx_let(fs, gx_xy(gx_frag_coord(fs)))
+    let cellsz: GxExpr = gx_vec2(gx_f(CW as f32), gx_f(CH as f32))
+    let uv: GxExpr = gx_let(fs, gx_fract(gx_div(px, cellsz)))
+    let right: GxExpr = gx_let(fs, gx_gt(gx_x(px), gx_f(CW as f32)))
+    let lower: GxExpr = gx_let(fs, gx_gt(gx_y(px), gx_f(CH as f32)))
+    let off_c: GxExpr = gx_let(fs, gx_sample(fs, 0, uv))
+    let msaa_c: GxExpr = gx_sample(fs, 1, uv)
+    let ssaa_c: GxExpr = gx_sample(fs, 2, uv)
+    # FXAA-style: blend toward the neighbour average by local luma contrast.
+    let texel: GxExpr = gx_let(fs, gx_xy(gx_uvec(fs, 0)))
+    let luma: GxExpr = gx_vec3(gx_f(0.299), gx_f(0.587), gx_f(0.114))
+    let n0: GxExpr = gx_let(fs, gx_sample(fs, 0, gx_add(uv, gx_mul(texel, gx_vec2(gx_f(1.0), gx_f(0.0))))))
+    let n1: GxExpr = gx_let(fs, gx_sample(fs, 0, gx_sub(uv, gx_mul(texel, gx_vec2(gx_f(1.0), gx_f(0.0))))))
+    let n2: GxExpr = gx_let(fs, gx_sample(fs, 0, gx_add(uv, gx_mul(texel, gx_vec2(gx_f(0.0), gx_f(1.0))))))
+    let n3: GxExpr = gx_let(fs, gx_sample(fs, 0, gx_sub(uv, gx_mul(texel, gx_vec2(gx_f(0.0), gx_f(1.0))))))
+    let l0: GxExpr = gx_dot(gx_xyz(n0), luma)
+    let l1: GxExpr = gx_dot(gx_xyz(n1), luma)
+    let l2: GxExpr = gx_dot(gx_xyz(n2), luma)
+    let l3: GxExpr = gx_dot(gx_xyz(n3), luma)
+    let lc: GxExpr = gx_dot(gx_xyz(off_c), luma)
+    let hi: GxExpr = gx_max(gx_max(gx_max(l0, l1), gx_max(l2, l3)), lc)
+    let lo: GxExpr = gx_min(gx_min(gx_min(l0, l1), gx_min(l2, l3)), lc)
+    let contrast: GxExpr = gx_let(fs, gx_sub(hi, lo))
+    let avg: GxExpr = gx_mul(gx_add(gx_add(n0, n1), gx_add(n2, n3)), gx_f(0.25))
+    let fxaa_c: GxExpr = gx_mix(off_c, avg, gx_mul(gx_smoothstep(gx_f(0.1), gx_f(0.6), contrast), gx_f(0.5)))
+    let top: GxExpr = gx_select(right, msaa_c, off_c)
+    let bottom: GxExpr = gx_select(right, fxaa_c, ssaa_c)
+    gx_out_color(fs, gx_select(lower, bottom, top))
+    let _comp_id: i32 = gpu_pipeline_finish(comp)
+
+    # Pinwheel: thin wedges from the centre, in clip space of the cell.
+    let verts: ptr<f32> = calloc((WEDGES * 6) as i64, 4) as ptr<f32>
+    let aspect: f32 = (CH as f32) / (CW as f32)
+    let mut k: i32 = 0
+    while k < WEDGES {
+        let a0: f32 = (k as f32) * 0.5235988 + 0.13
+        let a1: f32 = a0 + 0.17
+        verts[k * 6] = 0.0
+        verts[k * 6 + 1] = 0.0
+        verts[k * 6 + 2] = 1.6 * cosf(a0) * aspect
+        verts[k * 6 + 3] = 1.6 * sinf(a0)
+        verts[k * 6 + 4] = 1.6 * cosf(a1) * aspect
+        verts[k * 6 + 5] = 1.6 * sinf(a1)
+        k = k + 1
+    }
+    let vb: i32 = gpu_vertex_buffer(job, verts, WEDGES * 6)
+    let vbs: array<i32, 1> = [vb]
+
+    let off_t: i32 = gpu_texture(job, cell, null)
+    let msaa_t: i32 = gpu_texture(job, cell4, null)
+    let resolve_t: i32 = gpu_texture(job, cell, null)
+    let ssaa_t: i32 = gpu_texture(job, big, null)
+    let out_t: i32 = gpu_texture(job, out, null)
+    let nearest: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_NEAREST, mag_filter: GPU_FILTER_NEAREST,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_CLAMP, address_w: GPU_ADDRESS_CLAMP
+    }
+    let linear: GpuSamplerDesc = GpuSamplerDesc {
+        min_filter: GPU_FILTER_LINEAR, mag_filter: GPU_FILTER_LINEAR,
+        address_u: GPU_ADDRESS_CLAMP, address_v: GPU_ADDRESS_CLAMP, address_w: GPU_ADDRESS_CLAMP
+    }
+    let near_s: i32 = gpu_sampler(job, nearest)
+    let lin_s: i32 = gpu_sampler(job, linear)
+    let cu: ptr<f32> = calloc(4, 4) as ptr<f32>
+    gpu_v4_store(cu, 0, 1.0 / (CW as f32), 1.0 / (CH as f32), 0.0, 0.0)
+    let comp_u: i32 = gpu_uniform_buffer(job, cu, 1)
+    let g: i32 = gpu_group(job, comp, comp_u)
+    gpu_group_texture(job, comp, g, 0, off_t, near_s)
+    gpu_group_texture(job, comp, g, 1, resolve_t, near_s)
+    gpu_group_texture(job, comp, g, 2, ssaa_t, lin_s)
+
+    gpu_pass(job, off_t, 0 - 1, 0 - 1, 0.08, 0.1, 0.18, 1.0)
+    gpu_draw(job, aliased, 0 - 1, &vbs[0], 1, WEDGES * 3, 1, 0, 0)
+    gpu_pass(job, msaa_t, resolve_t, 0 - 1, 0.08, 0.1, 0.18, 1.0)
+    gpu_draw(job, msaa, 0 - 1, &vbs[0], 1, WEDGES * 3, 1, 0, 0)
+    gpu_pass(job, ssaa_t, 0 - 1, 0 - 1, 0.08, 0.1, 0.18, 1.0)
+    gpu_draw(job, aliased, 0 - 1, &vbs[0], 1, WEDGES * 3, 1, 0, 0)
+    gpu_pass(job, out_t, 0 - 1, 0 - 1, 0.0, 0.0, 0.0, 1.0)
+    let novb: array<i32, 1> = [0]
+    gpu_draw(job, comp, g, &novb[0], 0, 3, 1, 0, 0)
+    gpu_output(job, out_t)
+
+    # Background red is 20 and wedge red 235: anything strictly between
+    # (with a margin) is partial coverage.
+    gpu_probe_between(job, "off-no-edges", 0, 0, CW, CH, 30, 225, 0, 0)
+    gpu_probe_between(job, "msaa-edges", CW, 0, W, CH, 30, 225, 40, 2000)
+    gpu_probe_between(job, "ssaa-edges", 0, CH, CW, H, 30, 225, 40, 2000)
+    gpu_probe_between(job, "fxaa-edges", CW, CH, W, H, 30, 225, 20, 2000)
+    gpu_probe_pixel(job, "background", 1, 1, 20, 26, 46, 255, 1)
+    return gpu_job_run(job)
+}
