@@ -1,0 +1,121 @@
+# Local-only scorecard contract tests (#727). Synthetic numbers test
+# classification, not any assertion about Flow's measured performance.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function row(name: string, parity: string, fm: string, pm: string,
+             fd: string, pd: string, frss: string, prss: string,
+             native: string) -> string {
+    return "{\"workload_id\":\"" + name + "\","
+        + "\"semantic_parity_status\":\"" + parity + "\","
+        + "\"timing_scope\":\"precompiled_workload\","
+        + "\"repeats\":5,"
+        + "\"flow_metrics\":{\"median\":" + fm + ",\"dispersion\":" + fd
+        + ",\"median_rss_kb\":" + frss + "},"
+        + "\"python_metrics\":{\"median\":" + pm + ",\"dispersion\":" + pd
+        + ",\"median_rss_kb\":" + prss + "},"
+        + "\"attribution\":{\"flow_vs_python\":1.0,\"flow_vs_native\":" + native + "}}"
+}
+
+function fixture() -> string {
+    let mut a: string = "{\"system\":{\"git_sha\":\"abc123\",\"os\":\"Linux\",\"cpu\":\"test-cpu\"},\"benchmarks\":["
+    a = a + row("runtime_win", "verified", "8", "10", "0.1", "0.1", "100", "100", "1.02") + ","
+    a = a + row("runtime_tie", "verified", "10", "10", "0.1", "0.1", "100", "100", "null") + ","
+    a = a + row("runtime_loss", "verified", "15", "10", "0.1", "0.1", "100", "100", "1.1") + ","
+    a = a + row("memory_win", "verified", "10", "10", "0.1", "0.1", "50", "100", "1.0") + ","
+    a = a + row("missing_python", "verified", "8", "null", "0.1", "null", "50", "null", "null") + ","
+    a = a + row("bad_parity", "unresolved", "5", "10", "0.1", "0.1", "100", "100", "1.0") + ","
+    a = a + row("noisy_run", "verified", "8", "10", "3", "0.1", "100", "100", "1.0") + ","
+    a = a + s_replace(row("not_enough_repeats", "verified", "10", "10", "0.1", "0.1", "100", "100", "1.0"), "\"repeats\":5", "\"repeats\":2")
+    return a + "]}"
+}
+
+function command(path: string, strict: bool, dest: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "perf_scorecard")
+    sl_push(argv, path)
+    if strict {
+        sl_push(argv, "--strict")
+    }
+    if s_len(dest) > 0 {
+        sl_push2(argv, "--out", dest)
+    }
+    return t_run_argv(argv)
+}
+
+function check_verdicts() -> i32 {
+    if t_need_cc() != T_PASS { return T_SKIP }
+    let input: string = t_tmp() + "/valid.json"
+    if not write_text(input, fixture()) { return T_FAIL }
+    if command(input, false, "") != 0 {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let s: string = read_text(t_out())
+    if not a_contains(s, "\"schema\": \"flow-perf-scorecard/1\"") { return T_FAIL }
+    if not a_contains(s, "\"source_sha\": \"abc123\"") { return T_FAIL }
+    if not a_contains(s, "\"workload_id\": \"runtime_win\", \"timing_scope\": \"precompiled_workload\", \"verdict\": \"win\"") { return T_FAIL }
+    if not a_contains(s, "\"workload_id\": \"runtime_tie\", \"timing_scope\": \"precompiled_workload\", \"verdict\": \"tie\"") { return T_FAIL }
+    if not a_contains(s, "\"workload_id\": \"runtime_loss\", \"timing_scope\": \"precompiled_workload\", \"verdict\": \"loss\"") { return T_FAIL }
+    if not a_contains(s, "\"workload_id\": \"memory_win\", \"timing_scope\": \"precompiled_workload\", \"verdict\": \"memory_win\"") { return T_FAIL }
+    if not a_contains(s, "\"verdict\": \"no_python_data\"") { return T_FAIL }
+    if not a_contains(s, "\"verdict\": \"unresolved_parity\"") { return T_FAIL }
+    if not a_contains(s, "\"verdict\": \"noisy\"") { return T_FAIL }
+    if not a_contains(s, "\"verdict\": \"insufficient_repetitions\"") { return T_FAIL }
+    if not a_contains(s, "\"flow_vs_python\": 0.8") { return T_FAIL }
+    if not a_contains(s, "\"native_tax\": \"tax\"") { return T_FAIL }
+    if not a_contains(s, "\"wins\": 1, \"memory_wins\": 1, \"ties\": 1, \"losses\": 1, \"unscored\": 4, \"native_taxes\": 1") { return T_FAIL }
+    return T_PASS
+}
+
+function check_strict_is_a_gate() -> i32 {
+    if t_need_cc() != T_PASS { return T_SKIP }
+    let input: string = t_tmp() + "/strict.json"
+    let _w: bool = write_text(input, fixture())
+    if command(input, true, "") != 1 { return T_FAIL }
+    return T_PASS
+}
+
+function check_output_file() -> i32 {
+    if t_need_cc() != T_PASS { return T_SKIP }
+    let input: string = t_tmp() + "/input.json"
+    let dest: string = t_tmp() + "/scorecard.json"
+    let _w: bool = write_text(input, fixture())
+    if command(input, false, dest) != 0 { return T_FAIL }
+    if not a_file_contains(dest, "\"source_sha\": \"abc123\"") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_malformed_json() -> i32 {
+    if t_need_cc() != T_PASS { return T_SKIP }
+    let input: string = t_tmp() + "/broken.json"
+    let _w: bool = write_text(input, "{")
+    if command(input, false, "") != 2 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "invalid JSON") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_missing_metadata() -> i32 {
+    if t_need_cc() != T_PASS { return T_SKIP }
+    let input: string = t_tmp() + "/missing.json"
+    let _w: bool = write_text(input, "{\"system\":{\"os\":\"Linux\",\"cpu\":\"test\"},\"benchmarks\":[]}")
+    if command(input, false, "") != 2 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "missing system git_sha/os/cpu") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("perf_scorecard")
+    t_start()
+    t_end("classifies_each_row", check_verdicts())
+    t_start()
+    t_end("strict_gate", check_strict_is_a_gate())
+    t_start()
+    t_end("json_output", check_output_file())
+    t_start()
+    t_end("malformed_json", check_rejects_malformed_json())
+    t_start()
+    t_end("missing_metadata", check_rejects_missing_metadata())
+    t_done()
+    return 0
+}
