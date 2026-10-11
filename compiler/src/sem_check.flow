@@ -196,6 +196,59 @@ function sem_impl_markers(c: ptr<Sem>, offs: ptr<SemIntVec>, traits: ptr<SemStrV
     }
 }
 
+# Trait-method RT contracts (#766): inside `trait Name { ... }`, a method
+# signature written after `@rt_safe` is a contract on every impl of that
+# method. Records "Trait\x01method" in c.trait_rt_methods. The trait block
+# is skipped by the parser, so this reads the source from `from` (just
+# after the trait name) to the matching closing brace.
+function sem_scan_trait_rt_methods(c: ptr<Sem>, tname: string, from: i32) {
+    let src: ptr<u8> = c.src
+    let mut i: i32 = from
+    while src[i] != 0 and src[i] != 123 {
+        i = i + 1
+    }
+    if src[i] == 0 {
+        return
+    }
+    let mut depth: i32 = 0
+    while src[i] != 0 {
+        let ch: i32 = src[i] as i32
+        if ch == 35 {
+            while src[i] != 0 and src[i] != 10 {
+                i = i + 1
+            }
+            continue
+        }
+        if ch == 123 {
+            depth = depth + 1
+        } elif ch == 125 {
+            depth = depth - 1
+            if depth == 0 {
+                return
+            }
+        } elif ch == 64 and depth == 1 and sem_s_span_is(src, i + 1, i + 8, "rt_safe") and sem_s_is_alpha(src[i + 8] as i32) == false and sem_s_is_digit(src[i + 8] as i32) == false and src[i + 8] != 95 {
+            let mut k: i32 = i + 8
+            while sem_s_is_space(src[k] as i32) {
+                k = k + 1
+            }
+            if sem_s_span_is(src, k, k + 8, "function") and sem_s_is_space(src[k + 8] as i32) {
+                k = k + 8
+                while sem_s_is_space(src[k] as i32) {
+                    k = k + 1
+                }
+                let ns: i32 = k
+                while sem_s_is_alpha(src[k] as i32) or sem_s_is_digit(src[k] as i32) or src[k] == 95 {
+                    k = k + 1
+                }
+                if k > ns {
+                    sem_sm_put(c.trait_rt_methods, tname + "\x01" + sem_s_span(src, ns, k), 1)
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
 # Generic type parameters written after a function or struct name:
 # `<T, U: Trait>`, read from the source (flowc keeps only their count).
 function sem_scan_type_params(c: ptr<Sem>, after: i32) {
@@ -463,7 +516,9 @@ export function sem_build_module(c: ptr<Sem>, m: i32, is_root: bool) {
                 while sem_s_is_alpha(c.src[q2] as i32) or sem_s_is_digit(c.src[q2] as i32) {
                     q2 = q2 + 1
                 }
-                sem_decl_add(c, DK_TRAIT, m, d, sem_s_span(c.src, ts, q2), 0 - 1)
+                let tname: string = sem_s_span(c.src, ts, q2)
+                sem_decl_add(c, DK_TRAIT, m, d, tname, 0 - 1)
+                sem_scan_trait_rt_methods(c, tname, q2)
             }
         }
         if k != AST_FN {
@@ -742,6 +797,7 @@ function sem_collect_types(c: ptr<Sem>) {
                 }
                 let lst: ptr<SemStrVec> = sem_pv_get(c.impl_method_lists, li) as ptr<SemStrVec>
                 sem_sv_push(lst, ty + "_" + tr + "_" + sem_sv_get(c.fi_name, fi))
+                sem_sm_put(c.impl_fn_trait, sem_sv_get(c.fi_mangled, fi), im)
                 j = j + 1
             }
         }
@@ -1542,9 +1598,29 @@ function sem_check_rt_safe_call(c: ptr<Sem>, name: string) {
     sem_sv_push(c.rt_site_name, name)
     if c.rt_safe_from_domain {
         sem_iv_push(c.rt_site_dom, 1)
+        sem_sv_push(c.rt_site_trait, "")
+    } elif c.current_rt_trait as ptr<u8> != null {
+        sem_iv_push(c.rt_site_dom, 2)
+        sem_sv_push(c.rt_site_trait, c.current_rt_trait)
     } else {
         sem_iv_push(c.rt_site_dom, 0)
+        sem_sv_push(c.rt_site_trait, "")
     }
+}
+
+# "Trait.method" when `fi` implements a trait method declared `@rt_safe`
+# in its trait (#766), else null.
+function sem_impl_rt_contract(c: ptr<Sem>, fi: i32) -> string {
+    let im: i32 = sem_sm_get(c.impl_fn_trait, sem_sv_get(c.fi_mangled, fi))
+    if im < 0 {
+        return null as string
+    }
+    let tr: string = sem_sv_get(c.im_trait, im)
+    let method: string = sem_sv_get(c.fi_name, fi)
+    if sem_sm_get(c.trait_rt_methods, tr + "\x01" + method) < 0 {
+        return null as string
+    }
+    return tr + "." + method
 }
 
 function sem_is_dangerous_extern(name: string) -> bool {
@@ -3460,6 +3536,8 @@ function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
     c.current_function_name = cname
     c.current_rt_safe_fn = null
     c.rt_safe_from_domain = false
+    let prev_rt_trait: string = c.current_rt_trait
+    c.current_rt_trait = null
     let f: i32 = sem_ty_mk(c.t, TK_FUNCTION)
     let mut p: i32 = sem_na(c, e)
     while p != AST_NONE {
@@ -3483,6 +3561,7 @@ function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
     c.current_function_name = prev_fn
     c.current_rt_safe_fn = prev_rt
     c.rt_safe_from_domain = prev_rt_dom
+    c.current_rt_trait = prev_rt_trait
     if sem_nb(c, e) != AST_NONE {
         tys.ret[f] = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
     } else {
@@ -4932,9 +5011,16 @@ function sem_check_function(c: ptr<Sem>, fi: i32) {
     let prev_rt_dom: bool = c.rt_safe_from_domain
     c.current_domain = domain
     let actual: string = sem_sv_get(c.fi_mangled, fi)
+    let prev_rt_trait: string = c.current_rt_trait
+    let trait_contract: string = sem_impl_rt_contract(c, fi)
+    c.current_rt_trait = null
     if sem_fi_has_attr(c, fi, "rt_safe") {
         c.current_rt_safe_fn = actual
         c.rt_safe_from_domain = false
+    } elif trait_contract as ptr<u8> != null {
+        c.current_rt_safe_fn = actual
+        c.rt_safe_from_domain = false
+        c.current_rt_trait = trait_contract
     } elif domain == 0 {
         c.current_rt_safe_fn = actual
         c.rt_safe_from_domain = true
@@ -4995,6 +5081,7 @@ function sem_check_function(c: ptr<Sem>, fi: i32) {
     c.current_safe_fn = prev_safe
     c.current_domain = prev_domain
     c.rt_safe_from_domain = prev_rt_dom
+    c.current_rt_trait = prev_rt_trait
     c.current_function_name = prev_name
     c.local_storage = prev_storage
     c.span_origin = prev_origin
@@ -5483,6 +5570,8 @@ function sem_verify_rt_safe_calls(c: ptr<Sem>) {
             if sem_iv_get(c.rt_site_dom, i) == 1 {
                 marked = "is in the `callback` lifetime domain, which forbids allocation,"
                 doc = "docs/language/lifetime-domains.md"
+            } elif sem_iv_get(c.rt_site_dom, i) == 2 {
+                marked = "implements the rt_safe trait method '" + sem_sv_get(c.rt_site_trait, i) + "'"
             }
             if sem_s_eq(reason, "__unresolved_dynamic_call") {
                 if sem_s_eq(reason, name) {

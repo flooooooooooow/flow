@@ -664,7 +664,12 @@ A function-pointer or closure type may carry a compile-time `with rt_safe`
 contract. `@rt_safe` / `@lifetime(callback)` code may call through that
 type only when the bound function or closure is proven callback-safe (no
 forbidden ops, no unproven/escaping captures). The contract is erased
-before codegen; trait-method contracts are not in this slice (#766).
+before codegen.
+
+A trait method signature written after `@rt_safe` inside a `trait` block is
+the same contract on the trait: every `impl` of that method is checked as
+if it were marked `@rt_safe`, and a violation names the impl function and
+the trait method (#766).
 
 ```flow
 let n: i32 = 5

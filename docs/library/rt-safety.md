@@ -53,6 +53,22 @@ supports attributes on `function` declarations.
   captures of locals that would escape the creating frame. Diagnostics name
   the indirect callable and the unsafe operation it can reach. The contract
   is compile-time metadata and is erased before codegen (#766).
+- **Trait methods** carry the same contract when the trait declares them
+  `@rt_safe`. Every `impl` of that method is then checked as if it were
+  marked `@rt_safe`, whether or not any caller is RT-safe yet, so a new
+  impl cannot break callers that dispatch through the trait. The
+  diagnostic names the impl function and the trait method:
+
+  ```flow
+  trait Processor {
+      @rt_safe
+      function process(self, x: f32) -> f32
+  }
+  ```
+
+  `recv.process(x)` resolves to the impl for the receiver's type
+  (`Gain_Processor_process`), which is a direct call in the RT call graph.
+  The contract is compile-time only (#766).
 - Bump allocation from an *already-created* arena is allowed: `arena_alloc`,
   `arena_alloc_i32`, `arena_alloc_f32`, `arena_reset`, `arena_used`, and
   `arena_remaining` never call `malloc`/`free` themselves, so they stay
@@ -68,7 +84,9 @@ supports attributes on `function` declarations.
 - Closures and higher-order `with rt_safe` callables are the #766 slice
   (PR #1348). Function-pointer contracts (`with rt_safe`) are checked
   (#1310). A uniquely resolved `impl` method is in the `@rt_safe` call
-  graph; unresolved / ambiguous trait dispatch is rejected conservatively.
+  graph; method calls that resolve to no `impl` for the receiver's type and
+  are not a proven `with rt_safe` function value are treated as unresolved
+  dynamic calls and rejected on an RT-safe path.
 - `extern` C calls that are not a known may-effect and not on the
   known-safe allow-list (math, atomics, bounded copies, numeric
   conversions, print) carry `unknown` and are rejected from `@rt_safe` /

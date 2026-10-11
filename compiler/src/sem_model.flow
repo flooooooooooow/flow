@@ -148,6 +148,10 @@ export struct Sem {
     enum_variant_owner: ptr<SemStrMap>,
     trait_types: ptr<SemStrMap>,
     impl_pairs: ptr<SemStrMap>,
+    # Trait-method RT contracts (#766): "Trait\x01method" -> 1 when the
+    # trait declares the method `@rt_safe`; impl function name -> impl index.
+    trait_rt_methods: ptr<SemStrMap>,
+    impl_fn_trait: ptr<SemStrMap>,
     impl_methods: ptr<SemStrMap>,
     impl_method_lists: ptr<SemPtrVec>,
     unit_base_order: ptr<SemStrVec>,
@@ -187,6 +191,7 @@ export struct Sem {
     current_rt_safe_fn: string,
     current_safe_fn: string,
     rt_safe_from_domain: bool,
+    current_rt_trait: string,
     handler_stack: ptr<SemPtrVec>,
     current_function_name: string,
     function_effects: ptr<SemStrMap>,
@@ -208,6 +213,8 @@ export struct Sem {
     rt_site_fn: ptr<SemStrVec>,
     rt_site_name: ptr<SemStrVec>,
     rt_site_dom: ptr<SemIntVec>,
+    # "Trait.method" for a site in an impl of an @rt_safe trait method (#766).
+    rt_site_trait: ptr<SemStrVec>,
     # Compact RT/lifetime summaries (#765): name -> bits / domain / provenance.
     rt_sum_bits: ptr<SemStrMap>,
     rt_sum_dom: ptr<SemStrMap>,
@@ -351,6 +358,8 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.enum_variant_owner = sem_sm_new()
     c.trait_types = sem_sm_new()
     c.impl_pairs = sem_sm_new()
+    c.trait_rt_methods = sem_sm_new()
+    c.impl_fn_trait = sem_sm_new()
     c.impl_methods = sem_sm_new()
     c.impl_method_lists = sem_pv_new()
     c.unit_base_order = sem_sv_new()
@@ -386,6 +395,7 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.current_rt_safe_fn = null
     c.current_safe_fn = null
     c.rt_safe_from_domain = false
+    c.current_rt_trait = null
     c.handler_stack = sem_pv_new()
     sem_pv_push(c.handler_stack, sem_sv_new() as ptr<void>)
     c.current_function_name = null
@@ -408,6 +418,7 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.rt_site_fn = sem_sv_new()
     c.rt_site_name = sem_sv_new()
     c.rt_site_dom = sem_iv_new()
+    c.rt_site_trait = sem_sv_new()
     c.rt_sum_bits = sem_sm_new()
     c.rt_sum_dom = sem_sm_new()
     c.rt_sum_prov = sem_sm_new()
