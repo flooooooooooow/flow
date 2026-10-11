@@ -61,8 +61,9 @@ All notable changes to FLOW will be documented in this file.
   contract verifies the callee's RT summary; closures are also checked for
   unproven function-typed captures and escaping local pointer/span captures.
   Diagnostics name the indirect callable and the unsafe op it can reach.
-  The contract is compile-time only and erased before codegen. Trait-method
-  contracts remain a gap (#766).
+  The contract is compile-time only and erased before codegen. A trait
+  method declared `@rt_safe` in its `trait` block is a contract on every
+  `impl` of it; a violating impl is named with the trait method (#766).
 - flowc: remaining #732 copy elision. Single-module functions that return a named struct use a hidden `T* __flowc_sret` destination-passing ABI; bundles keep the C return type and construct into a callee-local sret slot. Same-storage record updates run overwrite-dependence certification (acyclic slot graphs write in topological order; cyclic cases such as a field swap keep a temporary). Compiler-emitted aggregate copies increment `copy_count` in the #740 profile, and the #728 harness records that metric. The MLIR emitter skips a second field-by-field materialize on record-update lets and returns.
 - Strings / I/O (#747): mixed `"x=" + n + " y=" + m` chains lower to one `__flowc_str_concatn` (C) or one malloc plus per-part memcpy (MLIR). `std.string` has `str_parse_f64` / `str_utf8_valid`; `std.io` has `io_read_text` (fail-closed UTF-8). Encoding policy: `docs/library/strings.md`. Cross-harness rows print `allocations:` / `copies:`.
 - Type checker (#765, remaining slice): `@rt_safe` / `@lifetime(callback)`

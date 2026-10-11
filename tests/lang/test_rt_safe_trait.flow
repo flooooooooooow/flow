@@ -1,0 +1,53 @@
+# Trait-method RT contracts (#766): `@rt_safe` on a trait method holds
+# every impl of it to the RT-safe rules, and an `@rt_safe` caller may
+# dispatch to those impls. The contract is erased before codegen.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+trait Processor {
+    @rt_safe
+    function process(self, x: f32) -> f32
+    function describe(self) -> i32
+}
+
+struct Gain {
+    g: f32
+}
+
+struct Offset {
+    d: f32
+}
+
+impl Processor for Gain {
+    function process(self, x: f32) -> f32 {
+        return x * self.g
+    }
+    function describe(self) -> i32 {
+        return 1
+    }
+}
+
+impl Processor for Offset {
+    function process(self, x: f32) -> f32 {
+        return x + self.d
+    }
+    function describe(self) -> i32 {
+        return 2
+    }
+}
+
+@rt_safe
+function chain(g: Gain, o: Offset, x: f32) -> f32 {
+    return Offset_Processor_process(o, Gain_Processor_process(g, x))
+}
+
+function main() -> i32 {
+    let g: Gain = Gain { g: 2.0 }
+    let o: Offset = Offset { d: 1.0 }
+    if chain(g, o, 1.5) != 4.0 {
+        return 1
+    }
+    if Gain_Processor_describe(g) + Offset_Processor_describe(o) != 3 {
+        return 2
+    }
+    return 0
+}

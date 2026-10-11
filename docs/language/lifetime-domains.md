@@ -339,7 +339,11 @@ checked. None of it is partially checked.
   dynamic dispatch. Passing a callback-local pointer into a helper that stores
   it is not followed. The `@rt_safe` call graph is over direct named calls and
   uniquely resolved `impl` methods. LD3 and LD4 inherit that. Closures with
-  `with rt_safe` contracts are checked as described in #766.
+  `with rt_safe` contracts are checked as described in #766. A trait method
+  declared `@rt_safe` in its `trait` block holds every `impl` of it to the
+  RT-safe rules. The `@rt_safe` call graph of a bare function-typed value
+  without that contract is still rejected conservatively as an unresolved
+  dynamic call.
 - **Use after `arena_reset` / `frame_begin` in the same function.** A
   pointer produced before a reset of the same arena is not invalidated
   by the reset call. The checker stops the pointer escaping into a
