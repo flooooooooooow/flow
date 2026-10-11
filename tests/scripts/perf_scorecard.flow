@@ -19,7 +19,7 @@ function row(name: string, parity: string, fm: string, pm: string,
 }
 
 function fixture() -> string {
-    let a: string = "{\"system\":{\"git_sha\":\"abc123\",\"os\":\"Linux\",\"cpu\":\"test-cpu\"},\"benchmarks\":["
+    let mut a: string = "{\"system\":{\"git_sha\":\"abc123\",\"os\":\"Linux\",\"cpu\":\"test-cpu\"},\"benchmarks\":["
     a = a + row("runtime_win", "verified", "8", "10", "0.1", "0.1", "100", "100", "1.02") + ","
     a = a + row("runtime_tie", "verified", "10", "10", "0.1", "0.1", "100", "100", "null") + ","
     a = a + row("runtime_loss", "verified", "15", "10", "0.1", "0.1", "100", "100", "1.1") + ","

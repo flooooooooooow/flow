@@ -937,6 +937,10 @@
           "path": "project/benchmark-results.md"
         },
         {
+          "label": "Performance Scorecards",
+          "path": "project/performance-scorecards.md"
+        },
+        {
           "label": "Compile Profile",
           "path": "project/compile-profile.md"
         },
