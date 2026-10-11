@@ -59,7 +59,7 @@ supports attributes on `function` declarations.
   impl cannot break callers that dispatch through the trait. The
   diagnostic names the impl function and the trait method:
 
-  ```text
+  ```flow
   trait Processor {
       @rt_safe
       function process(self, x: f32) -> f32
