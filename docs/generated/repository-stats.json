@@ -49,8 +49,8 @@
     "stdlib": "128 modules",
     "tests": "846 tests"
   },
-  "commit": "c5568e9428c0",
-  "generated_at": "2026-10-12T15:40:58+01:00",
+  "commit": "f5fc715a34ca",
+  "generated_at": "2026-10-12T15:41:12+01:00",
   "languages": {
     "C": {
       "files": 122,
@@ -107,6 +107,6 @@
   "totals": {
     "source_files": 4473,
     "source_lines": 692763,
-    "tracked_files": 10976
+    "tracked_files": 10980
   }
 }
