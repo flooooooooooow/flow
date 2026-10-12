@@ -4,7 +4,7 @@
 Python Export Analysis: imports
 ============================================================
 
-✅ Exported (11 symbols):
+✅ Exported (13 symbols):
    helper_twice: Public function with ABI-compatible signature
    helper_private: Public function with ABI-compatible signature
    wrapping_add_i32: Public function with ABI-compatible signature
@@ -15,6 +15,8 @@ Python Export Analysis: imports
    saturating_mul_i32: Public function with ABI-compatible signature
    wrapping_add_i64: Public function with ABI-compatible signature
    saturating_add_i64: Public function with ABI-compatible signature
+   saturating_sub_i64: Public function with ABI-compatible signature
+   saturating_mul_i64: Public function with ABI-compatible signature
    use_helper: Public function with ABI-compatible signature
 
 ⚠️  Excluded (2 symbols):

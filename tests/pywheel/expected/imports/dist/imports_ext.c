@@ -140,6 +140,32 @@ static PyObject* py_saturating_add_i64(PyObject* self, PyObject* args) {
 }
 
 
+static PyObject* py_saturating_sub_i64(PyObject* self, PyObject* args) {
+    int64_t a;
+    int64_t b;
+    
+    if (!PyArg_ParseTuple(args, "LL", &a, &b)) {
+        return NULL;
+    }
+    
+    int64_t result = saturating_sub_i64(a, b);
+    return PyLong_FromLongLong(result);
+}
+
+
+static PyObject* py_saturating_mul_i64(PyObject* self, PyObject* args) {
+    int64_t a;
+    int64_t b;
+    
+    if (!PyArg_ParseTuple(args, "LL", &a, &b)) {
+        return NULL;
+    }
+    
+    int64_t result = saturating_mul_i64(a, b);
+    return PyLong_FromLongLong(result);
+}
+
+
 static PyObject* py_use_helper(PyObject* self, PyObject* args) {
     int32_t x;
     
@@ -163,6 +189,8 @@ static PyMethodDef imports_methods[] = {
     {"saturating_mul_i32", py_saturating_mul_i32, METH_VARARGS, "saturating_mul_i32 function"},
     {"wrapping_add_i64", py_wrapping_add_i64, METH_VARARGS, "wrapping_add_i64 function"},
     {"saturating_add_i64", py_saturating_add_i64, METH_VARARGS, "saturating_add_i64 function"},
+    {"saturating_sub_i64", py_saturating_sub_i64, METH_VARARGS, "saturating_sub_i64 function"},
+    {"saturating_mul_i64", py_saturating_mul_i64, METH_VARARGS, "saturating_mul_i64 function"},
     {"use_helper", py_use_helper, METH_VARARGS, "use_helper function"},
     {NULL, NULL, 0, NULL}
 };

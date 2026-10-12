@@ -1,0 +1,59 @@
+# Fixed point math operations (Q format)
+
+# Q16.16 fixed-point math
+export type Q16_16 = i32
+
+export function q16_16_from_i32(val: i32) -> Q16_16 {
+    return (val << 16) as Q16_16
+}
+
+export function q16_16_to_i32(val: Q16_16) -> i32 {
+    return (val as i32) >> 16
+}
+
+export function q16_16_add(a: Q16_16, b: Q16_16) -> Q16_16 {
+    return ((a as i32) + (b as i32)) as Q16_16
+}
+
+export function q16_16_sub(a: Q16_16, b: Q16_16) -> Q16_16 {
+    return ((a as i32) - (b as i32)) as Q16_16
+}
+
+export function q16_16_mul(a: Q16_16, b: Q16_16) -> Q16_16 {
+    let res: i64 = ((a as i32) as i64) * ((b as i32) as i64)
+    return ((res >> 16) as i32) as Q16_16
+}
+
+export function q16_16_div(a: Q16_16, b: Q16_16) -> Q16_16 {
+    let res: i64 = ((a as i32) as i64) << 16
+    return ((res / ((b as i32) as i64)) as i32) as Q16_16
+}
+
+# Q8.24 fixed-point math
+export type Q8_24 = i32
+
+export function q8_24_from_i32(val: i32) -> Q8_24 {
+    return (val << 24) as Q8_24
+}
+
+export function q8_24_to_i32(val: Q8_24) -> i32 {
+    return (val as i32) >> 24
+}
+
+export function q8_24_add(a: Q8_24, b: Q8_24) -> Q8_24 {
+    return ((a as i32) + (b as i32)) as Q8_24
+}
+
+export function q8_24_sub(a: Q8_24, b: Q8_24) -> Q8_24 {
+    return ((a as i32) - (b as i32)) as Q8_24
+}
+
+export function q8_24_mul(a: Q8_24, b: Q8_24) -> Q8_24 {
+    let res: i64 = ((a as i32) as i64) * ((b as i32) as i64)
+    return ((res >> 24) as i32) as Q8_24
+}
+
+export function q8_24_div(a: Q8_24, b: Q8_24) -> Q8_24 {
+    let res: i64 = ((a as i32) as i64) << 24
+    return ((res / ((b as i32) as i64)) as i32) as Q8_24
+}

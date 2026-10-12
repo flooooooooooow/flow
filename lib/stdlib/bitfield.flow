@@ -1,0 +1,31 @@
+# Bitfield operations
+
+export function bitfield_extract_u32(val: u32, offset: u32, width: u32) -> u32 {
+    if width == 0 { return 0 }
+    let mut mask: u32 = 0xFFFFFFFF
+    if width < 32 { mask = (1 << width) - 1 }
+    return (val >> offset) & mask
+}
+
+export function bitfield_insert_u32(val: u32, offset: u32, width: u32, field_val: u32) -> u32 {
+    if width == 0 { return val }
+    let mut mask: u32 = 0xFFFFFFFF
+    if width < 32 { mask = (1 << width) - 1 }
+    let clear_mask: u32 = ~(mask << offset)
+    return (val & clear_mask) | ((field_val & mask) << offset)
+}
+
+export function bitfield_extract_u64(val: u64, offset: u32, width: u32) -> u64 {
+    if width == 0 { return 0 }
+    let mut mask: u64 = 0xFFFFFFFFFFFFFFFF
+    if width < 64 { mask = (1 << width) - 1 }
+    return (val >> offset) & mask
+}
+
+export function bitfield_insert_u64(val: u64, offset: u32, width: u32, field_val: u64) -> u64 {
+    if width == 0 { return val }
+    let mut mask: u64 = 0xFFFFFFFFFFFFFFFF
+    if width < 64 { mask = (1 << width) - 1 }
+    let clear_mask: u64 = ~(mask << offset)
+    return (val & clear_mask) | ((field_val & mask) << offset)
+}

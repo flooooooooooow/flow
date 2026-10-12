@@ -1,0 +1,17 @@
+import "stdlib/mmio.flow"
+
+function main() -> i32 {
+    let mut x_u32: u32 = 0
+    mmio_write_u32(&x_u32, 42)
+    if mmio_read_u32(&x_u32) != 42 { return 1 }
+
+    let mut x_u16: u16 = 0
+    mmio_write_u16(&x_u16, 42)
+    if mmio_read_u16(&x_u16) != 42 { return 2 }
+
+    let mut x_u8: u8 = 0
+    mmio_write_u8(&x_u8, 42)
+    if mmio_read_u8(&x_u8) != 42 { return 3 }
+
+    return 0
+}
