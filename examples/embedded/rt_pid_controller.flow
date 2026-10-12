@@ -1,0 +1,85 @@
+struct PIDState {
+    kp: f32
+    ki: f32
+    kd: f32
+    integrator: f32
+    prev_error: f32
+    dt: f32
+    out_min: f32
+    out_max: f32
+}
+
+# @rt_safe ensures no allocation or blocking calls happen in this control loop.
+# It represents a hard real-time execution path suitable for embedded microcontrollers.
+@rt_safe
+function pid_step(state: ptr<PIDState>, setpoint: f32, measured: f32) -> f32 {
+    let error: f32 = setpoint - measured
+
+    # Proportional
+    let p_term: f32 = state.kp * error
+
+    # Integral
+    state.integrator = state.integrator + (error * state.dt)
+    let i_term: f32 = state.ki * state.integrator
+
+    # Derivative
+    let derivative: f32 = (error - state.prev_error) / state.dt
+    let d_term: f32 = state.kd * derivative
+
+    state.prev_error = error
+
+    let mut output: f32 = p_term + i_term + d_term
+
+    # Clamp output
+    if output > state.out_max {
+        output = state.out_max
+    } else {
+        if output < state.out_min {
+            output = state.out_min
+        }
+    }
+
+    return output
+}
+
+function main() -> i32 {
+    # Initialization (not RT safe, allowed to allocate or do setup)
+    let mut state: PIDState = PIDState {
+        kp: 1.5,
+        ki: 0.1,
+        kd: 0.05,
+        integrator: 0.0,
+        prev_error: 0.0,
+        dt: 0.01, # 10ms control loop
+        out_min: -100.0,
+        out_max: 100.0
+    }
+
+    let setpoint: f32 = 25.0 # Target 25 degrees
+    let mut measured: f32 = 10.0 # Starting at 10 degrees
+
+    print("Embedded RT PID Controller Demo\n")
+    print("-------------------------------\n")
+
+    # Simulate a few cycles of the control loop
+    let mut i: i32 = 0
+    while i < 10 {
+        # The rt_safe function is called on the real-time path
+        let control_signal: f32 = pid_step(&state, setpoint, measured)
+
+        # Simulate the plant (temperature increases based on control signal)
+        measured = measured + (control_signal * 0.1)
+
+        print("Cycle ")
+        print(i)
+        print(": measured = ")
+        print(measured)
+        print(", control_signal = ")
+        print(control_signal)
+        print("\n")
+
+        i = i + 1
+    }
+
+    return 0
+}
