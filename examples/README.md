@@ -430,7 +430,7 @@ every `.flow` file under `examples/`, `apps/`, and `benchmarks/` (pass/fail plus
 failure category). Regenerate it with:
 
 ```bash
-python3 scripts/verify_examples.py
+./flow tool verify_examples
 ```
 
 A few examples known to compile *and run* successfully:
