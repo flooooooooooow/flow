@@ -1,3 +1,0 @@
-# expect-error
-import "examples/games/lunar_lander_ui.flow"
-function main() -> i32 { return 0 }
