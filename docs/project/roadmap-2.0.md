@@ -39,8 +39,8 @@ ROADMAP-SYNC: local-region-inference-and-automated-non-aliasing-proofs
 ### Effect-bounded lifetimes and capabilities
 
 - [x] Cross-module summaries for public functions (first slice, #765)
-- [ ] Remaining `@rt_safe` / `@lifetime` summary gaps (#765)
-- [ ] Reject `unknown` externs from `@rt_safe` / `callback`
+- [x] Remaining `@rt_safe` / `@lifetime` summary gaps (#765)
+- [x] Reject `unknown` externs from `@rt_safe` / `callback` (#765)
 - [x] First-class RT-safe callable contracts for closures (#766)
 
 ### Tiered safety profiles and formal proofs
