@@ -6,7 +6,7 @@
     },
     "documentation": {
       "files": 244,
-      "lines": 49300
+      "lines": 49302
     },
     "examples": {
       "files": 457,
@@ -30,11 +30,11 @@
     },
     "standard_library": {
       "files": 128,
-      "lines": 44352
+      "lines": 44408
     },
     "tests": {
-      "files": 845,
-      "lines": 58709
+      "files": 847,
+      "lines": 58798
     },
     "verify_corpus": {
       "files": 1078,
@@ -47,10 +47,10 @@
     "loc": "692k LOC",
     "proofs": "1078 verify files",
     "stdlib": "128 modules",
-    "tests": "845 tests"
+    "tests": "847 tests"
   },
-  "commit": "8a5fb28cc9be",
-  "generated_at": "2026-10-12T11:50:37Z",
+  "commit": "53d9b24e9047",
+  "generated_at": "2026-10-12T14:46:46+01:00",
   "languages": {
     "C": {
       "files": 122,
@@ -69,8 +69,8 @@
       "lines": 4259
     },
     "Flow": {
-      "files": 3737,
-      "lines": 491877
+      "files": 3739,
+      "lines": 492022
     },
     "HTML": {
       "files": 223,
@@ -105,8 +105,8 @@
   "proof_documents": 1080,
   "schema_version": 1,
   "totals": {
-    "source_files": 4470,
-    "source_lines": 692257,
-    "tracked_files": 10972
+    "source_files": 4472,
+    "source_lines": 692402,
+    "tracked_files": 10974
   }
 }
