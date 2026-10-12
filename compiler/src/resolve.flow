@@ -1042,7 +1042,7 @@ function flowc_mono_lit_expand_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
         return n
     }
     let mut p: Parser = flowc_parser_new(src, n, n * 2 + 4096)
-    let root: i32 = flowc_parse_program(&p)
+    let root: i32 = flowc_parse_cached(&p, src, n)
     if root < 0 or p.err != 0 {
         # The real parse reports the error.
         flowc_parser_free(p)
@@ -2211,7 +2211,7 @@ function flowc_resolve_gather(
         }
 
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-        let root: i32 = flowc_parse_program(&p)
+        let root: i32 = flowc_parse_cached(&p, src, nsrc)
         if root < 0 or p.err != 0 {
             flowc_parser_print_error(p, mpath)
             flowc_parser_free(p)
@@ -2301,7 +2301,7 @@ function flowc_resolve_deps_ready(
     }
 
     let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-    let root: i32 = flowc_parse_program(&p)
+    let root: i32 = flowc_parse_cached(&p, src, nsrc)
     if root < 0 or p.err != 0 {
         flowc_parser_free(p)
         return 0
@@ -3075,7 +3075,7 @@ function flowc_bundle_semcheck(
         srcs[i] = own
         let mut cap: i32 = nsrc + 4096
         let mut p: Parser = flowc_parser_new(own, nsrc, cap)
-        let root: i32 = flowc_parse_program(&p)
+        let root: i32 = flowc_parse_cached(&p, own, nsrc)
         if root < 0 or p.err != 0 {
             return 1
         }
@@ -3235,7 +3235,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
 
         let t_parse: i64 = flowc_prof_span_begin()
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-        let root: i32 = flowc_parse_program(&p)
+        let root: i32 = flowc_parse_cached(&p, src, nsrc)
         flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
         if root < 0 or p.err != 0 {
             flowc_parser_print_error(p, mpath)
