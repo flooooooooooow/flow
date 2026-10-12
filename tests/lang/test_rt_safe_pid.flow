@@ -1,0 +1,58 @@
+# This test verifies that the @rt_safe PID controller can be compiled and execute.
+# It makes sure that a positive control signal is generated when measured < setpoint.
+
+struct PIDState {
+    kp: f32
+    ki: f32
+    kd: f32
+    integrator: f32
+    prev_error: f32
+    dt: f32
+    out_min: f32
+    out_max: f32
+}
+
+@rt_safe
+function pid_step(state: ptr<PIDState>, setpoint: f32, measured: f32) -> f32 {
+    let error: f32 = setpoint - measured
+    let p_term: f32 = state.kp * error
+    state.integrator = state.integrator + (error * state.dt)
+    let i_term: f32 = state.ki * state.integrator
+    let derivative: f32 = (error - state.prev_error) / state.dt
+    let d_term: f32 = state.kd * derivative
+    state.prev_error = error
+    let mut output: f32 = p_term + i_term + d_term
+    if output > state.out_max {
+        output = state.out_max
+    } else {
+        if output < state.out_min {
+            output = state.out_min
+        }
+    }
+    return output
+}
+
+function main() -> i32 {
+    let mut state: PIDState = PIDState {
+        kp: 1.5,
+        ki: 0.1,
+        kd: 0.05,
+        integrator: 0.0,
+        prev_error: 0.0,
+        dt: 0.01,
+        out_min: -100.0,
+        out_max: 100.0
+    }
+
+    let setpoint: f32 = 25.0
+    let measured: f32 = 10.0
+
+    let control_signal: f32 = pid_step(&state, setpoint, measured)
+
+    # Simple check to make sure it runs and returns a plausible value
+    if control_signal < 0.0 {
+        return 1
+    }
+
+    return 0
+}
