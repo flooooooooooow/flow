@@ -114,7 +114,7 @@ a proof corpus rather than the showcase.
 |--------|--------|--------|
 | Crypto beyond SHA | More than `examples/crypto/` SHA-256 | ✅ |
 | JSON / TSV | Data interchange demos | 🔲 |
-| Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
+| Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | ✅ |
 | Physics DSL honesty | Document what `physics/` can/can't do | ✅ |
 | Linalg QR / eigen | Beyond LU / matrix_ops | ✅ |
 | Games twin | Second polished interactive beyond Tetris/2048 | ✅ |
