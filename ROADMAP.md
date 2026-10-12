@@ -100,7 +100,7 @@ a proof corpus rather than the showcase.
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
+| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | ✅ |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
 | Digital twin lite | Small plant + observer narrative | ✅ |
