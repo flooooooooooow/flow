@@ -1,0 +1,7 @@
+@hardware
+function fpga_accelerator() {
+}
+
+function main() -> i32 {
+    return 0
+}

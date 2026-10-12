@@ -37,7 +37,7 @@ grammar cards in [north-star.md](docs/vision/north-star.md).
 | **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
 | **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
-| **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
+| **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔨 partial: `@hardware` attribute definition |
 | **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial: Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null/fault handler: #288. |
 
 Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
