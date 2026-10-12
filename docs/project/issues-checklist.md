@@ -144,7 +144,7 @@
 - [ ] #1491 [roadmap:linalg-qr-eigen] Linalg QR / eigen https://github.com/flooooooooooow/flow/issues/1491
 - [ ] #1492 [roadmap:networking] Networking https://github.com/flooooooooooow/flow/issues/1492
 - [ ] #1493 [roadmap:physics-dsl-honesty] Physics DSL honesty https://github.com/flooooooooooow/flow/issues/1493
-- [ ] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
+- [x] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
 - [ ] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
 - [ ] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
 - [ ] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
