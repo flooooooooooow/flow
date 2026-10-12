@@ -163,6 +163,9 @@ export function flowc_rt_span_bits(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if rt_span_is(src, s, e, "rwlock_write_lock") == 1 { return FLOWC_RT_BLOCK }
     if rt_span_is(src, s, e, "sem_wait") == 1 { return FLOWC_RT_BLOCK }
     if rt_span_is(src, s, e, "semaphore_wait") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "channel_i32_send") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "channel_i32_recv") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "channel_select2") == 1 { return FLOWC_RT_BLOCK }
     return 0
 }
 

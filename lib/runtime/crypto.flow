@@ -194,3 +194,214 @@ export function flow_sha256(data: ptr<void>, len: i64, out: ptr<void>) -> void {
 export function flow_random_bytes(buf: ptr<void>, len: i64) -> i32 {
     return flow_rt_random_bytes(buf, len)
 }
+
+
+@flow_api
+export function flow_hmac_sha256(key: ptr<void>, key_len: i64, data: ptr<void>, data_len: i64, out: ptr<void>) -> void {
+    if out == null {
+        return
+    }
+
+    # RFC 2104: HMAC(K, m) = H((K ^ opad) || H((K ^ ipad) || m))
+    let mut real_key: array<u8, 64> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let rk: ptr<u8> = real_key
+
+    # 1. Prepare the key
+    if key_len > 64 {
+        # Keys longer than block size (64) are shortened by hashing them
+        flow_sha256(key, key_len, rk as ptr<void>)
+    } else {
+        # Keys shorter than block size are padded with zeros on the right
+        # Or keys exactly block size are copied
+        let kp: ptr<u8> = key as ptr<u8>
+        let mut i: i64 = 0
+        while i < key_len {
+            rk[i] = kp[i]
+            i = i + 1
+        }
+    }
+
+    # 2. Create inner and outer padded keys
+    let mut k_ipad: array<u8, 64> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let mut k_opad: array<u8, 64> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let kip: ptr<u8> = k_ipad
+    let kop: ptr<u8> = k_opad
+
+    let mut i: i64 = 0
+    while i < 64 {
+        kip[i] = rk[i] ^ 0x36
+        kop[i] = rk[i] ^ 0x5c
+        i = i + 1
+    }
+
+    # 3. Inner hash: H(K_ipad || m)
+    # We don't have a streaming API, so we have to construct the full message
+    # in memory if we just use flow_sha256. But doing so would require allocation.
+    # We can use flow_sha256_transform directly for the block part, but it's complex
+    # to handle padding. Let's do a trick: we'll use a local buffer for small data,
+    # and if it's large, we'd need a streaming API.
+    # Wait, can we stream? We have flow_sha256_transform. Let's write a small streaming
+    # sha256 wrapper inside this function or we can add it to the file.
+
+    # Instead of allocating, let's implement streaming locally:
+    let state_arr: array<u32, 8> = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    ]
+    let state: ptr<u32> = state_arr
+
+    # Process k_ipad
+    flow_sha256_transform(state, kip)
+
+    # Process data
+    let bytes: ptr<u8> = data as ptr<u8>
+    let nblocks: i64 = data_len / 64
+    let mut b: i64 = 0
+    while b < nblocks {
+        let base: i64 = b * 64
+        let blk: array<u8, 64> = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+        let blkp: ptr<u8> = blk
+        let mut ci: i64 = 0
+        while ci < 64 {
+            blkp[ci] = bytes[base + ci]
+            ci = ci + 1
+        }
+        flow_sha256_transform(state, blkp)
+        b = b + 1
+    }
+
+    # Tail
+    let tail_len: i64 = data_len - nblocks * 64
+    let pad: array<u8, 128> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let padp: ptr<u8> = pad
+    let mut ti: i64 = 0
+    while ti < tail_len {
+        padp[ti] = bytes[nblocks * 64 + ti]
+        ti = ti + 1
+    }
+    padp[tail_len] = 0x80
+    let mut final_len: i64 = 64
+    if tail_len >= 56 {
+        final_len = 128
+    }
+    # Total bit length = (64 + data_len) * 8
+    let bitlen: i64 = (64 + data_len) * 8
+    padp[final_len - 1] = (bitlen & 0xff) as u8
+    padp[final_len - 2] = ((bitlen >> 8) & 0xff) as u8
+    padp[final_len - 3] = ((bitlen >> 16) & 0xff) as u8
+    padp[final_len - 4] = ((bitlen >> 24) & 0xff) as u8
+    padp[final_len - 5] = ((bitlen >> 32) & 0xff) as u8
+    padp[final_len - 6] = ((bitlen >> 40) & 0xff) as u8
+    padp[final_len - 7] = ((bitlen >> 48) & 0xff) as u8
+    padp[final_len - 8] = ((bitlen >> 56) & 0xff) as u8
+    flow_sha256_transform(state, padp)
+    if final_len == 128 {
+        let second: ptr<u8> = (pad as ptr<u8>)
+        let blk2: array<u8, 64> = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]
+        let blk2p: ptr<u8> = blk2
+        let mut si: i64 = 0
+        while si < 64 {
+            blk2p[si] = second[64 + si]
+            si = si + 1
+        }
+        flow_sha256_transform(state, blk2p)
+    }
+
+    let mut inner_hash: array<u8, 32> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let inner_hash_ptr: ptr<u8> = inner_hash
+    let mut w: i32 = 0
+    while w < 8 {
+        inner_hash_ptr[w * 4] = ((state[w] >> 24) & 0xff) as u8
+        inner_hash_ptr[w * 4 + 1] = ((state[w] >> 16) & 0xff) as u8
+        inner_hash_ptr[w * 4 + 2] = ((state[w] >> 8) & 0xff) as u8
+        inner_hash_ptr[w * 4 + 3] = (state[w] & 0xff) as u8
+        w = w + 1
+    }
+
+    # 4. Outer hash: H(K_opad || inner_hash)
+    state[0] = 0x6a09e667
+    state[1] = 0xbb67ae85
+    state[2] = 0x3c6ef372
+    state[3] = 0xa54ff53a
+    state[4] = 0x510e527f
+    state[5] = 0x9b05688c
+    state[6] = 0x1f83d9ab
+    state[7] = 0x5be0cd19
+
+    flow_sha256_transform(state, kop)
+
+    # Process inner_hash (length 32)
+    # The tail logic for 32 bytes fits in one block (32 + 8 (len) <= 56)
+    let opad_tail: array<u8, 64> = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]
+    let opad_tail_ptr: ptr<u8> = opad_tail
+    let mut oi: i64 = 0
+    while oi < 32 {
+        opad_tail_ptr[oi] = inner_hash_ptr[oi]
+        oi = oi + 1
+    }
+    opad_tail_ptr[32] = 0x80
+
+    let obitlen: i64 = (64 + 32) * 8
+    opad_tail_ptr[63] = (obitlen & 0xff) as u8
+    opad_tail_ptr[62] = ((obitlen >> 8) & 0xff) as u8
+    opad_tail_ptr[61] = ((obitlen >> 16) & 0xff) as u8
+    opad_tail_ptr[60] = ((obitlen >> 24) & 0xff) as u8
+    opad_tail_ptr[59] = ((obitlen >> 32) & 0xff) as u8
+    opad_tail_ptr[58] = ((obitlen >> 40) & 0xff) as u8
+    opad_tail_ptr[57] = ((obitlen >> 48) & 0xff) as u8
+    opad_tail_ptr[56] = ((obitlen >> 56) & 0xff) as u8
+
+    flow_sha256_transform(state, opad_tail_ptr)
+
+    let outb: ptr<u8> = out as ptr<u8>
+    let mut w2: i32 = 0
+    while w2 < 8 {
+        outb[w2 * 4] = ((state[w2] >> 24) & 0xff) as u8
+        outb[w2 * 4 + 1] = ((state[w2] >> 16) & 0xff) as u8
+        outb[w2 * 4 + 2] = ((state[w2] >> 8) & 0xff) as u8
+        outb[w2 * 4 + 3] = (state[w2] & 0xff) as u8
+        w2 = w2 + 1
+    }
+}

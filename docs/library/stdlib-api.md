@@ -1166,6 +1166,8 @@ BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import 
 | `norm2` | `(x: ptr<f64>, n: i32) -> f64` | Euclidean 2-norm of length-n vector via BLAS dnrm2: \|\|x\|\|_2. |
 | `axpy` | `(alpha: f64, x: ptr<f64>, y: ptr<f64>, n: i32) -> void` | BLAS daxpy: y = alpha * x + y (in-place on y). |
 | `scal` | `(alpha: f64, x: ptr<f64>, n: i32) -> void` | BLAS dscal: scale vector in place, x = alpha * x. |
+| `geev` | `(A: Mat, wr: ptr<f64>, wi: ptr<f64>, vr: ptr<f64>) -> i32` | Computes eigenvalues and optionally right eigenvectors for a general matrix A via LAPACK dgeev. Overwrites A. wr: real parts of eigenvalues (needs A.cols slots) wi: imaginary parts of eigenvalues (needs A.cols slots) |
+| `geqrf` | `(A: Mat, tau: ptr<f64>) -> i32` | QR factorization via LAPACK dgeqrf. Overwrites A with Q/R factors. tau must point at at least min(A.rows, A.cols) f64 slots. Returns LAPACK info (0 = success). |
 | `solve` | `(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32` | Solve A x = b via LAPACK (LU). Writes solution to x. Returns 0 on success; non-zero info on failure. A is not modified. |
 | `getrf` | `(A: Mat, pivots: ptr<i32>) -> i32` | In-place LU factorization via LAPACK dgetrf. Overwrites A with L/U factors. pivots must point at at least min(A.rows, A.cols) i32 slots (max 1024 here). Returns LAPACK info (0 = success). |
 | `lu_factor` | `(A: Mat, pivots: ptr<i32>) -> i32` | Alias for getrf. It matches pattern-adoption sketch naming. |
@@ -1272,7 +1274,7 @@ FLOW Concurrency Standard Library Threads, mutexes, channels, atomics. Real pthr
 
 ### `crypto.flow`
 
-Cryptographic primitives (FFI to platform or bundled implementations)
+flow:lenient - cast arrays to ptrs Cryptographic primitives (FFI to platform or bundled implementations)
 
 *No `export` items found (internal / extern-only module).*
 
