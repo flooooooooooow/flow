@@ -98685,7 +98685,7 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   return n;
 }
   Parser p = flowc_parser_new(src, n, ((n * 2) + 4096));
-  int32_t root = flowc_parse_program((&p));
+  int32_t root = flowc_parse_cached((&p), src, n);
   if (root < 0 || (p).err != 0) {
   flowc_parser_free(p);
   return n;
@@ -99703,7 +99703,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   mod_search = (const char*)(mod_dir);
 }
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
-  int32_t root = flowc_parse_program((&p));
+  int32_t root = flowc_parse_cached((&p), src, nsrc);
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, mpath);
   flowc_parser_free(p);
@@ -99777,7 +99777,7 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const
   mod_search = (const char*)((&mod_dir_buf[0]));
 }
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
-  int32_t root = flowc_parse_program((&p));
+  int32_t root = flowc_parse_cached((&p), src, nsrc);
   if (root < 0 || (p).err != 0) {
   flowc_parser_free(p);
   return 0;
@@ -100163,7 +100163,7 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
 }
   flowc_prof_note_source(src, nsrc, ((p).arena).len);
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st11740 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st11740; }
+  { __typeof__(tpl_len[0]) __flowc_st11746 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st11746; }
 }
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
@@ -100174,8 +100174,8 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st11807 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11807; }
-  { __typeof__(siglen[0]) __flowc_st11821 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11821; }
+  { __typeof__(siglen[0]) __flowc_st11813 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11813; }
+  { __typeof__(siglen[0]) __flowc_st11827 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11827; }
 }
   flowc_parser_free(p);
   flow_mem_free(src);
@@ -100419,7 +100419,7 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
   srcs[i] = own;
   int32_t cap = (nsrc + 4096);
   Parser p = flowc_parser_new(own, nsrc, cap);
-  int32_t root = flowc_parse_program((&p));
+  int32_t root = flowc_parse_cached((&p), own, nsrc);
   if (root < 0 || (p).err != 0) {
   return 1;
 }
@@ -100457,8 +100457,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st13258 = sem_error_count(c); counts[0] = __flowc_st13258; }
-  { __typeof__(counts[1]) __flowc_st13264 = sem_fatal_count(c); counts[1] = __flowc_st13264; }
+  { __typeof__(counts[0]) __flowc_st13266 = sem_error_count(c); counts[0] = __flowc_st13266; }
+  { __typeof__(counts[1]) __flowc_st13272 = sem_fatal_count(c); counts[1] = __flowc_st13272; }
   return 0;
 }
 
@@ -100569,7 +100569,7 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   src[nsrc] = 0;
   int64_t t_parse = flowc_prof_span_begin();
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
-  int32_t root = flowc_parse_program((&p));
+  int32_t root = flowc_parse_cached((&p), src, nsrc);
   flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse);
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, mpath);
