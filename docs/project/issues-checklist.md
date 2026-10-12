@@ -138,7 +138,7 @@
 - [ ] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
 - [ ] #1486 [roadmap:embedded-rt] Embedded RT https://github.com/flooooooooooow/flow/issues/1486
 - [ ] #1487 [roadmap:fir-g-program-graph-phases-1-4] FIR-G program graph (Phases 1-4) https://github.com/flooooooooooow/flow/issues/1487
-- [ ] #1488 [roadmap:games-twin] Games twin https://github.com/flooooooooooow/flow/issues/1488
+- [x] #1488 [roadmap:games-twin] Games twin https://github.com/flooooooooooow/flow/issues/1488
 - [ ] #1489 [roadmap:hybrid-guarantees] Hybrid guarantees https://github.com/flooooooooooow/flow/issues/1489
 - [ ] #1490 [roadmap:json-tsv] JSON / TSV https://github.com/flooooooooooow/flow/issues/1490
 - [ ] #1491 [roadmap:linalg-qr-eigen] Linalg QR / eigen https://github.com/flooooooooooow/flow/issues/1491

@@ -1,0 +1,215 @@
+# Lunar Lander in FLOW (terminal UI)
+#
+# A polished interactive terminal game beyond 2048.
+# Controls:
+#   'w' - Thrust
+#   'a' - Rotate left
+#   'd' - Rotate right
+#   Enter to submit commands in bulk or one by one
+#   'q' - Quit
+#
+# Physics simulation with gravity, thrust, fuel management, and landing.
+
+import "stdlib/ui.flow"
+import "stdlib/string.flow"
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+extern { function rand() -> i32 }
+extern { function srand(seed: u32) -> void }
+extern { function getchar() -> i32 }
+
+const W: i32 = 80
+const H: i32 = 24
+
+struct Lander {
+    x: f64,
+    y: f64,
+    vx: f64,
+    vy: f64,
+    fuel: i32,
+    angle: i32 # -1=left, 0=up, 1=right
+}
+
+function idx(x: i32, y: i32) -> i32 {
+    return y * W + x
+}
+
+function clear_board(b: ptr<i32>) {
+    let mut i: i32 = 0
+    while i < 1920 {
+        b[i] = 32 # space
+        i = i + 1
+    }
+}
+
+function render_terrain(b: ptr<i32>, pad_x: i32, pad_w: i32) {
+    let mut x: i32 = 0
+    while x < W {
+        let mut height: i32 = 3
+        if x >= pad_x and x < pad_x + pad_w {
+            height = 5
+        } else {
+            # simple jagged terrain
+            if x % 4 == 0 { height = 2 }
+            if x % 7 == 0 { height = 4 }
+        }
+
+        let mut y: i32 = H - 1
+        while y >= H - height {
+            if y >= 0 and y < H {
+                b[idx(x, y)] = 35 # '#'
+            }
+            y = y - 1
+        }
+
+        # pad top
+        if x >= pad_x and x < pad_x + pad_w {
+            b[idx(x, H - height)] = 61 # '='
+        }
+
+        x = x + 1
+    }
+}
+
+function draw_ship(b: ptr<i32>, ship: ptr<Lander>) {
+    let sx: i32 = ship[0].x as i32
+    let sy: i32 = ship[0].y as i32
+
+    if sx >= 0 and sx < W and sy >= 0 and sy < H {
+        let a: i32 = ship[0].angle
+        if a == 0 {
+            b[idx(sx, sy)] = 65 # 'A'
+        } elif a < 0 {
+            b[idx(sx, sy)] = 60 # '<'
+        } else {
+            b[idx(sx, sy)] = 62 # '>'
+        }
+    }
+}
+
+function print_screen(b: ptr<i32>, ship: ptr<Lander>) {
+    ui_clear()
+
+    println("LUNAR LANDER")
+    print("Fuel: ")
+    print(ship[0].fuel)
+    print(" | Vx: ")
+    print((ship[0].vx * 10.0) as i32)
+    print(" | Vy: ")
+    println((ship[0].vy * 10.0) as i32)
+
+    let mut y: i32 = 0
+    while y < H {
+        let mut row: string = ""
+        let mut x: i32 = 0
+        while x < W {
+            let c: i32 = b[idx(x, y)]
+            if c == 32 { row = row + " " }
+            elif c == 35 { row = row + "#" }
+            elif c == 61 { row = row + "=" }
+            elif c == 65 { row = row + "A" }
+            elif c == 60 { row = row + "<" }
+            elif c == 62 { row = row + ">" }
+            else { row = row + "?" }
+            x = x + 1
+        }
+        println(row)
+        y = y + 1
+    }
+}
+
+function main() -> i32 {
+    let mut ship: Lander = Lander {
+        x: 40.0,
+        y: 2.0,
+        vx: 0.5,
+        vy: 0.0,
+        fuel: 50,
+        angle: 0
+    }
+
+    let pad_x: i32 = 60
+    let pad_w: i32 = 10
+    let pad_y: i32 = H - 5
+
+    let b: ptr<i32> = malloc(1920 * 4) as ptr<i32>
+
+    while true {
+        clear_board(b)
+        render_terrain(b, pad_x, pad_w)
+        draw_ship(b, &ship)
+        print_screen(b, &ship)
+
+        let sx: i32 = ship.x as i32
+        let sy: i32 = ship.y as i32
+
+        # collision
+        if sy >= H - 1 {
+            println("CRASH! You hit the ground hard.")
+            break
+        }
+
+        if sx >= pad_x and sx < pad_x + pad_w and sy >= pad_y - 1 {
+            if ship.vy > 0.5 {
+                println("CRASH! Landing too fast.")
+            } elif ship.angle != 0 {
+                println("CRASH! Bad angle.")
+            } else {
+                println("SAFE LANDING! Good job, Commander.")
+            }
+            break
+        } elif sy >= H - 3 {
+            println("CRASH! Missed the pad.")
+            break
+        }
+
+        print("Cmd (w=thrust, a=left, d=right, q=quit): ")
+
+        let mut w_pressed: bool = false
+        let mut a_pressed: bool = false
+        let mut d_pressed: bool = false
+        let mut q_pressed: bool = false
+
+        # Read a line of inputs
+        while true {
+            let c: i32 = getchar()
+            if c == -1 or c == 10 { break }
+            if c == 113 { q_pressed = true }
+            if c == 119 { w_pressed = true }
+            if c == 97 { a_pressed = true }
+            if c == 100 { d_pressed = true }
+        }
+
+        if q_pressed { break }
+
+        if a_pressed { ship.angle = -1 }
+        elif d_pressed { ship.angle = 1 }
+        elif w_pressed { ship.angle = 0 }
+
+        if w_pressed and ship.fuel > 0 {
+            ship.fuel = ship.fuel - 1
+            if ship.angle == -1 {
+                ship.vx = ship.vx - 0.5
+                ship.vy = ship.vy - 0.2
+            } elif ship.angle == 1 {
+                ship.vx = ship.vx + 0.5
+                ship.vy = ship.vy - 0.2
+            } else {
+                ship.vy = ship.vy - 0.5
+            }
+        }
+
+        ship.vy = ship.vy + 0.2 # gravity
+
+        ship.x = ship.x + ship.vx
+        ship.y = ship.y + ship.vy
+
+        if ship.x < 0.0 { ship.x = ship.x + W as f64 }
+        if ship.x >= W as f64 { ship.x = ship.x - W as f64 }
+    }
+
+    return 0
+}
