@@ -3101,11 +3101,22 @@ function mlg_register_tiles_enabled() -> i32 {
     }
     return 0
 }
-
-function mlg_register_tile_cap(s: string, out: ptr<i32>) -> i32 {
+function mlg_register_tile_cap(s: string, target: string, out: ptr<i32>) -> i32 {
     let p: ptr<u8> = s
     if p == null or p[0] == 0 {
-        out[0] = 256
+        if target == "amx" {
+            out[0] = 1024
+        } else {
+            if target == "sme" {
+                out[0] = 4096
+            } else {
+                if target == "nvvm" {
+                    out[0] = 512
+                } else {
+                    out[0] = 256
+                }
+            }
+        }
         return 1
     }
     let mut i: i32 = 0
@@ -3138,6 +3149,55 @@ function mlg_register_tile_target() -> string {
         return target
     }
     return ""
+}
+
+
+function mlg_put_register_tile_operand_type(m: ptr<Mlg>, target: string, t: i32) {
+    if target == "amx" {
+        let mut st: i32 = t
+        let mut n1: i32 = 0
+        let mut n2: i32 = 0
+        if mlg_is_vector_mt(st) == 1 {
+            n1 = m[0].vc_n[st - MT_VECTOR]
+            st = m[0].vc_elem[st - MT_VECTOR]
+        }
+        if mlg_is_vector_mt(st) == 1 {
+            n2 = m[0].vc_n[st - MT_VECTOR]
+            st = m[0].vc_elem[st - MT_VECTOR]
+        }
+        mlg_s(m, "!amx.tile<")
+        mlg_i(m, n1)
+        mlg_s(m, "x")
+        if n2 > 0 {
+            mlg_i(m, n2)
+            mlg_s(m, "x")
+        } else {
+            mlg_i(m, 1)
+            mlg_s(m, "x")
+        }
+        mlg_put_type(m, st)
+        mlg_s(m, ">")
+        return
+    }
+    if target == "nvvm" {
+        mlg_s(m, "!llvm.struct<(f32, f32, f32, f32)>")
+        return
+    }
+    if target == "sme" {
+        let mut st: i32 = t
+        let mut n1: i32 = 0
+        if mlg_is_vector_mt(st) == 1 {
+            n1 = m[0].vc_n[st - MT_VECTOR]
+            st = m[0].vc_elem[st - MT_VECTOR]
+        }
+        mlg_s(m, "vector<[")
+        mlg_i(m, n1)
+        mlg_s(m, "]x")
+        mlg_put_type(m, st)
+        mlg_s(m, ">")
+        return
+    }
+    mlg_put_type(m, t)
 }
 
 function mlg_register_tile_lowering(target: string) -> string {
@@ -3182,9 +3242,14 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_refuse(m, e, "register tile operands must have positive lane counts")
         return V_NONE
     }
+    let target: string = mlg_register_tile_target()
+    if target == "" {
+        mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_TARGET must be one of 'generic', 'amx', 'sme', 'nvvm'")
+        return V_NONE
+    }
     let cap_s: string = getenv("FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
     let mut cap: i32 = 0
-    if mlg_register_tile_cap(cap_s, &cap) == 0 {
+    if mlg_register_tile_cap(cap_s, target, &cap) == 0 {
         mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES must be a positive integer")
         return V_NONE
     }
@@ -3192,11 +3257,6 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     let tile_lanes: i32 = mlg_vector_scalar_lanes(m, rt)
     if tile_lanes <= 0 or tile_lanes > cap {
         mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
-        return V_NONE
-    }
-    let target: string = mlg_register_tile_target()
-    if target == "" {
-        mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_TARGET must be one of 'generic', 'amx', 'sme', 'nvvm'")
         return V_NONE
     }
     let r: i32 = mlg_new_val(m, rt)
@@ -3238,9 +3298,9 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
             mlg_s(m, "}")
         }
         mlg_s(m, " : (")
-        mlg_put_type(m, at)
+        mlg_put_register_tile_operand_type(m, target, at)
         mlg_s(m, ", ")
-        mlg_put_type(m, bt)
+        mlg_put_register_tile_operand_type(m, target, bt)
         mlg_s(m, ") -> ")
         mlg_put_type(m, rt)
     } else {
