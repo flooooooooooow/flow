@@ -8059,6 +8059,9 @@ int32_t is_ident_char(int32_t c) {
   if (c == 95) {
   return 1;
 }
+  if (c == 46) {
+  return 1;
+}
   return 0;
 }
 
