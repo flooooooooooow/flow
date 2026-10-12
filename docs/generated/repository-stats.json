@@ -6,7 +6,7 @@
     },
     "documentation": {
       "files": 244,
-      "lines": 49300
+      "lines": 49379
     },
     "examples": {
       "files": 457,
@@ -49,8 +49,8 @@
     "stdlib": "128 modules",
     "tests": "845 tests"
   },
-  "commit": "8a5fb28cc9be",
-  "generated_at": "2026-10-12T11:50:37Z",
+  "commit": "6a042b358c18",
+  "generated_at": "2026-10-12T11:33:09Z",
   "languages": {
     "C": {
       "files": 122,
