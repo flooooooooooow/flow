@@ -1272,7 +1272,7 @@ FLOW Concurrency Standard Library Threads, mutexes, channels, atomics. Real pthr
 
 ### `crypto.flow`
 
-Cryptographic primitives (FFI to platform or bundled implementations)
+flow:lenient - cast arrays to ptrs Cryptographic primitives (FFI to platform or bundled implementations)
 
 *No `export` items found (internal / extern-only module).*
 

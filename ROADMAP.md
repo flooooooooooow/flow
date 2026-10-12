@@ -76,7 +76,7 @@ a proof corpus rather than the showcase.
 - [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
-- [ ] Concurrency pipeline example once channel send/recv is exposed
+- [x] Concurrency pipeline example once channel send/recv is exposed
 - [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
 ### Tier 0: Minimum domains
@@ -94,16 +94,16 @@ a proof corpus rather than the showcase.
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
 | Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | done |
 | UI layout | `examples/ui/layout_hello.flow` | ✅ |
-| Concurrency pipeline | deferred: `Channel_i32` in stdlib lacks send/recv | 🔲 |
+| Concurrency pipeline | `examples/concurrency/pipeline.flow` | ✅ |
 
 ### Tier 1: Vision domains
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
+| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | ✅ |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
-| Digital twin lite | Small plant + observer narrative | 🔲 |
+| Digital twin lite | Small plant + observer narrative | ✅ |
 | Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0-W3) |
 | RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
@@ -112,10 +112,10 @@ a proof corpus rather than the showcase.
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | 🔲 |
+| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | ✅ |
 | JSON / TSV | Data interchange demos | 🔲 |
 | Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
-| Physics DSL honesty | Document what `physics/` can/can't do | partial |
+| Physics DSL honesty | Document what `physics/` can/can't do | ✅ |
 | Linalg QR / eigen | Beyond LU / matrix_ops | 🔲 |
 | Games twin | Second polished interactive beyond Tetris/2048 | partial |
 
