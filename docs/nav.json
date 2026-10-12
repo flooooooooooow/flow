@@ -646,6 +646,10 @@
         {
           "label": "Graphics 3D",
           "path": "language/graphics-3d.md"
+        },
+        {
+          "label": "Physics DSL",
+          "path": "language/physics-dsl.md"
         }
       ]
     },
