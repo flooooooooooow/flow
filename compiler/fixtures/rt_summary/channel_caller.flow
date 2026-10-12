@@ -1,0 +1,13 @@
+# expect-error
+# expect: RT-safety violation: 'test_channel' is marked '@rt_safe' but calls 'channel_i32_send', which is not RT-safe because it calls 'channel_i32_bind' (forbidden on an RT-safe path; see docs/library/rt-safety.md)
+import "stdlib/concurrent.flow"
+
+@rt_safe
+function test_channel(c: ptr<Channel_i32>) -> void {
+    let mut v: i32 = 0
+    channel_i32_send(c, v)
+}
+
+function main() -> i32 {
+    return 0
+}
