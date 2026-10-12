@@ -21,7 +21,7 @@
 | evolves-syntax | **SHIPPED**: `flow` blocks, `state`/`input`/`output`/`param` members, `evolves as`, Euler `_step` with factored `_derivs`, `_new`/`_init`/`_outputs`; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/pendulum_evolves.flow` |
 | time-blocks | **SHIPPED**: duration literals (`ns`/`us`/`ms`/`s`/`min` suffixes canonicalized to i64 nanoseconds at parse time), `every <duration> { x becomes expr }` blocks with hidden `__every_k_acc` accumulators and a catch-up loop, `solver { dt 1 ms  method euler }` lowered to `Name_default_dt()`; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/thermostat_evolves.flow` |
 | hybrid-events | **SHIPPED** (zero-crossing form): `when x reaches L { x becomes expr ... }` with sign-change detection at step granularity, synchronous resets, hidden `__guard_k_prev` memory; lowering in `src/flow/flow_blocks.py`, example `examples/evolution/bouncing_ball_evolves.flow` |
-| constraints | **SHIPPED**: `always { ... }` and `never { ... }` blocks lowered to `_check()` trapping with `flow_panic`; example `examples/evolution/pendulum_always.flow` |
+| constraints | design |
 | connect | design |
 | represent-linear | design |
 | analyze-block | design |

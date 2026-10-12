@@ -33,10 +33,6 @@ flow Ball {
         velocity becomes -restitution * velocity
         height becomes 0.0
     }
-
-    never {
-        height < -0.01
-    }
 }
 
 function main() -> i32 {
