@@ -76,7 +76,7 @@ a proof corpus rather than the showcase.
 - [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
 - [ ] Regenerate `examples/STATUS.md` after layout settles
-- [ ] Concurrency pipeline example once channel send/recv is exposed
+- [x] Concurrency pipeline example once channel send/recv is exposed
 - [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
 ### Tier 0: Minimum domains
@@ -94,7 +94,7 @@ a proof corpus rather than the showcase.
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
 | Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | partial |
 | UI layout | `examples/ui/layout_hello.flow` | ✅ |
-| Concurrency pipeline | deferred: `Channel_i32` in stdlib lacks send/recv | 🔲 |
+| Concurrency pipeline | `examples/concurrency/pipeline.flow` | ✅ |
 
 ### Tier 1: Vision domains
 
