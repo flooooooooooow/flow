@@ -117,7 +117,7 @@ a proof corpus rather than the showcase.
 | Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
 | Physics DSL honesty | Document what `physics/` can/can't do | partial |
 | Linalg QR / eigen | Beyond LU / matrix_ops | 🔲 |
-| Games twin | Second polished interactive beyond Tetris/2048 | partial |
+| Games twin | Second polished interactive beyond Tetris/2048 | ✅ |
 
 ### Syntax & weirdness to showcase
 
