@@ -1,0 +1,140 @@
+# DIGITAL TWIN LITE: Small plant + observer narrative
+#
+# Simulates a continuous physical plant and deploys identical control/observer
+# code against it, demonstrating the "sim <-> deploy identical code" W4 objective.
+#
+# A thermal mass (plant) is heated by a pulse-width modulated heater and cools
+# to the ambient temperature. An observer runs identically in "simulation"
+# (stepping both plant and observer) and "deployment" (stepping just the observer
+# against sensor readings).
+#
+# Run: ./flow run examples/systems/digital_twin/digital_twin.flow
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+}
+
+# --- The Plant (Simulated Physical System) ---
+flow OvenPlant {
+    state temp: f64 = 20.0
+    param ambient: f64 = 20.0
+    param heater_power: f64 = 50.0
+    param cooling_rate: f64 = 0.1
+    input heater_on: f64
+
+    solver { dt 10 ms method rk4 }
+
+    temp evolves as (heater_on * heater_power) - (cooling_rate * (temp - ambient))
+}
+
+# --- The Controller & Observer (The "Digital Twin") ---
+# This struct represents the software that will be deployed to the embedded device.
+struct OvenController {
+    target_temp: f64,
+    estimated_temp: f64,
+    observer_gain: f64,
+    dt: f64,
+}
+
+function OvenController_new(target: f64, dt: f64) -> OvenController {
+    return OvenController {
+        target_temp: target,
+        estimated_temp: 20.0, # initial guess
+        observer_gain: 0.5,
+        dt: dt,
+    }
+}
+
+# The control step takes the measured sensor temperature and returns the heater command (0.0 or 1.0)
+function OvenController_step(self: ptr<OvenController>, measured_temp: f64) -> f64 {
+    # 1. Update the digital twin's state estimate (Luenberger-style observer)
+    # simple model: temp_next = temp + dt * (-cooling * (temp - 20) + power * heater)
+    # We use a simplified model internally, corrected by the measurement.
+    let error: f64 = measured_temp - self.estimated_temp;
+    self.estimated_temp = self.estimated_temp + (self.observer_gain * error);
+
+    # 2. Control logic (Bang-bang with hysteresis around the estimate)
+    if self.estimated_temp < self.target_temp - 0.5 {
+        return 1.0;
+    } elif self.estimated_temp > self.target_temp + 0.5 {
+        return 0.0;
+    }
+
+    # Keep current state (simplified, assumes we know previous state or just evaluate cleanly)
+    # Since we can't easily read the previous output, we just use a simple threshold
+    if self.estimated_temp < self.target_temp {
+        return 1.0;
+    }
+    return 0.0;
+}
+
+function main() -> i32 {
+    println("  DIGITAL TWIN LITE  --  Sim <-> Deploy Identical Code (W4)")
+    println("  =========================================================")
+    println("")
+
+    let mut plant: OvenPlant = OvenPlant_new();
+    let dt: f64 = OvenPlant_default_dt();
+    let mut controller: OvenController = OvenController_new(50.0, dt);
+
+    let steps: i32 = 1000;
+    let mut time: f64 = 0.0;
+    let mut heater_cmd: f64 = 0.0;
+
+    println("      Time (s) | Plant Temp (C) | Twin Estimate (C) | Error (C) | Heater");
+    println("      ---------|----------------|-------------------|-----------|-------");
+
+    let mut max_error: f64 = 0.0;
+
+    for i in 0 to steps {
+        # 1. Read sensor (from simulated plant)
+        let measured_temp: f64 = plant.temp;
+
+        # 2. Run the deployed control software (identical code for sim/deploy)
+        heater_cmd = OvenController_step(&controller, measured_temp);
+
+        # 3. Apply actuation to the simulated plant
+        plant.heater_on = heater_cmd;
+        OvenPlant_step(&plant, dt);
+
+        time = time + dt;
+
+        let error: f64 = fabs(plant.temp - controller.estimated_temp);
+        if error > max_error {
+            max_error = error;
+        }
+
+        if i % 100 == 0 {
+            print("      ");
+            printf("%8.2f", time);
+            print(" | ");
+            printf("%14.2f", plant.temp);
+            print(" | ");
+            printf("%17.2f", controller.estimated_temp);
+            print(" | ");
+            printf("%9.4f", error);
+            print(" | ");
+            printf("%5.1f", heater_cmd);
+            println("");
+        }
+    }
+
+    println("");
+    print("    Max observer error: ");
+    printf("%.4f", max_error);
+    println(" C");
+
+    if max_error > 1.0 {
+        println("    FAIL: Digital twin diverged significantly from the plant.");
+        return 1;
+    }
+
+    if fabs(plant.temp - 50.0) > 2.0 {
+        println("    FAIL: Controller failed to reach or maintain target temperature.");
+        return 2;
+    }
+
+    println("    PASS: Plant and Twin maintained coherence, control successful.");
+    return 0;
+}

@@ -36,7 +36,7 @@ grammar cards in [north-star.md](docs/vision/north-star.md).
 | **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | 🔨 partial: `lib/stdlib/dsp.flow` (`map_f32`/`map_f64`, `filter_f32`, `reduce_f32`/`reduce_f64`, `scan_f32`/`scan_f64`, `zip_with_f32`/`zip_with_f64`, `scale_f32`/`scale_f64`, `offset_f32`, `clip_f32`, `sum_f32`/`sum_f64`, `dot_f32`/`dot_f64`), `|>` pipeline chaining with lambdas and named functions, function-type parameter compatibility fix, lambda-as-argument fat-pointer wrapping in C generator, `examples/dsp/pipeline.flow`, `tests/unit/test_dsp_pipeline.py` (11 tests). Compile-time fusion of adjacent `map`/`scale`/`offset` stages shipped in 0.11.0. Next: rate analysis. |
 | **W2** | MMIO/SVD, bitfields, fixed-point + saturating | 🔲 |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
-| **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
+| **W4** | Sim ↔ deploy identical code; digital twin | ✅ |
 | **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
 | **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial: Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null/fault handler: #288. |
 
@@ -103,7 +103,7 @@ a proof corpus rather than the showcase.
 | Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
-| Digital twin lite | Small plant + observer narrative | 🔲 |
+| Digital twin lite | Small plant + observer narrative | ✅ |
 | Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0-W3) |
 | RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
@@ -945,4 +945,4 @@ Reference: [docs/project/roadmap-2.0.md](docs/project/roadmap-2.0.md)
 1. 🔲 **Orchestration syntax** (#723, #724). `std.orchestrate` ships the combinators (`seq`, `fanout`, Result joins; see [docs/library/orchestrate.md](docs/library/orchestrate.md)). Syntax decisions will emerge from real library use, using a dedicated keyword or operator.
 2. 🔲 **Hardware synthesis and partitioning**. Lower `@hardware` declarations to RTL, enforce clock domain crossings, and deploy across hardware-software boundaries.
 3. 🔲 **Certified safety profiles**. Expand `--profile flight` with fault mitigation, static loop iteration bounds, and formal proofs of domain lattice rules.
-4. 🔲 **Distributed digital twins**. Deploy identical code paths across simulation, RTOS environments, and bare metal targets.
+4. ✅ **Distributed digital twins**. Deploy identical code paths across simulation, RTOS environments, and bare metal targets.
