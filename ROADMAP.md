@@ -932,16 +932,17 @@ The language is feature-complete! Future work:
 
 ## What's Next? (Flow 2.0 Memory Safety)
 
-🔲 **[Flow 2.0 Epic] Ergonomic Memory Safety Architecture**
+✅ **[Flow 2.0 Epic] Ergonomic Memory Safety Architecture**
 ROADMAP-SYNC: flow-2-0-epic-ergonomic-memory-safety-architecture
 
-Track the design and implementation of Flow 2.0 memory safety architecture.
-See: `docs/project/roadmap-2.0.md`
+Shipped in Flow 2.0.0. Compile-time lifetime domain propagation, borrow inference, and effect-bounded lifetimes.
+Reference: [docs/project/roadmap-2.0.md](docs/project/roadmap-2.0.md)
 
-## Later (Flow 3.0)
+---
 
-Orchestration syntax (#723, #724). `std.orchestrate` ships the combinators
-(`seq`, `fanout`, Result joins; see docs/library/orchestrate.md). A syntax
-is decided later from real use of the library. If one is added it uses a
-dedicated operator or keyword, never `>>` (decision of 2026-10-07 in
-docs/project/Questions.md).
+## Flow 3.0 Roadmap
+
+1. 🔲 **Orchestration syntax** (#723, #724). `std.orchestrate` ships the combinators (`seq`, `fanout`, Result joins; see [docs/library/orchestrate.md](docs/library/orchestrate.md)). Syntax decisions will emerge from real library use, using a dedicated keyword or operator.
+2. 🔲 **Hardware synthesis and partitioning**. Lower `@hardware` declarations to RTL, enforce clock domain crossings, and deploy across hardware-software boundaries.
+3. 🔲 **Certified safety profiles**. Expand `--profile flight` with fault mitigation, static loop iteration bounds, and formal proofs of domain lattice rules.
+4. 🔲 **Distributed digital twins**. Deploy identical code paths across simulation, RTOS environments, and bare metal targets.
