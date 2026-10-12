@@ -75,7 +75,7 @@ a proof corpus rather than the showcase.
 - [x] Canonical entrypoints table in `examples/README.md`
 - [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
-- [ ] Regenerate `examples/STATUS.md` after layout settles
+- [x] Regenerate `examples/STATUS.md` after layout settles
 - [x] Concurrency pipeline example once channel send/recv is exposed
 - [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
@@ -100,7 +100,7 @@ a proof corpus rather than the showcase.
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
+| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | ✅ |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
 | Digital twin lite | Small plant + observer narrative | ✅ |
@@ -112,7 +112,7 @@ a proof corpus rather than the showcase.
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | 🔲 |
+| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | ✅ |
 | JSON / TSV | Data interchange demos | 🔲 |
 | Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
 | Physics DSL honesty | Document what `physics/` can/can't do | ✅ |
