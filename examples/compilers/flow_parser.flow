@@ -1,0 +1,581 @@
+# Flow parser Phase 3 (self-hosting) — pedagogical parser demo.
+#
+# The live self-hosting tree is `compiler/` (`flowc`): lexer + subset parser.
+# Run: `./flow run compiler/src/main.flow`
+#
+# Extends flow_lexer.flow to parse a subset of Flow into an AST.
+# Parses:
+# - let statements (let x: i32 = 42)
+# - functions (function f(x: i32) -> i32 { return x })
+# - binary operators, identifiers, integers.
+#
+# Streaming API: lexer_next(lex) -> Token with byte spans.
+
+extern {
+    function printf(fmt: string) -> i32
+}
+
+const TOK_EOF: i32 = 0
+const TOK_IDENT: i32 = 1
+const TOK_KEYWORD: i32 = 2
+const TOK_INT: i32 = 3
+const TOK_FLOAT: i32 = 4
+const TOK_STRING: i32 = 5
+const TOK_LPAREN: i32 = 6
+const TOK_RPAREN: i32 = 7
+const TOK_LBRACE: i32 = 8
+const TOK_RBRACE: i32 = 9
+const TOK_LBRACK: i32 = 10
+const TOK_RBRACK: i32 = 11
+const TOK_COLON: i32 = 12
+const TOK_COMMA: i32 = 13
+const TOK_SEMI: i32 = 14
+const TOK_DOT: i32 = 15
+const TOK_ARROW: i32 = 16
+const TOK_EQ: i32 = 17
+const TOK_EQEQ: i32 = 18
+const TOK_NE: i32 = 19
+const TOK_LT: i32 = 20
+const TOK_LE: i32 = 21
+const TOK_GT: i32 = 22
+const TOK_GE: i32 = 23
+const TOK_PLUS: i32 = 24
+const TOK_MINUS: i32 = 25
+const TOK_STAR: i32 = 26
+const TOK_SLASH: i32 = 27
+const TOK_AMPAMP: i32 = 28
+const TOK_BARBAR: i32 = 29
+const TOK_BANG: i32 = 30
+const TOK_ERROR: i32 = 31
+
+const KW_LET: i32 = 1
+const KW_FUNCTION: i32 = 2
+const KW_RETURN: i32 = 3
+const KW_IF: i32 = 4
+const KW_ELSE: i32 = 5
+const KW_WHILE: i32 = 6
+const KW_FOR: i32 = 7
+const KW_IN: i32 = 8
+const KW_TO: i32 = 9
+const KW_STRUCT: i32 = 10
+
+struct Token {
+    kind: i32,
+    kw: i32,
+    start: i32,
+    end: i32,
+    line: i32,
+    col: i32
+}
+
+struct Lexer {
+    input: ptr<u8>,
+    len: i32,
+    pos: i32,
+    line: i32,
+    col: i32
+}
+
+function is_alpha(c: i32) -> i32 {
+    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 {
+        return 1
+    }
+    return 0
+}
+
+function is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return 1
+    }
+    return 0
+}
+
+function is_alnum(c: i32) -> i32 {
+    if is_alpha(c) == 1 or is_digit(c) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function is_space(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function lexer_new(input: ptr<u8>, len: i32) -> Lexer {
+    return Lexer { input: input, len: len, pos: 0, line: 1, col: 1 }
+}
+
+function lexer_bump(lex: ptr<Lexer>) {
+    let c: i32 = lex[0].input[lex[0].pos]
+    lex[0].pos = lex[0].pos + 1
+    if c == 10 {
+        lex[0].line = lex[0].line + 1
+        lex[0].col = 1
+    } else {
+        lex[0].col = lex[0].col + 1
+    }
+}
+
+function lexer_skip_trivia(lex: ptr<Lexer>) {
+    while lex[0].pos < lex[0].len {
+        let c: i32 = lex[0].input[lex[0].pos]
+        if is_space(c) == 1 {
+            lexer_bump(lex)
+        } else {
+            if c == 10 {
+                lexer_bump(lex)
+            } else {
+                if c == 35 {
+                    while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 10 {
+                        lexer_bump(lex)
+                    }
+                } else {
+                    return
+                }
+            }
+        }
+    }
+}
+
+function ident_eq(src: ptr<u8>, start: i32, end: i32, lit: ptr<u8>, lit_len: i32) -> i32 {
+    if end - start != lit_len {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < lit_len {
+        if src[start + i] != lit[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function classify_keyword(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let let_kw: array<u8, 3> = [108, 101, 116]
+    let fn_kw: array<u8, 8> = [102, 117, 110, 99, 116, 105, 111, 110]
+    let ret_kw: array<u8, 6> = [114, 101, 116, 117, 114, 110]
+    let if_kw: array<u8, 2> = [105, 102]
+    let else_kw: array<u8, 4> = [101, 108, 115, 101]
+    let while_kw: array<u8, 5> = [119, 104, 105, 108, 101]
+    let for_kw: array<u8, 3> = [102, 111, 114]
+    let in_kw: array<u8, 2> = [105, 110]
+    let to_kw: array<u8, 2> = [116, 111]
+    let struct_kw: array<u8, 6> = [115, 116, 114, 117, 99, 116]
+    let let_p: ptr<u8> = let_kw
+    let fn_p: ptr<u8> = fn_kw
+    let ret_p: ptr<u8> = ret_kw
+    let if_p: ptr<u8> = if_kw
+    let else_p: ptr<u8> = else_kw
+    let while_p: ptr<u8> = while_kw
+    let for_p: ptr<u8> = for_kw
+    let in_p: ptr<u8> = in_kw
+    let to_p: ptr<u8> = to_kw
+    let struct_p: ptr<u8> = struct_kw
+    if ident_eq(src, start, end, let_p, 3) == 1 { return KW_LET }
+    if ident_eq(src, start, end, fn_p, 8) == 1 { return KW_FUNCTION }
+    if ident_eq(src, start, end, ret_p, 6) == 1 { return KW_RETURN }
+    if ident_eq(src, start, end, if_p, 2) == 1 { return KW_IF }
+    if ident_eq(src, start, end, else_p, 4) == 1 { return KW_ELSE }
+    if ident_eq(src, start, end, while_p, 5) == 1 { return KW_WHILE }
+    if ident_eq(src, start, end, for_p, 3) == 1 { return KW_FOR }
+    if ident_eq(src, start, end, in_p, 2) == 1 { return KW_IN }
+    if ident_eq(src, start, end, to_p, 2) == 1 { return KW_TO }
+    if ident_eq(src, start, end, struct_p, 6) == 1 { return KW_STRUCT }
+    return 0
+}
+
+function make_tok(kind: i32, kw: i32, start: i32, end: i32, line: i32, col: i32) -> Token {
+    return Token { kind: kind, kw: kw, start: start, end: end, line: line, col: col }
+}
+
+function lexer_next(lex: ptr<Lexer>) -> Token {
+    lexer_skip_trivia(lex)
+    let start: i32 = lex[0].pos
+    let line: i32 = lex[0].line
+    let col: i32 = lex[0].col
+
+    if lex[0].pos >= lex[0].len {
+        return make_tok(TOK_EOF, 0, start, start, line, col)
+    }
+
+    let c: i32 = lex[0].input[lex[0].pos]
+
+    # Identifier / keyword
+    if is_alpha(c) == 1 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and is_alnum(lex[0].input[lex[0].pos]) == 1 {
+            lexer_bump(lex)
+        }
+        let end: i32 = lex[0].pos
+        let kw: i32 = classify_keyword(lex[0].input, start, end)
+        if kw != 0 {
+            return make_tok(TOK_KEYWORD, kw, start, end, line, col)
+        }
+        return make_tok(TOK_IDENT, 0, start, end, line, col)
+    }
+
+    # Number: int or float
+    if is_digit(c) == 1 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and is_digit(lex[0].input[lex[0].pos]) == 1 {
+            lexer_bump(lex)
+        }
+        let mut is_float: i32 = 0
+        if lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] == 46 {
+            # Peek next: digit required for float
+            if lex[0].pos + 1 < lex[0].len and is_digit(lex[0].input[lex[0].pos + 1]) == 1 {
+                is_float = 1
+                lexer_bump(lex)
+                while lex[0].pos < lex[0].len and is_digit(lex[0].input[lex[0].pos]) == 1 {
+                    lexer_bump(lex)
+                }
+            }
+        }
+        let end: i32 = lex[0].pos
+        if is_float == 1 {
+            return make_tok(TOK_FLOAT, 0, start, end, line, col)
+        }
+        return make_tok(TOK_INT, 0, start, end, line, col)
+    }
+
+    # String literal "..."
+    if c == 34 {
+        lexer_bump(lex)
+        while lex[0].pos < lex[0].len and lex[0].input[lex[0].pos] != 34 {
+            if lex[0].input[lex[0].pos] == 92 and lex[0].pos + 1 < lex[0].len {
+                lexer_bump(lex)
+            }
+            lexer_bump(lex)
+        }
+        if lex[0].pos < lex[0].len {
+            lexer_bump(lex)  # closing quote
+            return make_tok(TOK_STRING, 0, start, lex[0].pos, line, col)
+        }
+        return make_tok(TOK_ERROR, 0, start, lex[0].pos, line, col)
+    }
+
+    # Multi-char operators
+    let mut n1: i32 = 0
+    if lex[0].pos + 1 < lex[0].len {
+        n1 = lex[0].input[lex[0].pos + 1]
+    }
+    if c == 45 and n1 == 62 {  # ->
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_ARROW, 0, start, start + 2, line, col)
+    }
+    if c == 61 and n1 == 61 {  # ==
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_EQEQ, 0, start, start + 2, line, col)
+    }
+    if c == 33 and n1 == 61 {  # !=
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_NE, 0, start, start + 2, line, col)
+    }
+    if c == 60 and n1 == 61 {  # <=
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_LE, 0, start, start + 2, line, col)
+    }
+    if c == 62 and n1 == 61 {  # >=
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_GE, 0, start, start + 2, line, col)
+    }
+    if c == 38 and n1 == 38 {  # &&
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_AMPAMP, 0, start, start + 2, line, col)
+    }
+    if c == 124 and n1 == 124 {  # ||
+        lexer_bump(lex)
+        lexer_bump(lex)
+        return make_tok(TOK_BARBAR, 0, start, start + 2, line, col)
+    }
+
+    lexer_bump(lex)
+    if c == 40 { return make_tok(TOK_LPAREN, 0, start, start + 1, line, col) }
+    if c == 41 { return make_tok(TOK_RPAREN, 0, start, start + 1, line, col) }
+    if c == 123 { return make_tok(TOK_LBRACE, 0, start, start + 1, line, col) }
+    if c == 125 { return make_tok(TOK_RBRACE, 0, start, start + 1, line, col) }
+    if c == 91 { return make_tok(TOK_LBRACK, 0, start, start + 1, line, col) }
+    if c == 93 { return make_tok(TOK_RBRACK, 0, start, start + 1, line, col) }
+    if c == 58 { return make_tok(TOK_COLON, 0, start, start + 1, line, col) }
+    if c == 44 { return make_tok(TOK_COMMA, 0, start, start + 1, line, col) }
+    if c == 59 { return make_tok(TOK_SEMI, 0, start, start + 1, line, col) }
+    if c == 46 { return make_tok(TOK_DOT, 0, start, start + 1, line, col) }
+    if c == 61 { return make_tok(TOK_EQ, 0, start, start + 1, line, col) }
+    if c == 60 { return make_tok(TOK_LT, 0, start, start + 1, line, col) }
+    if c == 62 { return make_tok(TOK_GT, 0, start, start + 1, line, col) }
+    if c == 43 { return make_tok(TOK_PLUS, 0, start, start + 1, line, col) }
+    if c == 45 { return make_tok(TOK_MINUS, 0, start, start + 1, line, col) }
+    if c == 42 { return make_tok(TOK_STAR, 0, start, start + 1, line, col) }
+    if c == 47 { return make_tok(TOK_SLASH, 0, start, start + 1, line, col) }
+    if c == 33 { return make_tok(TOK_BANG, 0, start, start + 1, line, col) }
+    return make_tok(TOK_ERROR, 0, start, start + 1, line, col)
+}
+
+function expect_kind(tok: Token, kind: i32) -> i32 {
+    if tok.kind == kind { return 1 }
+    return 0
+}
+
+
+# --- PARSER ---
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const AST_PROGRAM: i32 = 1
+const AST_FUNCTION: i32 = 2
+const AST_LET: i32 = 3
+const AST_RETURN: i32 = 4
+const AST_BINOP: i32 = 5
+const AST_INT_NODE: i32 = 6
+const AST_IDENT_NODE: i32 = 7
+const AST_TYPE: i32 = 8
+
+struct AstNode {
+    kind: i32,
+    start: i32,
+    end: i32,
+    a: ptr<AstNode>,
+    b: ptr<AstNode>,
+    c: ptr<AstNode>,
+    next: ptr<AstNode>
+}
+
+function ast_alloc(kind: i32, start: i32, end: i32) -> ptr<AstNode> {
+    let node: ptr<AstNode> = malloc(56) as ptr<AstNode>
+    node[0].kind = kind
+    node[0].start = start
+    node[0].end = end
+    node[0].a = null
+    node[0].b = null
+    node[0].c = null
+    node[0].next = null
+    return node
+}
+
+struct Parser {
+    lex: ptr<Lexer>,
+    current: Token,
+    error: i32
+}
+
+function parser_next(p: ptr<Parser>) {
+    p[0].current = lexer_next(p[0].lex)
+}
+
+function parser_expect(p: ptr<Parser>, kind: i32) -> i32 {
+    if p[0].current.kind == kind {
+        parser_next(p)
+        return 1
+    }
+    p[0].error = 1
+    return 0
+}
+
+function parser_expect_kw(p: ptr<Parser>, kw: i32) -> i32 {
+    if p[0].current.kind == TOK_KEYWORD and p[0].current.kw == kw {
+        parser_next(p)
+        return 1
+    }
+    p[0].error = 1
+    return 0
+}
+
+# Forward declarations for recursive descent
+function parse_expression(p: ptr<Parser>) -> ptr<AstNode>
+function parse_term(p: ptr<Parser>) -> ptr<AstNode>
+function parse_factor(p: ptr<Parser>) -> ptr<AstNode>
+
+function parse_factor(p: ptr<Parser>) -> ptr<AstNode> {
+    let t: Token = p[0].current
+    if t.kind == TOK_INT {
+        parser_next(p)
+        return ast_alloc(AST_INT_NODE, t.start, t.end)
+    }
+    if t.kind == TOK_IDENT {
+        parser_next(p)
+        return ast_alloc(AST_IDENT_NODE, t.start, t.end)
+    }
+    if t.kind == TOK_LPAREN {
+        parser_next(p)
+        let expr: ptr<AstNode> = parse_expression(p)
+        parser_expect(p, TOK_RPAREN)
+        return expr
+    }
+    p[0].error = 1
+    return null
+}
+
+function parse_term(p: ptr<Parser>) -> ptr<AstNode> {
+    let mut left: ptr<AstNode> = parse_factor(p)
+    while p[0].current.kind == TOK_STAR or p[0].current.kind == TOK_SLASH {
+        let op_tok: Token = p[0].current
+        parser_next(p)
+        let right: ptr<AstNode> = parse_factor(p)
+        let node: ptr<AstNode> = ast_alloc(AST_BINOP, left[0].start, right[0].end)
+        node[0].a = left
+        node[0].b = right
+        # Store op in end for simplicity, or add a field
+        node[0].c = ast_alloc(op_tok.kind, op_tok.start, op_tok.end)
+        left = node
+    }
+    return left
+}
+
+function parse_expression(p: ptr<Parser>) -> ptr<AstNode> {
+    let mut left: ptr<AstNode> = parse_term(p)
+    while p[0].current.kind == TOK_PLUS or p[0].current.kind == TOK_MINUS {
+        let op_tok: Token = p[0].current
+        parser_next(p)
+        let right: ptr<AstNode> = parse_term(p)
+        let node: ptr<AstNode> = ast_alloc(AST_BINOP, left[0].start, right[0].end)
+        node[0].a = left
+        node[0].b = right
+        node[0].c = ast_alloc(op_tok.kind, op_tok.start, op_tok.end)
+        left = node
+    }
+    return left
+}
+
+function parse_type(p: ptr<Parser>) -> ptr<AstNode> {
+    let t: Token = p[0].current
+    if t.kind == TOK_IDENT {
+        parser_next(p)
+        return ast_alloc(AST_TYPE, t.start, t.end)
+    }
+    p[0].error = 1
+    return null
+}
+
+function parse_statement(p: ptr<Parser>) -> ptr<AstNode> {
+    if p[0].current.kind == TOK_KEYWORD and p[0].current.kw == KW_LET {
+        let start: i32 = p[0].current.start
+        parser_next(p)
+
+        let id_tok: Token = p[0].current
+        parser_expect(p, TOK_IDENT)
+        let name_node: ptr<AstNode> = ast_alloc(AST_IDENT_NODE, id_tok.start, id_tok.end)
+
+        parser_expect(p, TOK_COLON)
+
+        let type_node: ptr<AstNode> = parse_type(p)
+
+        parser_expect(p, TOK_EQ)
+
+        let expr_node: ptr<AstNode> = parse_expression(p)
+
+        let node: ptr<AstNode> = ast_alloc(AST_LET, start, expr_node[0].end)
+        node[0].a = name_node
+        node[0].b = type_node
+        node[0].c = expr_node
+        return node
+    }
+
+    if p[0].current.kind == TOK_KEYWORD and p[0].current.kw == KW_RETURN {
+        let start: i32 = p[0].current.start
+        parser_next(p)
+        let expr: ptr<AstNode> = parse_expression(p)
+        let node: ptr<AstNode> = ast_alloc(AST_RETURN, start, expr[0].end)
+        node[0].a = expr
+        return node
+    }
+
+    return parse_expression(p)
+}
+
+function parse_function(p: ptr<Parser>) -> ptr<AstNode> {
+    let start: i32 = p[0].current.start
+    parser_expect_kw(p, KW_FUNCTION)
+
+    let id_tok: Token = p[0].current
+    parser_expect(p, TOK_IDENT)
+    let name_node: ptr<AstNode> = ast_alloc(AST_IDENT_NODE, id_tok.start, id_tok.end)
+
+    parser_expect(p, TOK_LPAREN)
+    # just handle 0 args for now
+    parser_expect(p, TOK_RPAREN)
+
+    parser_expect(p, TOK_ARROW)
+    let ret_type: ptr<AstNode> = parse_type(p)
+
+    parser_expect(p, TOK_LBRACE)
+
+    let mut head: ptr<AstNode> = null
+    let mut tail: ptr<AstNode> = null
+
+    while p[0].current.kind != TOK_RBRACE and p[0].current.kind != TOK_EOF {
+        let stmt: ptr<AstNode> = parse_statement(p)
+        if head == null {
+            head = stmt
+            tail = stmt
+        } else {
+            tail[0].next = stmt
+            tail = stmt
+        }
+    }
+
+    let end: i32 = p[0].current.end
+    parser_expect(p, TOK_RBRACE)
+
+    let func: ptr<AstNode> = ast_alloc(AST_FUNCTION, start, end)
+    func[0].a = name_node
+    func[0].b = ret_type
+    func[0].c = head
+    return func
+}
+
+function print_ast(node: ptr<AstNode>, indent: i32) {
+    if node == null { return }
+    let mut i: i32 = 0
+    while i < indent {
+        printf("  ")
+        i = i + 1
+    }
+
+    if node[0].kind == AST_FUNCTION { printf("Function\n") }
+    if node[0].kind == AST_LET { printf("Let\n") }
+    if node[0].kind == AST_RETURN { printf("Return\n") }
+    if node[0].kind == AST_BINOP { printf("BinOp\n") }
+    if node[0].kind == AST_INT_NODE { printf("Int\n") }
+    if node[0].kind == AST_IDENT_NODE { printf("Ident\n") }
+    if node[0].kind == AST_TYPE { printf("Type\n") }
+
+    if node[0].a != null { print_ast(node[0].a, indent + 1) }
+    if node[0].b != null { print_ast(node[0].b, indent + 1) }
+    if node[0].c != null { print_ast(node[0].c, indent + 1) }
+
+    if node[0].next != null { print_ast(node[0].next, indent) }
+}
+
+function main() -> i32 {
+    let src: array<u8, 59> = [102, 117, 110, 99, 116, 105, 111, 110, 32, 102, 111, 111, 40, 41, 32, 45, 62, 32, 105, 51, 50, 32, 123, 10, 32, 32, 32, 32, 108, 101, 116, 32, 120, 58, 32, 105, 51, 50, 32, 61, 32, 52, 50, 10, 32, 32, 32, 32, 114, 101, 116, 117, 114, 110, 32, 120, 10, 125, 0]
+    let src_ptr: ptr<u8> = src
+    printf("Source:\nfunction foo() -> i32 {\n    let x: i32 = 42\n    return x\n}\n\n")
+
+    let mut lex: Lexer = lexer_new(src_ptr, 58)
+    let mut p: Parser = Parser { lex: &lex, current: Token { kind: 0, kw: 0, start: 0, end: 0, line: 0, col: 0 }, error: 0 }
+    parser_next(&p)
+
+    let ast: ptr<AstNode> = parse_function(&p)
+
+    printf("AST:\n")
+    print_ast(ast, 0)
+
+    if p.error == 1 {
+        printf("Parse error occurred.\n")
+        return 1
+    }
+
+    return 0
+}
