@@ -1,0 +1,12 @@
+import "stdlib/bitfield.flow"
+
+function main() -> i32 {
+    let x: u32 = 0x12345678
+    if bitfield_extract_u32(x, 16, 8) != 0x34 { return 1 }
+    if bitfield_insert_u32(x, 16, 8, 0xAB) != 0x12AB5678 { return 2 }
+
+    let y: u64 = 0x123456789ABCDEF0
+    if bitfield_extract_u64(y, 32, 16) != 0x5678 { return 3 }
+    if bitfield_insert_u64(y, 32, 16, 0xFFFF) != 0x1234FFFF9ABCDEF0 { return 4 }
+    return 0
+}

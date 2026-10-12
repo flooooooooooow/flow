@@ -1,0 +1,21 @@
+import "stdlib/fixed_point.flow"
+
+function main() -> i32 {
+    let a: Q16_16 = q16_16_from_i32(2)
+    let b: Q16_16 = q16_16_from_i32(3)
+
+    if q16_16_to_i32(q16_16_add(a, b)) != 5 { return 1 }
+    if q16_16_to_i32(q16_16_mul(a, b)) != 6 { return 2 }
+
+    let c: Q16_16 = q16_16_from_i32(1)
+    let d: Q16_16 = q16_16_from_i32(2)
+    let div_res: Q16_16 = q16_16_div(c, d)
+    let half: i32 = 1 << 15
+    if (div_res as i32) != half { return 3 }
+
+    let e: Q8_24 = q8_24_from_i32(2)
+    let f: Q8_24 = q8_24_from_i32(3)
+    if q8_24_to_i32(q8_24_add(e, f)) != 5 { return 4 }
+
+    return 0
+}

@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**128** modules scanned.
+**131** modules scanned.
 
 ## Modules
 
@@ -1145,6 +1145,19 @@ Big integer support for Project Euler (#252). Limb-based unsigned magnitude + se
 
 *No `export` items found (internal / extern-only module).*
 
+### `bitfield.flow`
+
+Bitfield operations
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `bitfield_extract_u32` | `(val: u32, offset: u32, width: u32) -> u32` | Bitfield operations |
+| `bitfield_insert_u32` | `(val: u32, offset: u32, width: u32, field_val: u32) -> u32` | - |
+| `bitfield_extract_u64` | `(val: u64, offset: u32, width: u32) -> u64` | - |
+| `bitfield_insert_u64` | `(val: u64, offset: u32, width: u32, field_val: u64) -> u64` | - |
+
 ### `blas.flow`
 
 BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import "stdlib/blas.flow"
@@ -1187,7 +1200,21 @@ Growable byte buffer and ASCII character tests.  The code lives in compiler/src/
 
 Checked / saturating / wrapping integer arithmetic (#275). Prefer these helpers when you need defined overflow behaviour outside the safety-profile default (which aborts via FLOW_CHECKED_*).
 
-*No `export` items found (internal / extern-only module).*
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `wrapping_add_i32` | `(a: i32, b: i32) -> i32` | Checked / saturating / wrapping integer arithmetic (#275). Prefer these helpers when you need defined overflow behaviour outside the safety-profile default (which aborts via FLOW_CHECKED_*). |
+| `wrapping_sub_i32` | `(a: i32, b: i32) -> i32` | - |
+| `wrapping_mul_i32` | `(a: i32, b: i32) -> i32` | - |
+| `saturating_add_i32` | `(a: i32, b: i32) -> i32` | - |
+| `saturating_sub_i32` | `(a: i32, b: i32) -> i32` | - |
+| `saturating_mul_i32` | `(a: i32, b: i32) -> i32` | - |
+| `checked_add_i32` | `(a: i32, b: i32, out: ptr<i32>) -> i32` | checked_* returns 1 and writes the sum when no overflow; returns 0 on overflow (out parameter style: Flow has no Option type yet). |
+| `wrapping_add_i64` | `(a: i64, b: i64) -> i64` | - |
+| `saturating_add_i64` | `(a: i64, b: i64) -> i64` | - |
+| `saturating_sub_i64` | `(a: i64, b: i64) -> i64` | - |
+| `saturating_mul_i64` | `(a: i64, b: i64) -> i64` | - |
 
 ### `circuit.flow`
 
@@ -1552,6 +1579,27 @@ experiment: running behavioural and psychophysical experiments in Flow.  The cas
                             done: i32, total: i32) -> void` | Progress bar over the block: filled fraction is trials done over total. |
 | `xp_feedback_bar` | `(g: Gfx, cx: i32, y: i32, w: i32, h: i32,
                                 resp: XpResponse) -> void` | Correct / incorrect / too-slow feedback, as a coloured bar under fixation. |
+
+### `fixed_point.flow`
+
+Fixed point math operations (Q format)
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `q16_16_from_i32` | `(val: i32) -> Q16_16` | - |
+| `q16_16_to_i32` | `(val: Q16_16) -> i32` | - |
+| `q16_16_add` | `(a: Q16_16, b: Q16_16) -> Q16_16` | - |
+| `q16_16_sub` | `(a: Q16_16, b: Q16_16) -> Q16_16` | - |
+| `q16_16_mul` | `(a: Q16_16, b: Q16_16) -> Q16_16` | - |
+| `q16_16_div` | `(a: Q16_16, b: Q16_16) -> Q16_16` | - |
+| `q8_24_from_i32` | `(val: i32) -> Q8_24` | - |
+| `q8_24_to_i32` | `(val: Q8_24) -> i32` | - |
+| `q8_24_add` | `(a: Q8_24, b: Q8_24) -> Q8_24` | - |
+| `q8_24_sub` | `(a: Q8_24, b: Q8_24) -> Q8_24` | - |
+| `q8_24_mul` | `(a: Q8_24, b: Q8_24) -> Q8_24` | - |
+| `q8_24_div` | `(a: Q8_24, b: Q8_24) -> Q8_24` | - |
 
 ### `fmm2d.flow`
 
@@ -2463,6 +2511,21 @@ ML neural-network building blocks (stdlib) Import: import "stdlib/ml_nn.flow" ML
 ML optimizers (stdlib) Import: import "stdlib/ml_opt.flow"
 
 *No `export` items found (internal / extern-only module).*
+
+### `mmio.flow`
+
+Memory-mapped I/O (MMIO) primitives These use volatile C primitives via builtins or C implementations.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `mmio_read_u32` | `(addr: ptr<u32>) -> u32` | - |
+| `mmio_write_u32` | `(addr: ptr<u32>, val: u32) -> void` | - |
+| `mmio_read_u16` | `(addr: ptr<u16>) -> u16` | - |
+| `mmio_write_u16` | `(addr: ptr<u16>, val: u16) -> void` | - |
+| `mmio_read_u8` | `(addr: ptr<u8>) -> u8` | - |
+| `mmio_write_u8` | `(addr: ptr<u8>, val: u8) -> void` | - |
 
 ### `net.flow`
 

@@ -1,0 +1,43 @@
+# Memory-mapped I/O (MMIO) primitives
+# These use volatile C primitives via builtins or C implementations.
+
+@cEmbed("#include <stdint.h>")
+@cEmbed("static inline uint32_t flow_mmio_read_u32(uint32_t* addr) { return *(volatile uint32_t*)addr; }")
+@cEmbed("static inline void flow_mmio_write_u32(uint32_t* addr, uint32_t val) { *(volatile uint32_t*)addr = val; }")
+@cEmbed("static inline uint16_t flow_mmio_read_u16(uint16_t* addr) { return *(volatile uint16_t*)addr; }")
+@cEmbed("static inline void flow_mmio_write_u16(uint16_t* addr, uint16_t val) { *(volatile uint16_t*)addr = val; }")
+@cEmbed("static inline uint8_t flow_mmio_read_u8(uint8_t* addr) { return *(volatile uint8_t*)addr; }")
+@cEmbed("static inline void flow_mmio_write_u8(uint8_t* addr, uint8_t val) { *(volatile uint8_t*)addr = val; }")
+
+extern {
+    function flow_mmio_read_u32(addr: ptr<u32>) -> u32
+    function flow_mmio_write_u32(addr: ptr<u32>, val: u32) -> void
+    function flow_mmio_read_u16(addr: ptr<u16>) -> u16
+    function flow_mmio_write_u16(addr: ptr<u16>, val: u16) -> void
+    function flow_mmio_read_u8(addr: ptr<u8>) -> u8
+    function flow_mmio_write_u8(addr: ptr<u8>, val: u8) -> void
+}
+
+export function mmio_read_u32(addr: ptr<u32>) -> u32 {
+    return flow_mmio_read_u32(addr)
+}
+
+export function mmio_write_u32(addr: ptr<u32>, val: u32) -> void {
+    flow_mmio_write_u32(addr, val)
+}
+
+export function mmio_read_u16(addr: ptr<u16>) -> u16 {
+    return flow_mmio_read_u16(addr)
+}
+
+export function mmio_write_u16(addr: ptr<u16>, val: u16) -> void {
+    flow_mmio_write_u16(addr, val)
+}
+
+export function mmio_read_u8(addr: ptr<u8>) -> u8 {
+    return flow_mmio_read_u8(addr)
+}
+
+export function mmio_write_u8(addr: ptr<u8>, val: u8) -> void {
+    flow_mmio_write_u8(addr, val)
+}
