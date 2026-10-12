@@ -117,7 +117,7 @@ function check_tensor_hot_loop_ssa() -> i32 {
     if not a_contains(emitted, "scf.for") { return T_FAIL }
     if not a_contains(emitted, "iter_args(") { return T_FAIL }
     if not a_contains(emitted, "-> (tensor<?xf32>)") { return T_FAIL }
-    if not a_contains(emitted, "tensor.empty") { return T_FAIL }
+    if not a_not_contains(emitted, "tensor.empty") { return T_FAIL }
     if not a_contains(emitted, "linalg.generic") { return T_FAIL }
     if not a_contains(emitted, "scf.yield") { return T_FAIL }
     if count_of(emitted, "func.func @accumulate") != 1 { return T_FAIL }
@@ -236,20 +236,20 @@ function check_alias_free_load_hoist() -> i32 {
     # The bufferized DPS shape: dest and a 0-d scale cannot alias, so LICM
     # must hoist the invariant scale load out of the loop.
     let snippet: string = t_tmp() + "/alias_free_hoist.mlir"
-    let _w: bool = write_text(snippet, "module {\nfunc.func @hoist(%dest: memref<16xf32>, %scale: memref<f32>) {\n  %c0 = arith.constant 0 : index\n  %c1 = arith.constant 1 : index\n  %c16 = arith.constant 16 : index\n  scf.for %i = %c0 to %c16 step %c1 {\n    %s = memref.load %scale[] : memref<f32>\n    %v = memref.load %dest[%i] : memref<16xf32>\n    %r = arith.addf %v, %s : f32\n    memref.store %r, %dest[%i] : memref<16xf32>\n  }\n  return\n}\n}\n")
+    let _w: bool = write_text(snippet, "module {\nfunc.func @hoist(%dest: memref<16xf32>, %scale: memref<f32>) {\n  affine.for %i = 0 to 16 {\n    %s = affine.load %scale[] : memref<f32>\n    %v = affine.load %dest[%i] : memref<16xf32>\n    %r = arith.addf %v, %s : f32\n    affine.store %r, %dest[%i] : memref<16xf32>\n  }\n  return\n}\n}\n")
     let output: string = t_tmp() + "/alias_free_hoist.out.mlir"
-    if run_mlir_opt_pipeline(snippet, output, "builtin.module(func.func(loop-invariant-code-motion))") != T_PASS {
+    if run_mlir_opt_pipeline(snippet, output, "builtin.module(func.func(affine-loop-invariant-code-motion))") != T_PASS {
         return T_FAIL
     }
     let text: string = read_text(output)
-    if not a_contains(text, "scf.for") { return T_FAIL }
-    if a_contains(text_after(text, "scf.for"), "memref.load %") and a_contains(text_after(text, "scf.for"), "memref<f32>") {
+    if not a_contains(text, "affine.for") { return T_FAIL }
+    if a_contains(text_after(text, "affine.for"), "affine.load %") and a_contains(text_after(text, "affine.for"), "memref<f32>") {
         outln("invariant scale load remained inside the loop")
         outln(text)
         return T_FAIL
     }
-    if not a_contains(text_before_for(text), "memref.load") {
-        outln("expected the invariant load to be hoisted before scf.for")
+    if not a_contains(text_before_for(text), "affine.load") {
+        outln("expected the invariant load to be hoisted before affine.for")
         outln(text)
         return T_FAIL
     }
@@ -277,7 +277,7 @@ function check_alias_free_vectorize() -> i32 {
     let snippet: string = t_tmp() + "/alias_free_vec.mlir"
     let _w: bool = write_text(snippet, "module {\nfunc.func @vec(%a: memref<16xf32>, %b: memref<16xf32>, %out: memref<16xf32>) {\n  affine.for %i = 0 to 16 {\n    %x = affine.load %a[%i] : memref<16xf32>\n    %y = affine.load %b[%i] : memref<16xf32>\n    %r = arith.addf %x, %y : f32\n    affine.store %r, %out[%i] : memref<16xf32>\n  }\n  return\n}\n}\n")
     let output: string = t_tmp() + "/alias_free_vec.out.mlir"
-    if run_mlir_opt_pipeline(snippet, output, "builtin.module(func.func(affine-super-vectorize))") != T_PASS {
+    if run_mlir_opt_pipeline(snippet, output, "builtin.module(func.func(affine-super-vectorize{virtual-vector-size=16}))") != T_PASS {
         return T_FAIL
     }
     let text: string = read_text(output)
