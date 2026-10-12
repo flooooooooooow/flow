@@ -671,6 +671,10 @@ jobs:
       - name: MLIR command goldens (no Python)
         run: timeout 20m ./flow tool tests/mlir_commands/run.flow
 
+      # One-Shot Bufferization and destination-passing checks with mlir-opt.
+      - name: MLIR bufferization boundary checks
+        run: ./flow tool tests/scripts/mlir_bufferize_boundary.flow
+
   # Host tools written in Flow (flow repl) run their stdin transcripts with
   # python and python3 removed from PATH, so a Python fallback cannot hide.
   # The same job runs tests/scripts, the Flow tests that replaced the pytest

@@ -5172,10 +5172,10 @@ function mlg_method_call_node0(m: ptr<Mlg>, e: i32) -> i32 {
     return t
 }
 
-# Python's elementwise tensor intrinsics. Memref values keep the established in-place
-# destination form. Tensor values use a fresh tensor.empty destination so the
-# operation has value semantics and One-Shot Bufferization can choose the
-# storage reuse after alias analysis.
+# Elementwise tensor intrinsics. Outside scf.for loops, tensor values use a
+# fresh tensor.empty destination so function calls retain value semantics.
+# Inside scf.for hot loops, the destination is threaded through the loop-carried
+# tensor so One-Shot Bufferization can bufferize in place.
 function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let a0: i32 = m[0].arena.nodes[e].a
     let a1: i32 = m[0].arena.nodes[a0].next
@@ -5184,7 +5184,7 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let t0: i32 = mlg_val_mt(m, v0, a0)
     let tensor_result: i32 = mlg_is_tensor_type_mt(t0)
     let mut init: i32 = V_NONE
-    if tensor_result == 1 {
+    if tensor_result == 1 and m[0].inside_scf_for == 0 {
         let z: i32 = mlg_new_val(m, MT_INDEX)
         mlg_line(m)
         mlg_v(m, z)
@@ -5215,7 +5215,7 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, " = linalg.generic {")
     mlg_nl(m)
     mlg_line(m)
-    if tensor_result == 1 {
+    if init != V_NONE {
         mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
     } else {
         mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
@@ -5228,13 +5228,13 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     # linalg operand lists name every value first, then every type:
     # ins(%a, %b : T, T).
     mlg_s(m, "} ins(")
-    if tensor_result == 1 {
+    if init != V_NONE {
         mlg_v(m, v0)
         mlg_s(m, ", ")
     }
     mlg_v(m, v1)
     mlg_s(m, " : ")
-    if tensor_result == 1 {
+    if init != V_NONE {
         mlg_put_type(m, t0)
         mlg_s(m, ", ")
     }
@@ -5250,7 +5250,7 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, ") {")
     mlg_nl(m)
     mlg_line(m)
-    if tensor_result == 1 {
+    if init != V_NONE {
         mlg_s(m, "^bb0(%lhs: f32, %rhs: f32, %out: f32):")
     } else {
         mlg_s(m, "^bb0(%in: f32, %out: f32):")
@@ -5266,12 +5266,9 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     if op == TOK_SLASH { opname = "divf" }
     mlg_s(m, " = arith.")
     mlg_s(m, opname)
-    if tensor_result == 1 {
+    if init != V_NONE {
         mlg_s(m, " %lhs, %rhs : f32")
     } else {
-        # Memref lowering uses v0 as the destination/current output value
-        # and v1 as the explicit input. For non-commutative operations the
-        # semantic order is therefore %out OP %in, not %in OP %out.
         if op == TOK_MINUS or op == TOK_SLASH {
             mlg_s(m, " %out, %in : f32")
         } else {
@@ -5291,8 +5288,10 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     return r
 }
 
-# Tensor-scalar elementwise operations use a zero-rank broadcast operand. The
-# tensor result gets a fresh destination so tensor values retain value semantics.
+# Tensor-scalar elementwise operations use a zero-rank broadcast operand. Outside
+# scf.for loops, a fresh tensor.empty destination preserves value semantics.
+# Inside scf.for hot loops, the destination is threaded through the loop-carried
+# tensor.
 function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let a0: i32 = m[0].arena.nodes[e].a
     let a1: i32 = m[0].arena.nodes[a0].next
@@ -5308,55 +5307,75 @@ function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
         mlg_refuse(m, e, "tensor scalar operation requires an f32 scalar")
         return V_NONE
     }
-    let z: i32 = mlg_new_val(m, MT_INDEX)
-    mlg_line(m)
-    mlg_v(m, z)
-    mlg_s(m, " = arith.constant 0 : index")
-    mlg_nl(m)
-    let dim: i32 = mlg_new_val(m, MT_INDEX)
-    mlg_line(m)
-    mlg_v(m, dim)
-    mlg_s(m, " = tensor.dim ")
-    mlg_v(m, v0)
-    mlg_s(m, ", ")
-    mlg_v(m, z)
-    mlg_s(m, " : ")
-    mlg_put_type(m, t0)
-    mlg_nl(m)
-    let init: i32 = mlg_new_val(m, t0)
-    mlg_line(m)
-    mlg_v(m, init)
-    mlg_s(m, " = tensor.empty(")
-    mlg_v(m, dim)
-    mlg_s(m, ") : ")
-    mlg_put_type(m, t0)
-    mlg_nl(m)
+    let mut init: i32 = V_NONE
+    if m[0].inside_scf_for == 0 {
+        let z: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, z)
+        mlg_s(m, " = arith.constant 0 : index")
+        mlg_nl(m)
+        let dim: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, dim)
+        mlg_s(m, " = tensor.dim ")
+        mlg_v(m, v0)
+        mlg_s(m, ", ")
+        mlg_v(m, z)
+        mlg_s(m, " : ")
+        mlg_put_type(m, t0)
+        mlg_nl(m)
+        init = mlg_new_val(m, t0)
+        mlg_line(m)
+        mlg_v(m, init)
+        mlg_s(m, " = tensor.empty(")
+        mlg_v(m, dim)
+        mlg_s(m, ") : ")
+        mlg_put_type(m, t0)
+        mlg_nl(m)
+    }
     let r: i32 = mlg_new_val(m, t0)
     mlg_line(m)
     mlg_v(m, r)
     mlg_s(m, " = linalg.generic {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> ()>, affine_map<(d0) -> (d0)>],")
+    if init != V_NONE {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> ()>, affine_map<(d0) -> (d0)>],")
+    } else {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> ()>, affine_map<(d0) -> (d0)>],")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  iterator_types = [\"parallel\"]")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "} ins(")
-    mlg_v(m, v0)
-    mlg_s(m, ", ")
+    if init != V_NONE {
+        mlg_v(m, v0)
+        mlg_s(m, ", ")
+    }
     mlg_v(m, v1)
     mlg_s(m, " : ")
-    mlg_put_type(m, t0)
-    mlg_s(m, ", f32) outs(")
-    mlg_v(m, init)
+    if init != V_NONE {
+        mlg_put_type(m, t0)
+        mlg_s(m, ", ")
+    }
+    mlg_s(m, "f32) outs(")
+    if init != V_NONE {
+        mlg_v(m, init)
+    } else {
+        mlg_v(m, v0)
+    }
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
     mlg_s(m, ") {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "^bb0(%in: f32, %scalar: f32, %out: f32):")
+    if init != V_NONE {
+        mlg_s(m, "^bb0(%in: f32, %scalar: f32, %out: f32):")
+    } else {
+        mlg_s(m, "^bb0(%scalar: f32, %out: f32):")
+    }
     mlg_nl(m)
     let s: i32 = mlg_new_val(m, MT_F32)
     mlg_line(m)
@@ -5368,7 +5387,11 @@ function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     } else {
         mlg_s(m, "addf")
     }
-    mlg_s(m, " %in, %scalar : f32")
+    if init != V_NONE {
+        mlg_s(m, " %in, %scalar : f32")
+    } else {
+        mlg_s(m, " %out, %scalar : f32")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  linalg.yield ")
