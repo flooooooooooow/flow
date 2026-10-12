@@ -20,7 +20,7 @@ The full adder output matches binary addition with carry.\\[0.5em]
 \noindent{\large \textbf{Derived fact 1.} \textit{Correct} \hfill FullAdder \cdot output \cdot output matches specification}\par
 \smallskip\noindent\textit{Coordinate: FullAdder \cdot output \cdot output matches specification}\par
 \medskip
-\noindent\textbf{Goal.} We're showing that result.Sum equals expected.the conjunction of sum and result.Cout equals expected.carry.\par
+\noindent\textbf{Goal.} We're showing that result.Sum equals the conjunction of expected.sum and result.Cout equals expected.carry.\par
 \noindent$\displaystyle \forall A \in \mathbb{Z} \forall B \in \mathbb{Z} \forall Cin \in \mathbb{Z}\quad result.Sum = expected.sum \land result.Cout = expected.carry$\par
 \medskip
 \noindent
@@ -29,7 +29,7 @@ The full adder output matches binary addition with carry.\\[0.5em]
 \midrule
 \textbf{1.} & Let result = FullAdder(A, B, Cin). & \\[0.45em]
 \textbf{2.} & Let expected = binary\_add\_1bit(A, B, Cin). & \\[0.45em]
-\textbf{3.} & From step 1 and step 2, this implies result.Sum equals expected.the conjunction of sum and result.Cout equals expected.carry. Hence proven. & $\displaystyle result.Sum = expected.sum \land result.Cout = expected.carry$ \\[0.45em]
+\textbf{3.} & From step 1 and step 2, this implies result.Sum equals the conjunction of expected.sum and result.Cout equals expected.carry. Hence proven. & $\displaystyle result.Sum = expected.sum \land result.Cout = expected.carry$ \\[0.45em]
 \bottomrule
 \end{tabular}
 \label{thm:FullAdder-output-output_matches_specification}
