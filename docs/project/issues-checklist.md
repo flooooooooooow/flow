@@ -132,8 +132,8 @@
 - [x] #170 [roadmap:wire-ml-demos-through-dual-grad-codegen] Wire ML demos through Dual / grad codegen https://github.com/flooooooooooow/flow/issues/170
 - [x] #679 [roadmap:flow-2-0-epic-ergonomic-memory-safety-architecture] [Flow 2.0 Epic] Ergonomic Memory Safety Architecture https://github.com/flooooooooooow/flow/issues/679
 - [ ] #1481 [roadmap:compiler-dogfood] Compiler dogfood https://github.com/flooooooooooow/flow/issues/1481
-- [ ] #1482 [roadmap:concurrency-pipeline] Concurrency pipeline https://github.com/flooooooooooow/flow/issues/1482
-- [ ] #1483 [roadmap:concurrency-pipeline-example-once-channel-send-recv-is-exposed] Concurrency pipeline example once channel send/recv is exposed https://github.com/flooooooooooow/flow/issues/1483
+- [x] #1482 [roadmap:concurrency-pipeline] Concurrency pipeline https://github.com/flooooooooooow/flow/issues/1482
+- [x] #1483 [roadmap:concurrency-pipeline-example-once-channel-send-recv-is-exposed] Concurrency pipeline example once channel send/recv is exposed https://github.com/flooooooooooow/flow/issues/1483
 - [ ] #1484 [roadmap:crypto-beyond-sha] Crypto beyond SHA https://github.com/flooooooooooow/flow/issues/1484
 - [ ] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
 - [ ] #1486 [roadmap:embedded-rt] Embedded RT https://github.com/flooooooooooow/flow/issues/1486
