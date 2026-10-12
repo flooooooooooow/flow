@@ -103,7 +103,7 @@ a proof corpus rather than the showcase.
 | Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
-| Digital twin lite | Small plant + observer narrative | 🔲 |
+| Digital twin lite | Small plant + observer narrative | ✅ |
 | Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0-W3) |
 | RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |

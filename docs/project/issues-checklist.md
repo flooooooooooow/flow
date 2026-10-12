@@ -135,7 +135,7 @@
 - [ ] #1482 [roadmap:concurrency-pipeline] Concurrency pipeline https://github.com/flooooooooooow/flow/issues/1482
 - [ ] #1483 [roadmap:concurrency-pipeline-example-once-channel-send-recv-is-exposed] Concurrency pipeline example once channel send/recv is exposed https://github.com/flooooooooooow/flow/issues/1483
 - [ ] #1484 [roadmap:crypto-beyond-sha] Crypto beyond SHA https://github.com/flooooooooooow/flow/issues/1484
-- [ ] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
+- [x] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
 - [ ] #1486 [roadmap:embedded-rt] Embedded RT https://github.com/flooooooooooow/flow/issues/1486
 - [ ] #1487 [roadmap:fir-g-program-graph-phases-1-4] FIR-G program graph (Phases 1-4) https://github.com/flooooooooooow/flow/issues/1487
 - [ ] #1488 [roadmap:games-twin] Games twin https://github.com/flooooooooooow/flow/issues/1488

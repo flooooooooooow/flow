@@ -22,6 +22,7 @@ its own evolution and exits nonzero if the guarantee fails.
 | [`spring_mass_control.flow`](spring_mass_control.flow) | `dsys` / `sense` / `ga` / `closed` | Model → analyze → control |
 | [`spring_mass_lqr.flow`](spring_mass_lqr.flow) | `analyze { lqr }` | Same plant, discrete LQR gains |
 | [`chain4_lqr.flow`](chain4_lqr.flow) | `analyze { lqr }` n=4 | LQR beyond n=2 |
+| [`digital_twin_lite.flow`](digital_twin_lite.flow) | twin tracking | Plant + observer narrative |
 | [`lorenz_gfx.flow`](lorenz_gfx.flow) | `flow` + `represent phase_portrait` | Live Lorenz (x,z) trail |
 | [`heat_diffusion.flow`](heat_diffusion.flow) | `field` / `boundary` / laplacian | 1D heat + ASCII frames |
 
