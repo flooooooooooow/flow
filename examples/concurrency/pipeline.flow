@@ -1,14 +1,31 @@
+# effects-mode: permissive
 # Producer → transform → consumer pipeline over Go-style channels.
 # Run: ./flow run examples/concurrency/pipeline.flow
 #
 # Stages communicate with channel_i32_send / channel_i32_recv.
-# (Single-threaded demo of the dataflow shape; threaded workers come next.)
+# (Threaded workers demo using ThreadedAsync)
 
+import "stdlib/async.flow"
 import "stdlib/concurrent.flow"
 
-function produce(out: ptr<Channel_i32>, n: i32) -> i32 {
+extern {
+    function flow_task_register(task_id: i32, fn: ptr<void>) -> void
+}
+
+let mut ap: ptr<Channel_i32> = null
+let mut bp: ptr<Channel_i32> = null
+
+let mut consume_count: i32 = 0
+let mut consume_sum: i32 = 0
+let mut produce_error: i32 = 0
+let mut transform_error: i32 = 0
+
+function produce(dummy: i32) -> i32 {
+    let out: ptr<Channel_i32> = ap
+    let n: i32 = 5
     for i in 1 to n + 1 {
         if !channel_i32_send(out, i) {
+            produce_error = 1
             return 1
         }
     }
@@ -16,11 +33,14 @@ function produce(out: ptr<Channel_i32>, n: i32) -> i32 {
     return 0
 }
 
-function transform(inp: ptr<Channel_i32>, out: ptr<Channel_i32>) -> i32 {
+function transform(dummy: i32) -> i32 {
+    let inp: ptr<Channel_i32> = ap
+    let out: ptr<Channel_i32> = bp
     let mut v: i32 = 0
     while channel_i32_recv(inp, &v) {
         # Double each value
         if !channel_i32_send(out, v * 2) {
+            transform_error = 1
             return 1
         }
     }
@@ -28,7 +48,8 @@ function transform(inp: ptr<Channel_i32>, out: ptr<Channel_i32>) -> i32 {
     return 0
 }
 
-function consume(inp: ptr<Channel_i32>) -> i32 {
+function consume(dummy: i32) -> i32 {
+    let inp: ptr<Channel_i32> = bp
     let mut v: i32 = 0
     let mut sum: i32 = 0
     let mut count: i32 = 0
@@ -37,13 +58,8 @@ function consume(inp: ptr<Channel_i32>) -> i32 {
         count = count + 1
         printf("  stage3 got %d\n", v)
     }
-    printf("pipeline: count=%d sum=%d (expect count=5 sum=30)\n", count, sum)
-    if count != 5 {
-        return 1
-    }
-    if sum != 30 {
-        return 2
-    }
+    consume_count = count
+    consume_sum = sum
     return 0
 }
 
@@ -51,17 +67,34 @@ function main() -> i32 {
     printf("Channel pipeline demo\n")
     let mut a: Channel_i32 = channel_i32_new(8)
     let mut b: Channel_i32 = channel_i32_new(8)
-    let ap: ptr<Channel_i32> = &a
-    let bp: ptr<Channel_i32> = &b
+    ap = &a
+    bp = &b
 
-    if produce(ap, 5) != 0 {
-        return 10
+    flow_task_register(1, produce as ptr<void>)
+    flow_task_register(2, transform as ptr<void>)
+    flow_task_register(3, consume as ptr<void>)
+
+    handle Async with ThreadedAsync {
+        async_spawn(1)
+        async_spawn(2)
+        async_spawn(3)
+        let _r1: i32 = async_join(1)
+        let _r2: i32 = async_join(2)
+        let _r3: i32 = async_join(3)
     }
-    if transform(ap, bp) != 0 {
-        return 11
+
+    printf("pipeline: count=%d sum=%d (expect count=5 sum=30)\n", consume_count, consume_sum)
+    if consume_count != 5 {
+        return 1
     }
-    if consume(bp) != 0 {
-        return 12
+    if consume_sum != 30 {
+        return 2
+    }
+    if produce_error != 0 {
+        return 3
+    }
+    if transform_error != 0 {
+        return 4
     }
 
     channel_i32_destroy(ap)
