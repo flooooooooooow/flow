@@ -1,0 +1,69 @@
+# FLOW Shader Language — coupled with a simulation loop
+# This program couples a shader fill with a sim loop. It models an n-body
+# system or coupled oscillators directly inside the fragment shader, driven
+# by the global time uniform. Each pixel evaluates the simulation loop up to the current time.
+#
+#   ./flow shader examples/gpu/shader_sim.flow
+
+shader fill sim_coupled_oscillators {
+    let dt: f32 = 0.02
+    var t: f32 = 0.0
+
+    # State variables for two coupled pendulums
+    var theta1: f32 = 1.0
+    var omega1: f32 = 0.0
+    var theta2: f32 = -0.5
+    var omega2: f32 = 0.0
+
+    let g_l: f32 = 9.81 / 2.0
+    let k_m: f32 = 2.0
+
+    let target_t: f32 = mod(time, 15.0)
+
+    # Sim loop
+    for i in 0 to 750 {
+        if t < target_t {
+            let alpha1: f32 = -g_l * sin(theta1) - k_m * (theta1 - theta2)
+            let alpha2: f32 = -g_l * sin(theta2) + k_m * (theta1 - theta2)
+
+            omega1 = omega1 + alpha1 * dt
+            omega2 = omega2 + alpha2 * dt
+
+            theta1 = theta1 + omega1 * dt
+            theta2 = theta2 + omega2 * dt
+
+            t = t + dt
+        }
+    }
+
+    # Rendering
+    let p: vec2 = (uv - vec2(0.5)) * vec2(resolution.x / resolution.y, 1.0) * 4.0
+    var col: vec3 = vec3(0.05, 0.05, 0.08)
+
+    # Grid
+    let grid: vec2 = abs(fract(p * 2.0) - vec2(0.5))
+    let line: f32 = smoothstep(0.04, 0.0, min(grid.x, grid.y))
+    col = col + vec3(0.1) * line
+
+    # Pendulum 1
+    let p1: vec2 = vec2(sin(theta1) * 1.5 - 1.0, -cos(theta1) * 1.5 + 1.0)
+    let d1: f32 = length(p - p1)
+    let ball1: f32 = smoothstep(0.15, 0.12, d1)
+    col = mix(col, vec3(1.0, 0.2, 0.3), ball1)
+
+    # Pendulum 2
+    let p2: vec2 = vec2(sin(theta2) * 1.5 + 1.0, -cos(theta2) * 1.5 + 1.0)
+    let d2: f32 = length(p - p2)
+    let ball2: f32 = smoothstep(0.15, 0.12, d2)
+    col = mix(col, vec3(0.2, 0.6, 1.0), ball2)
+
+    # Spring between them (approximate distance-based intensity along the segment)
+    let pa: vec2 = p - p1
+    let ba: vec2 = p2 - p1
+    let h: f32 = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)
+    let d_line: f32 = length(pa - ba * h)
+    let spring: f32 = smoothstep(0.03, 0.01, d_line) * (0.5 + 0.5 * sin(h * 40.0))
+    col = mix(col, vec3(0.8, 0.8, 0.8), spring)
+
+    color = vec4(col, 1.0)
+}
