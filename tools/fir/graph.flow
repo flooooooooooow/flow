@@ -8,7 +8,6 @@
 
 import "tools/hostlib/text.flow"
 import "compiler/src/fir_analysis.flow"
-import "compiler/src/fir_opts.flow"
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -635,7 +634,7 @@ export function discover_candidates(g: ptr<FirG>, live: ptr<i32>) -> CandList {
             cl_push(&out, Cand {
                 kind: KIND_DEAD,
                 target: name,
-                score: flowc_score_dead_elim(ops),
+                score: 10.0 + (ops as f64),
                 reason: "unreachable from roots",
                 caller: "",
                 callsite_op: -1,
@@ -682,11 +681,13 @@ export function discover_candidates(g: ptr<FirG>, live: ptr<i32>) -> CandList {
         # decides it.
         let is_pure: bool = fg_is_pure(g, sm_get(&g.func_by_name, name))
         let n_sites: i32 = site_count[cal]
-        let mut is_pure_int: i32 = 0
-        if is_pure {
-            is_pure_int = 1
+        let mut score: f64 = ((16 - ops + 1) as f64) / (n_sites as f64)
+        if n_sites == 1 {
+            score = score * 2.0
         }
-        let mut score: f64 = flowc_score_inline(ops, n_sites, is_pure_int)
+        if is_pure {
+            score = score * 1.5
+        }
         score = round4(score)
         let mut tb: TBuf = tb_new()
         tb_puts(&tb, "callee_ops=")

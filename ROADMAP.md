@@ -75,15 +75,15 @@ a proof corpus rather than the showcase.
 - [x] Canonical entrypoints table in `examples/README.md`
 - [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
-- [x] Regenerate `examples/STATUS.md` after layout settles
-- [x] Concurrency pipeline example once channel send/recv is exposed
+- [ ] Regenerate `examples/STATUS.md` after layout settles
+- [ ] Concurrency pipeline example once channel send/recv is exposed
 - [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
 ### Tier 0: Minimum domains
 
 | Domain | Entrypoint / note | Status |
 |--------|-------------------|--------|
-| Networking | `examples/net/tcp_echo.flow` (API shape; full echo loop planned) | ✅ |
+| Networking | `examples/net/tcp_echo.flow` (API shape; full echo loop planned) | partial |
 | HTTP slice | `apps/flow-http/http.flow` | ✅ |
 | Stats | `examples/stats/regression_gd.flow` | ✅ |
 | FFI / C | Zero-bridge C interop in 0.11.0: `@cImport`/`@cInclude`/`@cEmbed`, `extern type`, `cfn(A) -> R`; BLAS bindings + `benchmarks/blas_vs_naive.flow`; `examples/interop/python_embed.flow` for Python | ✅ |
@@ -92,32 +92,32 @@ a proof corpus rather than the showcase.
 | Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
 | Match | `examples/basics/match_enums.flow` | ✅ |
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
-| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | done |
+| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | partial |
 | UI layout | `examples/ui/layout_hello.flow` | ✅ |
-| Concurrency pipeline | `examples/concurrency/pipeline.flow` | ✅ |
+| Concurrency pipeline | deferred: `Channel_i32` in stdlib lacks send/recv | 🔲 |
 
 ### Tier 1: Vision domains
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | ✅ |
+| Hybrid guarantees | Continuous + discrete with checkable invariants (`evolution/bouncing_ball`) | partial |
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
-| Digital twin lite | Small plant + observer narrative | ✅ |
-| Embedded RT | Constrained / no-alloc RT path beyond audio policy | ✅ |
+| Digital twin lite | Small plant + observer narrative | 🔲 |
+| Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0-W3) |
 | RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
-| Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | ✅ |
+| Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
 
 ### Tier 2: Competitive completeness
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | ✅ |
+| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | 🔲 |
 | JSON / TSV | Data interchange demos | 🔲 |
 | Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
-| Physics DSL honesty | Document what `physics/` can/can't do | ✅ |
-| Linalg QR / eigen | Beyond LU / matrix_ops | ✅ |
-| Games twin | Second polished interactive beyond Tetris/2048 | ✅ |
+| Physics DSL honesty | Document what `physics/` can/can't do | partial |
+| Linalg QR / eigen | Beyond LU / matrix_ops | 🔲 |
+| Games twin | Second polished interactive beyond Tetris/2048 | partial |
 
 ### Syntax & weirdness to showcase
 

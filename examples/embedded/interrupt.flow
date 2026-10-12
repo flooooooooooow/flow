@@ -1,0 +1,12 @@
+# flow:lenient
+
+# Mocking a bare-metal timer interrupt handler
+@interrupt
+function timer_isr() {
+    # Increment a simulated tick counter
+    # This function would be registered in the hardware vector table
+}
+
+function main() -> i32 {
+    return 0
+}

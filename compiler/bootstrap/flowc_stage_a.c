@@ -66857,15 +66857,6 @@ int32_t flowc_rt_span_bits(uint8_t* src, int32_t s, int32_t e) {
   if (rt_span_is(src, s, e, "semaphore_wait") == 1) {
   return FLOWC_RT_BLOCK;
 }
-  if (rt_span_is(src, s, e, "channel_i32_send") == 1) {
-  return FLOWC_RT_BLOCK;
-}
-  if (rt_span_is(src, s, e, "channel_i32_recv") == 1) {
-  return FLOWC_RT_BLOCK;
-}
-  if (rt_span_is(src, s, e, "channel_select2") == 1) {
-  return FLOWC_RT_BLOCK;
-}
   return 0;
 }
 
@@ -67299,7 +67290,7 @@ int32_t rt_add_fn(AstArena arena, uint8_t* src, int32_t fn, int32_t is_extern, i
 }
   ns[nfn] = ((arena).nodes[fn]).name_start;
   ne[nfn] = ((arena).nodes[fn]).name_end;
-  { __typeof__(domain[nfn]) __flowc_st3077 = rt_fn_lifetime(arena, src, fn); domain[nfn] = __flowc_st3077; }
+  { __typeof__(domain[nfn]) __flowc_st3044 = rt_fn_lifetime(arena, src, fn); domain[nfn] = __flowc_st3044; }
   bits[nfn] = 0;
   ps[nfn] = 0;
   pe[nfn] = 0;
