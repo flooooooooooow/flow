@@ -1,0 +1,167 @@
+# GEMM Micro-Kernel Benchmark
+# Compares a register-tiled 4x4 outer-product micro-kernel against reference BLAS
+#
+# Run: FLOW_LDFLAGS="-framework Accelerate" ./flow run benchmarks/micro/gemm_micro_kernel.flow
+
+import "stdlib/blas.flow"
+
+extern {
+    function clock() -> i64
+    function printf(fmt: string, val: f64) -> i32
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+function gemm_micro_kernel_4x4(A: ptr<f64>, B: ptr<f64>, C: ptr<f64>, K: i32, lda: i32, ldb: i32, ldc: i32) {
+    let mut c00: f64 = C[0 * ldc + 0]
+    let mut c01: f64 = C[0 * ldc + 1]
+    let mut c02: f64 = C[0 * ldc + 2]
+    let mut c03: f64 = C[0 * ldc + 3]
+    let mut c10: f64 = C[1 * ldc + 0]
+    let mut c11: f64 = C[1 * ldc + 1]
+    let mut c12: f64 = C[1 * ldc + 2]
+    let mut c13: f64 = C[1 * ldc + 3]
+    let mut c20: f64 = C[2 * ldc + 0]
+    let mut c21: f64 = C[2 * ldc + 1]
+    let mut c22: f64 = C[2 * ldc + 2]
+    let mut c23: f64 = C[2 * ldc + 3]
+    let mut c30: f64 = C[3 * ldc + 0]
+    let mut c31: f64 = C[3 * ldc + 1]
+    let mut c32: f64 = C[3 * ldc + 2]
+    let mut c33: f64 = C[3 * ldc + 3]
+
+    for k in 0 to K {
+        let a0: f64 = A[0 * lda + k]
+        let a1: f64 = A[1 * lda + k]
+        let a2: f64 = A[2 * lda + k]
+        let a3: f64 = A[3 * lda + k]
+        let b0: f64 = B[k * ldb + 0]
+        let b1: f64 = B[k * ldb + 1]
+        let b2: f64 = B[k * ldb + 2]
+        let b3: f64 = B[k * ldb + 3]
+
+        c00 = c00 + a0 * b0
+        c01 = c01 + a0 * b1
+        c02 = c02 + a0 * b2
+        c03 = c03 + a0 * b3
+
+        c10 = c10 + a1 * b0
+        c11 = c11 + a1 * b1
+        c12 = c12 + a1 * b2
+        c13 = c13 + a1 * b3
+
+        c20 = c20 + a2 * b0
+        c21 = c21 + a2 * b1
+        c22 = c22 + a2 * b2
+        c23 = c23 + a2 * b3
+
+        c30 = c30 + a3 * b0
+        c31 = c31 + a3 * b1
+        c32 = c32 + a3 * b2
+        c33 = c33 + a3 * b3
+    }
+
+    C[0 * ldc + 0] = c00
+    C[0 * ldc + 1] = c01
+    C[0 * ldc + 2] = c02
+    C[0 * ldc + 3] = c03
+    C[1 * ldc + 0] = c10
+    C[1 * ldc + 1] = c11
+    C[1 * ldc + 2] = c12
+    C[1 * ldc + 3] = c13
+    C[2 * ldc + 0] = c20
+    C[2 * ldc + 1] = c21
+    C[2 * ldc + 2] = c22
+    C[2 * ldc + 3] = c23
+    C[3 * ldc + 0] = c30
+    C[3 * ldc + 1] = c31
+    C[3 * ldc + 2] = c32
+    C[3 * ldc + 3] = c33
+}
+
+function gemm_tiled(A: Mat, B: Mat, C: Mat) {
+    let m: i32 = A.rows
+    let k: i32 = A.cols
+    let n: i32 = B.cols
+    let mut i: i32 = 0
+    while i < m {
+        let mut j: i32 = 0
+        while j < n {
+            gemm_micro_kernel_4x4(&A.data[i * k], &B.data[j], &C.data[i * n + j], k, k, n, n)
+            j = j + 4
+        }
+        i = i + 4
+    }
+}
+
+function run_benchmark(size: i32) {
+    let A: Mat = mat_new(size, size)
+    let B: Mat = mat_new(size, size)
+    let C_blas: Mat = mat_new(size, size)
+    let C_micro: Mat = mat_new(size, size)
+
+    for i in 0 to size {
+        for j in 0 to size {
+            mat_set(A, i, j, (i + j) % 7 + 1.0)
+            mat_set(B, i, j, (i * j) % 11 + 1.0)
+            mat_set(C_micro, i, j, 0.0)
+        }
+    }
+
+    # Warm up
+    gemm(A, B, C_blas)
+    gemm_tiled(A, B, C_micro)
+
+    let iters: i32 = 5
+    let t0: i64 = clock()
+    for iter in 0 to iters {
+        gemm(A, B, C_blas)
+    }
+    let t1: i64 = clock()
+
+    let t2: i64 = clock()
+    for iter in 0 to iters {
+        gemm_tiled(A, B, C_micro)
+    }
+    let t3: i64 = clock()
+
+    let blas_time: f64 = (t1 - t0) / CLOCKS_PER_SEC / iters
+    let micro_time: f64 = (t3 - t2) / CLOCKS_PER_SEC / iters
+    let flops: f64 = 2.0 * size * size * size
+    let blas_gflops: f64 = flops / blas_time / 1e9
+    let micro_gflops: f64 = flops / micro_time / 1e9
+
+    print("Matrix size: ")
+    print(size)
+    print("x")
+    println(size)
+
+    print("  Reference BLAS:       ")
+    printf("%.4f", blas_time * 1000.0)
+    print(" ms, ")
+    printf("%.2f", blas_gflops)
+    println(" GFLOPS")
+
+    print("  Register Tile (4x4):  ")
+    printf("%.4f", micro_time * 1000.0)
+    print(" ms, ")
+    printf("%.2f", micro_gflops)
+    println(" GFLOPS")
+
+    mat_free(A)
+    mat_free(B)
+    mat_free(C_blas)
+    mat_free(C_micro)
+}
+
+function main() -> i32 {
+    println("==================================================")
+    println("GEMM Micro-Kernel Benchmark")
+    println("Hardware register tiles vs Reference BLAS")
+    println("==================================================")
+
+    run_benchmark(128)
+    run_benchmark(256)
+
+    return 0
+}
