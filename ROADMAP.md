@@ -83,7 +83,7 @@ a proof corpus rather than the showcase.
 
 | Domain | Entrypoint / note | Status |
 |--------|-------------------|--------|
-| Networking | `examples/net/tcp_echo.flow` (API shape; full echo loop planned) | partial |
+| Networking | `examples/net/tcp_echo.flow` (API shape; full echo loop planned) | ✅ |
 | HTTP slice | `apps/flow-http/http.flow` | ✅ |
 | Stats | `examples/stats/regression_gd.flow` | ✅ |
 | FFI / C | Zero-bridge C interop in 0.11.0: `@cImport`/`@cInclude`/`@cEmbed`, `extern type`, `cfn(A) -> R`; BLAS bindings + `benchmarks/blas_vs_naive.flow`; `examples/interop/python_embed.flow` for Python | ✅ |
