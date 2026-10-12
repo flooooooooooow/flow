@@ -26,7 +26,7 @@
     },
     "self_hosted_compiler": {
       "files": 112,
-      "lines": 119291
+      "lines": 119292
     },
     "standard_library": {
       "files": 128,
@@ -49,12 +49,12 @@
     "stdlib": "128 modules",
     "tests": "848 tests"
   },
-  "commit": "817e1eb0ea8b",
-  "generated_at": "2026-10-12T15:22:53+01:00",
+  "commit": "942af1bd56e0",
+  "generated_at": "2026-10-12T16:15:30+01:00",
   "languages": {
     "C": {
       "files": 122,
-      "lines": 116886
+      "lines": 116889
     },
     "C++": {
       "files": 22,
@@ -70,7 +70,7 @@
     },
     "Flow": {
       "files": 3742,
-      "lines": 492494
+      "lines": 492495
     },
     "HTML": {
       "files": 223,
@@ -106,7 +106,7 @@
   "schema_version": 1,
   "totals": {
     "source_files": 4475,
-    "source_lines": 692874,
+    "source_lines": 692878,
     "tracked_files": 10982
   }
 }
