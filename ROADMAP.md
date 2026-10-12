@@ -92,7 +92,7 @@ a proof corpus rather than the showcase.
 | Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
 | Match | `examples/basics/match_enums.flow` | ✅ |
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
-| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | partial |
+| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | done |
 | UI layout | `examples/ui/layout_hello.flow` | ✅ |
 | Concurrency pipeline | `examples/concurrency/pipeline.flow` | ✅ |
 
