@@ -2,49 +2,36 @@
 # Run: ./flow run examples/concurrency/pipeline.flow
 #
 # Stages communicate with channel_i32_send / channel_i32_recv.
-# (Single-threaded demo of the dataflow shape; threaded workers come next.)
+# This runs stages in parallel threads using thread_spawn.
 
 import "stdlib/concurrent.flow"
 
-function produce(out: ptr<Channel_i32>, n: i32) -> i32 {
-    for i in 1 to n + 1 {
-        if !channel_i32_send(out, i) {
-            return 1
-        }
-    }
-    channel_i32_close(out)
-    return 0
+struct ProduceArgs {
+    out: ptr<Channel_i32>,
+    n: i32
 }
 
-function transform(inp: ptr<Channel_i32>, out: ptr<Channel_i32>) -> i32 {
+function produce(arg: ptr<i8>) -> void {
+    let args: ptr<ProduceArgs> = arg as ptr<ProduceArgs>
+    for i in 1 to args.n + 1 {
+        let _: bool = channel_i32_send(args.out, i)
+    }
+    channel_i32_close(args.out)
+}
+
+struct TransformArgs {
+    inp: ptr<Channel_i32>,
+    out: ptr<Channel_i32>
+}
+
+function transform(arg: ptr<i8>) -> void {
+    let args: ptr<TransformArgs> = arg as ptr<TransformArgs>
     let mut v: i32 = 0
-    while channel_i32_recv(inp, &v) {
+    while channel_i32_recv(args.inp, &v) {
         # Double each value
-        if !channel_i32_send(out, v * 2) {
-            return 1
-        }
+        let _: bool = channel_i32_send(args.out, v * 2)
     }
-    channel_i32_close(out)
-    return 0
-}
-
-function consume(inp: ptr<Channel_i32>) -> i32 {
-    let mut v: i32 = 0
-    let mut sum: i32 = 0
-    let mut count: i32 = 0
-    while channel_i32_recv(inp, &v) {
-        sum = sum + v
-        count = count + 1
-        printf("  stage3 got %d\n", v)
-    }
-    printf("pipeline: count=%d sum=%d (expect count=5 sum=30)\n", count, sum)
-    if count != 5 {
-        return 1
-    }
-    if sum != 30 {
-        return 2
-    }
-    return 0
+    channel_i32_close(args.out)
 }
 
 function main() -> i32 {
@@ -54,18 +41,34 @@ function main() -> i32 {
     let ap: ptr<Channel_i32> = &a
     let bp: ptr<Channel_i32> = &b
 
-    if produce(ap, 5) != 0 {
-        return 10
+    let mut prod_args: ProduceArgs = ProduceArgs { out: ap, n: 5 }
+    let mut t1: Thread = thread_spawn(produce as ptr<i8>, &prod_args as ptr<i8>)
+
+    let mut trans_args: TransformArgs = TransformArgs { inp: ap, out: bp }
+    let mut t2: Thread = thread_spawn(transform as ptr<i8>, &trans_args as ptr<i8>)
+
+    let mut v: i32 = 0
+    let mut sum: i32 = 0
+    let mut count: i32 = 0
+    while channel_i32_recv(bp, &v) {
+        sum = sum + v
+        count = count + 1
+        printf("  stage3 got %d\n", v)
     }
-    if transform(ap, bp) != 0 {
-        return 11
-    }
-    if consume(bp) != 0 {
-        return 12
-    }
+    printf("pipeline: count=%d sum=%d (expect count=5 sum=30)\n", count, sum)
+
+    let _j1: i32 = thread_join(&t1)
+    let _j2: i32 = thread_join(&t2)
 
     channel_i32_destroy(ap)
     channel_i32_destroy(bp)
+
+    if count != 5 {
+        return 1
+    }
+    if sum != 30 {
+        return 2
+    }
     printf("OK\n")
     return 0
 }
