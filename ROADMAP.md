@@ -75,7 +75,7 @@ a proof corpus rather than the showcase.
 - [x] Canonical entrypoints table in `examples/README.md`
 - [x] UI layout tourist example under `examples/` (`examples/ui/layout_hello.flow`)
 - [x] Packages / WASM showcase entrypoints (`examples/packages/`, `examples/wasm/hello_wasm.flow`)
-- [ ] Regenerate `examples/STATUS.md` after layout settles
+- [x] Regenerate `examples/STATUS.md` after layout settles
 - [x] Concurrency pipeline example once channel send/recv is exposed
 - [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
