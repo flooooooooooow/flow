@@ -25,23 +25,23 @@ ROADMAP-SYNC: local-region-inference-and-automated-non-aliasing-proofs
 - [x] `FrameArena` bump API
 - [x] Interprocedural escape analysis without parameter annotations (#687)
 - [x] Axiom §7 `request` and `persistent` domains
-- [ ] Sound propagation through struct fields and collections (#684)
-- [ ] Domain-bound allocation tracking for arenas and heap regions (#690)
+- [x] Sound propagation through struct fields and collections (#684)
+- [x] Domain-bound allocation tracking for arenas and heap regions (#690)
 - [ ] Escape through a call, closure, or heap cell (remaining gaps)
 - [ ] Domains on parameters / in types
 - [ ] `domain frame { ... }` blocks
 
 ### Automated aliasing and borrow inference
 
-- [ ] Local region inference and automated non-aliasing proofs (#694)
-- [ ] Value semantics with compiler-inferred move defaults (#696)
+- [x] Local region inference and automated non-aliasing proofs (#694)
+- [x] Value semantics with compiler-inferred move defaults (#696)
 
 ### Effect-bounded lifetimes and capabilities
 
 - [x] Cross-module summaries for public functions (first slice, #765)
 - [ ] Remaining `@rt_safe` / `@lifetime` summary gaps (#765)
 - [ ] Reject `unknown` externs from `@rt_safe` / `callback`
-- [ ] First-class RT-safe callable contracts for closures (#766)
+- [x] First-class RT-safe callable contracts for closures (#766)
 
 ### Tiered safety profiles and formal proofs
 
