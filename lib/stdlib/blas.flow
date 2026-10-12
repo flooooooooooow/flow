@@ -242,62 +242,6 @@ export function scal(alpha: f64, x: ptr<f64>, n: i32) -> void {
 # LAPACK WRAPPERS
 # ============================================================================
 
-# Computes eigenvalues and optionally right eigenvectors for a general matrix A via LAPACK dgeev.
-# Overwrites A.
-# wr: real parts of eigenvalues (needs A.cols slots)
-# wi: imaginary parts of eigenvalues (needs A.cols slots)
-# vr: right eigenvectors (optional). If provided, it must be a matrix of same size as A. If null, eigenvectors are not computed.
-# Returns LAPACK info (0 = success).
-export function geev(A: Mat, wr: ptr<f64>, wi: ptr<f64>, vr: ptr<f64>) -> i32 {
-    let mut jobvl: i8 = 78 # 'N'
-    let mut jobvr: i8 = 78 # 'N'
-    if vr != null {
-        jobvr = 86 # 'V'
-    }
-
-    let mut n: i32 = A.cols
-    let mut lda: i32 = n
-    let mut ldvl: i32 = 1
-    let vl: ptr<f64> = null
-    let mut ldvr: i32 = 1
-    if vr != null {
-        ldvr = n
-    }
-
-    let mut lwork: i32 = 4 * n
-    if lwork < 1 {
-        lwork = 1
-    }
-    let work: ptr<f64> = malloc((lwork * 8) as i64) as ptr<f64>
-    let mut info: i32 = 0
-
-    dgeev_(&jobvl, &jobvr, &n, A.data, &lda, wr, wi, vl, &ldvl, vr, &ldvr, work, &lwork, &info)
-
-    free(work as ptr<void>)
-    return info
-}
-
-# QR factorization via LAPACK dgeqrf. Overwrites A with Q/R factors.
-# tau must point at at least min(A.rows, A.cols) f64 slots.
-# Returns LAPACK info (0 = success).
-export function geqrf(A: Mat, tau: ptr<f64>) -> i32 {
-    let mut m: i32 = A.rows
-    let mut n: i32 = A.cols
-
-    let mut lwork: i32 = n
-    if m > n {
-        lwork = m
-    }
-    let work: ptr<f64> = malloc((lwork * 8) as i64) as ptr<f64>
-    let mut info: i32 = 0
-
-    dgeqrf_(&m, &n, A.data, &m, tau, work, &lwork, &info)
-
-    free(work as ptr<void>)
-    return info
-}
-
-
 # Solve A x = b via LAPACK (LU). Writes solution to x.
 # Returns 0 on success; non-zero info on failure. A is not modified.
 export function solve(A: Mat, b: ptr<f64>, x: ptr<f64>) -> i32 {

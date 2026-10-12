@@ -1,6 +1,10 @@
 # FLOW Networking Standard Library
 # TCP/UDP sockets, HTTP client
 
+# =============================================================================
+# Socket Types
+# =============================================================================
+
 struct Socket {
     fd: i32,
     domain: i32,
@@ -8,37 +12,50 @@ struct Socket {
     protocol: i32
 }
 
-struct SockAddr_in {
-    family: u16,
-    port: u16,
-    addr: u32,
-    zero: array<u8, 8>
-}
+# Socket domains
 
-extern {
-    function flow_net_htons(hostshort: i16) -> u16
-    function flow_net_htonl(hostlong: i32) -> u32
-    function flow_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i32
-    function flow_net_bind(fd: i32, addr: ptr<SockAddr_in>, len: u32) -> i32
-    function flow_net_listen(fd: i32, backlog: i32) -> i32
-    function flow_net_accept(fd: i32, addr: ptr<SockAddr_in>, len: ptr<u32>) -> i32
-    function flow_net_recv(fd: i32, buf: ptr<u8>, len: u32, flags: i32) -> i32
-    function flow_net_send(fd: i32, buf: ptr<u8>, len: u32, flags: i32) -> i32
-    function flow_net_connect(fd: i32, addr: ptr<SockAddr_in>, len: u32) -> i32
-    function flow_net_set_reuseaddr(fd: i32) -> void
+# Socket types
+
+@cImport("sys/socket.h")
+@cImport("arpa/inet.h")
+@cImport("netinet/in.h")
+
+# =============================================================================
+# Socket Address
+# =============================================================================
+
+struct SockAddr_in {
+    len: u8,          # sin_len (macOS/BSD)
+    family: u8,       # sa_family_t
+    port: u16,        # in_port_t (network byte order)
+    addr: u32,        # in_addr_t (network byte order)
+    zero: array<u8, 8>  # Padding to 16 bytes
 }
 
 function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
     return SockAddr_in {
+        len: 16,
         family: 2,       # AF_INET
-        port: flow_net_htons(port as i16),
-        addr: flow_net_htonl(addr),
+        port: htons(port as i16),
+        addr: htonl(addr),
         zero: []
     }
 }
 
-const AF_INET: i32 = 2
-const INADDR_ANY: i32 = 0
+# =============================================================================
+# Low-level Socket Functions (extern to libc)
+# =============================================================================
+
+# socket, bind, listen, accept, connect, send, recv and shutdown come from
+# <sys/socket.h>, which <netinet/in.h> includes above. Declaring them here as
+# well produced "conflicting types for 'bind'": libc takes `struct sockaddr *`
+# and a socklen_t, not this module's own SockAddr_in and an i32.
+
+# Shutdown how values
+
+# =============================================================================
+# High-level TCP API
+# =============================================================================
 
 struct TcpListener {
     socket: Socket,
@@ -51,14 +68,14 @@ struct TcpStream {
 }
 
 function tcp_listener_new(port: i32) -> TcpListener {
-    let fd = flow_net_socket(2, 1, 0)
-    let sock = Socket { fd: fd, domain: 2, socket_type: 1, protocol: 0 }
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    let sock = Socket { fd: fd, domain: AF_INET, socket_type: SOCK_STREAM, protocol: 0 }
     return TcpListener { socket: sock, port: port }
 }
 
 function tcp_stream_new() -> TcpStream {
-    let fd = flow_net_socket(2, 1, 0)
-    let sock = Socket { fd: fd, domain: 2, socket_type: 1, protocol: 0 }
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    let sock = Socket { fd: fd, domain: AF_INET, socket_type: SOCK_STREAM, protocol: 0 }
     return TcpStream { socket: sock, connected: false }
 }
 
@@ -66,16 +83,24 @@ function tcp_stream_is_connected(stream: TcpStream) -> bool {
     return stream.connected
 }
 
+# =============================================================================
+# UDP API
+# =============================================================================
+
 struct UdpSocket {
     socket: Socket,
     bound: bool
 }
 
 function udp_socket_new() -> UdpSocket {
-    let fd = flow_net_socket(2, 2, 0)
-    let sock = Socket { fd: fd, domain: 2, socket_type: 2, protocol: 0 }
+    let fd = socket(AF_INET, SOCK_DGRAM, 0)
+    let sock = Socket { fd: fd, domain: AF_INET, socket_type: SOCK_DGRAM, protocol: 0 }
     return UdpSocket { socket: sock, bound: false }
 }
+
+# =============================================================================
+# HTTP Client (Simple)
+# =============================================================================
 
 struct HttpResponse {
     status_code: i32,
@@ -95,6 +120,7 @@ function http_request_new(method: string, url: string) -> HttpRequest {
 }
 
 function http_get(url: string) -> HttpResponse {
+    # Placeholder - actual implementation would parse URL and make request
     return HttpResponse { status_code: 0, body_length: 0, success: false }
 }
 
@@ -102,10 +128,19 @@ function http_post(url: string, body: string) -> HttpResponse {
     return HttpResponse { status_code: 0, body_length: 0, success: false }
 }
 
+# =============================================================================
+# DNS Resolution
+# =============================================================================
+
 extern {
     function gethostbyname(name: string) -> ptr<i8>
 }
 
 function resolve_hostname(hostname: string) -> i32 {
-    return 0
+    # Returns IPv4 address as i32, or 0 on failure
+    return 0  # Placeholder
 }
+
+# =============================================================================
+# Common IP Addresses
+# =============================================================================

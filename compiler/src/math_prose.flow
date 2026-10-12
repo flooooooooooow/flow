@@ -171,7 +171,6 @@ function is_ident_char(c: i32) -> i32 {
     if c >= 65 and c <= 90 { return 1 }
     if c >= 48 and c <= 57 { return 1 }
     if c == 95 { return 1 }
-    if c == 46 { return 1 }
     return 0
 }
 
