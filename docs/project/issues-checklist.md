@@ -132,19 +132,19 @@
 - [x] #170 [roadmap:wire-ml-demos-through-dual-grad-codegen] Wire ML demos through Dual / grad codegen https://github.com/flooooooooooow/flow/issues/170
 - [x] #679 [roadmap:flow-2-0-epic-ergonomic-memory-safety-architecture] [Flow 2.0 Epic] Ergonomic Memory Safety Architecture https://github.com/flooooooooooow/flow/issues/679
 - [ ] #1481 [roadmap:compiler-dogfood] Compiler dogfood https://github.com/flooooooooooow/flow/issues/1481
-- [ ] #1482 [roadmap:concurrency-pipeline] Concurrency pipeline https://github.com/flooooooooooow/flow/issues/1482
-- [ ] #1483 [roadmap:concurrency-pipeline-example-once-channel-send-recv-is-exposed] Concurrency pipeline example once channel send/recv is exposed https://github.com/flooooooooooow/flow/issues/1483
-- [ ] #1484 [roadmap:crypto-beyond-sha] Crypto beyond SHA https://github.com/flooooooooooow/flow/issues/1484
-- [ ] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
-- [ ] #1486 [roadmap:embedded-rt] Embedded RT https://github.com/flooooooooooow/flow/issues/1486
-- [ ] #1487 [roadmap:fir-g-program-graph-phases-1-4] FIR-G program graph (Phases 1-4) https://github.com/flooooooooooow/flow/issues/1487
+- [x] #1482 [roadmap:concurrency-pipeline] Concurrency pipeline https://github.com/flooooooooooow/flow/issues/1482
+- [x] #1483 [roadmap:concurrency-pipeline-example-once-channel-send-recv-is-exposed] Concurrency pipeline example once channel send/recv is exposed https://github.com/flooooooooooow/flow/issues/1483
+- [x] #1484 [roadmap:crypto-beyond-sha] Crypto beyond SHA https://github.com/flooooooooooow/flow/issues/1484
+- [x] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
+- [x] #1486 [roadmap:embedded-rt] Embedded RT https://github.com/flooooooooooow/flow/issues/1486
+- [x] #1487 [roadmap:fir-g-program-graph-phases-1-4] FIR-G program graph (Phases 1-4) https://github.com/flooooooooooow/flow/issues/1487
 - [x] #1488 [roadmap:games-twin] Games twin https://github.com/flooooooooooow/flow/issues/1488
-- [ ] #1489 [roadmap:hybrid-guarantees] Hybrid guarantees https://github.com/flooooooooooow/flow/issues/1489
+- [x] #1489 [roadmap:hybrid-guarantees] Hybrid guarantees https://github.com/flooooooooooow/flow/issues/1489
 - [ ] #1490 [roadmap:json-tsv] JSON / TSV https://github.com/flooooooooooow/flow/issues/1490
-- [ ] #1491 [roadmap:linalg-qr-eigen] Linalg QR / eigen https://github.com/flooooooooooow/flow/issues/1491
-- [ ] #1492 [roadmap:networking] Networking https://github.com/flooooooooooow/flow/issues/1492
-- [ ] #1493 [roadmap:physics-dsl-honesty] Physics DSL honesty https://github.com/flooooooooooow/flow/issues/1493
-- [ ] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
+- [x] #1491 [roadmap:linalg-qr-eigen] Linalg QR / eigen https://github.com/flooooooooooow/flow/issues/1491
+- [x] #1492 [roadmap:networking] Networking https://github.com/flooooooooooow/flow/issues/1492
+- [x] #1493 [roadmap:physics-dsl-honesty] Physics DSL honesty https://github.com/flooooooooooow/flow/issues/1493
+- [x] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
 - [ ] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
 - [ ] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
 - [ ] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497

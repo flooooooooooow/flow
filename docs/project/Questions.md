@@ -11,41 +11,6 @@ Format:
 
 ## Open Questions
 
-### 2026-10-08: RT summary cache: may a stored snapshot skip RT checks? (#765)
-
-**Context:** PR #1355 as written added a summary cache. After a clean check
-it stored the imported `$` summary rows under `$FLOWC_RT_CACHE_DIR` or
-`~/.cache/flow/rt/`, keyed by a 64-bit hash of the client source. On the
-next compile, if the current imports refined the stored rows, Stage-A RT
-consult was skipped (`rt_cache_hit`). Three things make that a trust
-decision and not a bug fix:
-
-- Anyone who can write the cache file can switch off RT checks: a crafted
-  snapshot that lists the imports with every effect bit set is refined by
-  the real ones.
-- The key has no compiler version or schema salt, so a newer flowc with
-  stricter RT rules would trust a snapshot an older flowc wrote.
-- The selftest wrote to a fixed shared path, `/tmp/flow-rt-cache-selftest`.
-
-The PR's later hardening (owner-only 0700 directory, framing and range
-validation, lowercase-hex keys, rejecting empty snapshots) narrows the first
-point but does not remove it. The cache only skips the Stage-A consult; the
-semantic checker still runs when it is on, so the speed gain is small.
-
-**Options:**
-1. No persistent RT cache. Keep the refinement relation as a tested pure
-   function for a future incremental build (what #1355 now lands).
-2. A cache that is advisory only: it may reorder or batch work but never
-   skips a check.
-3. The original design, with the key salted like the AST cache
-   (`FLOWC_AST_CACHE_SCHEMA`, compiler version) and the #736 decision on
-   directory ownership applied to `~/.cache/flow/rt/` as well.
-
-**Recommendation:** Option 1 until #736's cache trust question is settled,
-then revisit 3 with the same rules for both caches.
-
-**Status:** Open. #1355 lands option 1.
-
 ### 2026-10-08: Float literals in f32 arithmetic: f32 or f64?
 
 **Context:** #729 lists "unnecessary f32<->f64 promotion" as a codegen tax.
@@ -61,7 +26,7 @@ The cost is real. On macOS arm64 at -O3, `a[i] = a[i] * 0.1 + 1.3` over
 4096 floats runs 3.24x slower than the same loop with `0.1f` and `1.3f`:
 clang widens to two-lane f64 vectors with `fcvtl`/`fcvtn` around them. The
 results also differ: for 1677722 of the 8388608 floats in [1, 2),
-`(float)(x * 0.1)` is not `x * 0.1f`. So the fix changes numeric output of
+`(float)(x * 0.1)` is not `x * 0.1f`. The fix changes numeric output of
 existing f32 programs in the last bit.
 
 #1450 fixed the one place where the C backend mixed both rules in one loop
@@ -87,7 +52,6 @@ decision because it changes output bits.
 
 ---
 
-
 ### 2026-10-05: Algebraic effects: abort, retry, and multi-shot continuations?
 
 **Context:** Issue #564 records that shipped handlers are tail-resumptive
@@ -101,271 +65,37 @@ which conflicts with the zero-overhead C ABI path. See
 and [effects-continuations.md](../language/effects-continuations.md).
 
 **Options:**
-1. Keep tail-resumptive handlers as the 1.0 language rule. Reject reserved
+1. Keep tail-resumptive handlers as the language rule. Reject reserved
    `resume` / `resume_multi` forms in capability methods. Encode abort as
    `Result` / status, retry as a caller loop plus a policy effect.
 2. Add abort (0-shot) only, via longjmp or an extra handle-block status,
-   still without retry or multi-shot.
+   without retry or multi-shot.
 3. Add general one-shot and multi-shot continuation capture (Koka / Eff /
    OCaml 5 style).
 
-**Recommendation:** Option 1. It is the conservative 1.0 choice already
+**Recommendation:** Option 1. It is the conservative choice already
 accepted by the RFC. Options 2 and 3 change control-flow and ABI
 predictability and need an explicit human design decision before anyone
 plans a scheduler or exception encoding on top of `handle`.
 
 **Status:** Conservative option implemented (2026-10-05): spec + compiler
 rejection of `resume` / `resume_multi` in capability methods + tests.
-Options 2 and 3 remain open for a later 1.x or post-1.0 decision.
+Options 2 and 3 remain open for post-2.0 design decisions.
 
 ---
 
-### 2026-08-06: Lifetime domains: annotation-only or `domain` blocks in v0?
-
-**Context:** Issue #148 asks for `callback` / `frame` / `session` /
-`application` as a first-class memory model, and leaves the v0 surface open:
-annotations on declarations, or a `domain frame { … }` block that implies an
-arena reset at the block's end.
-([lifetime-domains.md](../language/lifetime-domains.md))
-
-**Options:**
-1. Annotation-only: `@lifetime(D)` on a function and on a module static.
-   Reuses the existing decorator grammar, no parser work beyond a new
-   attribute name, and a value takes its domain from its allocation site.
-2. `domain frame { … }` blocks: nicer at the frame boundary because the
-   reset is implicit, but it needs new grammar, a new scope kind, and a
-   decision about what a domain block means when nested or when it contains
-   a `return`.
-3. Both.
-
-**Recommendation:** Option 1 for v0, shipped. `@lifetime(...)` parses on
-functions, statics and struct fields; the five rules (LD1 escape to a
-longer-lived static, including through composite storage, LD2 escape by
-return, LD3 allocation discipline, LD4 call ordering, LD5 field-declared
-domains) are enforced by the type checker. Block sugar is listed under
-Future work with `frame_begin` / `frame_end` as the explicit form it would
-expand to. Field annotations are issue #684.
-
-**Status:** ✅ Resolved for v0 (annotation-only, 2026-08-06; fields 2026-10-05)
-
----
-
-### 2026-08-05: `gfx_run`: callback vs block sugar?
-
-**Context:** Pattern adoption ([pattern-adoption.md](pattern-adoption.md)) wants
-to kill the repeated poll/esc/clear/present loop in every gfx demo. Two sketches:
-
-**Options:**
-1. Stdlib/runtime callback: `flow_gfx_run` + user `flow_gfx_frame(g, frame) -> i32`
-   (works today; slightly awkward naming).
-2. Block sugar: `gfx_run(g, max_frames: N) { … }` (nicer; needs parser/lowering).
-3. Both: A now, B later when frame blocks exist.
-
-**Recommendation:** Option 3 (shipped MVP): `gfx_frame_pump` for inline loops;
-`flow_gfx_run` / `gfx_run` calling weak-overridable `flow_gfx_frame`. Block sugar deferred.
-
-**Status:** ✅ Resolved (Option 3 MVP 2026-08-05)
-
----
-
-### 2026-08-05: `represent phase_portrait`: language form or stdlib trail helper?
-
-**Context:** Lorenz north-star wants `represent phase_portrait(x, z) { trail … }`
-inside a `flow`. We already have `represent linear`.
-
-**Options:**
-1. Full `represent phase_portrait` lowering (ring buffer + window + maps).
-2. Stdlib-only `portrait_trail_*` helpers; keep `represent` for linear/analysis.
-3. Hybrid: stdlib trail now; grammar sugar later that expands to helpers.
-
-**Recommendation:** Option 3. Lorenz now uses `flow` + trail in `main`; grammar sugar later.
-
-**Status:** ✅ Resolved for MVP (stdlib trail helpers / grammar still open as follow-on)
-
----
-
-### 2026-08-05: LQR n>2: stdlib first or extend `dsys`?
-
-**Context:** Cartpole control reimplements 4×4 Riccati because dynamics DSL is n=2.
-
-**Options:**
-1. Stdlib `lqr`/`dare` over LAPACK/Accelerate; DSL stays n=2 until matrix literals mature.
-2. Extend `dsys`/`analyze`/`lqr` to arbitrary n in the DSL immediately.
-3. Codegen-only for fixed n=4 cartpole (one-off).
-
-**Recommendation:** Option 1: general, dogfoods BLAS, unblocks cartpole without
-rushing DSL matrix codegen.
-
-**Status:** 🔲 Pending
-
----
-
-### 2026-08-05: Field / laplacian: stdlib MVP or grammar card?
-
-**Context:** `heat_diffusion.flow` is nested Euler; vision wants
-`T evolves as alpha * laplacian(T)`.
-
-**Options:**
-1. Stdlib `laplacian_1d` + ordinary `flow` over array-backed state (no new keywords).
-2. Full `field` / `boundary` grammar from north-star.
-3. Defer until after Lorenz/`gfx_run` land.
-
-**Recommendation:** Option 1 for P2 MVP; grammar as follow-on card.
-
-**Status:** 🔲 Pending
-
----
-
-
-### 2026-08-05: Self-hosting cutover: when does `./flow` drop Python?
-
-**Context:** Plan in `docs/project/self-hosting.md`. Stage-A `flowc` exists
-as a bootstrap; production is still `src/flow/*.py`.
-
-**Options:**
-1. Hard cutover after Phase C parity suite green (recommended).
-2. Soft forever dual-host (`FLOW_HOST=python|flowc`) with no deadline.
-3. Freeze Python features and only grow `flowc` (slow user-facing velocity).
-
-**Recommendation:** (1) with a published parity checklist; keep (2) as escape
-hatch for one release after cutover.
-
-**Resolution (2026-08-05):** Soft dual-host now: `./flow run|compile`
-defaults to `FLOW_HOST=flowc` (Stage-A); escape hatch `FLOW_HOST=python`.
-Hard drop of Python from the compile path is Phase D (#153).
-
-**Status:** ✅ Resolved (soft cutover; Phase D retires Python)
-
-### 2026-08-07: Heterogeneous FIR-G compiler architecture
-
-**Context:** Design for FIR-S → FIR-G → FIR-M with GPU/MLX analysis and learned
-optimisation (MLGO-style profitability only). See [fir-g.md](fir-g.md).
-
-**Options:**
-1. Bolt ML onto existing AST walkers
-2. Introduce dense-ID FIR-G as first-class IR; CPU analyses first; MLX later
-3. Jump straight to MLX-in-core / C++ rewrite
-
-**Recommendation:** (2). Phase order locked in fir-g.md. Correctness stays
-deterministic; ML only for profitability. Dual C/MLIR/WASM backends remain.
-
-**Status:** ✅ Resolved (2026-08-07). Phases 1-4 landed in Python alongside
-existing emitters (`./flow fir-g`, measured routing, opt candidates).
-
----
-
-### 2026-08-04: Self-hosting bootstrap strategy
-
-**Context:** Started `compiler/` (`flowc`): Flow lexer + subset parser that
-runs under today's Python→C host. Next phases: more syntax, then a backend.
-
-**Progress:** Stage-A path well underway. Host runs tests; Stage-A emits+links
-real `token`/`ast`/`lexer`/`fileio`/`parser`/`cgen` → `flowc_frontend.o`; C
-driver emits fixtures; **self-emit** rebuilds frontend → `flowc_frontend_self.o`.
-See [compiler/README.md](../../compiler/README.md), `roundtrip.flow`.
-
-**Options:**
-1. **Heterogeneous forever**: Flow front-end (lex/parse/typecheck), keep C/MLIR
-   codegen in Python until Flow can emit C well enough to compile itself
-2. **Stage-A C emitter in Flow**: tiny subset→C in Flow; use host to compile
-   `flowc`, then `flowc` compiles a larger `flowc`
-3. **Interpreter first**: Flow AST interpreter for dogfooding before codegen
-
-**Recommendation:** (1) until parser covers ~80% of `src/flow` syntax surface,
-then (2) for a minimal `function`/`let`/`if`/`return`→C path. Avoid (3) as the
-main line. Flow's product is compiled.
-
-**Status:** 🔲 Pending
-
----
-
-### 2026-08-04: Ecosystem packages: registry vs stdlib
-
-**Context:** Seeded `json`, `toml`, `http`, `sqlite` under `registry/packages/` (not
-`lib/stdlib/`) so apps pull them with `flow add` / `flow.toml`. Stdlib still
-owns POSIX, collections, audio, gfx, concurrency.
-
-**Options:**
-1. Keep app-facing libs in the registry; stdlib stays language/runtime primitives
-2. Graduate mature packages into `lib/stdlib/` / `std.*` once stable
-3. Dual-publish (stdlib re-exports registry): more moving parts
-
-**Recommendation:** (1) now; (2) only for ubiquitous primitives (e.g. JSON) after
-API freeze. Wrap packages that need system libs (`http`, `sqlite`) stay registry
-+ `[native]` forever.
-
-**Status:** 🔲 Pending
-
----
-
-### 2026-08-04: Concurrency vs Go: Phase 2 priorities
-
-**Context:** Phase 1 shipped ([docs/language/concurrency-vs-go.md](../language/concurrency-vs-go.md)):
-real channels, WaitGroup wait, TLS effect handlers, `parallel for`→OpenMP,
-`ThreadedAsync` over pthreads. (Later the same day: `select2`, FiberAsync M:N,
-asm fctx, `NetpollAsyncIO`. Still no delimited continuations / N-way `select`.)
-
-**Options:**
-1. Continuations + fiber scheduler next (true effects-native async)
-2. `select` + generic channels next (Go API parity)
-3. Go-comparison benchmarks next (credibility before more runtime)
-4. Real `AsyncIO` (kqueue/epoll) next (server path)
-
-**Recommendation:** (3) then (1). Measure channel/ping-pong and parallel-for
-vs Go before inventing fibers; keep effect surface stable.
-
-**Status:** ✅ Resolved (2026-08-04) through M:N + netpoll ([replace-go.md](../language/replace-go.md)).
-Flow wins ping-pong + fan-out vs Go. Follow-ups shipped: `select4`, fiber-park
-IO, HTTP microbench, `FLOW_RACE=1` hooks, `flow_cont` scaffold. Remaining:
-true Flow-frame suspend, generic channels, TSAN-class races. GitHub CI disabled.
-
----
-
-### 2026-08-04: Effect-row typing vs soft defaults
-
-**Context:** Unhandled effect ops currently return zero / no-op (documented
-"safe defaults"). Interim opt-in abort shipped: `FLOW_STRICT_EFFECTS=1` and
-`--strict-effects` (see `docs/effects-showcase.md`).
-
-**Options:**
-1. Keep soft defaults as language default; rows later; strict via env/flag
-2. Flip default to fail-loud; soft defaults only with an explicit pragma
-3. Effect-row typing on signatures (Koka/Unison style): reject unhandled at compile time
-
-**Recommendation:** Stay on (1) until rows exist; then prefer (3) and retire
-soft defaults for typed code. Do not flip default to abort without a migration
-note. Showcase and tests rely on zeros.
-
-**Update (2026-08-04):** Phase 1 shipped: `--strict-effects` enables
-**compile-time** unhandled-effect errors via a lexical handler stack in the
-type checker (plus runtime abort).
-
-**Update (2026-08-04, later):** Phase 2 shipped: `function f() -> T with E1, E2`
-declares a signature effect row; in Stable mode the body may perform
-those effects, and callers must cover them via `handle` or their own `with`.
-
-**Update (2026-08-04, final):** First-class rows shipped: `(T) -> R with E` on
-types; calls through such values require `E` in Stable mode. The legacy
-zero/no-op behavior remains available through the explicit permissive environment
-variables described above.
-
-**Status:** ✅ Resolved. Stable compilation and runtime fail loudly by default. Set
-`FLOWC_PERMISSIVE_EFFECTS=1` while compiling and `FLOW_PERMISSIVE_EFFECTS=1`
-while running to retain the legacy zero/no-op behavior.
-
----
-
-### 2026-08-04: Declarative ordering: Phase 2 scope
+### 2026-08-04: Declarative ordering: Phase 2 scope and semantics follow-ups
 
 **Context:** Phase 1 shipped (`docs/language/ordering.md`): `xs |> sort`,
 `sort by` / `sortBy [asc .f, desc .g]`, `stable`/`unique`/`descending`,
-plus parsed-but-ignored policies (`parallel`, `gpu`, `with entropy`, …).
-C backend lowers to in-place stable insertion on `array<T, N>`.
+plus parsed-but-ignored policies (`parallel`, `gpu`, `with entropy`, ...).
+Phase 2 selector and float ordering are decided and shipped. The four
+semantic design questions from Phase 1 remain open for human resolution.
 
-**Open decisions for Phase 2:**
+**Open decisions:**
 1. **`unique` length**: keep compact-in-place with stale tail (current), or
    return `(array, len)`, or shrink via slices?
-2. **Entropy**: first-class effect (`with entropy`) vs optional seed arg only?
+2. **Entropy**: first-class effect (`with entropy`) or optional seed arg only?
 3. **`order { }` block**: required sugar, or keep pipeline-only?
 4. **Copy vs mutate**: pipeline looks pure; today is in-place. Pure
    `sorted` copy as default?
@@ -374,117 +104,28 @@ C backend lowers to in-place stable insertion on `array<T, N>`.
 advertising `unique` widely; defer GPU/distributed until adaptive selector
 exists.
 
-**Status:** 🔲 Pending (Phase 1 implemented 2026-08-04)
-
----
-
-### 2026-08-06: Declarative ordering: Phase 2 selector and new surface
-
-**Context:** Phase 2 shipped (#144, #145, #146, #147). A cost-based selector
-(`src/flow/plan_selector.py`) picks among six sort lowerings and two search
-lowerings; ordering provenance (`src/flow/ordering_hints.py`) carries
-sortedness and integer-range facts through straight-line code; `--explain`
-prints every decision. Measured payoff in `benchmarks/ordering/RESULTS.md`.
-
-**Decided:**
-1. **Float ordering**: IEEE 754-2008 totalOrder for sort / unique / find;
-   arithmetic comparison stays IEEE. Rationale in `docs/language/ordering.md`.
-   Supersedes the NaN-before / NaN-after question in #144.
-2. **New surface**: two additions, both pipeline-position only:
-   `xs |> find(t)` (index of the first match under the same total order, or
-   `-1`) and the `general` sort policy (pin the general plan, ignore hints).
-   `find` is claimed only after `|>` and only when followed by `(`, so an
-   ordinary `find(...)` call is untouched.
-3. **Cost vocabulary**: one dimension, estimated element operations, plus a
-   single hard resource budget (256 KiB of compiler scratch). `require` /
-   `prefer` and a `supports cpu / simd / gpu` axis wait for a cost IR with
-   real units.
-
-**Still open:** items (1) `unique` length, (2) entropy, (3) `order { }` and
-(4) copy vs mutate from the 2026-08-04 entry above are all untouched.
-
-**Status:** ✅ Resolved for the selector and the new surface; the four Phase 1
-semantics questions above remain pending.
-
----
-
-### 2026-08-11: Multi-implementation selection beyond sort (#147)
-
-**Context:** The cost-based selector in `plan_selector.py` is already
-construct-agnostic. `ordering_plans.py` registers sort and search. The
-issue asks for the same mechanism to cover non-sorting transforms (DSP,
-ML, numerics) with a constraint vocabulary (`require` / `prefer`).
-
-**Decided:**
-1. **Implementation declaration** stays a stdlib registry, not a new
-   syntax block. Each construct registers `Implementation` objects via
-   `register()`. New file: `src/flow/general_plans.py` registers `matmul`
-   (naive vs blocked) and `reduce` (sequential vs parallel_tree).
-2. **Constraint vocabulary** lives in `src/flow/constraints.py`.
-   `require(memory < N)` becomes `require_memory_bytes = N` in the Facts
-   data dict. `prefer(parallel)` becomes `prefer = "parallel"`.
-   Implementations check these in their applicability predicates and
-   cost models. The selector itself does not know about constraints.
-3. **Surface syntax** for `require` / `prefer` is attribute-based:
-   `@require(memory < 4096)`, `@prefer(parallel)`. The parser is in
-   `constraints.py` but not yet wired into the compiler. The compiler
-   builds Facts programmatically today. Wiring the attribute form is a
-   follow-up once the cost IR has real units.
-4. **Two constructs, two implementations each, constraint flips choice:**
-   - matmul: naive (small n) vs blocked (large n). `require(memory < 4096)`
-     flips large n back to naive.
-   - reduce: sequential (small n) vs parallel_tree (large n).
-     `prefer(parallel)` flips small n to parallel_tree.
-5. **`--explain`** already works for any construct. The report includes
-   matmul and reduce selections with the same format as sort.
-
-**What stays parsed-only:** `prefer` for objectives other than `parallel`
-(latency, energy, memory) is parsed but does not bias the cost model yet.
-The cost IR has one dimension (estimated element operations). Real units
-need a target model.
-
-**Status:** Resolved. Implemented in `general_plans.py`, `constraints.py`,
-20 tests in `test_general_plans.py`.
-
----
-
-### 2026-08-04: Dynamics DSL namespace style
-
-**Context:** Top-level bare keywords `dsys` / `horizon` / `sense` / `ga` /
-`analyze` / `closed` collide with ordinary identifiers and the vision-layer
-`analyze Name { }` form. Editors need a clear namespace for IntelliSense.
-
-**Options:**
-1. Additive `dyn.` / `dynamics.` prefixes + `dynamics { … }` block (bare forms kept)
-2. Require namespace only; deprecate bare keywords
-3. No syntax change: IntelliSense-only labeling
-
-**Recommendation:** Option 1 (shipped). Bare forms remain; prefer namespaced
-forms in new code. See `docs/language/dynamics-dsl.md` § Namespaces and
-`examples/dynamics/ga_dsys_namespaced.flow`.
-
-**Status:** ✅ Resolved (Option 1 implemented 2026-08-04)
-
----
-
-### 2026-01-09: Web Playground Debugging Support
-
-**Context:** The web playground exists (`docs/playground/index.html`) but doesn't have debugging capabilities.
-
-**Options:**
-1. Source maps + breakpoints
-2. Step-through interpreter in the playground
-3. Print-based debugging only
-
-**Recommendation:** Start with clear print output in tutorials (`flow-compile.js`), then option 2.
-
-**Status:** ✅ **Answered: Option 2**. Visual step-debugger desired; blocked on real wasm/compile playground (wiki Phase 3)
+**Status:** Open follow-ups awaiting human decision.
 
 ---
 
 ## Resolved Questions (Archive)
 
+### 2026-10-10: Stores through unbounded pointer parameters
+
+**Context:** PR #1472 follows issue #684. A function with a declared
+lifetime domain can store a frame-local reference through an unannotated
+pointer or span parameter. The callee cannot establish how long the
+caller-owned pointee remains live.
+
+**Answer:** Reject that store when the value contains a reference rooted in
+the writing frame. An explicit field `@lifetime(D)` contract permits the
+store when `D` is the same or shorter-lived than the writer. This applies
+to field stores and whole-composite assignment through the parameter.
+
+**Resolved:** 2026-10-10, decided by the project owner.
+
 ### 2026-10-08: AST parse cache: how far should flowc distrust its own cache directory? (#736)
+
 The user cache directory stays trusted as #1345 set it. Records carry a
 payload checksum and a size cap, so a torn or corrupt record is a miss and
 is re-parsed. No ownership or mode checks on the directory and no
@@ -492,6 +133,20 @@ is re-parsed. No ownership or mode checks on the directory and no
 
 **Resolved:** 2026-10-08, decided by the coordinator with the owner's
 delegation.
+
+### 2026-10-08: RT summary cache: may a stored snapshot skip RT checks? (#765)
+
+**Context:** PR #1355 considered a persistent summary cache under
+`$FLOWC_RT_CACHE_DIR` or `~/.cache/flow/rt/`. Skipping Stage-A RT consult on
+stored snapshots introduced trust concerns across compiler versions and
+shared directory paths.
+
+**Answer:** Option 1 adopted. No persistent RT cache is stored. The
+refinement relation remains a pure function in the compiler. Serialized RT
+and lifetime summaries fail closed with framing and range validation. Issue
+#765 is closed.
+
+**Resolved:** 2026-10-08, landed in PR #1355 and issue #765 hardening.
 
 ### 2026-10-08: Is Flow 1.0.2 still released?
 
@@ -579,20 +234,6 @@ contract, together with rule LD5. #1358 merges after #1369.
 
 **Resolved:** 2026-10-07, decided by the project owner.
 
-### 2026-10-10: Stores through unbounded pointer parameters
-
-**Context:** PR #1472 follows issue #684. A function with a declared
-lifetime domain can store a frame-local reference through an unannotated
-pointer or span parameter. The callee cannot establish how long the
-caller-owned pointee remains live.
-
-**Answer:** Reject that store when the value contains a reference rooted in
-the writing frame. An explicit field `@lifetime(D)` contract permits the
-store when `D` is the same or shorter-lived than the writer. This applies
-to field stores and whole-composite assignment through the parameter.
-
-**Resolved:** 2026-10-10, decided by the project owner.
-
 ### 2026-10-07: Last-use moves without a `move` keyword or COW
 
 **Context:** Issue #696 asks for value semantics with compiler-inferred
@@ -639,59 +280,339 @@ runner `vps-linux`) is recorded in the PR.
 
 **Resolved:** 2026-10-07, decided by the project owner.
 
+### 2026-08-11: Multi-implementation selection beyond sort (#147)
+
+**Context:** The cost-based selector in `plan_selector.py` is construct-agnostic.
+`ordering_plans.py` registers sort and search. The issue asks for the same
+mechanism to cover non-sorting transforms (DSP, ML, numerics) with a
+constraint vocabulary (`require` / `prefer`).
+
+**Decided:**
+1. **Implementation declaration** stays a stdlib registry, not a new
+   syntax block. Each construct registers `Implementation` objects via
+   `register()`. `src/flow/general_plans.py` registers `matmul` (naive vs
+   blocked) and `reduce` (sequential vs parallel_tree).
+2. **Constraint vocabulary** lives in `src/flow/constraints.py`.
+   `require(memory < N)` becomes `require_memory_bytes = N` in the Facts
+   data dict. `prefer(parallel)` becomes `prefer = "parallel"`.
+   Implementations check these in their applicability predicates and
+   cost models. The selector itself does not know about constraints.
+3. **Surface syntax** for `require` / `prefer` is attribute-based:
+   `@require(memory < 4096)`, `@prefer(parallel)`. The parser is in
+   `constraints.py` but not wired into the compiler. The compiler
+   builds Facts programmatically today. Wiring the attribute form is a
+   follow-up once the cost IR has real units.
+4. **Two constructs, two implementations each, constraint flips choice:**
+   - matmul: naive (small n) vs blocked (large n). `require(memory < 4096)`
+     flips large n back to naive.
+   - reduce: sequential (small n) vs parallel_tree (large n).
+     `prefer(parallel)` flips small n to parallel_tree.
+5. **`--explain`** works for any construct. The report includes
+   matmul and reduce selections with the same format as sort.
+
+**What stays parsed-only:** `prefer` for objectives other than `parallel`
+(latency, energy, memory) is parsed but does not bias the cost model yet.
+The cost IR has one dimension (estimated element operations). Real units
+need a target model.
+
+**Resolved:** 2026-08-11. Implemented in `general_plans.py`, `constraints.py`,
+and test suite.
+
+### 2026-08-07: Heterogeneous FIR-G compiler architecture
+
+**Context:** Design for FIR-S -> FIR-G -> FIR-M with GPU/MLX analysis and learned
+optimisation (MLGO-style profitability only). See [fir-g.md](fir-g.md).
+
+**Options:**
+1. Bolt ML onto existing AST walkers
+2. Introduce dense-ID FIR-G as first-class IR; CPU analyses first; MLX later
+3. Jump straight to MLX-in-core / C++ rewrite
+
+**Recommendation:** (2). Phase order locked in fir-g.md. Correctness stays
+deterministic; ML only for profitability. Dual C/MLIR/WASM backends remain.
+
+**Resolved:** 2026-08-07. Phases 1-4 landed in Flow alongside existing
+emitters (`./flow fir-g`, measured routing, opt candidates).
+
+### 2026-08-06: Lifetime domains: annotation-only or `domain` blocks in v0?
+
+**Context:** Issue #148 asks for `callback` / `frame` / `session` /
+`application` as a first-class memory model, and leaves the v0 surface open:
+annotations on declarations, or a `domain frame { ... }` block that implies an
+arena reset at the block's end.
+([lifetime-domains.md](../language/lifetime-domains.md))
+
+**Options:**
+1. Annotation-only: `@lifetime(D)` on a function and on a module static.
+   Reuses the existing decorator grammar, no parser work beyond a new
+   attribute name, and a value takes its domain from its allocation site.
+2. `domain frame { ... }` blocks: nicer at the frame boundary because the
+   reset is implicit, but it needs new grammar, a new scope kind, and a
+   decision about what a domain block means when nested or when it contains
+   a `return`.
+3. Both.
+
+**Recommendation:** Option 1 for v0, shipped. `@lifetime(...)` parses on
+functions, statics and struct fields; the five rules (LD1 escape to a
+longer-lived static, including through composite storage, LD2 escape by
+return, LD3 allocation discipline, LD4 call ordering, LD5 field-declared
+domains) are enforced by the type checker. Block sugar is listed under
+Future work with `frame_begin` / `frame_end` as the explicit form it would
+expand to. Field annotations are issue #684.
+
+**Resolved:** 2026-08-06 (annotation-only v0); field contracts landed 2026-10-05.
+
+### 2026-08-06: Declarative ordering: Phase 2 selector and new surface
+
+**Context:** Phase 2 shipped (#144, #145, #146, #147). A cost-based selector
+picks among six sort lowerings and two search lowerings; ordering provenance
+carries sortedness and integer-range facts through straight-line code;
+`--explain` prints every decision. Measured payoff in
+`benchmarks/ordering/RESULTS.md`.
+
+**Decided:**
+1. **Float ordering**: IEEE 754-2008 totalOrder for sort / unique / find;
+   arithmetic comparison stays IEEE. Rationale in `docs/language/ordering.md`.
+   Supersedes the NaN-before / NaN-after question in #144.
+2. **New surface**: two additions, both pipeline-position only:
+   `xs |> find(t)` (index of the first match under the same total order, or
+   `-1`) and the `general` sort policy (pin the general plan, ignore hints).
+   `find` is claimed only after `|>` and only when followed by `(`, so an
+   ordinary `find(...)` call is untouched.
+3. **Cost vocabulary**: one dimension, estimated element operations, plus a
+   single hard resource budget (256 KiB of compiler scratch). `require` /
+   `prefer` and a `supports cpu / simd / gpu` axis wait for a cost IR with
+   real units.
+
+**Resolved:** 2026-08-06 for selector and new surface. Four Phase 1 semantics
+questions remain open under Open Questions.
+
+### 2026-08-05: `gfx_run`: callback vs block sugar?
+
+**Context:** Pattern adoption ([pattern-adoption.md](pattern-adoption.md)) wants
+to kill the repeated poll/esc/clear/present loop in every gfx demo. Two sketches:
+
+**Options:**
+1. Stdlib/runtime callback: `flow_gfx_run` + user `flow_gfx_frame(g, frame) -> i32`
+   (works today; slightly awkward naming).
+2. Block sugar: `gfx_run(g, max_frames: N) { ... }` (nicer; needs parser/lowering).
+3. Both: A now, B later when frame blocks exist.
+
+**Answer:** Option 3 (shipped MVP): `gfx_frame_pump` for inline loops;
+`flow_gfx_run` / `gfx_run` calling weak-overridable `flow_gfx_frame`. Block
+sugar deferred.
+
+**Resolved:** 2026-08-05.
+
+### 2026-08-05: `represent phase_portrait`: language form or stdlib trail helper?
+
+**Context:** Lorenz north-star wants `represent phase_portrait(x, z) { trail ... }`
+inside a `flow`. We already have `represent linear`.
+
+**Options:**
+1. Full `represent phase_portrait` lowering (ring buffer + window + maps).
+2. Stdlib-only `portrait_trail_*` helpers; keep `represent` for linear/analysis.
+3. Hybrid: stdlib trail now; grammar sugar later that expands to helpers.
+
+**Answer:** Option 3. Lorenz uses `flow` + trail in `main`; grammar sugar later.
+
+**Resolved:** 2026-08-05 (MVP stdlib trail helpers shipped).
+
+### 2026-08-05: LQR n>2: stdlib first or extend `dsys`?
+
+**Context:** Cartpole control reimplements 4x4 Riccati because dynamics DSL is n=2.
+
+**Options:**
+1. Stdlib `lqr`/`dare` over LAPACK/Accelerate; DSL stays n=2 until matrix literals mature.
+2. Extend `dsys`/`analyze`/`lqr` to arbitrary n in the DSL immediately.
+3. Codegen-only for fixed n=4 cartpole (one-off).
+
+**Answer:** Option 1 selected. General, dogfoods BLAS, and unblocks cartpole
+without rushing DSL matrix codegen. Discrete LQR helpers implemented in
+`lib/stdlib/dynamics/lqr.flow` (`dlqr_diag_q_scalar_u` up to n=8).
+
+**Resolved:** 2026-08-05.
+
+### 2026-08-05: Field / laplacian: stdlib MVP or grammar card?
+
+**Context:** `heat_diffusion.flow` is nested Euler; vision wants
+`T evolves as alpha * laplacian(T)`.
+
+**Options:**
+1. Stdlib `laplacian_1d` + ordinary `flow` over array-backed state (no new keywords).
+2. Full `field` / `boundary` grammar from north-star.
+3. Defer until after Lorenz/`gfx_run` land.
+
+**Answer:** Both shipped. Option 1 landed as stdlib `laplacian_1d` in
+`lib/stdlib/dynamics/pde.flow`. Option 2 landed as the Field DSL preprocessor
+in `compiler/src/field_dsl.flow` supporting `field T : f64[N] on Line` and
+`T evolves as laplacian(T)`.
+
+**Resolved:** 2026-08-05.
+
+### 2026-08-05: Self-hosting cutover: when does `./flow` drop Python?
+
+**Context:** Plan in `docs/project/self-hosting.md`. Stage-A `flowc` exists
+as a bootstrap; production is still `src/flow/*.py`.
+
+**Options:**
+1. Hard cutover after Phase C parity suite green (recommended).
+2. Soft forever dual-host (`FLOW_HOST=python|flowc`) with no deadline.
+3. Freeze Python features and only grow `flowc` (slow user-facing velocity).
+
+**Answer:** Soft dual-host launched initially, followed by hard cutover.
+Python compiler `src/flow` deleted, Stage-A `flowc` is the only compiler.
+`FLOW_HOST=python` returns an error.
+
+**Resolved:** 2026-08-05 (soft cutover); Phase D hard retirement completed.
+
+### 2026-08-04: Dynamics DSL namespace style
+
+**Context:** Top-level bare keywords `dsys` / `horizon` / `sense` / `ga` /
+`analyze` / `closed` collide with ordinary identifiers and the vision-layer
+`analyze Name { }` form. Editors need a clear namespace for IntelliSense.
+
+**Options:**
+1. Additive `dyn.` / `dynamics.` prefixes + `dynamics { ... }` block (bare forms kept)
+2. Require namespace only; deprecate bare keywords
+3. No syntax change: IntelliSense-only labeling
+
+**Answer:** Option 1 shipped. Bare forms remain; prefer namespaced forms in new
+code. See `docs/language/dynamics-dsl.md` section Namespaces and
+`examples/dynamics/ga_dsys_namespaced.flow`.
+
+**Resolved:** 2026-08-04.
+
+### 2026-08-04: Concurrency vs Go: Phase 2 priorities
+
+**Context:** Phase 1 shipped ([docs/language/concurrency-vs-go.md](../language/concurrency-vs-go.md)):
+real channels, WaitGroup wait, TLS effect handlers, `parallel for`->OpenMP,
+`ThreadedAsync` over pthreads. (Later the same day: `select2`, FiberAsync M:N,
+asm fctx, `NetpollAsyncIO`. Delimited continuations / N-way `select` pending.)
+
+**Options:**
+1. Continuations + fiber scheduler next (true effects-native async)
+2. `select` + generic channels next (Go API parity)
+3. Go-comparison benchmarks next (credibility before more runtime)
+4. Real `AsyncIO` (kqueue/epoll) next (server path)
+
+**Answer:** Option 3 then 1. Measure channel/ping-pong and parallel-for
+vs Go before inventing fibers; keep effect surface stable. Flow wins ping-pong
+and fan-out vs Go ([replace-go.md](../language/replace-go.md)). Follow-ups
+shipped: `select4`, fiber-park IO, HTTP microbench, `FLOW_RACE=1` hooks,
+`flow_cont` scaffold.
+
+**Resolved:** 2026-08-04.
+
+### 2026-08-04: Effect-row typing vs soft defaults
+
+**Context:** Unhandled effect ops originally returned zero / no-op (documented
+"safe defaults"). Interim opt-in abort shipped: `FLOW_STRICT_EFFECTS=1` and
+`--strict-effects` (see `docs/effects-showcase.md`).
+
+**Options:**
+1. Keep soft defaults as language default; rows later; strict via env/flag
+2. Flip default to fail-loud; soft defaults only with an explicit pragma
+3. Effect-row typing on signatures (Koka/Unison style): reject unhandled at compile time
+
+**Answer:** Phase 1 enabled compile-time unhandled effect errors via a
+lexical handler stack in the type checker. Phase 2 added effect row signatures
+(`function f() -> T with E1, E2`). Phase 3 added first-class row types.
+Stable compilation and runtime fail loudly by default. Setting
+`FLOWC_PERMISSIVE_EFFECTS=1` while compiling and `FLOW_PERMISSIVE_EFFECTS=1`
+while running retains the legacy zero/no-op behavior.
+
+**Resolved:** 2026-08-04.
+
+### 2026-08-04: Self-hosting bootstrap strategy
+
+**Context:** Started `compiler/` (`flowc`): Flow lexer + subset parser that
+runs under Python host. Next phases: syntax expansion, then backend.
+
+**Options:**
+1. Heterogeneous: Flow front-end, keep C/MLIR codegen in Python until Flow
+   can emit C to compile itself.
+2. Stage-A C emitter in Flow: subset->C in Flow; compile `flowc`, then `flowc`
+   compiles larger `flowc`.
+3. Interpreter first: Flow AST interpreter for dogfooding before codegen.
+
+**Answer:** Option 2 adopted. Stage-A C emitter written in Flow. The compiler
+self-hosts and reproduces identical fixed-point C output (`gen1.c == gen2.c`)
+with no Python dependency.
+
+**Resolved:** 2026-08-04.
+
+### 2026-08-04: Ecosystem packages: registry vs stdlib
+
+**Context:** Seeded `json`, `toml`, `http`, `sqlite` under `registry/packages/`
+so apps pull them with `flow add` / `flow.toml`. Stdlib owns POSIX,
+collections, audio, gfx, concurrency.
+
+**Options:**
+1. Keep app-facing libs in the registry; stdlib stays language/runtime primitives
+2. Graduate mature packages into `lib/stdlib/` / `std.*` once stable
+3. Dual-publish (stdlib re-exports registry)
+
+**Answer:** Option 1 adopted. App-facing libraries live in `registry/packages/`
+resolved by `tools/pkg_sync` / package manager (PR #989). Standard library owns
+language and runtime primitives.
+
+**Resolved:** 2026-08-04.
+
 ### 2026-07-28: Allow hyphens in `import` module paths / symbol lists?
 
 **Answer:** Implemented Option 1, plus one additional low-risk change
 discovered while verifying it end-to-end:
 
-1. `_parse_module_path` / `_parse_import_symbol_list` in `src/flow/parser.py`
-   now route through a new `_parse_dashed_identifier()` helper that merges
-   `IDENTIFIER (- IDENTIFIER)*` runs into one dashed name (`Group-inv-unique`,
-   `inv-unique`). Scoped to those two grammar productions only. MINUS has no
-   other meaning in an import path/symbol-list position, so ordinary
-   subtraction elsewhere is untouched (regression test added:
-   `test_subtraction_still_works_outside_imports`).
-2. Parsing alone wasn't sufficient to unblock the corpus: `import_symbols`
-   are validated for existence in `ModuleResolver._validate_import_symbols`
-   (`src/flow/module_resolver.py`), and the cited hyphenated names
-   (`inv-unique`) never actually match a real declaration (declarations are
-   always named by claim path, e.g. `«Group» «inverse» «is unique»`; no Flow
-   declaration name can itself contain a hyphen). Confirmed this list is
+1. `_parse_module_path` / `_parse_import_symbol_list` route through
+   `_parse_dashed_identifier()` helper that merges `IDENTIFIER (- IDENTIFIER)*`
+   runs into one dashed name (`Group-inv-unique`, `inv-unique`). Scoped to those
+   two grammar productions only. MINUS has no other meaning in an import
+   path/symbol-list position, so ordinary subtraction elsewhere is untouched.
+2. Parsing alone was not sufficient to unblock the corpus: `import_symbols`
+   are validated for existence in `ModuleResolver._validate_import_symbols`,
+   and the cited hyphenated names (`inv-unique`) never match a real declaration
+   (declarations are always named by claim path, e.g. `«Group» «inverse» «is unique»`;
+   no Flow declaration name can itself contain a hyphen). This list is
    citation-only. It does not gate which declarations get pulled in
-   (`all_declarations` already includes every transitively-imported
-   declaration regardless of the symbol list), so skipping the
-   exists/exported checks specifically for symbol names containing a hyphen
-   is safe: it only affects the newly-legal hyphenated-citation syntax, never
-   a real (non-hyphenated) imported binding, so existing typo detection is
-   unaffected.
+   (`all_declarations` includes every transitively-imported declaration
+   regardless of the symbol list), so skipping the exists/exported checks
+   specifically for symbol names containing a hyphen is safe: it only affects
+   the legal hyphenated-citation syntax, never a real (non-hyphenated) imported
+   binding, so existing typo detection is unaffected.
 
-Verified with `scripts/triage_verify_failures.py`: 43 of the 56 files tagged
-purely "hyphenated import path/symbols" now transpile cleanly (827 vs. 784
-pass out of 1054 under `examples/verify/`), with **zero regressions**
-(diffed the full pass/fail set before vs. after). The other 13 still fail,
-but for unrelated, already-catalogued reasons (operator-suffixed module
-paths like `Nat/+`, or citation imports of a *non-hyphenated* symbol name
-that also doesn't exist: same root issue as this one but out of scope since
-it wasn't gated on hyphens). Added parser + resolver tests to
-`tests/unit/test_module_resolver.py`; full `tests/unit/` suite (239 tests)
-passes.
+Verified with `triage_verify_failures`: 43 of the 56 files tagged purely
+"hyphenated import path/symbols" transpile cleanly with zero regressions.
 
-**Resolved:** 2026-07-28
+**Resolved:** 2026-07-28.
 
 ### 2026-07-28: Package registry design
 
 **Answer:** Defer + design doc. No central registry until 3+ real third-party packages; git/path deps are the supported path. See [docs/project/package-registry.md](package-registry.md).
 
-**Resolved:** 2026-07-28
+**Resolved:** 2026-07-28.
+
+### 2026-01-09: Web Playground Debugging Support
+
+**Context:** The web playground exists (`docs/playground/index.html`) but lacks debugging capabilities.
+
+**Options:**
+1. Source maps + breakpoints
+2. Step-through interpreter in the playground
+3. Print-based debugging only
+
+**Answer:** Option 2 adopted. Visual step-debugger targeted via wasm playground.
+
+**Resolved:** 2026-01-09.
 
 ### 2026-01-09: Parser `ptr[0].field` Syntax
 
 **Answer:** Fix the parser. Unified postfix chaining shipped (parser + C codegen). Ring buffer, memory pool, hash table, 2048, tetris, csv_parser, flowdb recovered.
 
-**Resolved:** 2026-07
+**Resolved:** 2026-07.
 
 ### 2026-01-08: Should we use `let mut` or `var` for mutable variables?
 
 **Answer:** Use `let mut` - matches Rust, explicit about mutation.
 
-**Resolved:** 2026-01-08
+**Resolved:** 2026-01-08.
