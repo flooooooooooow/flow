@@ -10,8 +10,6 @@
 #   tests/unit/test_misra_phase2.py::test_checked_arith_smoke_runs
 # Exit 0 on success; a nonzero exit identifies the failing check.
 
-import "stdlib/checked_arith.flow"
-
 extern {
     function calloc(n: i64, s: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
