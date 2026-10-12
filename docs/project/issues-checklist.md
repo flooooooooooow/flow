@@ -101,33 +101,55 @@
 - [x] #102 [CI-M3] CI: no SAST/dependency/security scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/102
 - [x] #110 [roadmap:async-primitives] Async primitives https://github.com/flooooooooooow/flow/issues/110
 - [ ] #111 [roadmap:windows-graphics-support] Windows graphics support https://github.com/flooooooooooow/flow/issues/111
-- [ ] #112 [roadmap:implement-closure-environment-capture-automatic-captures-not-just-explicit-self] Implement closure environment capture (automatic captures, not just explicit self) https://github.com/flooooooooooow/flow/issues/112
-- [ ] #113 [roadmap:loop-vectorization] Loop vectorization https://github.com/flooooooooooow/flow/issues/113
+- [x] #112 [roadmap:implement-closure-environment-capture-automatic-captures-not-just-explicit-self] Implement closure environment capture (automatic captures, not just explicit self) https://github.com/flooooooooooow/flow/issues/112
+- [ ] #113 [roadmap:loop-vectorization-partial-elementwise-f32-transfer-path-exists] Loop vectorization (partial: elementwise f32 transfer_* path exists) https://github.com/flooooooooooow/flow/issues/113
 - [ ] #114 [roadmap:real-world-projects] Real-world projects https://github.com/flooooooooooow/flow/issues/114
 - [x] #115 [roadmap:integer-match-exhaustiveness-is-only-a-minimal-warning-stub-no-range-gap-analysis] Integer match exhaustiveness is only a minimal warning stub (no range/gap analysis) https://github.com/flooooooooooow/flow/issues/115
 - [ ] #116 [roadmap:rt-safety-policy-no-alloc-audio-thread] RT-safety policy (no-alloc audio thread) https://github.com/flooooooooooow/flow/issues/116
 - [x] #117 [roadmap:break-continue-have-no-dedicated-ast-nodes-lexed-as-identifiers-special-cased-in-c-generator] break/continue have no dedicated AST nodes (lexed as identifiers, special-cased in C generator) https://github.com/flooooooooooow/flow/issues/117
 - [ ] #118 [roadmap:gpu-autodiff] GPU autodiff https://github.com/flooooooooooow/flow/issues/118
-- [x] #119 [roadmap:three-older-effects-demos-transpile-but-do-not-link-capability-parameter-style] Three older effects demos transpile but do not link (capability parameter style) https://github.com/flooooooooooow/flow/issues/119
+- [ ] #119 [roadmap:three-older-effects-demos-transpile-but-do-not-link-capability-parameter-style] Three older effects demos transpile but do not link (capability parameter style) https://github.com/flooooooooooow/flow/issues/119
 - [ ] #120 [roadmap:dead-code-elimination] Dead code elimination https://github.com/flooooooooooow/flow/issues/120
-- [ ] #121 [roadmap:wasm-target] WASM target https://github.com/flooooooooooow/flow/issues/121
+- [x] #121 [roadmap:wasm-target] WASM target https://github.com/flooooooooooow/flow/issues/121
 - [x] #122 [roadmap:record-tetris-demo-gif] Record Tetris demo GIF https://github.com/flooooooooooow/flow/issues/122
 - [ ] #123 [roadmap:function-inlining] Function inlining https://github.com/flooooooooooow/flow/issues/123
-- [x] #124 [roadmap:mlir-backend-not-exercised-against-new-chained-ast-shapes] MLIR backend not exercised against new chained AST shapes https://github.com/flooooooooooow/flow/issues/124
+- [ ] #124 [roadmap:mlir-backend-not-exercised-against-new-chained-ast-shapes] MLIR backend not exercised against new chained AST shapes https://github.com/flooooooooooow/flow/issues/124
 - [x] #125 [roadmap:cross-platform-graphics-linux] Cross-platform graphics (Linux) https://github.com/flooooooooooow/flow/issues/125
 - [ ] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
 - [ ] #127 [roadmap:debugger] Debugger https://github.com/flooooooooooow/flow/issues/127
 - [ ] #128 [roadmap:self-hosting-components] Self-hosting components https://github.com/flooooooooooow/flow/issues/128
 - [x] #159 [roadmap:canonicalize-evolution-demos-onto-flow-evolves] Canonicalize evolution demos onto flow/evolves https://github.com/flooooooooooow/flow/issues/159
-- [ ] #160 [roadmap:closed-loop-plant-step-from-dsys-connect] Closed-loop plant.step from dsys/connect https://github.com/flooooooooooow/flow/issues/160
-- [ ] #161 [roadmap:dual-tensor-operators-mutable-params] Dual + Tensor operators + mutable params https://github.com/flooooooooooow/flow/issues/161
-- [ ] #162 [roadmap:dynamics-dsl-lqr-beyond-n-2] Dynamics DSL / LQR beyond n=2 https://github.com/flooooooooooow/flow/issues/162
-- [ ] #163 [roadmap:field-laplacian-pde-surface] Field / laplacian PDE surface https://github.com/flooooooooooow/flow/issues/163
+- [x] #160 [roadmap:closed-loop-plant-step-from-dsys-connect] Closed-loop plant.step from dsys/connect https://github.com/flooooooooooow/flow/issues/160
+- [x] #161 [roadmap:dual-tensor-operators-mutable-params] Dual + Tensor operators + mutable params https://github.com/flooooooooooow/flow/issues/161
+- [x] #162 [roadmap:dynamics-dsl-lqr-beyond-n-2] Dynamics DSL / LQR beyond n=2 https://github.com/flooooooooooow/flow/issues/162
+- [x] #163 [roadmap:field-laplacian-pde-surface] Field / laplacian PDE surface https://github.com/flooooooooooow/flow/issues/163
 - [x] #164 [roadmap:gfx-run-frame-helper] gfx_run frame helper https://github.com/flooooooooooow/flow/issues/164
-- [ ] #165 [roadmap:lorenz-as-flow-represent-phase-portrait] Lorenz as flow + represent phase_portrait https://github.com/flooooooooooow/flow/issues/165
+- [x] #165 [roadmap:lorenz-as-flow-represent-phase-portrait] Lorenz as flow + represent phase_portrait https://github.com/flooooooooooow/flow/issues/165
 - [x] #166 [roadmap:mlir-opt-pass-flags] MLIR opt pass flags https://github.com/flooooooooooow/flow/issues/166
-- [ ] #167 [roadmap:owned-httpresponse-json-decode-helpers] Owned HttpResponse + JSON decode helpers https://github.com/flooooooooooow/flow/issues/167
-- [ ] #168 [roadmap:route-linalg-examples-through-blas-flow] Route linalg examples through blas.flow https://github.com/flooooooooooow/flow/issues/168
-- [ ] #169 [roadmap:tier-0-tourist-examples] Tier-0 tourist examples https://github.com/flooooooooooow/flow/issues/169
-- [ ] #170 [roadmap:wire-ml-demos-through-dual-grad-codegen] Wire ML demos through Dual / grad codegen https://github.com/flooooooooooow/flow/issues/170
-- [ ] #679 [roadmap:flow-2-0-epic-ergonomic-memory-safety-architecture] [Flow 2.0 Epic] Ergonomic Memory Safety Architecture https://github.com/flooooooooooow/flow/issues/679
+- [x] #167 [roadmap:owned-httpresponse-json-decode-helpers] Owned HttpResponse + JSON decode helpers https://github.com/flooooooooooow/flow/issues/167
+- [x] #168 [roadmap:route-linalg-examples-through-blas-flow] Route linalg examples through blas.flow https://github.com/flooooooooooow/flow/issues/168
+- [x] #169 [roadmap:tier-0-tourist-examples] Tier-0 tourist examples https://github.com/flooooooooooow/flow/issues/169
+- [x] #170 [roadmap:wire-ml-demos-through-dual-grad-codegen] Wire ML demos through Dual / grad codegen https://github.com/flooooooooooow/flow/issues/170
+- [x] #679 [roadmap:flow-2-0-epic-ergonomic-memory-safety-architecture] [Flow 2.0 Epic] Ergonomic Memory Safety Architecture https://github.com/flooooooooooow/flow/issues/679
+- [ ] #1481 [roadmap:compiler-dogfood] Compiler dogfood https://github.com/flooooooooooow/flow/issues/1481
+- [ ] #1482 [roadmap:concurrency-pipeline] Concurrency pipeline https://github.com/flooooooooooow/flow/issues/1482
+- [ ] #1483 [roadmap:concurrency-pipeline-example-once-channel-send-recv-is-exposed] Concurrency pipeline example once channel send/recv is exposed https://github.com/flooooooooooow/flow/issues/1483
+- [ ] #1484 [roadmap:crypto-beyond-sha] Crypto beyond SHA https://github.com/flooooooooooow/flow/issues/1484
+- [ ] #1485 [roadmap:digital-twin-lite] Digital twin lite https://github.com/flooooooooooow/flow/issues/1485
+- [ ] #1486 [roadmap:embedded-rt] Embedded RT https://github.com/flooooooooooow/flow/issues/1486
+- [ ] #1487 [roadmap:fir-g-program-graph-phases-1-4] FIR-G program graph (Phases 1-4) https://github.com/flooooooooooow/flow/issues/1487
+- [ ] #1488 [roadmap:games-twin] Games twin https://github.com/flooooooooooow/flow/issues/1488
+- [ ] #1489 [roadmap:hybrid-guarantees] Hybrid guarantees https://github.com/flooooooooooow/flow/issues/1489
+- [ ] #1490 [roadmap:json-tsv] JSON / TSV https://github.com/flooooooooooow/flow/issues/1490
+- [ ] #1491 [roadmap:linalg-qr-eigen] Linalg QR / eigen https://github.com/flooooooooooow/flow/issues/1491
+- [ ] #1492 [roadmap:networking] Networking https://github.com/flooooooooooow/flow/issues/1492
+- [ ] #1493 [roadmap:physics-dsl-honesty] Physics DSL honesty https://github.com/flooooooooooow/flow/issues/1493
+- [ ] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
+- [ ] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
+- [ ] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
+- [ ] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
+- [ ] #1498 [roadmap:w2] **W2** https://github.com/flooooooooooow/flow/issues/1498
+- [ ] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
+- [ ] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
+- [ ] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
+- [ ] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502
