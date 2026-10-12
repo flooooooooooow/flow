@@ -1,0 +1,13 @@
+MLIR Fusion Benchmark (Affine vs scf.for)
+
+matrix:
+  scf.for: 2.53 ms
+  affine (no fusion): 2.51 ms
+  affine (fused): 1.91 ms
+  Speedup (fused vs scf): 24.63%
+
+stencil:
+  scf.for: 2.25 ms
+  affine (no fusion): 2.28 ms
+  affine (fused): 1.99 ms
+  Speedup (fused vs scf): 11.27%

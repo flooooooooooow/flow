@@ -1,0 +1,19 @@
+# Static counted loops can use the affine dialect when requested.
+# MLIR parity fixture: affine loop fusion.
+# Fuses a broadcast and a reduction with their producer into one kernel.
+
+function run_fusion(a: array<f32>, b: array<f32>, c: array<f32>) -> void {
+    for i in 0 to 100 step 1 {
+        a[i] = 1.0
+        b[i] = 2.0
+    }
+
+    for i in 0 to 100 step 1 {
+        c[i] = (a[i] + b[i]) * 2.0
+    }
+
+    let mut sum: f32 = 0.0
+    for i in 0 to 100 step 1 {
+        sum = sum + c[i]
+    }
+}
