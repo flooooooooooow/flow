@@ -5,16 +5,6 @@ extern {
     function perror(s: string) -> void
 }
 
-@cEmbed("
-static inline void set_reuseaddr(int fd) {
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-}
-")
-extern {
-    function set_reuseaddr(fd: i32) -> void
-}
-
 function main() -> i32 {
     let port: i32 = 7777
     let listener: TcpListener = tcp_listener_new(port)
@@ -24,7 +14,7 @@ function main() -> i32 {
         return 1
     }
 
-    set_reuseaddr(listener.socket.fd)
+    flow_net_set_reuseaddr(listener.socket.fd)
 
     let addr = sockaddr_in_new(port, INADDR_ANY)
     let b = flow_net_bind(listener.socket.fd, &addr as ptr<SockAddr_in>, 16)

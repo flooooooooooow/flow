@@ -1,10 +1,6 @@
 # FLOW Networking Standard Library
 # TCP/UDP sockets, HTTP client
 
-@cImport("sys/socket.h")
-@cImport("arpa/inet.h")
-@cImport("netinet/in.h")
-
 struct Socket {
     fd: i32,
     domain: i32,
@@ -19,72 +15,9 @@ struct SockAddr_in {
     zero: array<u8, 8>
 }
 
-@cEmbed("
-static inline uint16_t flow_htons(int16_t x) { return htons(x); }
-static inline uint32_t flow_htonl(int32_t x) { return htonl(x); }
-")
-
 extern {
-    function flow_htons(hostshort: i16) -> u16
-    function flow_htonl(hostlong: i32) -> u32
-}
-
-function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
-    return SockAddr_in {
-        family: 2,       # AF_INET
-        port: flow_htons(port as i16),
-        addr: flow_htonl(addr),
-        zero: []
-    }
-}
-
-@cEmbed("
-struct SockAddr_in;
-
-static inline int32_t flow_net_socket(int32_t domain, int32_t type, int32_t protocol) { return socket(domain, type, protocol); }
-static inline int32_t flow_net_bind(int32_t fd, struct SockAddr_in* addr_f, uint32_t len) {
-    uint16_t* ptr = (uint16_t*)addr_f;
-    uint32_t* ptr32 = (uint32_t*)(((uint8_t*)addr_f) + 4);
-    struct sockaddr_in sin = {0};
-    sin.sin_family = AF_INET;
-    sin.sin_port = ptr[1];
-    sin.sin_addr.s_addr = ptr32[0];
-    return bind(fd, (struct sockaddr*)&sin, sizeof(sin));
-}
-static inline int32_t flow_net_listen(int32_t fd, int32_t backlog) { return listen(fd, backlog); }
-static inline int32_t flow_net_accept(int32_t fd, struct SockAddr_in* addr_f, uint32_t* len) {
-    struct sockaddr_in sin = {0};
-    socklen_t slen = sizeof(sin);
-    int ret = accept(fd, (struct sockaddr*)&sin, &slen);
-    if (ret >= 0 && addr_f) {
-        uint16_t* ptr = (uint16_t*)addr_f;
-        uint32_t* ptr32 = (uint32_t*)(((uint8_t*)addr_f) + 4);
-        ptr[0] = sin.sin_family;
-        ptr[1] = sin.sin_port;
-        ptr32[0] = sin.sin_addr.s_addr;
-        if (len) *len = 16;
-    }
-    return ret;
-}
-static inline int32_t flow_net_recv(int32_t fd, uint8_t* buf, uint32_t len, int32_t flags) { return recv(fd, buf, len, flags); }
-static inline int32_t flow_net_send(int32_t fd, const uint8_t* buf, uint32_t len, int32_t flags) { return send(fd, buf, len, flags); }
-
-static inline int32_t flow_net_connect(int32_t fd, struct SockAddr_in* addr_f, uint32_t len) {
-    uint16_t* ptr = (uint16_t*)addr_f;
-    uint32_t* ptr32 = (uint32_t*)(((uint8_t*)addr_f) + 4);
-    struct sockaddr_in sin = {0};
-    sin.sin_family = AF_INET;
-    sin.sin_port = ptr[1];
-    sin.sin_addr.s_addr = ptr32[0];
-    return connect(fd, (struct sockaddr*)&sin, sizeof(sin));
-}
-#undef SOCK_STREAM
-#undef SOCK_DGRAM
-#define FLOW_SOCK_STREAM 1
-#define FLOW_SOCK_DGRAM 2
-")
-
-extern {
+    function flow_net_htons(hostshort: i16) -> u16
+    function flow_net_htonl(hostlong: i32) -> u32
     function flow_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i32
     function flow_net_bind(fd: i32, addr: ptr<SockAddr_in>, len: u32) -> i32
     function flow_net_listen(fd: i32, backlog: i32) -> i32
@@ -92,6 +25,16 @@ extern {
     function flow_net_recv(fd: i32, buf: ptr<u8>, len: u32, flags: i32) -> i32
     function flow_net_send(fd: i32, buf: ptr<u8>, len: u32, flags: i32) -> i32
     function flow_net_connect(fd: i32, addr: ptr<SockAddr_in>, len: u32) -> i32
+    function flow_net_set_reuseaddr(fd: i32) -> void
+}
+
+function sockaddr_in_new(port: i32, addr: i32) -> SockAddr_in {
+    return SockAddr_in {
+        family: 2,       # AF_INET
+        port: flow_net_htons(port as i16),
+        addr: flow_net_htonl(addr),
+        zero: []
+    }
 }
 
 const AF_INET: i32 = 2
