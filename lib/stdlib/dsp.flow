@@ -1,3 +1,5 @@
+import "stdlib/rf.flow"
+
 # DSP Pipeline Module
 #
 # Functional DSP primitives that compose with the |> operator.
@@ -190,4 +192,38 @@ export function dot_f64(a: ptr<f64>, b: ptr<f64>, n: i32) -> f64 {
         s = s + a[i] * b[i]
     }
     return s
+}
+
+# =============================================================================
+# Rate-aware Signal primitives
+# =============================================================================
+
+export function signal_map_f32<R>(s: Signal<R>, f: (f32) -> f32) -> Signal<R> {
+    let out: Signal<R> = signal_new<R>(s.len, s.sample_rate)
+    let a: ptr<f32> = s.data as ptr<f32>
+    let b: ptr<f32> = out.data as ptr<f32>
+    for i in 0 to (s.len * 2) {
+        b[i] = f(a[i])
+    }
+    return out
+}
+
+export function signal_scale_f32<R>(s: Signal<R>, gain: f32) -> Signal<R> {
+    let out: Signal<R> = signal_new<R>(s.len, s.sample_rate)
+    let a: ptr<f32> = s.data as ptr<f32>
+    let b: ptr<f32> = out.data as ptr<f32>
+    for i in 0 to (s.len * 2) {
+        b[i] = a[i] * gain
+    }
+    return out
+}
+
+export function signal_offset_f32<R>(s: Signal<R>, dc: f32) -> Signal<R> {
+    let out: Signal<R> = signal_new<R>(s.len, s.sample_rate)
+    let a: ptr<f32> = s.data as ptr<f32>
+    let b: ptr<f32> = out.data as ptr<f32>
+    for i in 0 to (s.len * 2) {
+        b[i] = a[i] + dc
+    }
+    return out
 }

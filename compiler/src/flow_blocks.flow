@@ -235,6 +235,11 @@ export struct Fb {
     f_solver_line: ptr<i32>,
     f_rec: ptr<i32>,
     f_rec_line: ptr<i32>,
+    f_gua: ptr<i32>,
+    f_gua_line: ptr<i32>,
+    ngu: i32,
+    gu_flow: ptr<i32>,
+    gu_name: ptr<i32>,
     f_out: ptr<i32>,
     # members: states, inputs, outputs, params, children
     nmm: i32,
@@ -2322,6 +2327,48 @@ function fb_parse_invariant(c: ptr<Fb>, f: i32, kind: i32, word: string) -> i32 
     return 0
 }
 
+function fb_parse_guarantee(c: ptr<Fb>, f: i32) -> i32 {
+    let rt: i32 = c[0].pos
+    fb_advance(c)
+    if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
+    let first: i32 = c[0].ngu
+    while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
+        if fb_at_eof(c) == 1 {
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated 'guarantee' block in flow '")
+            fb_put_fname(m, c, f)
+            bb_puts(m, "': expected '}' before end of file")
+            return 0 - 1
+        }
+        if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+            fb_advance(c)
+        } else {
+            let dt: i32 = fb_expect(c, "IDENTIFIER")
+            if dt < 0 { return 0 - 1 }
+            let dn: i32 = fb_tok_str(c, dt)
+            let i: i32 = c[0].ngu
+            c[0].gu_flow[i] = f
+            c[0].gu_name[i] = dn
+            c[0].ngu = i + 1
+            if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
+                fb_advance(c)
+            }
+        }
+    }
+    if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
+    if c[0].ngu == first {
+        let m3: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m3, "'guarantee' block in flow '")
+        fb_put_fname(m3, c, f)
+        bb_puts(m3, "' needs at least one property")
+        bb_puts(fb_err_hint(c), "write 'guarantee { stable passive causal realtime }'")
+        return 0 - 1
+    }
+    c[0].f_gua[f] = 1
+    c[0].f_gua_line[f] = c[0].tl[rt]
+    return 0
+}
+
 function fb_parse_recognize(c: ptr<Fb>, f: i32) -> i32 {
     let rt: i32 = c[0].pos
     fb_advance(c)
@@ -2626,6 +2673,17 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
             return 0 - 1
         }
         return fb_parse_recognize(c, f)
+    }
+    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "guarantee") == 1 {
+        if c[0].f_gua[f] == 1 {
+            let m3: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m3, "flow '")
+            fb_put_fname(m3, c, f)
+            bb_puts(m3, "' has two 'guarantee' blocks")
+            bb_puts(fb_err_hint(c), "merge the properties into one guarantee block")
+            return 0 - 1
+        }
+        return fb_parse_guarantee(c, f)
     }
     if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "connect") == 1 {
         return fb_parse_connect(c, f)

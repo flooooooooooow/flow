@@ -27141,6 +27141,11 @@ typedef struct Fb {
   int32_t* f_solver_line;
   int32_t* f_rec;
   int32_t* f_rec_line;
+  int32_t* f_gua;
+  int32_t* f_gua_line;
+  int32_t ngu;
+  int32_t* gu_flow;
+  int32_t* gu_name;
   int32_t* f_out;
   int32_t nmm;
   int32_t icap;
@@ -27485,6 +27490,7 @@ int32_t fb_col_offset(Fb* c, int32_t ln, int32_t col);
 void fb_put_stripped(ByteBuf* b, uint8_t* p, int32_t s, int32_t e);
 int32_t fb_put_part(ByteBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first);
 int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word);
+int32_t fb_parse_guarantee(Fb* c, int32_t f);
 int32_t fb_parse_recognize(Fb* c, int32_t f);
 int32_t fb_parse_connect(Fb* c, int32_t f);
 int32_t fb_parse_solver(Fb* c, int32_t f);
@@ -28697,15 +28703,15 @@ int32_t fb_node(Fb* c, int32_t kind, int32_t tok) {
   if (id >= (c[0]).ncap) {
   int32_t ncap = (((c[0]).ncap * 2) + 64);
   int64_t bytes = ((int64_t)(ncap) * 4);
-  { __typeof__((c[0]).nk) __flowc_st4839 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nk), bytes)); (c[0]).nk = __flowc_st4839; }
-  { __typeof__((c[0]).nop) __flowc_st4856 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nop), bytes)); (c[0]).nop = __flowc_st4856; }
-  { __typeof__((c[0]).ntok) __flowc_st4873 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).ntok), bytes)); (c[0]).ntok = __flowc_st4873; }
-  { __typeof__((c[0]).na) __flowc_st4890 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).na), bytes)); (c[0]).na = __flowc_st4890; }
-  { __typeof__((c[0]).nb) __flowc_st4907 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nb), bytes)); (c[0]).nb = __flowc_st4907; }
-  { __typeof__((c[0]).nc) __flowc_st4924 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nc), bytes)); (c[0]).nc = __flowc_st4924; }
-  { __typeof__((c[0]).nx) __flowc_st4941 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nx), bytes)); (c[0]).nx = __flowc_st4941; }
-  { __typeof__((c[0]).nfs) __flowc_st4958 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nfs), bytes)); (c[0]).nfs = __flowc_st4958; }
-  { __typeof__((c[0]).nfe) __flowc_st4975 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nfe), bytes)); (c[0]).nfe = __flowc_st4975; }
+  { __typeof__((c[0]).nk) __flowc_st4853 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nk), bytes)); (c[0]).nk = __flowc_st4853; }
+  { __typeof__((c[0]).nop) __flowc_st4870 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nop), bytes)); (c[0]).nop = __flowc_st4870; }
+  { __typeof__((c[0]).ntok) __flowc_st4887 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).ntok), bytes)); (c[0]).ntok = __flowc_st4887; }
+  { __typeof__((c[0]).na) __flowc_st4904 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).na), bytes)); (c[0]).na = __flowc_st4904; }
+  { __typeof__((c[0]).nb) __flowc_st4921 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nb), bytes)); (c[0]).nb = __flowc_st4921; }
+  { __typeof__((c[0]).nc) __flowc_st4938 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nc), bytes)); (c[0]).nc = __flowc_st4938; }
+  { __typeof__((c[0]).nx) __flowc_st4955 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nx), bytes)); (c[0]).nx = __flowc_st4955; }
+  { __typeof__((c[0]).nfs) __flowc_st4972 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nfs), bytes)); (c[0]).nfs = __flowc_st4972; }
+  { __typeof__((c[0]).nfe) __flowc_st4989 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nfe), bytes)); (c[0]).nfe = __flowc_st4989; }
   (c[0]).ncap = ncap;
 }
   (c[0]).nk[id] = kind;
@@ -29501,7 +29507,7 @@ int32_t fb_parse_primary(Fb* c) {
   if (fb_is_ident(c, u) == 1 && (c[0]).tl[u] == (c[0]).tl[t] && fb_is_upper((c[0]).src[(c[0]).ts[u]]) == 1) {
   fb_advance(c);
   int32_t q = fb_node2(c, N_CAST, u, lit, (0 - 1));
-  { __typeof__((c[0]).nop[q]) __flowc_st8359 = fb_tok_str(c, u); (c[0]).nop[q] = __flowc_st8359; }
+  { __typeof__((c[0]).nop[q]) __flowc_st8373 = fb_tok_str(c, u); (c[0]).nop[q] = __flowc_st8373; }
   return q;
 }
   return lit;
@@ -29966,7 +29972,7 @@ int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text) {
   bb_put_span(tb, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
   bb_putc(tb, 32);
   bb_put_span(tb, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
-  { __typeof__(text[0]) __flowc_st10629 = fb_intern_buf(c, tb); text[0] = __flowc_st10629; }
+  { __typeof__(text[0]) __flowc_st10643 = fb_intern_buf(c, tb); text[0] = __flowc_st10643; }
   bb_free(tb);
   uint8_t* p = (uint8_t*)((c[0]).src);
   int32_t s = (c[0]).ts[nt];
@@ -30154,8 +30160,8 @@ int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, con
   int32_t i = (c[0]).nbc;
   (c[0]).bc_kind[i] = kind;
   (c[0]).bc_owner[i] = owner;
-  { __typeof__((c[0]).bc_target[i]) __flowc_st11464 = fb_tok_str(c, st); (c[0]).bc_target[i] = __flowc_st11464; }
-  { __typeof__((c[0]).bc_expr[i]) __flowc_st11475 = fb_wrap_top(c, rhs, rhs_s); (c[0]).bc_expr[i] = __flowc_st11475; }
+  { __typeof__((c[0]).bc_target[i]) __flowc_st11478 = fb_tok_str(c, st); (c[0]).bc_target[i] = __flowc_st11478; }
+  { __typeof__((c[0]).bc_expr[i]) __flowc_st11489 = fb_wrap_top(c, rhs, rhs_s); (c[0]).bc_expr[i] = __flowc_st11489; }
   (c[0]).bc_line[i] = (c[0]).tl[st];
   (c[0]).nbc = (i + 1);
 }
@@ -30300,9 +30306,9 @@ int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word) {
   int32_t i = (c[0]).niv;
   (c[0]).iv_flow[i] = f;
   (c[0]).iv_kind[i] = kind;
-  { __typeof__((c[0]).iv_expr[i]) __flowc_st12162 = fb_wrap_top(c, ex, st); (c[0]).iv_expr[i] = __flowc_st12162; }
+  { __typeof__((c[0]).iv_expr[i]) __flowc_st12176 = fb_wrap_top(c, ex, st); (c[0]).iv_expr[i] = __flowc_st12176; }
   (c[0]).iv_line[i] = (c[0]).tl[st];
-  { __typeof__((c[0]).iv_text[i]) __flowc_st12189 = fb_source_between(c, st, (c[0]).pos); (c[0]).iv_text[i] = __flowc_st12189; }
+  { __typeof__((c[0]).iv_text[i]) __flowc_st12203 = fb_source_between(c, st, (c[0]).pos); (c[0]).iv_text[i] = __flowc_st12203; }
   (c[0]).niv = (i + 1);
   count = (count + 1);
 }
@@ -30322,6 +30328,54 @@ int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word) {
   bb_puts(h, " { x < 1.0 }' or remove the block");
   return (0 - 1);
 }
+  return 0;
+}
+
+int32_t fb_parse_guarantee(Fb* c, int32_t f) {
+  int32_t rt = (c[0]).pos;
+  fb_advance(c);
+  if (fb_expect(c, "LBRACE") < 0) {
+  return (0 - 1);
+}
+  int32_t first = (c[0]).ngu;
+  while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
+  if (fb_at_eof(c) == 1) {
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated 'guarantee' block in flow '");
+  fb_put_fname(m, c, f);
+  bb_puts(m, "': expected '}' before end of file");
+  return (0 - 1);
+}
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+} else {
+  int32_t dt = fb_expect(c, "IDENTIFIER");
+  if (dt < 0) {
+  return (0 - 1);
+}
+  int32_t dn = fb_tok_str(c, dt);
+  int32_t i = (c[0]).ngu;
+  (c[0]).gu_flow[i] = f;
+  (c[0]).gu_name[i] = dn;
+  (c[0]).ngu = (i + 1);
+  if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
+  fb_advance(c);
+}
+}
+}
+  if (fb_expect(c, "RBRACE") < 0) {
+  return (0 - 1);
+}
+  if ((c[0]).ngu == first) {
+  ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m3, "'guarantee' block in flow '");
+  fb_put_fname(m3, c, f);
+  bb_puts(m3, "' needs at least one property");
+  bb_puts(fb_err_hint(c), "write 'guarantee { stable passive causal realtime }'");
+  return (0 - 1);
+}
+  (c[0]).f_gua[f] = 1;
+  (c[0]).f_gua_line[f] = (c[0]).tl[rt];
   return 0;
 }
 
@@ -30603,8 +30657,8 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
 }
   int32_t i = (c[0]).nev;
   (c[0]).ev_flow[i] = f;
-  { __typeof__((c[0]).ev_target[i]) __flowc_st13504 = fb_tok_str(c, t); (c[0]).ev_target[i] = __flowc_st13504; }
-  { __typeof__((c[0]).ev_expr[i]) __flowc_st13515 = fb_wrap_top(c, rhs, rs); (c[0]).ev_expr[i] = __flowc_st13515; }
+  { __typeof__((c[0]).ev_target[i]) __flowc_st13738 = fb_tok_str(c, t); (c[0]).ev_target[i] = __flowc_st13738; }
+  { __typeof__((c[0]).ev_expr[i]) __flowc_st13749 = fb_wrap_top(c, rhs, rs); (c[0]).ev_expr[i] = __flowc_st13749; }
   (c[0]).ev_line[i] = (c[0]).tl[t];
   (c[0]).nev = (i + 1);
   return 0;
@@ -30623,8 +30677,8 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
 }
   int32_t w = (c[0]).nwh;
   (c[0]).wh_flow[w] = f;
-  { __typeof__((c[0]).wh_target[w]) __flowc_st13627 = fb_tok_str(c, gt); (c[0]).wh_target[w] = __flowc_st13627; }
-  { __typeof__((c[0]).wh_thr[w]) __flowc_st13638 = fb_wrap_top(c, thr, ts0); (c[0]).wh_thr[w] = __flowc_st13638; }
+  { __typeof__((c[0]).wh_target[w]) __flowc_st13861 = fb_tok_str(c, gt); (c[0]).wh_target[w] = __flowc_st13861; }
+  { __typeof__((c[0]).wh_thr[w]) __flowc_st13872 = fb_wrap_top(c, thr, ts0); (c[0]).wh_thr[w] = __flowc_st13872; }
   (c[0]).wh_line[w] = (c[0]).tl[t];
   (c[0]).nwh = (w + 1);
   return fb_parse_becomes_body(c, f, 1, w, "when", "resets");
@@ -30684,6 +30738,17 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
 }
   return fb_parse_recognize(c, f);
 }
+  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "guarantee") == 1) {
+  if ((c[0]).f_gua[f] == 1) {
+  ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m3, "flow '");
+  fb_put_fname(m3, c, f);
+  bb_puts(m3, "' has two 'guarantee' blocks");
+  bb_puts(fb_err_hint(c), "merge the properties into one guarantee block");
+  return (0 - 1);
+}
+  return fb_parse_guarantee(c, f);
+}
   if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "connect") == 1) {
   return fb_parse_connect(c, f);
 }
@@ -30726,7 +30791,7 @@ int32_t fb_parse_flow(Fb* c, int32_t f) {
   if (nt < 0) {
   return (0 - 1);
 }
-  { __typeof__((c[0]).f_name[f]) __flowc_st14225 = fb_tok_str(c, nt); (c[0]).f_name[f] = __flowc_st14225; }
+  { __typeof__((c[0]).f_name[f]) __flowc_st14516 = fb_tok_str(c, nt); (c[0]).f_name[f] = __flowc_st14516; }
   if (fb_expect(c, "LBRACE") < 0) {
   return (0 - 1);
 }
@@ -33032,7 +33097,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   cyclic = 1;
 } else {
   done[pick] = 1;
-  { __typeof__(order[placed]) __flowc_st26064 = fb_nth_member(c, f, MK_CHILD, pick); order[placed] = __flowc_st26064; }
+  { __typeof__(order[placed]) __flowc_st26355 = fb_nth_member(c, f, MK_CHILD, pick); order[placed] = __flowc_st26355; }
   placed = (placed + 1);
   int32_t pn = (c[0]).mm_name[order[(placed - 1)]];
   i = 0;
@@ -33049,7 +33114,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   if (cyclic == 1) {
   k = 0;
   for (; k < (n); k = k + 1) {
-  { __typeof__(order[k]) __flowc_st26177 = fb_nth_member(c, f, MK_CHILD, k); order[k] = __flowc_st26177; }
+  { __typeof__(order[k]) __flowc_st26468 = fb_nth_member(c, f, MK_CHILD, k); order[k] = __flowc_st26468; }
 }
 }
   flow_mem_free((uint8_t*)(indeg));
@@ -33368,101 +33433,101 @@ Fb* fb_ctx_new(uint8_t* src, int32_t n) {
   (c[0]).n = n;
   int32_t tcap = (n + 2);
   (c[0]).nt = 0;
-  { __typeof__((c[0]).tk) __flowc_st27756 = fb_alloc_i32(tcap); (c[0]).tk = __flowc_st27756; }
-  { __typeof__((c[0]).top) __flowc_st27763 = fb_alloc_i32(tcap); (c[0]).top = __flowc_st27763; }
-  { __typeof__((c[0]).ts) __flowc_st27770 = fb_alloc_i32(tcap); (c[0]).ts = __flowc_st27770; }
-  { __typeof__((c[0]).te) __flowc_st27777 = fb_alloc_i32(tcap); (c[0]).te = __flowc_st27777; }
-  { __typeof__((c[0]).tl) __flowc_st27784 = fb_alloc_i32(tcap); (c[0]).tl = __flowc_st27784; }
-  { __typeof__((c[0]).tc) __flowc_st27791 = fb_alloc_i32(tcap); (c[0]).tc = __flowc_st27791; }
-  { __typeof__((c[0]).tvar) __flowc_st27798 = fb_alloc_i32(tcap); (c[0]).tvar = __flowc_st27798; }
+  { __typeof__((c[0]).tk) __flowc_st28047 = fb_alloc_i32(tcap); (c[0]).tk = __flowc_st28047; }
+  { __typeof__((c[0]).top) __flowc_st28054 = fb_alloc_i32(tcap); (c[0]).top = __flowc_st28054; }
+  { __typeof__((c[0]).ts) __flowc_st28061 = fb_alloc_i32(tcap); (c[0]).ts = __flowc_st28061; }
+  { __typeof__((c[0]).te) __flowc_st28068 = fb_alloc_i32(tcap); (c[0]).te = __flowc_st28068; }
+  { __typeof__((c[0]).tl) __flowc_st28075 = fb_alloc_i32(tcap); (c[0]).tl = __flowc_st28075; }
+  { __typeof__((c[0]).tc) __flowc_st28082 = fb_alloc_i32(tcap); (c[0]).tc = __flowc_st28082; }
+  { __typeof__((c[0]).tvar) __flowc_st28089 = fb_alloc_i32(tcap); (c[0]).tvar = __flowc_st28089; }
   (c[0]).pos = 0;
   (c[0]).nn = 0;
   (c[0]).ncap = 256;
-  { __typeof__((c[0]).nk) __flowc_st27823 = fb_alloc_i32(256); (c[0]).nk = __flowc_st27823; }
-  { __typeof__((c[0]).nop) __flowc_st27830 = fb_alloc_i32(256); (c[0]).nop = __flowc_st27830; }
-  { __typeof__((c[0]).ntok) __flowc_st27837 = fb_alloc_i32(256); (c[0]).ntok = __flowc_st27837; }
-  { __typeof__((c[0]).na) __flowc_st27844 = fb_alloc_i32(256); (c[0]).na = __flowc_st27844; }
-  { __typeof__((c[0]).nb) __flowc_st27851 = fb_alloc_i32(256); (c[0]).nb = __flowc_st27851; }
-  { __typeof__((c[0]).nc) __flowc_st27858 = fb_alloc_i32(256); (c[0]).nc = __flowc_st27858; }
-  { __typeof__((c[0]).nx) __flowc_st27865 = fb_alloc_i32(256); (c[0]).nx = __flowc_st27865; }
-  { __typeof__((c[0]).nfs) __flowc_st27872 = fb_alloc_i32(256); (c[0]).nfs = __flowc_st27872; }
-  { __typeof__((c[0]).nfe) __flowc_st27879 = fb_alloc_i32(256); (c[0]).nfe = __flowc_st27879; }
-  { __typeof__((c[0]).nm) __flowc_st27886 = bb_new(4096); (c[0]).nm = __flowc_st27886; }
+  { __typeof__((c[0]).nk) __flowc_st28114 = fb_alloc_i32(256); (c[0]).nk = __flowc_st28114; }
+  { __typeof__((c[0]).nop) __flowc_st28121 = fb_alloc_i32(256); (c[0]).nop = __flowc_st28121; }
+  { __typeof__((c[0]).ntok) __flowc_st28128 = fb_alloc_i32(256); (c[0]).ntok = __flowc_st28128; }
+  { __typeof__((c[0]).na) __flowc_st28135 = fb_alloc_i32(256); (c[0]).na = __flowc_st28135; }
+  { __typeof__((c[0]).nb) __flowc_st28142 = fb_alloc_i32(256); (c[0]).nb = __flowc_st28142; }
+  { __typeof__((c[0]).nc) __flowc_st28149 = fb_alloc_i32(256); (c[0]).nc = __flowc_st28149; }
+  { __typeof__((c[0]).nx) __flowc_st28156 = fb_alloc_i32(256); (c[0]).nx = __flowc_st28156; }
+  { __typeof__((c[0]).nfs) __flowc_st28163 = fb_alloc_i32(256); (c[0]).nfs = __flowc_st28163; }
+  { __typeof__((c[0]).nfe) __flowc_st28170 = fb_alloc_i32(256); (c[0]).nfe = __flowc_st28170; }
+  { __typeof__((c[0]).nm) __flowc_st28177 = bb_new(4096); (c[0]).nm = __flowc_st28177; }
   (c[0]).nf = 0;
-  { __typeof__((c[0]).f_name) __flowc_st27899 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_name = __flowc_st27899; }
-  { __typeof__((c[0]).f_line) __flowc_st27906 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_line = __flowc_st27906; }
-  { __typeof__((c[0]).f_start) __flowc_st27913 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st27913; }
-  { __typeof__((c[0]).f_end) __flowc_st27920 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st27920; }
-  { __typeof__((c[0]).f_solver) __flowc_st27927 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st27927; }
-  { __typeof__((c[0]).f_dt_ns) __flowc_st27943 = (int64_t*)(flow_mem_malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st27943; }
-  { __typeof__((c[0]).f_dt_text) __flowc_st27950 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st27950; }
-  { __typeof__((c[0]).f_method) __flowc_st27957 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st27957; }
-  { __typeof__((c[0]).f_solver_line) __flowc_st27964 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st27964; }
-  { __typeof__((c[0]).f_rec) __flowc_st27971 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec = __flowc_st27971; }
-  { __typeof__((c[0]).f_rec_line) __flowc_st27978 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec_line = __flowc_st27978; }
-  { __typeof__((c[0]).f_out) __flowc_st27985 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_out = __flowc_st27985; }
+  { __typeof__((c[0]).f_name) __flowc_st28190 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_name = __flowc_st28190; }
+  { __typeof__((c[0]).f_line) __flowc_st28197 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_line = __flowc_st28197; }
+  { __typeof__((c[0]).f_start) __flowc_st28204 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st28204; }
+  { __typeof__((c[0]).f_end) __flowc_st28211 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st28211; }
+  { __typeof__((c[0]).f_solver) __flowc_st28218 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st28218; }
+  { __typeof__((c[0]).f_dt_ns) __flowc_st28234 = (int64_t*)(flow_mem_malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st28234; }
+  { __typeof__((c[0]).f_dt_text) __flowc_st28241 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st28241; }
+  { __typeof__((c[0]).f_method) __flowc_st28248 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st28248; }
+  { __typeof__((c[0]).f_solver_line) __flowc_st28255 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st28255; }
+  { __typeof__((c[0]).f_rec) __flowc_st28262 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec = __flowc_st28262; }
+  { __typeof__((c[0]).f_rec_line) __flowc_st28269 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec_line = __flowc_st28269; }
+  { __typeof__((c[0]).f_out) __flowc_st28276 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_out = __flowc_st28276; }
   int32_t icap = ((tcap * 2) + 16);
   (c[0]).icap = icap;
   (c[0]).nmm = 0;
-  { __typeof__((c[0]).mm_flow) __flowc_st28011 = fb_alloc_i32(icap); (c[0]).mm_flow = __flowc_st28011; }
-  { __typeof__((c[0]).mm_kind) __flowc_st28018 = fb_alloc_i32(icap); (c[0]).mm_kind = __flowc_st28018; }
-  { __typeof__((c[0]).mm_name) __flowc_st28025 = fb_alloc_i32(icap); (c[0]).mm_name = __flowc_st28025; }
-  { __typeof__((c[0]).mm_type) __flowc_st28032 = fb_alloc_i32(icap); (c[0]).mm_type = __flowc_st28032; }
-  { __typeof__((c[0]).mm_init) __flowc_st28039 = fb_alloc_i32(icap); (c[0]).mm_init = __flowc_st28039; }
-  { __typeof__((c[0]).mm_line) __flowc_st28046 = fb_alloc_i32(icap); (c[0]).mm_line = __flowc_st28046; }
-  { __typeof__((c[0]).mm_synth) __flowc_st28053 = fb_alloc_i32(icap); (c[0]).mm_synth = __flowc_st28053; }
-  { __typeof__((c[0]).mm_params) __flowc_st28060 = fb_alloc_i32(icap); (c[0]).mm_params = __flowc_st28060; }
-  { __typeof__((c[0]).mm_pipe_m) __flowc_st28067 = fb_alloc_i32(icap); (c[0]).mm_pipe_m = __flowc_st28067; }
-  { __typeof__((c[0]).mm_pipe_p) __flowc_st28074 = fb_alloc_i32(icap); (c[0]).mm_pipe_p = __flowc_st28074; }
+  { __typeof__((c[0]).mm_flow) __flowc_st28302 = fb_alloc_i32(icap); (c[0]).mm_flow = __flowc_st28302; }
+  { __typeof__((c[0]).mm_kind) __flowc_st28309 = fb_alloc_i32(icap); (c[0]).mm_kind = __flowc_st28309; }
+  { __typeof__((c[0]).mm_name) __flowc_st28316 = fb_alloc_i32(icap); (c[0]).mm_name = __flowc_st28316; }
+  { __typeof__((c[0]).mm_type) __flowc_st28323 = fb_alloc_i32(icap); (c[0]).mm_type = __flowc_st28323; }
+  { __typeof__((c[0]).mm_init) __flowc_st28330 = fb_alloc_i32(icap); (c[0]).mm_init = __flowc_st28330; }
+  { __typeof__((c[0]).mm_line) __flowc_st28337 = fb_alloc_i32(icap); (c[0]).mm_line = __flowc_st28337; }
+  { __typeof__((c[0]).mm_synth) __flowc_st28344 = fb_alloc_i32(icap); (c[0]).mm_synth = __flowc_st28344; }
+  { __typeof__((c[0]).mm_params) __flowc_st28351 = fb_alloc_i32(icap); (c[0]).mm_params = __flowc_st28351; }
+  { __typeof__((c[0]).mm_pipe_m) __flowc_st28358 = fb_alloc_i32(icap); (c[0]).mm_pipe_m = __flowc_st28358; }
+  { __typeof__((c[0]).mm_pipe_p) __flowc_st28365 = fb_alloc_i32(icap); (c[0]).mm_pipe_p = __flowc_st28365; }
   (c[0]).nev = 0;
-  { __typeof__((c[0]).ev_flow) __flowc_st28087 = fb_alloc_i32(icap); (c[0]).ev_flow = __flowc_st28087; }
-  { __typeof__((c[0]).ev_target) __flowc_st28094 = fb_alloc_i32(icap); (c[0]).ev_target = __flowc_st28094; }
-  { __typeof__((c[0]).ev_expr) __flowc_st28101 = fb_alloc_i32(icap); (c[0]).ev_expr = __flowc_st28101; }
-  { __typeof__((c[0]).ev_line) __flowc_st28108 = fb_alloc_i32(icap); (c[0]).ev_line = __flowc_st28108; }
+  { __typeof__((c[0]).ev_flow) __flowc_st28378 = fb_alloc_i32(icap); (c[0]).ev_flow = __flowc_st28378; }
+  { __typeof__((c[0]).ev_target) __flowc_st28385 = fb_alloc_i32(icap); (c[0]).ev_target = __flowc_st28385; }
+  { __typeof__((c[0]).ev_expr) __flowc_st28392 = fb_alloc_i32(icap); (c[0]).ev_expr = __flowc_st28392; }
+  { __typeof__((c[0]).ev_line) __flowc_st28399 = fb_alloc_i32(icap); (c[0]).ev_line = __flowc_st28399; }
   (c[0]).nwh = 0;
-  { __typeof__((c[0]).wh_flow) __flowc_st28121 = fb_alloc_i32(icap); (c[0]).wh_flow = __flowc_st28121; }
-  { __typeof__((c[0]).wh_target) __flowc_st28128 = fb_alloc_i32(icap); (c[0]).wh_target = __flowc_st28128; }
-  { __typeof__((c[0]).wh_thr) __flowc_st28135 = fb_alloc_i32(icap); (c[0]).wh_thr = __flowc_st28135; }
-  { __typeof__((c[0]).wh_line) __flowc_st28142 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28142; }
+  { __typeof__((c[0]).wh_flow) __flowc_st28412 = fb_alloc_i32(icap); (c[0]).wh_flow = __flowc_st28412; }
+  { __typeof__((c[0]).wh_target) __flowc_st28419 = fb_alloc_i32(icap); (c[0]).wh_target = __flowc_st28419; }
+  { __typeof__((c[0]).wh_thr) __flowc_st28426 = fb_alloc_i32(icap); (c[0]).wh_thr = __flowc_st28426; }
+  { __typeof__((c[0]).wh_line) __flowc_st28433 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28433; }
   (c[0]).ney = 0;
-  { __typeof__((c[0]).ey_flow) __flowc_st28155 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28155; }
-  { __typeof__((c[0]).ey_ns) __flowc_st28171 = (int64_t*)(flow_mem_malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28171; }
-  { __typeof__((c[0]).ey_text) __flowc_st28178 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28178; }
-  { __typeof__((c[0]).ey_line) __flowc_st28185 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28185; }
+  { __typeof__((c[0]).ey_flow) __flowc_st28446 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28446; }
+  { __typeof__((c[0]).ey_ns) __flowc_st28462 = (int64_t*)(flow_mem_malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28462; }
+  { __typeof__((c[0]).ey_text) __flowc_st28469 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28469; }
+  { __typeof__((c[0]).ey_line) __flowc_st28476 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28476; }
   (c[0]).nbc = 0;
-  { __typeof__((c[0]).bc_kind) __flowc_st28198 = fb_alloc_i32(icap); (c[0]).bc_kind = __flowc_st28198; }
-  { __typeof__((c[0]).bc_owner) __flowc_st28205 = fb_alloc_i32(icap); (c[0]).bc_owner = __flowc_st28205; }
-  { __typeof__((c[0]).bc_target) __flowc_st28212 = fb_alloc_i32(icap); (c[0]).bc_target = __flowc_st28212; }
-  { __typeof__((c[0]).bc_expr) __flowc_st28219 = fb_alloc_i32(icap); (c[0]).bc_expr = __flowc_st28219; }
-  { __typeof__((c[0]).bc_line) __flowc_st28226 = fb_alloc_i32(icap); (c[0]).bc_line = __flowc_st28226; }
+  { __typeof__((c[0]).bc_kind) __flowc_st28489 = fb_alloc_i32(icap); (c[0]).bc_kind = __flowc_st28489; }
+  { __typeof__((c[0]).bc_owner) __flowc_st28496 = fb_alloc_i32(icap); (c[0]).bc_owner = __flowc_st28496; }
+  { __typeof__((c[0]).bc_target) __flowc_st28503 = fb_alloc_i32(icap); (c[0]).bc_target = __flowc_st28503; }
+  { __typeof__((c[0]).bc_expr) __flowc_st28510 = fb_alloc_i32(icap); (c[0]).bc_expr = __flowc_st28510; }
+  { __typeof__((c[0]).bc_line) __flowc_st28517 = fb_alloc_i32(icap); (c[0]).bc_line = __flowc_st28517; }
   (c[0]).niv = 0;
-  { __typeof__((c[0]).iv_flow) __flowc_st28239 = fb_alloc_i32(icap); (c[0]).iv_flow = __flowc_st28239; }
-  { __typeof__((c[0]).iv_kind) __flowc_st28246 = fb_alloc_i32(icap); (c[0]).iv_kind = __flowc_st28246; }
-  { __typeof__((c[0]).iv_expr) __flowc_st28253 = fb_alloc_i32(icap); (c[0]).iv_expr = __flowc_st28253; }
-  { __typeof__((c[0]).iv_line) __flowc_st28260 = fb_alloc_i32(icap); (c[0]).iv_line = __flowc_st28260; }
-  { __typeof__((c[0]).iv_text) __flowc_st28267 = fb_alloc_i32(icap); (c[0]).iv_text = __flowc_st28267; }
+  { __typeof__((c[0]).iv_flow) __flowc_st28530 = fb_alloc_i32(icap); (c[0]).iv_flow = __flowc_st28530; }
+  { __typeof__((c[0]).iv_kind) __flowc_st28537 = fb_alloc_i32(icap); (c[0]).iv_kind = __flowc_st28537; }
+  { __typeof__((c[0]).iv_expr) __flowc_st28544 = fb_alloc_i32(icap); (c[0]).iv_expr = __flowc_st28544; }
+  { __typeof__((c[0]).iv_line) __flowc_st28551 = fb_alloc_i32(icap); (c[0]).iv_line = __flowc_st28551; }
+  { __typeof__((c[0]).iv_text) __flowc_st28558 = fb_alloc_i32(icap); (c[0]).iv_text = __flowc_st28558; }
   (c[0]).ncn = 0;
-  { __typeof__((c[0]).cn_flow) __flowc_st28280 = fb_alloc_i32(icap); (c[0]).cn_flow = __flowc_st28280; }
-  { __typeof__((c[0]).cn_sm) __flowc_st28287 = fb_alloc_i32(icap); (c[0]).cn_sm = __flowc_st28287; }
-  { __typeof__((c[0]).cn_sp) __flowc_st28294 = fb_alloc_i32(icap); (c[0]).cn_sp = __flowc_st28294; }
-  { __typeof__((c[0]).cn_dm) __flowc_st28301 = fb_alloc_i32(icap); (c[0]).cn_dm = __flowc_st28301; }
-  { __typeof__((c[0]).cn_dp) __flowc_st28308 = fb_alloc_i32(icap); (c[0]).cn_dp = __flowc_st28308; }
-  { __typeof__((c[0]).cn_line) __flowc_st28315 = fb_alloc_i32(icap); (c[0]).cn_line = __flowc_st28315; }
+  { __typeof__((c[0]).cn_flow) __flowc_st28571 = fb_alloc_i32(icap); (c[0]).cn_flow = __flowc_st28571; }
+  { __typeof__((c[0]).cn_sm) __flowc_st28578 = fb_alloc_i32(icap); (c[0]).cn_sm = __flowc_st28578; }
+  { __typeof__((c[0]).cn_sp) __flowc_st28585 = fb_alloc_i32(icap); (c[0]).cn_sp = __flowc_st28585; }
+  { __typeof__((c[0]).cn_dm) __flowc_st28592 = fb_alloc_i32(icap); (c[0]).cn_dm = __flowc_st28592; }
+  { __typeof__((c[0]).cn_dp) __flowc_st28599 = fb_alloc_i32(icap); (c[0]).cn_dp = __flowc_st28599; }
+  { __typeof__((c[0]).cn_line) __flowc_st28606 = fb_alloc_i32(icap); (c[0]).cn_line = __flowc_st28606; }
   (c[0]).nrc = 0;
-  { __typeof__((c[0]).rc_flow) __flowc_st28328 = fb_alloc_i32(icap); (c[0]).rc_flow = __flowc_st28328; }
-  { __typeof__((c[0]).rc_name) __flowc_st28335 = fb_alloc_i32(icap); (c[0]).rc_name = __flowc_st28335; }
+  { __typeof__((c[0]).rc_flow) __flowc_st28619 = fb_alloc_i32(icap); (c[0]).rc_flow = __flowc_st28619; }
+  { __typeof__((c[0]).rc_name) __flowc_st28626 = fb_alloc_i32(icap); (c[0]).rc_name = __flowc_st28626; }
   (c[0]).nnames = 0;
-  { __typeof__((c[0]).nx_kind) __flowc_st28348 = fb_alloc_i32(icap); (c[0]).nx_kind = __flowc_st28348; }
-  { __typeof__((c[0]).nx_name) __flowc_st28355 = fb_alloc_i32(icap); (c[0]).nx_name = __flowc_st28355; }
+  { __typeof__((c[0]).nx_kind) __flowc_st28639 = fb_alloc_i32(icap); (c[0]).nx_kind = __flowc_st28639; }
+  { __typeof__((c[0]).nx_name) __flowc_st28646 = fb_alloc_i32(icap); (c[0]).nx_name = __flowc_st28646; }
   (c[0]).err = 0;
   (c[0]).err_flow = (0 - 1);
   (c[0]).err_line = 0;
   (c[0]).err_col = 0;
-  { __typeof__((c[0]).emsg) __flowc_st28388 = bb_new(256); (c[0]).emsg = __flowc_st28388; }
-  { __typeof__((c[0]).ehint) __flowc_st28395 = bb_new(256); (c[0]).ehint = __flowc_st28395; }
+  { __typeof__((c[0]).emsg) __flowc_st28679 = bb_new(256); (c[0]).emsg = __flowc_st28679; }
+  { __typeof__((c[0]).ehint) __flowc_st28686 = bb_new(256); (c[0]).ehint = __flowc_st28686; }
   (c[0]).has_hint = 0;
   (c[0]).cur = 0;
-  { __typeof__((c[0]).out) __flowc_st28418 = bb_new(((n * 2) + 1024)); (c[0]).out = __flowc_st28418; }
+  { __typeof__((c[0]).out) __flowc_st28709 = bb_new(((n * 2) + 1024)); (c[0]).out = __flowc_st28709; }
   return c;
 }
 
