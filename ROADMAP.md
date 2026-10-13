@@ -36,7 +36,7 @@ grammar cards in [north-star.md](docs/vision/north-star.md).
 | **W1** | Fuseable DSP `\|>` + rate analysis; harden `guarantee` | ✅ complete: `lib/stdlib/dsp.flow` (`map_f32`/`map_f64`, `filter_f32`, `reduce_f32`/`reduce_f64`, `scan_f32`/`scan_f64`, `zip_with_f32`/`zip_with_f64`, `scale_f32`/`scale_f64`, `offset_f32`, `clip_f32`, `sum_f32`/`sum_f64`, `dot_f32`/`dot_f64`), `|>` pipeline chaining with lambdas and named functions, function-type parameter compatibility fix, lambda-as-argument fat-pointer wrapping in C generator, `examples/dsp/pipeline.flow`, `tests/unit/test_dsp_pipeline.py` (11 tests). Compile-time fusion of adjacent `map`/`scale`/`offset` stages shipped in 0.11.0. Next: rate analysis. |
 | **W2** | MMIO, bitfields, fixed-point + saturating | ✅ complete: `lib/stdlib/mmio.flow`, `lib/stdlib/bitfield.flow`, `lib/stdlib/fixed_point.flow` (`Q16_16`, `Q8_24`), `saturating_*` helpers in `checked_arith.flow` |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | ✅ complete: `lib/stdlib/interrupt.flow`, `lib/stdlib/rtos.flow`, `lib/stdlib/fsm.flow`, `examples/embedded/fsm_controller.flow`, `tests/lang/test_interrupt.flow`, `tests/lang/test_rtos.flow`, `tests/lang/test_fsm.flow` |
-| **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
+| **W4** | Sim ↔ deploy identical code; digital twin | ✅ complete: `examples/evolution/digital_twin_lite.flow`, `examples/systems/distributed_digital_twins.flow` |
 | **W5** | `@hardware` → RTL; CDC; deploy partitions | ✅ complete: `lib/stdlib/hardware.flow` (`ClockDomain`, `Register`, `cdc_sync`), `@hardware` compiler attribute validation, `examples/hardware/blink.flow`, and `tests/lang/test_hardware_cdc.flow`. |
 | **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial: Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null dereference macro and fault handler (#288). |
 
@@ -183,7 +183,7 @@ Reference: [docs/project/roadmap-2.0.md](docs/project/roadmap-2.0.md)
 1. 🔲 **Orchestration syntax** (#723, #724). `std.orchestrate` ships the combinators (`seq`, `fanout`, Result joins; see [docs/library/orchestrate.md](docs/library/orchestrate.md)). Syntax decisions will emerge from real library use, using a dedicated keyword or operator.
 2. 🔲 **Hardware synthesis and partitioning**. Lower `@hardware` declarations to RTL, enforce clock domain crossings, and deploy across hardware-software boundaries.
 3. 🔲 **Certified safety profiles**. Expand `--profile flight` with fault mitigation, static loop iteration bounds, and formal proofs of domain lattice rules.
-4. 🔲 **Distributed digital twins**. Deploy identical code paths across simulation, RTOS environments, and bare metal targets.
+4. ✅ **Distributed digital twins**. Deploy identical code paths across simulation, RTOS environments, and bare metal targets.
 
 ---
 

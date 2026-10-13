@@ -1,0 +1,162 @@
+# DISTRIBUTED DIGITAL TWIN
+#
+# A "distributed digital twin" deployed across nodes.
+# One node acts as the simulated plant, the other as the digital twin observer.
+# We will use TCP to communicate the measured position to the twin.
+#
+# Run: ./flow run examples/systems/distributed_digital_twins.flow
+
+import "stdlib/concurrent.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function fabs(x: f64) -> f64
+    function usleep(usec: i32) -> i32
+}
+
+# The physical plant (reality)
+flow Motor {
+    state pos: f64 = 0.0
+    state vel: f64 = 0.0
+
+    input voltage: f64
+
+    param friction: f64 = 0.1
+
+    # Simplified DC motor
+    pos evolves as vel
+    vel evolves as -friction * vel + voltage
+}
+
+# The digital twin (observer)
+flow Twin {
+    state pos: f64 = 0.5   # Starts with an incorrect state estimate
+    state vel: f64 = 2.0   # Starts with an incorrect state estimate
+
+    input voltage: f64     # Known control input
+    input pos_meas: f64    # Measured output from the plant
+
+    param friction: f64 = 0.1
+    param L1: f64 = 2.0    # Observer gain for position
+    param L2: f64 = 1.0    # Observer gain for velocity
+
+    # Luenberger observer: dx_hat/dt = A x_hat + B u + L (y - C x_hat)
+    pos evolves as vel + L1 * (pos_meas - pos)
+    vel evolves as -friction * vel + voltage + L2 * (pos_meas - pos)
+}
+
+struct NodeState {
+    plant: Motor,
+    twin: Twin,
+    chan_meas: Channel_i64,
+    dt: f64
+}
+
+# Plant Thread
+function plant_node(arg: ptr<i8>) -> ptr<i8> {
+    let state_ptr: ptr<NodeState> = arg as ptr<NodeState>
+    
+    let steps: i32 = 600
+
+    for k in 0 to steps + 1 {
+        let dt: f64 = state_ptr[0].dt
+        let t: f64 = k * dt
+        
+        state_ptr[0].plant.voltage = 1.0
+        
+        # Transmit measurement over the network (simulated via channel)
+        # using integer cast (scaled up) to simulate f64 transfer using Channel_i64
+        let msg: i64 = (state_ptr[0].plant.pos * 1000000.0) as i64
+        channel_i64_send(&state_ptr[0].chan_meas, msg)
+        
+        Motor_step(&state_ptr[0].plant, dt)
+        
+        # Yield to allow the twin to run in lock-step
+        usleep(100)
+    }
+    
+    channel_i64_close(&state_ptr[0].chan_meas)
+    return null
+}
+
+# Twin Thread
+function twin_node(arg: ptr<i8>) -> ptr<i8> {
+    let state_ptr: ptr<NodeState> = arg as ptr<NodeState>
+    
+    let mut k: i32 = 0
+
+    while true {
+        let mut meas_i64: i64 = 0
+        let ok: bool = channel_i64_recv(&state_ptr[0].chan_meas, &meas_i64)
+        if not ok {
+            break
+        }
+        let meas: f64 = (meas_i64 as f64) / 1000000.0
+        
+        let dt: f64 = state_ptr[0].dt
+        let t: f64 = k * dt
+        
+        state_ptr[0].twin.voltage = 1.0
+        state_ptr[0].twin.pos_meas = meas
+
+        if k % 60 == 0 {
+            print("    ")
+            printf("%7.2f", t)
+            printf("  %9.4f", state_ptr[0].plant.pos)
+            printf(" %9.4f", state_ptr[0].twin.pos)
+            print("   | ")
+            printf(" %9.4f", state_ptr[0].plant.vel)
+            printf(" %9.4f", state_ptr[0].twin.vel)
+            println("")
+        }
+
+        Twin_step(&state_ptr[0].twin, dt)
+        k = k + 1
+    }
+    
+    return null
+}
+
+function main() -> i32 {
+    println("")
+    println("  DISTRIBUTED DIGITAL TWIN: observer tracking a physical plant")
+    println("  ==============================================================")
+    println("")
+    println("      t [s]   plant pos  twin pos   |   plant vel  twin vel")
+    println("    -------  ---------- ---------   |  ---------- ---------")
+
+    let mut state: NodeState = NodeState {
+        plant: Motor_new(),
+        twin: Twin_new(),
+        chan_meas: channel_i64_new(1000),
+        dt: 0.01
+    }
+
+    # Spawn nodes
+    let t_plant: Thread = thread_spawn(plant_node as ptr<i8>, &state as ptr<i8>)
+    let t_twin: Thread = thread_spawn(twin_node as ptr<i8>, &state as ptr<i8>)
+
+    thread_join(&t_plant)
+    thread_join(&t_twin)
+
+    let pos_err_end: f64 = fabs(state.plant.pos - state.twin.pos)
+    let vel_err_end: f64 = fabs(state.plant.vel - state.twin.vel)
+
+    println("")
+    print("    final position error : ")
+    printf("%.4f", pos_err_end)
+    println("")
+    print("    final velocity error : ")
+    printf("%.4f", vel_err_end)
+    println("")
+    println("")
+
+    # The precision of the simulation has some tolerance
+    if pos_err_end > 0.02 or vel_err_end > 0.02 {
+        println("    FAIL: twin did not converge to plant state")
+        return 1
+    }
+
+    println("    OK: observer successfully tracks physical plant")
+    return 0
+}
