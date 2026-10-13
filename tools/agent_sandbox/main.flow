@@ -128,7 +128,6 @@ function main() -> i32 {
     add_mount(c, "--ro-bind-try", "/lib64", "/lib64")
     add_mount(c, "--ro-bind", work, "/workspace")
     add_mount(c, "--bind", out, "/output")
-    add(c, "--size", "16777216")
     add(c, "--tmpfs", "/tmp")
     add(c, "--proc", "/proc")
     add(c, "--dev", "/dev")
