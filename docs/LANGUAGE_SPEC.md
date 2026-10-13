@@ -1,7 +1,7 @@
 # FLOW Language Specification
 
 > **Version**: 2.0.0
-> **Last Updated**: 2026-09-27
+> **Last Updated**: 2026-10-13
 
 ## Overview
 
