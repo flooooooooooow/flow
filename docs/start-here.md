@@ -60,7 +60,7 @@ Check it worked:
 flow version
 ```
 
-You should see a version number such as `0.11.1`.
+You should see a version number such as `2.0.0`.
 
 On Linux, or if you want the examples and the full source:
 
@@ -184,7 +184,7 @@ maths, no library to import.
 ## 7. Let an AI write Flow for you
 
 Flow is young, so an AI assistant does much better when it has been told how the
-language actually works today. There is a pack of skills and tools for exactly
+language works today. There is a pack of skills and tools for exactly
 this.
 
 Install [Claude Code](https://claude.com/claude-code):

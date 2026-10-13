@@ -43,7 +43,7 @@ cd flow
 ./flow version
 ```
 
-The requirement is Clang or GCC. `flow run` and `flow compile` use `flowc`, the self-hosted compiler, which `./flow` builds from checked-in C on first use. Python 3.9+ is needed only for the MLIR backend (`--backend=mlir`) and for the wheel build step of `flow python`.
+The requirement is Clang or GCC. `flow run` and `flow compile` use `flowc`, the self-hosted compiler, which `./flow` builds from checked-in C on first use. Python is needed only for the wheel build step of `flow python`.
 
 If you installed from source, replace `flow` with `./flow` in the commands below.
 
@@ -181,7 +181,7 @@ flow test
 flow fmt file.flow
 ```
 
-The self-hosted Stage-A subset can be exercised directly with plain `flow run` / `flow compile`. See [self-hosting](project/self-hosting.md) for the current boundary between Stage-A and the full Python-host compiler.
+`flowc` is the self-hosted compiler and builds programs directly to native executables. See [self-hosting](project/self-hosting.md) for compiler internals and verification proofs.
 
 ## 7. Next steps
 

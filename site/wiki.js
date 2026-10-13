@@ -1,4 +1,4 @@
-/* Flow Wiki — client-side documentation shell */
+/* Flow Wiki: client-side documentation shell */
 
 let navData = null;
 let searchIndex = [];
@@ -115,7 +115,7 @@ function renderVersionPicker() {
     for (const v of versionsData.versions) {
         const opt = document.createElement('option');
         opt.value = v.id;
-        const tag = v.latest ? ' (latest)' : v.archived ? '' : ' — snapshot TBD';
+        const tag = v.latest ? ' (latest)' : v.archived ? '' : ' (snapshot TBD)';
         opt.textContent = `${v.label}${tag}`;
         group.appendChild(opt);
     }
@@ -164,7 +164,7 @@ function updateVersionBanner() {
     const slug = versionSlug(current.id);
     banner.innerHTML = `
         <span>Viewing <strong>${current.label}</strong> release notes context.
-        Full docs archive not published yet — content reflects <strong>${latest?.label || 'latest'}</strong>.</span>
+        Full docs archive not published yet. Content reflects <strong>${latest?.label || 'latest'}</strong>.</span>
         <button type="button" class="banner-action" data-goto-changelog="${slug}">Release notes →</button>
         <button type="button" class="banner-action" data-reset-version>Back to latest</button>
     `;
@@ -442,7 +442,7 @@ function spyOnHeadings(headings, links, tocCol) {
         if (visible.size) {
             id = headings.find((h) => visible.has(h.id))?.id || null;
         } else {
-            // Nothing intersecting (long section) — fall back to the last heading passed.
+            // Nothing intersecting (long section): fall back to the last heading passed.
             const top = window.scrollY + parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop || '0') + 4;
             for (const h of headings) {
                 if (h.getBoundingClientRect().top + window.scrollY <= top) id = h.id;
@@ -606,7 +606,7 @@ async function loadDoc(path) {
         const response = await fetch(path, { cache: 'no-cache' });
         if (!response.ok) throw new Error(`Not found (${response.status})`);
         const text = await response.text();
-        // nginx try_files falls back to index.html with HTTP 200 — never render that as a doc
+        // nginx try_files falls back to index.html with HTTP 200. Never render that as a doc.
         if (looksLikeHtmlDocument(text)) {
             throw new Error('Not found (got site shell HTML instead of the document)');
         }
@@ -677,7 +677,7 @@ async function loadDoc(path) {
         document.body.classList.toggle('page-home', path === 'wiki-home.md');
         document.body.classList.toggle('page-wide', path.endsWith('.ebnf'));
         if (path === 'wiki-home.md') {
-            // The home page's only H1 *is* the hero headline — keep it. Any
+            // The home page's only H1 is the hero headline: keep it. Any
             // stray H1 outside the hero would duplicate .doc-title, so drop it.
             const hero = content.querySelector('.wiki-hero');
             const h1 = content.querySelector('h1');
@@ -686,7 +686,7 @@ async function loadDoc(path) {
 
         const loc = anchor ? `${path}#${anchor}` : path;
         history.replaceState(null, '', `#${encodeURIComponent(loc)}`);
-        document.title = `${displayTitle} — Flow Docs`;
+        document.title = `${displayTitle} · Flow Docs`;
         if (!anchor) window.scrollTo({ top: 0, behavior: 'instant' });
         updateReadProgress();
     } catch (err) {
@@ -870,7 +870,7 @@ function addHeadingAnchors(container) {
         a.className = 'heading-anchor';
         a.href = `#${encodeURIComponent(currentPath)}`;
         a.textContent = '#';
-        a.setAttribute('aria-label', `Link to “${h.textContent.trim()}”`);
+        a.setAttribute('aria-label', `Link to "${h.textContent.trim()}"`);
         a.addEventListener('click', (e) => {
             e.preventDefault();
             const loc = `#${encodeURIComponent(`${currentPath}#${h.id}`)}`;
@@ -886,7 +886,7 @@ function renderNotFound(path, message) {
     return `
         <div class="not-found-panel">
             <h2>Page not found</h2>
-            <p>Could not load <code>${escapeHtml(path)}</code>${message ? ` — ${escapeHtml(message)}` : ''}.</p>
+            <p>Could not load <code>${escapeHtml(path)}</code>${message ? `: ${escapeHtml(message)}` : ''}.</p>
             <div class="not-found-links">
                 <a href="#" class="wiki-cta wiki-cta-primary" data-goto="wiki-home.md">Home</a>
                 <a href="#" class="wiki-cta" data-goto="getting-started.md">Quick Start</a>
@@ -1144,7 +1144,7 @@ async function renderSearchResults(query) {
                 renderSearchHitList(hits);
                 return;
             }
-            // Empty Pagefind result — fall through to local index
+            // Empty Pagefind result: fall through to local index
         } catch (_) {
             // fall through to local
         }

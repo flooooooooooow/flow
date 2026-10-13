@@ -1,227 +1,285 @@
-# TSV Parser Demo
-# Streaming TSV parser demonstrating data processing in Flow
+# TSV Parser and Data Interchange Demo
+# Demonstrates tab-separated values (TSV) streaming parsing,
+# column extraction, numeric aggregation, and record generation in pure Flow.
+#
+# Run: ./flow run examples/data/tsv_parser.flow
 
 extern {
-    function putchar(c: i32) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function printf(fmt: string, val: i32) -> i32
 }
 
-# ============================================================================
-# PARSING FUNCTIONS
-# ============================================================================
+const MAX_COLUMNS: i32 = 16
+const MAX_ROWS: i32 = 64
 
-function parse_row(data: ptr<u8>, start: i32, len: i32,
-                   delimiter: i32, quote_char: i32,
-                   field_starts: ptr<i32>, field_lengths: ptr<i32>) -> i32 {
-    let mut num_fields: i32 = 0
-    let mut field_start: i32 = start
-    let mut i: i32 = start
-    let mut in_quotes: i32 = 0
+struct TsvField {
+    start: i32,
+    len: i32
+}
 
+struct TsvRow {
+    fields: ptr<TsvField>,
+    num_fields: i32
+}
+
+struct TsvTable {
+    raw_data: string,
+    headers: ptr<string>,
+    num_columns: i32,
+    num_rows: i32
+}
+
+function tsv_extract_str(raw: string, start: i32, len: i32) -> string {
+    let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = raw as ptr<u8>
+    let mut i: i32 = 0
     while i < len {
-        let c: i32 = data[i]
-
-        if c == quote_char {
-            in_quotes = 1 - in_quotes
-        }
-
-        if c == delimiter and in_quotes == 0 {
-            # End of field
-            field_starts[num_fields] = field_start
-            field_lengths[num_fields] = i - field_start
-            num_fields = num_fields + 1
-            field_start = i + 1
-        }
-
-        if c == 10 or c == 13 {  # Newline
-            if in_quotes == 0 {
-                # End of row
-                field_starts[num_fields] = field_start
-                field_lengths[num_fields] = i - field_start
-                num_fields = num_fields + 1
-                return num_fields
-            }
-        }
-
+        buf[i] = p[start + i]
         i = i + 1
     }
-
-    # Handle last field (no trailing newline)
-    if i > field_start {
-        field_starts[num_fields] = field_start
-        field_lengths[num_fields] = i - field_start
-        num_fields = num_fields + 1
-    }
-
-    return num_fields
+    buf[len] = 0
+    return buf as string
 }
 
-function find_next_row(data: ptr<u8>, start: i32, len: i32) -> i32 {
-    let mut i: i32 = start
-    while i < len {
-        if data[i] == 10 {  # \n
-            return i + 1
-        }
+function tsv_parse_float(raw: string, start: i32, len: i32) -> f64 {
+    let p: ptr<u8> = raw as ptr<u8>
+    let mut i: i32 = 0
+    let mut sign: f64 = 1.0
+    if i < len and p[start + i] == 45 {
+        sign = -1.0
         i = i + 1
     }
-    return len
+    let mut int_part: f64 = 0.0
+    while i < len and p[start + i] >= 48 and p[start + i] <= 57 {
+        int_part = int_part * 10.0 + ((p[start + i] - 48) as f64)
+        i = i + 1
+    }
+    if i < len and p[start + i] == 46 {
+        i = i + 1
+        let mut frac: f64 = 0.0
+        let mut div: f64 = 10.0
+        while i < len and p[start + i] >= 48 and p[start + i] <= 57 {
+            frac = frac + ((p[start + i] - 48) as f64) / div
+            div = div * 10.0
+            i = i + 1
+        }
+        return sign * (int_part + frac)
+    }
+    return sign * int_part
 }
 
-function count_rows(data: ptr<u8>, len: i32) -> i32 {
-    let mut count: i32 = 1
-    for i in 0 to len {
-        if data[i] == 10 {
-            count = count + 1
-        }
+function tsv_parse_int(raw: string, start: i32, len: i32) -> i32 {
+    let p: ptr<u8> = raw as ptr<u8>
+    let mut i: i32 = 0
+    let mut sign: i32 = 1
+    if i < len and p[start + i] == 45 {
+        sign = -1
+        i = i + 1
     }
-    return count
+    let mut val: i32 = 0
+    while i < len and p[start + i] >= 48 and p[start + i] <= 57 {
+        val = val * 10 + ((p[start + i] - 48) as i32)
+        i = i + 1
+    }
+    return sign * val
 }
 
-function get_field_as_int(data: ptr<u8>, start: i32, length: i32) -> i32 {
-    let mut result: i32 = 0
-    let mut negative: i32 = 0
-    let mut i: i32 = start
-
-    # Skip leading whitespace and quotes
-    while i < start + length {
-        let c: i32 = data[i]
-        if c != 32 and c != 34 and c != 9 {  # space, quote, or tab
-            break
-        }
-        i = i + 1
-    }
-
-    # Check for negative
-    if i < start + length and data[i] == 45 {  # '-'
-        negative = 1
-        i = i + 1
-    }
-
-    # Parse digits
-    while i < start + length {
-        let c: i32 = data[i]
-        if c >= 48 and c <= 57 {  # '0'-'9'
-            result = result * 10 + (c - 48)
-        } elif c == 34 or c == 32 or c == 9 {  # quote, space, tab
-            break
-        }
-        i = i + 1
-    }
-
-    if negative == 1 {
-        result = 0 - result
-    }
-
-    return result
-}
-
-function print_field(data: ptr<u8>, start: i32, length: i32) {
-    for i in 0 to length {
-        let c: i32 = data[start + i]
-        if c != 34 {  # Skip quotes
-            putchar(c)
-        }
-    }
+struct TsvStats {
+    count: i32,
+    sum: f64,
+    min_val: f64,
+    max_val: f64,
+    mean: f64
 }
 
 function main() -> i32 {
-    println("TSV Parser Demo")
-    println("===============")
+    # TSV dataset with tabs (\t) and newlines (\n)
+    let tsv_data: string = "timestamp\tsensor_id\ttemperature\tpressure\n1000\talpha\t21.50\t101.30\n1010\talpha\t22.10\t101.25\n1020\tbeta\t23.80\t101.40\n1030\tbeta\t24.20\t101.35\n1040\talpha\t22.90\t101.28\n"
+
+    println("=== TSV Data Interchange Demo ===")
+    println("")
+    println("Raw TSV Dataset:")
+    print(tsv_data)
     println("")
 
-    # Sample TSV data (embedded as bytes)
-    # "id\tname\tscore\n1\tAlice\t95\n2\tBob\t87\n3\tCharlie\t91"
-    let tsv_data: array<u8, 100> = [
-        105, 100, 9,           # "id\t"
-        110, 97, 109, 101, 9,  # "name\t"
-        115, 99, 111, 114, 101, 10,  # "score\n"
-        49, 9,                 # "1\t"
-        65, 108, 105, 99, 101, 9,    # "Alice\t"
-        57, 53, 10,             # "95\n"
-        50, 9,                 # "2\t"
-        66, 111, 98, 9,        # "Bob\t"
-        56, 55, 10,             # "87\n"
-        51, 9,                 # "3\t"
-        67, 104, 97, 114, 108, 105, 101, 9,  # "Charlie\t"
-        57, 49, 0               # "91\0"
-    ]
-    let data_ptr: ptr<u8> = tsv_data
-    let data_len: i32 = 47
-
-    println("Parsing TSV data:")
-    println("  id\tname\tscore")
-    println("  1\tAlice\t95")
-    println("  2\tBob\t87")
-    println("  3\tCharlie\t91")
-    println("")
-
-    let num_rows: i32 = count_rows(data_ptr, data_len)
-    print("Total rows: ")
-    println(num_rows)
-    println("")
-
-    let field_starts: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0]
-    let field_lengths: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0]
-    let starts_ptr: ptr<i32> = field_starts
-    let lengths_ptr: ptr<i32> = field_lengths
+    let total_len: i32 = strlen(tsv_data) as i32
+    let p: ptr<u8> = tsv_data as ptr<u8>
 
     let mut pos: i32 = 0
-    let mut row_idx: i32 = 0
+    let mut line_num: i32 = 0
 
-    println("Parsed rows:")
-    while pos < data_len {
-        let num_fields: i32 = parse_row(data_ptr, pos, data_len, 9, 34, starts_ptr, lengths_ptr) # 9 is TAB
+    let mut temp_stats: TsvStats = TsvStats {
+        count: 0,
+        sum: 0.0,
+        min_val: 100000.0,
+        max_val: -100000.0,
+        mean: 0.0
+    }
 
-        if num_fields > 0 {
-            print("  Row ")
-            print(row_idx)
-            print(": ")
-            print(num_fields)
-            println(" fields")
+    let mut press_stats: TsvStats = TsvStats {
+        count: 0,
+        sum: 0.0,
+        min_val: 100000.0,
+        max_val: -100000.0,
+        mean: 0.0
+    }
 
-            for f in 0 to num_fields {
-                print("    [")
-                print(f)
-                print("]: ")
-                print_field(data_ptr, field_starts[f], field_lengths[f])
-                println("")
+    println("Parsed Records:")
+    println("  Line | Timestamp | Sensor | Temp [C] | Pressure [kPa]")
+    println("  -----+-----------+--------+----------+---------------")
+
+    while pos < total_len {
+        let line_start: i32 = pos
+        while pos < total_len and p[pos] != 10 {
+            pos = pos + 1
+        }
+        let line_end: i32 = pos
+        if pos < total_len and p[pos] == 10 {
+            pos = pos + 1
+        }
+
+        # Skip empty lines
+        if line_end <= line_start {
+            continue
+        }
+
+        # Parse fields in this line separated by '\t' (byte 9)
+        let mut field_starts: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut field_lens: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut num_fields: i32 = 0
+
+        let mut f_pos: i32 = line_start
+        let mut f_start: i32 = line_start
+
+        while f_pos <= line_end {
+            if f_pos == line_end or p[f_pos] == 9 {
+                if num_fields < 16 {
+                    field_starts[num_fields] = f_start
+                    field_lens[num_fields] = f_pos - f_start
+                    num_fields = num_fields + 1
+                }
+                f_start = f_pos + 1
             }
-
-            row_idx = row_idx + 1
+            f_pos = f_pos + 1
         }
 
-        pos = find_next_row(data_ptr, pos, data_len)
+        if line_num == 0 {
+            # Header line verification
+            if num_fields != 4 {
+                println("FAIL: Expected 4 header columns")
+                return 1
+            }
+            line_num = line_num + 1
+            continue
+        }
+
+        if num_fields >= 4 {
+            let ts: i32 = tsv_parse_int(tsv_data, field_starts[0], field_lens[0])
+            let sensor: string = tsv_extract_str(tsv_data, field_starts[1], field_lens[1])
+            let temp: f64 = tsv_parse_float(tsv_data, field_starts[2], field_lens[2])
+            let press: f64 = tsv_parse_float(tsv_data, field_starts[3], field_lens[3])
+
+            print("    ")
+            print(line_num)
+            print("  |   ")
+            print(ts)
+            print("    | ")
+            print(sensor)
+            print("  |  ")
+            let t_int: i32 = temp as i32
+            let t_dec: i32 = ((temp - (t_int as f64)) * 100.0) as i32
+            print(t_int)
+            print(".")
+            if t_dec < 10 { print("0") }
+            print(t_dec)
+            print("   |    ")
+            let p_int: i32 = press as i32
+            let p_dec: i32 = ((press - (p_int as f64)) * 100.0) as i32
+            print(p_int)
+            print(".")
+            if p_dec < 10 { print("0") }
+            println(p_dec)
+
+            # Accumulate stats
+            temp_stats.count = temp_stats.count + 1
+            temp_stats.sum = temp_stats.sum + temp
+            if temp < temp_stats.min_val { temp_stats.min_val = temp }
+            if temp > temp_stats.max_val { temp_stats.max_val = temp }
+
+            press_stats.count = press_stats.count + 1
+            press_stats.sum = press_stats.sum + press
+            if press < press_stats.min_val { press_stats.min_val = press }
+            if press > press_stats.max_val { press_stats.max_val = press }
+
+            free(sensor as ptr<void>)
+            line_num = line_num + 1
+        }
+    }
+
+    if temp_stats.count > 0 {
+        temp_stats.mean = temp_stats.sum / (temp_stats.count as f64)
+    }
+    if press_stats.count > 0 {
+        press_stats.mean = press_stats.sum / (press_stats.count as f64)
     }
 
     println("")
+    println("Summary Statistics:")
+    print("  Total Data Records : ")
+    println(temp_stats.count)
 
-    # Demonstrate aggregate: sum of scores
-    println("=== Aggregate: Sum of Scores ===")
+    print("  Temperature Mean   : ")
+    let tm_int: i32 = temp_stats.mean as i32
+    let tm_dec: i32 = ((temp_stats.mean - (tm_int as f64)) * 100.0) as i32
+    print(tm_int)
+    print(".")
+    if tm_dec < 10 { print("0") }
+    print(tm_dec)
+    println(" C")
 
-    pos = 0
-    pos = find_next_row(data_ptr, pos, data_len)  # Skip header
+    print("  Temperature Range  : ")
+    let tmin_int: i32 = temp_stats.min_val as i32
+    let tmin_dec: i32 = ((temp_stats.min_val - (tmin_int as f64)) * 100.0) as i32
+    print(tmin_int)
+    print(".")
+    if tmin_dec < 10 { print("0") }
+    print(tmin_dec)
+    print(" to ")
+    let tmax_int: i32 = temp_stats.max_val as i32
+    let tmax_dec: i32 = ((temp_stats.max_val - (tmax_int as f64)) * 100.0) as i32
+    print(tmax_int)
+    print(".")
+    if tmax_dec < 10 { print("0") }
+    print(tmax_dec)
+    println(" C")
 
-    let mut total_score: i32 = 0
-    let mut count: i32 = 0
+    print("  Pressure Mean      : ")
+    let pm_int: i32 = press_stats.mean as i32
+    let pm_dec: i32 = ((press_stats.mean - (pm_int as f64)) * 100.0) as i32
+    print(pm_int)
+    print(".")
+    if pm_dec < 10 { print("0") }
+    print(pm_dec)
+    println(" kPa")
 
-    while pos < data_len {
-        let num_fields: i32 = parse_row(data_ptr, pos, data_len, 9, 34, starts_ptr, lengths_ptr)
-
-        if num_fields >= 3 {
-            let score: i32 = get_field_as_int(data_ptr, field_starts[2], field_lengths[2])
-            total_score = total_score + score
-            count = count + 1
-        }
-
-        pos = find_next_row(data_ptr, pos, data_len)
+    # Assertions
+    if temp_stats.count != 5 {
+        println("FAIL: Expected 5 data records")
+        return 2
+    }
+    if temp_stats.min_val < 21.0 or temp_stats.max_val > 25.0 {
+        println("FAIL: Temperature bounds out of expected range")
+        return 3
+    }
+    if press_stats.mean < 101.0 or press_stats.mean > 102.0 {
+        println("FAIL: Pressure mean out of expected range")
+        return 4
     }
 
-    print("Total score: ")
-    println(total_score)
-    print("Average score: ")
-    println(total_score / count)
-
     println("")
-    println("TSV Parser demo complete!")
-
+    println("OK: TSV streaming parse, typed field extraction, and statistics verified.")
     return 0
 }
