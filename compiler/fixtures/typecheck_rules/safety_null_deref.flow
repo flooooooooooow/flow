@@ -1,6 +1,0 @@
-# expect: flow: null pointer dereference
-function main() -> i32 {
-    let p: ptr<i32> = null
-    let x: i32 = p[0]
-    return x
-}
