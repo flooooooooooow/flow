@@ -92,8 +92,11 @@ function main() -> i32 {
     }
     # Refuse broad host mounts. An explicit output inside the workspace is
     # still independently mounted at /output, not writable at /workspace.
-    if s_eq(work, out) {
-        errln("agent_sandbox: output must differ from read-only workspace")
+    # An output mount containing the workspace would re-expose its files
+    # through /output with write permissions, bypassing /workspace's ro-bind.
+    # Compare canonical physical paths with a separator boundary.
+    if s_eq(work, out) or s_starts(work, out + "/") {
+        errln("agent_sandbox: output must not be the workspace or an ancestor of it")
         return 2
     }
     if not is_file("/usr/bin/bwrap") {
