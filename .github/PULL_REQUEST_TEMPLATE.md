@@ -37,6 +37,12 @@ Compatibility, performance, security, lifetime, backend, or release implications
 - [ ] No user-visible compatibility change.
 - [ ] Compatibility change is documented in `docs/project/CHANGELOG.md`.
 
+## Security & AI Safety
+
+- [ ] Security-critical changes (compiler, runtime, tools/agent_sandbox, workflows) have been reviewed by a human CODEOWNER.
+- [ ] No unapproved changes to release policy, branch protection, or sandbox boundaries.
+- [ ] If this PR was AI-authored, the AI's claims have been independently verified against observable evidence.
+
 ## Agent handoff
 
 Agent/provider/session, when applicable:

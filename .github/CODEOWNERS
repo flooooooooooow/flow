@@ -9,3 +9,6 @@
 /.github/ @godofecht
 /SECURITY.md @godofecht
 /packaging/ @godofecht
+
+# Agent Sandbox prototype and security policies
+/tools/agent_sandbox/ @godofecht

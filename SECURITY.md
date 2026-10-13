@@ -75,6 +75,7 @@ sandboxing.
 | Package/dependency acquisition | Dependency source and extraction semantics remain Experimental until integrity, symlink and root-containment rules are qualified. |
 | Release artifacts | Built from a clean checkout, freshness-checked, checksummed, unpacked and exercised before publication. Provenance/signing work is tracked by #652. |
 | Experimental JIT/GPU/hardware paths | Do not inherit the Stable 1.0 security guarantee unless separately promoted. |
+| AI Agent Lifecycle | Flow repository governance treats AI-generated code as untrusted. AI agent tools and safe subsets require human code review for policy changes and OS sandbox validation before execution. |
 
 ### Release threat review
 

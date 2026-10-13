@@ -155,5 +155,6 @@
 - [x] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502
 - [ ] #1546 [roadmap:certified-safety-profiles] Certified safety profiles https://github.com/flooooooooooow/flow/issues/1546
 - [x] #1547 [roadmap:distributed-digital-twins] Distributed digital twins https://github.com/flooooooooooow/flow/issues/1547
-- [ ] #1548 [roadmap:hardware-synthesis-and-partitioning] Hardware synthesis and partitioning https://github.com/flooooooooooow/flow/issues/1548
-- [ ] #1549 [roadmap:orchestration-syntax] Orchestration syntax https://github.com/flooooooooooow/flow/issues/1549
+- [x] #1548 [roadmap:hardware-synthesis-and-partitioning] Hardware synthesis and partitioning https://github.com/flooooooooooow/flow/issues/1548
+- [x] #1549 [roadmap:orchestration-syntax] Orchestration syntax https://github.com/flooooooooooow/flow/issues/1549
+- [x] #1544 [roadmap:ai-safety-architecture] RFC: enforceable AI safety in Flow's language, runtime and agentic repository lifecycle https://github.com/flooooooooooow/flow/issues/1544
