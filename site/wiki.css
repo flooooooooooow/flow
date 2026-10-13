@@ -183,7 +183,7 @@ body {
     border-radius: 4px;
 }
 
-/* Custom scrollbars — keeps the chrome from breaking the dark canvas. */
+/* Custom scrollbars: keeps the chrome from breaking the dark canvas. */
 * { scrollbar-width: thin; scrollbar-color: var(--border-light) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
@@ -1503,7 +1503,7 @@ kbd.key {
     overflow: hidden;
 }
 
-/* Faint grid — reads as a phase plane, matching Flow's dynamics identity. */
+/* Faint grid: reads as a phase plane, matching Flow's dynamics identity. */
 .wiki-hero::before {
     content: '';
     position: absolute;
@@ -1649,7 +1649,7 @@ kbd.key {
     font-variant-numeric: tabular-nums;
 }
 
-/* ── Documentation index (Python docs–style section grid) ───────────────── */
+/* ── Documentation index (Python docs style section grid) ─────────────────── */
 
 .markdown-body nav.wiki-doc-index,
 .wiki-doc-index {
@@ -1763,7 +1763,7 @@ kbd.key {
     font-weight: 600;
 }
 
-/* ── Home path strip (not cards — navigation with one job) ─────────────── */
+/* ── Home path strip: navigation with one job ────────────────────────────── */
 
 .markdown-body nav.wiki-paths,
 .wiki-paths {

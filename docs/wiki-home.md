@@ -112,7 +112,7 @@ Python-style entry points. Pick a section; the sidebar tabs mirror this map.
 ## Effects & capabilities
 
 If you are evaluating Flow's effect system, start with the cookbook rather than the language spec.
-It uses the syntax the current compiler actually accepts and links directly to runnable programs.
+It uses the syntax the current compiler accepts and links directly to runnable programs.
 
 | I want to see… | Jump straight to |
 |---|---|
