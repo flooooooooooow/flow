@@ -1,0 +1,14 @@
+# expect: flight profile violation: 'allocate' allocates or frees heap memory because it calls 'malloc'
+# env: FLOW_PROFILE=flight
+@unsafe extern {
+    function malloc(size: i32) -> ptr<i8>
+}
+
+function allocate() -> ptr<i8> {
+    return malloc(64)
+}
+
+function main() -> i32 {
+    let _p: ptr<i8> = allocate()
+    return 0
+}

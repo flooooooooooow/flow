@@ -2730,6 +2730,61 @@ function flowc_resolve_add_templates(arena: AstArena, root: i32, src: ptr<u8>, o
     return n
 }
 
+# Plain struct declarations across modules. cgen types a field access
+# `a.cfg.wire` by finding the struct each step names, and a struct another
+# module declares was not in the arena, so the chain lost its type: `.`
+# where `->` was needed, and `==` on strings compared pointers. Each
+# module's non-generic structs are kept in `decl` and appended to later
+# modules' source after the templates. emit_one parses them and unlinks
+# them from the program's item list, so lookups that scan the arena find
+# them and nothing that walks the items emits them twice.
+function flowc_resolve_add_decls(arena: AstArena, root: i32, src: ptr<u8>, own_len: i32, decl: ptr<u8>, decl_cap: i32, decl_len: i32) -> i32 {
+    let mut n: i32 = decl_len
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let mut d: i32 = item
+        if arena.nodes[d].kind == AST_EXPORT and arena.nodes[d].a != AST_NONE {
+            d = arena.nodes[d].a
+        }
+        let s: i32 = arena.nodes[d].start
+        let e: i32 = arena.nodes[d].end
+        if arena.nodes[d].kind == AST_STRUCT and arena.nodes[d].b == AST_NONE and s >= 0 and e > s and e <= own_len and n + (e - s) + 2 < decl_cap {
+            decl[n] = 10
+            n = n + 1
+            let mut i: i32 = s
+            while i < e {
+                decl[n] = src[i]
+                n = n + 1
+                i = i + 1
+            }
+            decl[n] = 10
+            n = n + 1
+            decl[n] = 0
+        }
+        item = arena.nodes[item].next
+    }
+    return n
+}
+
+# Drop the program items that start at or after `from`: the declarations
+# flowc_resolve_add_decls appended. Their nodes stay in the arena.
+function flowc_resolve_unlink_from(arena: AstArena, root: i32, from: i32) {
+    let mut prev: i32 = AST_NONE
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].start >= from {
+            if prev == AST_NONE {
+                arena.nodes[root].a = AST_NONE
+            } else {
+                arena.nodes[prev].next = AST_NONE
+            }
+            return
+        }
+        prev = item
+        item = arena.nodes[item].next
+    }
+}
+
 function flowc_resolve_emit_one(
     path: string,
     out: ptr<u8>,
@@ -2740,7 +2795,10 @@ function flowc_resolve_emit_one(
     siglen: ptr<i32>,
     tpl: ptr<u8>,
     tpl_cap: i32,
-    tpl_len: ptr<i32>
+    tpl_len: ptr<i32>,
+    decl: ptr<u8>,
+    decl_cap: i32,
+    decl_len: ptr<i32>
 ) -> i32 {
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
     if src == null {
@@ -2768,6 +2826,16 @@ function flowc_resolve_emit_one(
         }
         nsrc = nsrc + tpl_len[0]
     }
+    # Earlier modules' plain structs, so field chains through them type.
+    let ext0: i32 = nsrc
+    if decl != null and decl_len[0] > 0 and nsrc + decl_len[0] < FLOWC_RESOLVE_SRC_CAP - 1 {
+        let mut di: i32 = 0
+        while di < decl_len[0] {
+            src[nsrc + di] = decl[di]
+            di = di + 1
+        }
+        nsrc = nsrc + decl_len[0]
+    }
     src[nsrc] = 0
 
     let t_parse: i64 = flowc_prof_span_begin()
@@ -2783,6 +2851,12 @@ function flowc_resolve_emit_one(
 
     if tpl != null {
         tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
+    }
+    if nsrc > ext0 {
+        flowc_resolve_unlink_from(p.arena, root, ext0)
+    }
+    if decl != null {
+        decl_len[0] = flowc_resolve_add_decls(p.arena, root, src, own, decl, decl_cap, decl_len[0])
     }
     flowc_fuse_pipelines(&p.arena, src)
     # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
@@ -3411,6 +3485,12 @@ export function flowc_bundle_emit(
     if tpl != null {
         tpl[0] = 0
     }
+    # Plain structs of the modules emitted so far.
+    let decl: ptr<u8> = malloc(FLOWC_RESOLVE_TPL_CAP as i64)
+    let mut decl_len: i32 = 0
+    if decl != null {
+        decl[0] = 0
+    }
 
     let mut written: i32 = 0
     let mut mi: i32 = 0
@@ -3441,7 +3521,7 @@ export function flowc_bundle_emit(
             free(path_store)
             return 0 - 1
         }
-        let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen, tpl, FLOWC_RESOLVE_TPL_CAP, &tpl_len)
+        let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen, tpl, FLOWC_RESOLVE_TPL_CAP, &tpl_len, decl, FLOWC_RESOLVE_TPL_CAP, &decl_len)
         # A module may emit no C at all (one that holds only theorems).
         if n < 0 {
             free(fns)
@@ -3474,6 +3554,9 @@ export function flowc_bundle_emit(
 
     if tpl != null {
         free(tpl)
+    }
+    if decl != null {
+        free(decl)
     }
     free(fns)
     free(sigs)

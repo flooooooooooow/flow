@@ -5973,6 +5973,32 @@ export function sem_check_program(c: ptr<Sem>) {
         sem_check_recursion(c)
         sem_check_unbounded_loops(c)
     }
+    if c.flight_profile {
+        sem_verify_flight_profile(c)
+    }
+}
+
+function sem_verify_flight_profile(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.d_name) {
+        if sem_decl_kind(c, i) == DK_FUNC {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            if sem_iv_get(c.fi_extern, fi) == 0 {
+                let fnm: string = sem_sv_get(c.d_name, i)
+                let reason: string = sem_unsafe_reason(c, true, c.heap_unsafe_reason, fnm)
+                if reason as ptr<u8> != null {
+                    sem_set_mod(c, sem_iv_get(c.d_mod, i))
+                    sem_set_pos(c, sem_iv_get(c.d_node, i))
+                    if sem_s_eq(reason, fnm) {
+                        sem_err(c, "flight profile violation: '" + fnm + "' allocates or frees heap memory")
+                    } else {
+                        sem_err(c, "flight profile violation: '" + fnm + "' allocates or frees heap memory because it calls '" + reason + "'")
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
 }
 
 # Print the diagnostics the way the Python host printed its type errors,

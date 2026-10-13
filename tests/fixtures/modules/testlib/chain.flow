@@ -1,0 +1,31 @@
+# Structs reached through pointer fields, for tests/lang/test_import_field_chain.flow.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+export struct ChainInner {
+    wire: string,
+    n: i32
+}
+
+export struct ChainOuter {
+    cfg: ptr<ChainInner>,
+    k: i32
+}
+
+export struct ChainTop {
+    mid: ptr<ChainOuter>
+}
+
+export function chain_new(wire: string) -> ptr<ChainTop> {
+    let i: ptr<ChainInner> = malloc(sizeof<ChainInner>()) as ptr<ChainInner>
+    i.wire = wire
+    i.n = 7
+    let o: ptr<ChainOuter> = malloc(sizeof<ChainOuter>()) as ptr<ChainOuter>
+    o.cfg = i
+    o.k = 1
+    let t: ptr<ChainTop> = malloc(sizeof<ChainTop>()) as ptr<ChainTop>
+    t.mid = o
+    return t
+}

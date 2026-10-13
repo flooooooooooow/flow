@@ -9,10 +9,14 @@ MISRA/CERT-oriented work (ROADMAP W6, issues #273 / #285).
 |---------|---------------|----------|
 | **default** | (none) | Full language. Application TUs get runtime div0/shift/bounds guards. Overflow checks off. |
 | **safety** | `FLOW_PROFILE=safety` or `--profile=safety` | `-Werror` (with known-noise waivers); signed overflow guards (`FLOW_OVERFLOW_CHECK`); **rejects recursive functions** (MISRA 17.2); **requires `@max_iterations(N)` on while** (MISRA 17.4). |
-| **flight** | `FLOW_PROFILE=flight` or `--profile=flight` | Same as **safety** today; future: stricter no-heap / no-float subset. |
+| **flight** | `FLOW_PROFILE=flight` or `--profile=flight` | Inherits safety guards. Statically verifies zero heap allocations across the call graph and bans recursion. |
 | **embedded** | *(planned)* | Prefer static allocation; no GC assumptions. |
 
 Also: `flow.toml` may set `profile = "safety"` once project config is wired; until then use the env/CLI flags.
+
+## Flight profile verification
+
+Under `flight` (`FLOW_PROFILE=flight` or `--profile=flight`), the compiler statically verifies that no function directly or transitively allocates or frees heap memory. Calls to `malloc`, `free`, `realloc`, or functions that touch dynamic memory produce compile-time errors. Recursion is prohibited. Loops require static iteration bounds via `@max_iterations(N)`.
 
 ## Temp arena (strcat / closures)
 
@@ -45,4 +49,4 @@ The C backend emits a runtime counter that aborts if the bound is exceeded.
 
 ## Still open (epic #285)
 
-- Loop bounds (#272), full no-heap (#274), WCET (#282), printf in generated code (#281)
+- WCET (#282), printf in generated code (#281)
