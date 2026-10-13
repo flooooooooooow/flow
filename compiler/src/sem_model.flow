@@ -77,6 +77,7 @@ export struct Sem {
     strict: bool,
     check_effect_rows: bool,
     safety_profile: bool,
+    flight_profile: bool,
     # modules
     nm: i32,
     m_ar: ptr<AstArena>,
@@ -277,10 +278,14 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     # remains available only through the explicit permissive environment.
     c.check_effect_rows = true
     c.safety_profile = false
+    c.flight_profile = false
     let prof: string = getenv("FLOW_PROFILE")
     if prof as ptr<u8> != null {
         if sem_s_eq(prof, "safety") or sem_s_eq(prof, "flight") {
             c.safety_profile = true
+        }
+        if sem_s_eq(prof, "flight") {
+            c.flight_profile = true
         }
     }
     let se: string = getenv("FLOWC_STRICT_EFFECTS")

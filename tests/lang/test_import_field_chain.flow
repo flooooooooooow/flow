@@ -1,0 +1,19 @@
+# A field chain through pointer fields of structs another module declares.
+# cgen could not find the imported struct, so `o.cfg.wire` lost its type:
+# it emitted `(o->cfg).wire`, which C rejects, and compared the string by
+# pointer.
+
+import tests.fixtures.modules.testlib.chain { ChainInner, ChainOuter, ChainTop, chain_new }
+
+function main() -> i32 {
+    let t: ptr<ChainTop> = chain_new("open" + "ai")
+    let o: ptr<ChainOuter> = t.mid
+    if not (o.cfg.wire == "openai") { return 1 }
+    o.cfg.n = 9
+    if o.cfg.n != 9 { return 2 }
+    if not (t.mid.cfg.wire == "openai") { return 3 }
+    t.mid.cfg.n = t.mid.cfg.n + 1
+    if t.mid.cfg.n != 10 { return 4 }
+    if t.mid.k != 1 { return 5 }
+    return 0
+}

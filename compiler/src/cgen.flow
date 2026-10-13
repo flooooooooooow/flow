@@ -14173,19 +14173,27 @@ function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
                 }
             }
         }
-        # Self-referential ptr<StructName> → struct StructName*
-        # (typedef name not visible inside the struct body in C).
+        # Self-referential ptr<StructName>, or ptr<ptr<StructName>> at any
+        # depth → struct StructName* (the typedef name is not visible inside
+        # the struct body in C).
         let mut emitted_self: i32 = 0
         if arr_n == 0 and fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
-            if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "ptr") == 1 {
-                let inner: i32 = arena.nodes[fty].a
-                if inner != AST_NONE and arena.nodes[inner].kind == AST_TYPE {
-                    if flowc_cgen_span_eq(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, sns, sne) == 1 {
-                        flowc_cgen_puts(w, "struct ")
-                        flowc_cgen_put_span(w, src, sns, sne)
+            let mut depth: i32 = 0
+            let mut inner: i32 = fty
+            while inner != AST_NONE and arena.nodes[inner].kind == AST_TYPE and arena.nodes[inner].a != AST_NONE and flowc_cgen_span_is(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, "ptr") == 1 {
+                depth = depth + 1
+                inner = arena.nodes[inner].a
+            }
+            if depth > 0 and inner != AST_NONE and arena.nodes[inner].kind == AST_TYPE and arena.nodes[inner].a == AST_NONE {
+                if flowc_cgen_span_eq(src, arena.nodes[inner].name_start, arena.nodes[inner].name_end, sns, sne) == 1 {
+                    flowc_cgen_puts(w, "struct ")
+                    flowc_cgen_put_span(w, src, sns, sne)
+                    let mut st: i32 = 0
+                    while st < depth {
                         flowc_cgen_putc(w, 42)
-                        emitted_self = 1
+                        st = st + 1
                     }
+                    emitted_self = 1
                 }
             }
         }

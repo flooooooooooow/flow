@@ -1,0 +1,25 @@
+# A struct field of type ptr<ptr<Self>>. The self-reference was only
+# rewritten to `struct Self*` one level deep, so `Node** kids` named the
+# typedef before C had seen it.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct TreeNode {
+    kids: ptr<ptr<TreeNode>>,
+    n: i32
+}
+
+function main() -> i32 {
+    let a: ptr<TreeNode> = malloc(sizeof<TreeNode>()) as ptr<TreeNode>
+    let b: ptr<TreeNode> = malloc(sizeof<TreeNode>()) as ptr<TreeNode>
+    b.n = 5
+    b.kids = null
+    a.kids = malloc(16) as ptr<ptr<TreeNode>>
+    a.kids[0] = b
+    a.n = 1
+    let k: ptr<TreeNode> = a.kids[0]
+    if k.n != 5 { return 1 }
+    return 0
+}

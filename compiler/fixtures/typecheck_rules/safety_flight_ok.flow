@@ -1,0 +1,16 @@
+# expect: ok
+# env: FLOW_PROFILE=flight
+function compute(a: i32, b: i32) -> i32 {
+    let mut sum: i32 = 0
+    let mut i: i32 = 0
+    @max_iterations(100)
+    while i < a {
+        sum = sum + b
+        i = i + 1
+    }
+    return sum
+}
+
+function main() -> i32 {
+    return compute(10, 5)
+}

@@ -182,7 +182,7 @@ Reference: [docs/project/roadmap-2.0.md](docs/project/roadmap-2.0.md)
 
 1. ✅ **Orchestration syntax** (#723, #724). `std.orchestrate` ships the combinators (`seq`, `fanout`, Result joins; see [docs/library/orchestrate.md](docs/library/orchestrate.md)). Syntax decisions will emerge from real library use, using a dedicated keyword or operator.
 2. ✅ **Hardware synthesis and partitioning**. Lower `@hardware` declarations to RTL, enforce clock domain crossings, and deploy across hardware-software boundaries (completed in W5).
-3. 🔲 **Certified safety profiles**. Expand `--profile flight` with fault mitigation, static loop iteration bounds, and formal proofs of domain lattice rules.
+3. ✅ **Certified safety profiles**. Expand `--profile flight` with fault mitigation, static loop iteration bounds, and formal proofs of domain lattice rules.
 4. ✅ **Distributed digital twins**. Deploy identical code paths across simulation, RTOS environments, and bare metal targets.
 
 ---
