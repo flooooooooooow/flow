@@ -10,12 +10,13 @@
 #       tests/cgen/generic_struct_infer.flow
 #     a module alias used as a value: tests/lang/test_import_alias.flow
 #     string module statics (#1103): tests/lang/test_module_string_static.flow
-#   agree-diff 1: compiler/fixtures/typecheck_rules/chained_assign_mismatch.flow,
-#     where Python typed the inner assignment unknown.
+#   agree-diff 4: compiler/fixtures/typecheck_rules/chained_assign_mismatch.flow,
+#     where Python typed the inner assignment unknown, plus 3 unknown attribute
+#     fixtures where flowc lists newly supported attribute @hardware.
 #   flowc-only 1: the modules-namespacing.md block that defines `gain` twice.
 #     Python kept both as overloads and clang rejected the redefinition.
 Darwin py-only 7 0
-Darwin agree-diff 1 0
+Darwin agree-diff 4 0
 Darwin flowc-only 1 0
 #   warnings (#678): flowc prints the checker's warnings; none differ from
 #     the Python checker's (warnings.txt).
@@ -29,7 +30,7 @@ Darwin warn-flowc-only 0 0
 # ("Undefined function 'htons'"), and flowc does. The second case is the
 # string module static introduced by #1103.
 Linux py-only 8 0
-Linux agree-diff 1 0
+Linux agree-diff 4 0
 Linux flowc-only 1 0
 Linux warn-diff 0 0
 Linux warn-py-only 0 0

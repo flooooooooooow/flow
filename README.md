@@ -41,7 +41,7 @@ Flow is a statically typed, compiled systems language built around one idea: you
 |--|--|
 | Version | 2.0.0 |
 | Install | `brew tap flooooooooooow/flow && brew install flow` |
-| License | [Proprietary](LICENSE) from 2.0.0; [MIT](LICENSE-1.x-MIT) through 1.0.2 |
+| License | [Proprietary](LICENSE) from 2.0.0; [MIT](licenses/LICENSE-1.x-MIT) through 1.0.2 |
 | Cite | [CITATION.cff](CITATION.cff) |
 
 The compatibility promise is defined in [STABILITY.md](STABILITY.md). Linux x86-64 and macOS arm64 are the Tier-1 platforms; every published release is qualified from the exact tag before GitHub Release publication.
@@ -445,7 +445,7 @@ Version 2.0.0 and later are proprietary. All rights reserved. See
 [LICENSE](LICENSE).
 
 Version 1.0.2 and all earlier versions remain available under the MIT License.
-See [LICENSE-1.x-MIT](LICENSE-1.x-MIT).
+See [licenses/LICENSE-1.x-MIT](licenses/LICENSE-1.x-MIT).
 
 For licensing inquiries, contact abhishek.shivakumar@gmail.com.
 

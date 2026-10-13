@@ -65,6 +65,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/gate_lib.flow"
+import "compiler/scripts/parity_lib.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_args, proc_run, proc_timeout_ms }
 
 const FIX: string = "compiler/fixtures/mlir"
@@ -183,7 +184,7 @@ function python_setup(rev: string) {
     let tar: string = WORK + "/pyref.tar"
     let ga: ptr<ProcStrs> = sl_of3("git", "archive", "-o")
     sl_push2(ga, tar, rev)
-    sl_push2(ga, "src/flow", "compiler/bootstrap/flowc_stage_a.c")
+    sl_push(ga, "compiler/bootstrap/flowc_stage_a.c")
     check(run_argv(ga))
     let tx: ptr<ProcStrs> = sl_of3("tar", "-x", "-f")
     sl_push(tx, tar)
@@ -696,8 +697,14 @@ function main() -> i32 {
     let mut corpus_n: i32 = 0
     let mut corpus_fail: i32 = 0
     let lines: ptr<ProcStrs> = gl_file_lines(FIX + "/corpus.txt")
+    let total_lines: i32 = sl_len(lines)
+    let files: ptr<ProcStrs> = sl_new()
+    let wants: ptr<ProcStrs> = sl_new()
+    let cmds: ptr<ptr<ProcCmd>> = malloc(((total_lines + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
+    let logs: ptr<ProcStrs> = sl_new()
+
     let mut k: i32 = 0
-    while k < sl_len(lines) {
+    while k < total_lines {
         let line: string = sl_get(lines, k)
         k = k + 1
         if s_starts(line, "#") {
@@ -709,18 +716,38 @@ function main() -> i32 {
         if s_empty(want) or s_eq(want, "#") {
             continue
         }
-        corpus_n = corpus_n + 1
         let fl: string = WORK + "/flowc/" + key_of(f)
-        if flowc_emit(f, fl + ".mlir", "") != 0 {
+        rm_f(fl + ".mlir")
+        let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc_bin()))
+        proc_env(c, "FLOWC_LENIENT", "1")
+        proc_env(c, "FLOWC_EMIT", "mlir")
+        proc_env(c, "FLOWC_IN", f)
+        proc_env(c, "FLOWC_OUT", fl + ".mlir")
+        cmds[corpus_n] = c
+        sl_push(logs, fl + ".mlir.log")
+        sl_push(files, f)
+        sl_push(wants, want)
+        corpus_n = corpus_n + 1
+    }
+
+    let rcs: ptr<i32> = pl_run_pool(cmds, logs, pl_jobs())
+
+    let mut ci: i32 = 0
+    while ci < corpus_n {
+        let f: string = sl_get(files, ci)
+        let want: string = sl_get(wants, ci)
+        let fl: string = WORK + "/flowc/" + key_of(f)
+        if rcs[ci] != 0 {
             corpus_fail = corpus_fail + 1
             errln("FAIL corpus " + f + ": no longer accepted: " + gl_first_line(fl + ".mlir.log"))
-            continue
+        } else {
+            norm_to(fl + ".mlir", fl + ".norm")
+            if not s_eq(digest_of(fl + ".norm"), want) {
+                corpus_fail = corpus_fail + 1
+                errln("FAIL corpus " + f + ": MLIR changed since the golden was recorded")
+            }
         }
-        norm_to(fl + ".mlir", fl + ".norm")
-        if not s_eq(digest_of(fl + ".norm"), want) {
-            corpus_fail = corpus_fail + 1
-            errln("FAIL corpus " + f + ": MLIR changed since the golden was recorded")
-        }
+        ci = ci + 1
     }
     outln("corpus (recorded): programs=" + s_itoa(corpus_n) + " fail=" + s_itoa(corpus_fail))
     fail = fail + corpus_fail

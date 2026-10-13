@@ -168,6 +168,9 @@ function is_semantic_attr(name: string) -> i32 {
     if streq(name, "gpu") == 1 {
         return 1
     }
+    if streq(name, "hardware") == 1 {
+        return 1
+    }
     if streq(name, "rt_safe") == 1 {
         return 1
     }

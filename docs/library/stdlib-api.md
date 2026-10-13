@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**131** modules scanned.
+**135** modules scanned.
 
 ## Modules
 
@@ -1654,6 +1654,30 @@ Bitmap font: 5x7 glyphs for printable ASCII (32..126).  Renderer-agnostic on pur
 | `font_text_height` | `(scale: i32) -> i32` | - |
 | `font_int_width` | `(n: i32, scale: i32) -> i32` | Digits needed to render `n` (a lone minus sign counts as one). |
 
+### `fsm.flow`
+
+Finite State Machine (FSM) primitives.  Provides deterministic state transitions, event dispatching,
+
+**Structs:** `FsmTransition`, `StateMachine`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `fsm_new` | `(initial_state: i32) -> StateMachine` | - |
+| `fsm_free` | `(fsm: ptr<StateMachine>) -> void` | - |
+| `fsm_add_transition` | `(
+    fsm: ptr<StateMachine>,
+    from_state: i32,
+    event: i32,
+    to_state: i32
+) -> bool` | - |
+| `fsm_can_trigger` | `(fsm: ptr<StateMachine>, event: i32) -> bool` | - |
+| `fsm_trigger` | `(fsm: ptr<StateMachine>, event: i32) -> bool` | - |
+| `fsm_reset` | `(fsm: ptr<StateMachine>) -> void` | - |
+| `fsm_current_state` | `(fsm: ptr<StateMachine>) -> i32` | - |
+| `fsm_previous_state` | `(fsm: ptr<StateMachine>) -> i32` | - |
+
 ### `gfx.flow`
 
 gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runtime/gfx_macos.m, runtime/gfx_linux.c, runtime/gfx_windows.c
@@ -2287,6 +2311,39 @@ GPU tensors over the shared GpuBuffer resource model (#814).  Import: import "st
 | `gpu_tensor_max_abs_diff` | `(a: GpuTensor, b: GpuTensor) -> f32` | Maximum \|a[i] - b[i]\| for equal-shape f32 tensors. |
 | `gpu_tensor_argmax` | `(gt: GpuTensor) -> i32` | Flat index of the maximum f32 element, or -1 if empty. |
 | `gpu_tensor_mean` | `(gt: GpuTensor) -> f32` | Mean of all f32 elements, or 0 if empty. |
+
+### `hardware.flow`
+
+Hardware / RTL Module - Clock Domains and Partitions  Primitives for physical hardware deployment, clock domain crossing (CDC),
+
+*No `export` items found (internal / extern-only module).*
+
+### `interrupt.flow`
+
+Interrupt management and hardware barriers for embedded and bare-metal systems.  Provides global interrupt control, critical sections,
+
+**Structs:** `CriticalSection`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `interrupt_enable` | `() -> void` | Globally enable interrupts. |
+| `interrupt_disable` | `() -> u32` | Globally disable interrupts. Returns the previous interrupt state. |
+| `interrupt_restore` | `(prev: u32) -> void` | Restore previous interrupt state. |
+| `interrupt_is_enabled` | `() -> bool` | Check if interrupts are globally enabled. |
+| `critical_section_enter` | `() -> CriticalSection` | Enter a critical section, disabling interrupts and saving previous state. |
+| `critical_section_exit` | `(cs: CriticalSection) -> void` | Exit a critical section, restoring the prior interrupt state. |
+| `data_memory_barrier` | `() -> void` | Data memory barrier (DMB): ensures that all memory accesses before the barrier complete before any memory access after the barrier. |
+| `data_sync_barrier` | `() -> void` | Data synchronization barrier (DSB): ensures that all instructions before the barrier complete before executing any instruction after the barrier. |
+| `instruction_sync_barrier` | `() -> void` | Instruction synchronization barrier (ISB): flushes the pipeline and prefetches subsequent instructions from the cache or memory. |
+| `irq_enable` | `(irq: i32) -> bool` | Enable an IRQ line (0 <= irq < 64). |
+| `irq_disable` | `(irq: i32) -> bool` | Disable an IRQ line (0 <= irq < 64). |
+| `irq_is_enabled` | `(irq: i32) -> bool` | Query whether an IRQ line is enabled. |
+| `irq_set_pending` | `(irq: i32) -> bool` | Mark an IRQ as pending. |
+| `irq_clear_pending` | `(irq: i32) -> bool` | Clear pending status for an IRQ line. |
+| `irq_is_pending` | `(irq: i32) -> bool` | Query whether an IRQ line is pending. |
+| `irq_reset_all` | `() -> void` | Reset all software IRQ lines. |
 
 ### `io.flow`
 
@@ -3098,6 +3155,52 @@ RF / SDR Module - IQ Samples and Rate-Typed Signals  Complex baseband processing
 | `iq_from_real` | `(re: f32) -> IQ` | - |
 | `iq_sample` | `(re: f32, im: f32) -> IQSample` | - |
 | `iq_sample_from_iq` | `(z: IQ) -> IQSample` | - |
+
+### `rtos.flow`
+
+Real-Time Operating System (RTOS) and scheduler primitives.  Provides deterministic task control, priority-based cooperative scheduling,
+
+**Structs:** `TaskControlBlock`, `RtosScheduler`, `RtosSemaphore`, `RtosMutex`, `RtosRingBuffer`
+
+**Constants:**
+
+- `PRIO_IDLE: i32`
+- `PRIO_LOW: i32`
+- `PRIO_NORMAL: i32`
+- `PRIO_HIGH: i32`
+- `PRIO_REALTIME: i32`
+- `TASK_STATE_READY: i32`
+- `TASK_STATE_RUNNING: i32`
+- `TASK_STATE_BLOCKED: i32`
+- `TASK_STATE_SUSPENDED: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `scheduler_new` | `() -> RtosScheduler` | - |
+| `scheduler_free` | `(sched: ptr<RtosScheduler>) -> void` | - |
+| `scheduler_add_task` | `(
+    sched: ptr<RtosScheduler>,
+    id: i32,
+    priority: i32,
+    period_ticks: i64
+) -> bool` | - |
+| `scheduler_set_state` | `(sched: ptr<RtosScheduler>, task_id: i32, state: i32) -> bool` | - |
+| `scheduler_tick` | `(sched: ptr<RtosScheduler>) -> i32` | Advances scheduler by one tick and returns the task ID of the highest priority ready task. Returns -1 if no task is eligible. |
+| `sem_new` | `(initial: i32, max: i32) -> RtosSemaphore` | - |
+| `sem_take` | `(sem: ptr<RtosSemaphore>) -> bool` | - |
+| `sem_give` | `(sem: ptr<RtosSemaphore>) -> bool` | - |
+| `mutex_new` | `() -> RtosMutex` | - |
+| `mutex_lock` | `(mtx: ptr<RtosMutex>, task_id: i32) -> bool` | - |
+| `mutex_unlock` | `(mtx: ptr<RtosMutex>, task_id: i32) -> bool` | - |
+| `ring_buffer_new` | `(capacity: u32) -> RtosRingBuffer` | - |
+| `ring_buffer_free` | `(rb: ptr<RtosRingBuffer>) -> void` | - |
+| `ring_buffer_is_empty` | `(rb: ptr<RtosRingBuffer>) -> bool` | - |
+| `ring_buffer_is_full` | `(rb: ptr<RtosRingBuffer>) -> bool` | - |
+| `ring_buffer_count` | `(rb: ptr<RtosRingBuffer>) -> u32` | - |
+| `ring_buffer_push` | `(rb: ptr<RtosRingBuffer>, item: i32) -> bool` | - |
+| `ring_buffer_pop` | `(rb: ptr<RtosRingBuffer>, out_val: ptr<i32>) -> bool` | - |
 
 ### `sdl2.flow`
 

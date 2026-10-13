@@ -485,23 +485,23 @@ The long-term goal is to establish Flow as the first production-ready programmin
 
 ## Where Flow Is Today
 
-An honest mapping from vision pillars to the current implementation (2026-07):
+An honest mapping from vision pillars to the current implementation (2026-10, Flow 2.0.0):
 
 | Vision pillar | Status today |
 |---|---|
-| General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped**: statically-typed language compiling to C via `./flow` |
-| Dynamical systems | **Seed exists**: `dsys` declarative surface syntax for linear systems (`examples/dynamics/`), stdlib dynamics module |
-| Analysis (controllability, spectral, gramians) | **Seed exists**: `sense on <plant>` blocks over `dsys` systems |
-| Control synthesis | **Seed exists**: GA-based gain search over rollout horizons (`ga evolve on`) |
-| Automatic differentiation | **Shipped**: native autodiff |
-| Algebraic effects | **Shipped**: see `docs/effects-showcase.md` |
-| `evolves as` continuous dynamics, ODE solvers as codegen | Not yet: the flagship gap |
-| Units in the type system / dimensional analysis | Not yet |
-| Explicit time (`every 1 ms`, `after`, `within`), scheduling | Not yet |
-| Hybrid events (`when x reaches 0 { x becomes ... }`) | Not yet |
-| `always` / `never` / temporal guarantees | Not yet |
-| Flow composition (`connect { a.out -> b.in }`) | Not yet |
-| Representations (linear, Koopman, transfer function) | Not yet |
-| Realtime memory model, deployment blocks, fixed-point numerics | Not yet |
+| General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped**: statically-typed language compiling to C via self-hosted `flowc` and `./flow` |
+| Dynamical systems | **Shipped**: `flow` blocks with continuous dynamics (`x evolves as expr`), explicit `solver { dt ... method ... }`, Euler and RK4 codegen; linear systems in `dsys` |
+| Analysis (controllability, spectral, gramians) | **Shipped**: `sense on <plant>` blocks over `dsys` systems and synthesized `<Flow>_lin` from `represent linear` |
+| Control synthesis | **Shipped**: GA-based gain search over rollout horizons (`ga evolve on`), discrete LQR via `analyze { lqr }` |
+| Automatic differentiation | **Shipped**: native forward and reverse mode autodiff |
+| Algebraic effects | **Shipped**: effect declarations, capability requirements, and `handle ... with` handlers |
+| `evolves as` continuous dynamics, ODE solvers as codegen | **Shipped**: `flow` blocks lower simultaneously to pure derivative functions and step integrators (`examples/evolution/pendulum_evolves.flow`) |
+| Units in the type system / dimensional analysis | **Shipped**: `unit` declarations, dimension exponent vectors, compile-time arithmetic checking, SI units in `lib/stdlib/units_si.flow` (`examples/evolution/units_kinematics.flow`) |
+| Explicit time (`every 1 ms`, durations) | **Shipped**: duration literals (`ns`, `us`, `ms`, `s`, `min`), periodic discrete blocks (`every <duration> { x becomes expr }`) with accumulators and catch-up loops |
+| Hybrid events (`when x reaches 0 { x becomes ... }`) | **Shipped**: zero-crossing event guards with synchronous state resets (`examples/evolution/bouncing_ball_evolves.flow`) |
+| `always` / `never` / temporal guarantees | **Shipped**: state invariant blocks (`always { ... }`, `never { ... }`) checked on every step with panic on violation (`examples/evolution/pendulum_always.flow`) |
+| Flow composition (`connect { a.out -> b.in }`) | **Shipped**: composite flows with member wiring (`connect`), parent-to-child input routing, and pipeline stages via `\|>` (`examples/evolution/parent_input_connect.flow`) |
+| Representations (linear, Koopman, transfer function) | **Seed shipped**: `represent linear` blocks with equilibrium linearization synthesized into `dsys` (`examples/evolution/pendulum_represent_linear.flow`); Koopman and transfer functions remain research epics |
+| Realtime memory model, deployment blocks, fixed-point numerics | **Shipped (Realtime & Numerics)**: `@rt_safe` compile-time verification prohibiting heap allocations; `Q16_16` and `Q8_24` fixed-point types, saturating arithmetic, MMIO, bitfields; deployment partitions on Flow 3.0 roadmap |
 
-The gaps are tracked as vision epics on the project board. The strategy is to grow the existing `dsys`/dynamics seed toward the `flow { evolves as }` model rather than build a second language beside the current one.
+The core continuous evolution, discrete timing, and hybrid event primitives are shipped and verified in the compiler. Remaining research epics (Koopman embeddings, monitor-automaton temporal guarantees, RTL hardware synthesis) are tracked on the Flow 3.0 roadmap.
