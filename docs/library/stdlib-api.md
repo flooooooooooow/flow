@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**131** modules scanned.
+**132** modules scanned.
 
 ## Modules
 
@@ -2287,6 +2287,12 @@ GPU tensors over the shared GpuBuffer resource model (#814).  Import: import "st
 | `gpu_tensor_max_abs_diff` | `(a: GpuTensor, b: GpuTensor) -> f32` | Maximum \|a[i] - b[i]\| for equal-shape f32 tensors. |
 | `gpu_tensor_argmax` | `(gt: GpuTensor) -> i32` | Flat index of the maximum f32 element, or -1 if empty. |
 | `gpu_tensor_mean` | `(gt: GpuTensor) -> f32` | Mean of all f32 elements, or 0 if empty. |
+
+### `hardware.flow`
+
+Hardware / RTL Module - Clock Domains and Partitions  Primitives for physical hardware deployment, clock domain crossing (CDC),
+
+*No `export` items found (internal / extern-only module).*
 
 ### `io.flow`
 
