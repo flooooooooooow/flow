@@ -7,7 +7,7 @@ mechanism. Updated with Phase 0–2 work (#285 epic).
 |------|---------|-------------|-------------|----------|
 | 8.1 | Prototypes required | PARTIAL | PARTIAL | Extern decls emit prototypes; `#283` `-Werror=implicit-function-declaration` under safety |
 | 8.7 | External linkage unused | OPEN | OPEN | - |
-| 11.8 | Null deref | PARTIAL | PARTIAL | PR #288 `FLOW_NONNULL` (pending merge) |
+| 11.8 | Null deref | PROVEN | PROVEN | `FLOW_NONNULL` wrapper (#288) |
 | 12.1 | Signed overflow | DEVIATION | DEVIATION | Runtime overflow codegen removed; UBSan via `FLOW_UBSAN=1` for testing (#275) |
 | 12.2 | Shift UB | PROVEN | PROVEN | Literal shift UB rejected at type-check time (#265) |
 | 12.5 | Div0 | PROVEN | PROVEN | Literal div-by-zero rejected at type-check time (#264) |

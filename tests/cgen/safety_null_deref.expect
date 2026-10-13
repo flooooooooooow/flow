@@ -1,0 +1,5 @@
+# FLOW_NONNULL on pointer dereferences under FLOW_PROFILE=safety
+env FLOW_PROFILE=safety
++ FLOW_NONNULL(p)->x
++ FLOW_NONNULL(p)[0]
+exit 0

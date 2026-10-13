@@ -91,6 +91,7 @@ extern {
     function write(fd: i32, buf: string, n: i64) -> i64
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
     function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
+    function strcmp(a: string, b: string) -> i32
     function flowc_prof_mode_raw() -> i32
     function flowc_prof_now_raw() -> i64
     function flowc_prof_add_raw(id: i32, ns: i64)
@@ -170,6 +171,9 @@ export struct CgenBuf {
     # application unit: integer division by zero, shifts, and reads of
     # sized arrays and spans out of bounds abort through flow_fault_handler.
     checks: i32,
+    # 1 under FLOW_PROFILE=safety / flight or FLOWC_SAFETY=1:
+    # pointer dereferences are wrapped with FLOW_NONNULL.
+    safety: i32,
     # Nonzero while an lvalue (an assignment target, the operand of &) is
     # emitted: a checked read is an rvalue, so it is left out there.
     lval: i32,
@@ -234,7 +238,7 @@ export struct CgenBuf {
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0, sret: 0, sig_head: null, sig_next: null, sig_off: null, sig_mask: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, safety: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, bounds_hi_val: -1, bounds_hi_body: AST_NONE, root: AST_NONE, na_clone: 0, sret: 0, sig_head: null, sig_next: null, sig_off: null, sig_mask: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -7520,6 +7524,9 @@ function flowc_cgen_emit_checks_prelude(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_MOD\n#define FLOW_CHECKED_MOD(L, R) (((R) != 0) ? ((L) % (R)) : (flow_div_by_zero_handler(), (L) * 0))\n#endif\n")
     flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHL\n#define FLOW_CHECKED_SHL(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull)) && ((L) >= 0)) ? ((L) << (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n")
     flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHR\n#define FLOW_CHECKED_SHR(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull))) ? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n")
+    if w[0].safety == 1 {
+        flowc_cgen_puts(w, "#ifndef FLOW_NONNULL\n#define FLOW_NONNULL(P) ((P) != NULL ? (P) : (flow_fault_handler(\"null pointer dereference\"), (P)))\n#endif\n")
+    }
     flowc_cgen_puts(w, "#endif\n")
 }
 
@@ -8496,14 +8503,26 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let uk: i32 = arena.nodes[arena.nodes[id].a].kind
         if uk != AST_IDENT and uk != AST_INT and uk != AST_FLOAT and uk != AST_BOOL and uk != AST_STRING and uk != AST_CALL and uk != AST_INDEX and uk != AST_FIELD_ACCESS {
             flowc_cgen_putc(w, 40)
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            if arena.nodes[id].ival == TOK_STAR and w[0].safety == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
             flowc_cgen_putc(w, 41)
         } else {
             # `&a[i]` takes the address of an lvalue.
             if arena.nodes[id].ival == TOK_AMP {
                 w[0].lval = 1
             }
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            if arena.nodes[id].ival == TOK_STAR and w[0].safety == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
             w[0].lval = 0
         }
         flowc_cgen_putc(w, 41)
@@ -8662,7 +8681,13 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_emit_array_lit_ctype(w, arena, src, arena.nodes[id].a)
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         } else {
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            if w[0].safety == 1 and flowc_cgen_base_is_ptr(w, arena, src, arena.nodes[id].a) == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
         }
         flowc_cgen_putc(w, 91)
         w[0].lval = 0
@@ -9455,6 +9480,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         # a call or a cast returning ptr<P> reads through it too (#1065).
         let is_ptr: i32 = flowc_cgen_base_is_ptr(w, arena, src, base)
         if is_ptr == 1 {
+            if w[0].safety == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+            }
             # A cast binds looser than `->` in C: ((P*)(x))->f.
             let wrap: bool = base != AST_NONE and arena.nodes[base].kind == AST_CAST
             if wrap {
@@ -9462,6 +9490,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             }
             flowc_cgen_emit_expr(w, arena, src, base)
             if wrap {
+                flowc_cgen_putc(w, 41)
+            }
+            if w[0].safety == 1 {
                 flowc_cgen_putc(w, 41)
             }
             flowc_cgen_puts(w, "->")
@@ -15473,6 +15504,19 @@ function flowc_cgen_emit_module(
             w.checks = 1
         }
     }
+    let prof: string = getenv("FLOW_PROFILE")
+    if prof as ptr<u8> != null {
+        if strcmp(prof, "safety") == 0 or strcmp(prof, "flight") == 0 {
+            w.safety = 1
+        }
+    }
+    let sft: string = getenv("FLOWC_SAFETY")
+    if sft as ptr<u8> != null {
+        let sp: ptr<u8> = sft as ptr<u8>
+        if sp[0] == 49 and sp[1] == 0 {
+            w.safety = 1
+        }
+    }
     let prf: ptr<u8> = getenv("FLOWC_PERF_REPORT") as ptr<u8>
     if prf != null {
         if prf[0] == 49 and prf[1] == 0 {
@@ -15483,6 +15527,7 @@ function flowc_cgen_emit_module(
     # never moves main onto a fiber.
     if flowc_cgen_library_mode() == 1 {
         w.checks = 0
+        w.safety = 0
         w.fiber_main = 0
     }
     # FLOWC_DEBUG_INFO=1: #line directives name this module's file. A bundle
@@ -15757,7 +15802,7 @@ function flowc_cgen_emit_module(
 
     # Pass 0.3: the runtime checks' fault handler and macros, the Python
     # host's text (MISRA #264/#265/#279).
-    if w.checks == 1 {
+    if w.checks == 1 or w.safety == 1 {
         flowc_cgen_emit_checks_prelude(&w)
     }
 
