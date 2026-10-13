@@ -31,6 +31,12 @@ function add(c: ptr<ProcCmd>, flag: string, value: string) {
     proc_arg(c, value)
 }
 
+function add_mount(c: ptr<ProcCmd>, flag: string, source: string, target: string) {
+    proc_arg(c, flag)
+    proc_arg(c, source)
+    proc_arg(c, target)
+}
+
 function guest_env(c: ptr<ProcCmd>, name: string, value: string) {
     proc_arg(c, "--setenv")
     proc_arg(c, name)
@@ -116,12 +122,12 @@ function main() -> i32 {
     add(c, "--dir", "/output")
     add(c, "--dir", "/proc")
     add(c, "--dir", "/dev")
-    add(c, "--ro-bind", "/usr", "/usr")
-    add(c, "--ro-bind-try", "/bin", "/bin")
-    add(c, "--ro-bind-try", "/lib", "/lib")
-    add(c, "--ro-bind-try", "/lib64", "/lib64")
-    add(c, "--ro-bind", work, "/workspace")
-    add(c, "--bind", out, "/output")
+    add_mount(c, "--ro-bind", "/usr", "/usr")
+    add_mount(c, "--ro-bind-try", "/bin", "/bin")
+    add_mount(c, "--ro-bind-try", "/lib", "/lib")
+    add_mount(c, "--ro-bind-try", "/lib64", "/lib64")
+    add_mount(c, "--ro-bind", work, "/workspace")
+    add_mount(c, "--bind", out, "/output")
     add(c, "--size", "16777216")
     add(c, "--tmpfs", "/tmp")
     add(c, "--proc", "/proc")
