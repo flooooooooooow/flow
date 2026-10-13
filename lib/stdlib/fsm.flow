@@ -1,0 +1,99 @@
+# Finite State Machine (FSM) primitives.
+#
+# Provides deterministic state transitions, event dispatching,
+# guards, and transition history.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+const MAX_TRANSITIONS: i32 = 64
+
+export struct FsmTransition {
+    from_state: i32
+    event: i32
+    to_state: i32
+}
+
+export struct StateMachine {
+    current_state: i32
+    initial_state: i32
+    previous_state: i32
+    transition_count: i32
+    transitions: ptr<FsmTransition>
+}
+
+export function fsm_new(initial_state: i32) -> StateMachine {
+    let mem: ptr<FsmTransition> = calloc(MAX_TRANSITIONS as i64, 16) as ptr<FsmTransition>
+    return StateMachine {
+        current_state: initial_state,
+        initial_state: initial_state,
+        previous_state: initial_state,
+        transition_count: 0,
+        transitions: mem
+    }
+}
+
+export function fsm_free(fsm: ptr<StateMachine>) {
+    if (fsm.transitions as ptr<void>) != null {
+        free(fsm.transitions as ptr<void>)
+        fsm.transitions = null
+    }
+}
+
+export function fsm_add_transition(
+    fsm: ptr<StateMachine>,
+    from_state: i32,
+    event: i32,
+    to_state: i32
+) -> bool {
+    if fsm.transition_count >= MAX_TRANSITIONS {
+        return false
+    }
+    let idx: i32 = fsm.transition_count
+    fsm.transitions[idx] = FsmTransition {
+        from_state: from_state,
+        event: event,
+        to_state: to_state
+    }
+    fsm.transition_count = fsm.transition_count + 1
+    return true
+}
+
+export function fsm_can_trigger(fsm: ptr<StateMachine>, event: i32) -> bool {
+    let mut i: i32 = 0
+    while i < fsm.transition_count {
+        if fsm.transitions[i].from_state == fsm.current_state and fsm.transitions[i].event == event {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+export function fsm_trigger(fsm: ptr<StateMachine>, event: i32) -> bool {
+    let mut i: i32 = 0
+    while i < fsm.transition_count {
+        if fsm.transitions[i].from_state == fsm.current_state and fsm.transitions[i].event == event {
+            fsm.previous_state = fsm.current_state
+            fsm.current_state = fsm.transitions[i].to_state
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+export function fsm_reset(fsm: ptr<StateMachine>) {
+    fsm.previous_state = fsm.current_state
+    fsm.current_state = fsm.initial_state
+}
+
+export function fsm_current_state(fsm: ptr<StateMachine>) -> i32 {
+    return fsm.current_state
+}
+
+export function fsm_previous_state(fsm: ptr<StateMachine>) -> i32 {
+    return fsm.previous_state
+}

@@ -1,0 +1,68 @@
+import "stdlib/interrupt.flow"
+
+function main() -> i32 {
+    # 1. Global interrupt enable/disable/restore
+    interrupt_enable()
+    if not interrupt_is_enabled() {
+        return 1
+    }
+
+    let prev: u32 = interrupt_disable()
+    if interrupt_is_enabled() {
+        return 2
+    }
+    if prev != 1 {
+        return 3
+    }
+
+    interrupt_restore(prev)
+    if not interrupt_is_enabled() {
+        return 4
+    }
+
+    # 2. Critical Section RAII token
+    let cs: CriticalSection = critical_section_enter()
+    if interrupt_is_enabled() {
+        return 5
+    }
+    critical_section_exit(cs)
+    if not interrupt_is_enabled() {
+        return 6
+    }
+
+    # 3. Memory barriers
+    data_memory_barrier()
+    data_sync_barrier()
+    instruction_sync_barrier()
+
+    # 4. Software IRQ controller
+    irq_reset_all()
+    if irq_is_enabled(12) {
+        return 7
+    }
+
+    irq_enable(12)
+    if not irq_is_enabled(12) {
+        return 8
+    }
+
+    if irq_is_pending(12) {
+        return 9
+    }
+    irq_set_pending(12)
+    if not irq_is_pending(12) {
+        return 10
+    }
+
+    irq_clear_pending(12)
+    if irq_is_pending(12) {
+        return 11
+    }
+
+    irq_disable(12)
+    if irq_is_enabled(12) {
+        return 12
+    }
+
+    return 0
+}
