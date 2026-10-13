@@ -67,7 +67,7 @@ After cutting a new **non-RC** release:
    ```bash
    ./flow tool sync_version --homebrew --sha256 <digest>
    ```
-4. From 2.0.0 on, `LICENSE` is proprietary and `LICENSE-1.x-MIT` covers
+4. From 2.0.0 on, `LICENSE` is proprietary and `licenses/LICENSE-1.x-MIT` covers
    1.x only. When the formula first moves to a 2.x archive, replace
    `license "MIT"` with `license :cannot_represent`, which is Homebrew's
    value for a license with no SPDX identifier.
