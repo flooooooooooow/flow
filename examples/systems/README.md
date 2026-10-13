@@ -5,6 +5,7 @@ construction (arXiv:2111.12800). Every program here prints what it measured
 and gates its exit code on a self-check (exit 0 = PASS).
 
 - `arena_frame.flow` - arena + bump-frame allocation
+- `distributed_digital_twins.flow`: observer tracking a physical plant across simulated nodes
 - `manual_memory.flow` - manual malloc/free discipline
 - `memory_pool.flow` - O(1) pool allocator over a fixed arena
 - `ring_buffer.flow` - lock-free SPSC queue

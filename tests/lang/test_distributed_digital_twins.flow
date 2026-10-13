@@ -1,0 +1,100 @@
+import "stdlib/concurrent.flow"
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+flow Motor {
+    state pos: f64 = 0.0
+    state vel: f64 = 0.0
+
+    input voltage: f64
+
+    param friction: f64 = 0.1
+
+    pos evolves as vel
+    vel evolves as -friction * vel + voltage
+}
+
+flow Twin {
+    state pos: f64 = 0.5
+    state vel: f64 = 2.0
+
+    input voltage: f64
+    input pos_meas: f64
+
+    param friction: f64 = 0.1
+    param L1: f64 = 2.0
+    param L2: f64 = 1.0
+
+    pos evolves as vel + L1 * (pos_meas - pos)
+    vel evolves as -friction * vel + voltage + L2 * (pos_meas - pos)
+}
+
+struct NodeState {
+    plant: Motor,
+    twin: Twin,
+    chan_meas: Channel_i64,
+    dt: f64
+}
+
+function plant_node(arg: ptr<i8>) -> ptr<i8> {
+    let state_ptr: ptr<NodeState> = arg as ptr<NodeState>
+    let steps: i32 = 600
+
+    for k in 0 to steps + 1 {
+        let dt: f64 = state_ptr[0].dt
+        state_ptr[0].plant.voltage = 1.0
+        let msg: i64 = (state_ptr[0].plant.pos * 1000000.0) as i64
+        channel_i64_send(&state_ptr[0].chan_meas, msg)
+        Motor_step(&state_ptr[0].plant, dt)
+    }
+
+    channel_i64_close(&state_ptr[0].chan_meas)
+    return null
+}
+
+function twin_node(arg: ptr<i8>) -> ptr<i8> {
+    let state_ptr: ptr<NodeState> = arg as ptr<NodeState>
+    let mut k: i32 = 0
+
+    while true {
+        let mut meas_i64: i64 = 0
+        let ok: bool = channel_i64_recv(&state_ptr[0].chan_meas, &meas_i64)
+        if not ok {
+            break
+        }
+        let meas: f64 = (meas_i64 as f64) / 1000000.0
+        let dt: f64 = state_ptr[0].dt
+        state_ptr[0].twin.voltage = 1.0
+        state_ptr[0].twin.pos_meas = meas
+        Twin_step(&state_ptr[0].twin, dt)
+        k = k + 1
+    }
+
+    return null
+}
+
+function main() -> i32 {
+    let mut state: NodeState = NodeState {
+        plant: Motor_new(),
+        twin: Twin_new(),
+        chan_meas: channel_i64_new(1000),
+        dt: 0.01
+    }
+
+    let t_plant: Thread = thread_spawn(plant_node as ptr<i8>, &state as ptr<i8>)
+    let t_twin: Thread = thread_spawn(twin_node as ptr<i8>, &state as ptr<i8>)
+
+    thread_join(&t_plant)
+    thread_join(&t_twin)
+
+    let pos_err_end: f64 = fabs(state.plant.pos - state.twin.pos)
+    let vel_err_end: f64 = fabs(state.plant.vel - state.twin.vel)
+
+    if pos_err_end > 0.05 or vel_err_end > 0.05 {
+        return 1
+    }
+
+    return 0
+}

@@ -150,10 +150,10 @@
 - [x] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
 - [x] #1498 [roadmap:w2] **W2** https://github.com/flooooooooooow/flow/issues/1498
 - [x] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
-- [ ] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
+- [x] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
 - [x] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
 - [x] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502
 - [ ] #1546 [roadmap:certified-safety-profiles] Certified safety profiles https://github.com/flooooooooooow/flow/issues/1546
-- [ ] #1547 [roadmap:distributed-digital-twins] Distributed digital twins https://github.com/flooooooooooow/flow/issues/1547
+- [x] #1547 [roadmap:distributed-digital-twins] Distributed digital twins https://github.com/flooooooooooow/flow/issues/1547
 - [ ] #1548 [roadmap:hardware-synthesis-and-partitioning] Hardware synthesis and partitioning https://github.com/flooooooooooow/flow/issues/1548
 - [ ] #1549 [roadmap:orchestration-syntax] Orchestration syntax https://github.com/flooooooooooow/flow/issues/1549
