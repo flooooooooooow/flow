@@ -144,7 +144,7 @@ Flow 2.0.0 changes the license and marks a new major version.
 ### License
 
 - Version 2.0.0 and later are proprietary. All rights reserved. See `LICENSE`.
-- Version 1.0.2 and all earlier versions remain available under the MIT License, preserved as `LICENSE-1.x-MIT`. Rights already granted under MIT for the 1.x line are unaffected.
+- Version 1.0.2 and all earlier versions remain available under the MIT License, preserved as `licenses/LICENSE-1.x-MIT`. Rights already granted under MIT for the 1.x line are unaffected.
 - The repository stays public.
 
 ### Version
