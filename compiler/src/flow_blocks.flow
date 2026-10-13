@@ -2657,7 +2657,7 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
     bb_puts(m5, "Unexpected item in flow '")
     fb_put_fname(m5, c, f)
     bb_puts(m5, "' body")
-    bb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }' / 'guarantee { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')")
+    bb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')")
     return 0 - 1
 }
 
