@@ -1,6 +1,6 @@
 # Wiki Roadmap
-
-> Phased plan for [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)  
+ 
+> Note: this document tracks phased delivery for the Flow documentation website ([flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)). For the Flow language, compiler, and runtime roadmap, see [ROADMAP.md](../ROADMAP.md).  
 > Strategy: [wiki-strategy.md](wiki-strategy.md)
 
 ---

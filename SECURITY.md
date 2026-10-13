@@ -2,27 +2,18 @@
 
 ## Supported Versions
 
-Flow is still on the pre-1.0 development line. Until `1.0.0` ships, only the
-latest 0.x release line receives fixes.
+Flow 2.0.0 is the current supported release line.
 
 | Version | Supported |
 |---------|-----------|
-| 0.12.x  | ✅ current pre-1.0 line |
-| < 0.12  | ❌ |
+| 2.0.x   | ✅ current release line |
+| 1.x     | ❌ security fixes ended |
+| 0.x     | ❌ security fixes ended |
 
-When Flow 1.0 ships, the support policy becomes:
-
-| Version | Support |
-|---------|---------|
-| latest 1.x minor | ✅ bug and security fixes |
-| previous 1.x minor | ✅ security fixes for 90 days after the next minor release |
-| older 1.x minors | ❌ |
-| 0.x | ✅ security fixes for 90 days after `1.0.0`, then ❌ |
-
-A security or correctness issue may require an otherwise incompatible change in
-a supported release when preserving the old behaviour would leave users exposed
-to a material vulnerability, memory-safety defect, miscompilation, or similarly
-serious failure. Such changes must be called out prominently in release notes.
+When a security or correctness issue requires an incompatible change in a
+supported release to protect users from a material vulnerability,
+memory-safety defect, miscompilation, or serious failure, the change is
+called out prominently in release notes.
 
 ## Reporting a Vulnerability
 
@@ -47,7 +38,7 @@ is preferred; please give us a reasonable window before public write-ups.
 
 ## Scope
 
-In scope: the `flow` CLI, compiler (`src/flow/`, `compiler/`), runtime, stdlib,
+In scope: the `flow` CLI, compiler (`compiler/`), runtime (`runtime/`), stdlib (`lib/`),
 release/build tooling, and official packages as shipped from this repository.
 
 Security-sensitive compiler/tooling areas include subprocess construction,
@@ -58,25 +49,26 @@ resource exhaustion, and unsafe FFI boundaries.
 Out of scope: third-party packages under `registry/` that are not part of a
 release artifact, and VPS / personal site infrastructure.
 
-## Flow 1.0 threat model
+## Threat model
 
-The Stable Flow 1.0 compiler must be able to parse, resolve, type-check and lower
+The Flow compiler must be able to parse, resolve, type-check and lower
 hostile source without command injection, filesystem traversal or unintended
 host code execution. Resource-exhaustion and semantic-divergence resistance are
 qualified separately by the release fuzz programme.
 
 Compiling source and executing source are different trust decisions. `flow run`
 deliberately compiles and executes the supplied program with the invoking
-user's privileges; it is **not a sandbox**. Likewise, `extern`, raw pointers and
-other native FFI facilities are trusted-code boundaries and can perform
-arbitrary process-visible actions. The local playground/native compile server
-is development tooling. It is not a remote multi-tenant execution sandbox.
+user's privileges; it is an ordinary execution environment, without a sandbox.
+Likewise, `extern`, raw pointers and other native FFI facilities are trusted-code
+boundaries and can perform arbitrary process-visible actions. The local
+playground compile server is development tooling, without remote multi-tenant
+sandboxing.
 
-| Surface | 1.0 security position |
+| Surface | Security position |
 | --- | --- |
 | Stable compiler pipeline | Hostile source must not become a shell command, escape permitted import roots, or execute host code merely by being compiled. |
-| Stable subprocesses | Compiler/tool invocations use argument vectors rather than shell interpolation. Repository tests reject `shell=True`, `os.system` and `os.popen` under `src/flow`. |
-| Temporary build state | Stable Python tooling uses race-resistant temporary APIs. `tempfile.mktemp` is forbidden under `src/flow`. |
+| Subprocesses | Compiler and tool invocations use argument vectors rather than shell interpolation. Subprocesses run without intermediate shells. |
+| Temporary build state | Build tooling uses race-resistant temporary directory APIs. |
 | Module imports | Stable local resolution stays inside the selected project, stdlib and package roots. Legacy string imports reject absolute, home-relative and parent-traversing paths. |
 | `flow run` | Native execution boundary; it is not sandboxed. Program exit status is propagated once execution begins. |
 | FFI / `extern` | Trusted native boundary, outside safe-source containment guarantees. |
@@ -107,9 +99,7 @@ comparably serious violation of this documented boundary.
 
 ## Release security gate
 
-Flow `1.0.0` must not ship with a known unresolved critical or high-severity
+Production releases must not ship with a known unresolved critical or high-severity
 vulnerability in a Stable component. Release qualification also requires the
 dependency audit and security scans defined in CI, plus disposition of relevant
 findings from release fuzzing.
-
-Tracking: #650 and the Flow 1.0 stabilisation programme #653.
