@@ -41,7 +41,7 @@ function check_code(r: ptr<ProcResult>, expected: i32, name: string) -> bool {
 }
 
 function main() -> i32 {
-    let root: string = abs_dir_physical(env("FLOW_REPO_ROOT"))
+    let mut root: string = abs_dir_physical(env("FLOW_REPO_ROOT"))
     if s_len(root) == 0 {
         root = cwd_physical()
     }
