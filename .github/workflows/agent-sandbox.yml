@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install required namespace isolation helper
         run: |
           if ! test -x /usr/bin/bwrap; then
