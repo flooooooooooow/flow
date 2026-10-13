@@ -1,0 +1,166 @@
+# Opt-in Linux sandbox for executing AI-generated native programs.
+#
+# This is an OS containment prototype, not a language effect checker or a
+# complete sandbox. It delegates confinement to Linux namespaces + bubblewrap.
+# Host paths and the program are supplied by the trusted caller.
+#
+# Usage:
+# ./flow tool agent_sandbox --workspace DIR --output DIR [--timeout-ms N] -- PROGRAM [ARG ...]
+#
+# DIR must exist; the workspace is read-only at /workspace, and only output
+# is writable at /output. Neither path is exposed in its original location.
+# No network namespace sharing, host home, environment/secrets or device
+# passthrough. Fails closed if /usr/bin/bwrap or user namespaces are missing.
+#
+# Exit 2 is a rejected configuration; 125 is unavailable isolation or a
+# sandbox launch error; otherwise returns the guest's exit code (including
+# timeouts as 124). It never falls back to unsandboxed execution.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_argc, proc_argv, proc_timeout_ms, proc_env_clear, proc_stdin, proc_stdout, proc_stderr, proc_run, PROC_NULL, PROC_INHERIT }
+
+const DEFAULT_TIMEOUT_MS: i32 = 5000
+const MAX_TIMEOUT_MS: i32 = 30000
+
+function usage() {
+    errln("usage: agent_sandbox --workspace DIR --output DIR [--timeout-ms 1..30000] -- PROGRAM [ARG ...]")
+}
+
+function add(c: ptr<ProcCmd>, flag: string, value: string) {
+    proc_arg(c, flag)
+    proc_arg(c, value)
+}
+
+function add_mount(c: ptr<ProcCmd>, flag: string, source: string, target: string) {
+    proc_arg(c, flag)
+    proc_arg(c, source)
+    proc_arg(c, target)
+}
+
+function guest_env(c: ptr<ProcCmd>, name: string, value: string) {
+    proc_arg(c, "--setenv")
+    proc_arg(c, name)
+    proc_arg(c, value)
+}
+
+function main() -> i32 {
+    let mut workspace: string = ""
+    let mut output: string = ""
+    let mut timeout: i32 = DEFAULT_TIMEOUT_MS
+    let mut i: i32 = 1
+    let argc: i32 = proc_argc()
+
+    while i < argc {
+        let arg: string = proc_argv(i)
+        if s_eq(arg, "--") {
+            i = i + 1
+            break
+        }
+        if i + 1 >= argc {
+            usage()
+            return 2
+        }
+        let value: string = proc_argv(i + 1)
+        if s_eq(arg, "--workspace") and s_len(workspace) == 0 {
+            workspace = value
+        } elif s_eq(arg, "--output") and s_len(output) == 0 {
+            output = value
+        } elif s_eq(arg, "--timeout-ms") {
+            if not s_is_digits(value) or s_len(value) > 5 {
+                usage()
+                return 2
+            }
+            timeout = s_atoi(value, 0)
+        } else {
+            usage()
+            return 2
+        }
+        i = i + 2
+    }
+
+    if i >= argc or timeout < 1 or timeout > MAX_TIMEOUT_MS {
+        usage()
+        return 2
+    }
+    # Resolve symlinks before mounting. This does not make untrusted callers
+    # safe; only a trusted launcher is allowed to grant host directories.
+    let work: string = abs_dir_physical(workspace)
+    let out: string = abs_dir_physical(output)
+    if s_len(work) == 0 or s_len(out) == 0 or s_eq(work, "/") or s_eq(out, "/") {
+        errln("agent_sandbox: workspace and output must be existing, non-root directories")
+        return 2
+    }
+    # Refuse broad host mounts. An explicit output inside the workspace is
+    # still independently mounted at /output, not writable at /workspace.
+    # An output mount containing the workspace would re-expose its files
+    # through /output with write permissions, bypassing /workspace's ro-bind.
+    # Compare canonical physical paths with a separator boundary.
+    if s_eq(work, out) or s_starts(work, out + "/") {
+        errln("agent_sandbox: output must not be the workspace or an ancestor of it")
+        return 2
+    }
+    if not is_file("/usr/bin/bwrap") {
+        errln("agent_sandbox: /usr/bin/bwrap is required; refusing unsandboxed execution")
+        return 125
+    }
+
+    let c: ptr<ProcCmd> = proc_cmd("/usr/bin/bwrap")
+    # Explicit namespace requests: do not use --unshare-user-try, which
+    # silently proceeds without a user namespace.
+    proc_arg(c, "--unshare-user")
+    proc_arg(c, "--unshare-pid")
+    proc_arg(c, "--unshare-net")
+    proc_arg(c, "--unshare-ipc")
+    proc_arg(c, "--unshare-uts")
+    proc_arg(c, "--die-with-parent")
+    proc_arg(c, "--new-session")
+    proc_arg(c, "--clearenv")
+    # No ambient filesystem view. Build a new root from explicit mounts.
+    add(c, "--tmpfs", "/")
+    add(c, "--dir", "/usr")
+    add(c, "--dir", "/bin")
+    add(c, "--dir", "/lib")
+    add(c, "--dir", "/lib64")
+    add(c, "--dir", "/workspace")
+    add(c, "--dir", "/output")
+    add(c, "--dir", "/proc")
+    add(c, "--dir", "/dev")
+    add_mount(c, "--ro-bind", "/usr", "/usr")
+    add_mount(c, "--ro-bind-try", "/bin", "/bin")
+    add_mount(c, "--ro-bind-try", "/lib", "/lib")
+    add_mount(c, "--ro-bind-try", "/lib64", "/lib64")
+    add_mount(c, "--ro-bind", work, "/workspace")
+    add_mount(c, "--bind", out, "/output")
+    add(c, "--tmpfs", "/tmp")
+    add(c, "--proc", "/proc")
+    add(c, "--dev", "/dev")
+    add(c, "--chdir", "/workspace")
+    guest_env(c, "PATH", "/usr/bin:/bin")
+    guest_env(c, "HOME", "/tmp")
+    guest_env(c, "TMPDIR", "/tmp")
+    guest_env(c, "LC_ALL", "C")
+    proc_arg(c, "--")
+    while i < argc {
+        proc_arg(c, proc_argv(i))
+        i = i + 1
+    }
+
+    # No trusted environment escapes to the child launcher either.
+    proc_env_clear(c)
+    proc_stdin(c, PROC_NULL)
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    proc_timeout_ms(c, timeout)
+    let r: ptr<ProcResult> = proc_run(c)
+    if s_len(r.error) > 0 {
+        errln("agent_sandbox: failed to start bubblewrap: " + r.error)
+        return 125
+    }
+    if r.timed_out {
+        errln("agent_sandbox: wall-time limit reached")
+        return 124
+    }
+    # bubblewrap itself returns nonzero on unsupported namespaces or mount
+    # setup. Propagate that nonzero, never rerun the program outside bwrap.
+    return r.exit_code
+}

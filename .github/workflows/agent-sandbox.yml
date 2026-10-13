@@ -1,0 +1,35 @@
+# Security proof runs in a hosted runner; never execute untrusted PR code on
+# a self-hosted runner or with secrets/publishing privileges.
+name: Agent sandbox boundary
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolate:
+    name: Linux namespace enforcement
+    # Ubuntu 24.04 hosted runners may block unprivileged bwrap networking via
+    # AppArmor; use the maintained 22.04 image without weakening host policy.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install required namespace isolation helper
+        run: |
+          if ! test -x /usr/bin/bwrap; then
+            sudo apt-get install -y --no-install-recommends bubblewrap
+          fi
+          test -x /usr/bin/bwrap
+      - name: Run adversarial isolation tests (no mocks)
+        run: ./flow tool tools/agent_sandbox/test.flow
