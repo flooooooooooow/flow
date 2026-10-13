@@ -608,8 +608,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.goldens == 'true'
-    env:
-      FLOW_GATE_JOBS: '4'
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/flow-bin-cache
@@ -661,7 +659,7 @@ jobs:
           printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy-mlir/python3
           cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
           chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
-          PATH="/tmp/nopy-mlir:$PATH" timeout 20m ./flow tool compiler/scripts/parity_mlir.flow
+          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./flow tool compiler/scripts/parity_mlir.flow
           # --backend=mlir on the flowc host needs no Python either.
           PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
             ./flow run --backend=mlir compiler/fixtures/mlir/control.flow

@@ -154,7 +154,6 @@ export const FLOW_ITEM_RECOGNIZE: i32 = 8
 export const FLOW_ITEM_CONNECT: i32 = 9
 export const FLOW_ITEM_CHILD: i32 = 10
 export const FLOW_ITEM_BECOMES: i32 = 11
-export const FLOW_ITEM_GUARANTEE: i32 = 12
 
 # AST_TYPE.c metadata. Keep this in the existing child slot so AstNode remains
 # 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep

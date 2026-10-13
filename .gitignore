@@ -8,7 +8,6 @@ build/
 *.ll
 *.bc
 *.ppm
-frames/
 
 # Python
 __pycache__/

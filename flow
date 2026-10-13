@@ -19,7 +19,7 @@ if [ ! -x "$bin" ] || [ -n "$(find "$root/tools/flow_cli" "$root/lib/stdlib/proc
     mkdir -p "$cache/cli" "$(dirname "$boot")"
     if [ ! -x "$boot" ] || [ -n "$(find "$root/compiler/bootstrap/flowc_stage_a.c" -newer "$boot")" ]; then
         echo "flow: building flowc from compiler/bootstrap/flowc_stage_a.c..." >&2
-        "${CC:-cc}" -O1 -w -o "$boot.tmp.$$" "$root/compiler/bootstrap/flowc_stage_a.c" -lm
+        "${CC:-cc}" -O2 -w -o "$boot.tmp.$$" "$root/compiler/bootstrap/flowc_stage_a.c" -lm
         mv -f "$boot.tmp.$$" "$boot"
     fi
     (cd "$root" && FLOWC_BUNDLE=1 FLOWC_DIR=. FLOWC_TYPECHECK=1 FLOWC_IN=tools/flow_cli/main.flow \

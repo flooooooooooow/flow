@@ -140,16 +140,16 @@
 - [x] #1487 [roadmap:fir-g-program-graph-phases-1-4] FIR-G program graph (Phases 1-4) https://github.com/flooooooooooow/flow/issues/1487
 - [x] #1488 [roadmap:games-twin] Games twin https://github.com/flooooooooooow/flow/issues/1488
 - [x] #1489 [roadmap:hybrid-guarantees] Hybrid guarantees https://github.com/flooooooooooow/flow/issues/1489
-- [x] #1490 [roadmap:json-tsv] JSON / TSV https://github.com/flooooooooooow/flow/issues/1490
+- [ ] #1490 [roadmap:json-tsv] JSON / TSV https://github.com/flooooooooooow/flow/issues/1490
 - [x] #1491 [roadmap:linalg-qr-eigen] Linalg QR / eigen https://github.com/flooooooooooow/flow/issues/1491
 - [x] #1492 [roadmap:networking] Networking https://github.com/flooooooooooow/flow/issues/1492
 - [x] #1493 [roadmap:physics-dsl-honesty] Physics DSL honesty https://github.com/flooooooooooow/flow/issues/1493
 - [x] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
 - [ ] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
 - [ ] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
-- [x] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
+- [ ] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
 - [x] #1498 [roadmap:w2] **W2** https://github.com/flooooooooooow/flow/issues/1498
 - [ ] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
 - [ ] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
-- [x] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
+- [ ] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
 - [ ] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502

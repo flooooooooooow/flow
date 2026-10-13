@@ -13,7 +13,7 @@ import .ast {
     AstArena, AST_NONE, AST_FLOW_DECL,
     FLOW_ITEM_MEMBER, FLOW_ITEM_EVOLVES, FLOW_ITEM_WHEN, FLOW_ITEM_EVERY,
     FLOW_ITEM_SOLVER, FLOW_ITEM_ALWAYS, FLOW_ITEM_NEVER,
-    FLOW_ITEM_CONNECT, FLOW_ITEM_CHILD, FLOW_ITEM_GUARANTEE
+    FLOW_ITEM_CONNECT, FLOW_ITEM_CHILD
 }
 
 extern {
@@ -214,7 +214,7 @@ export function flowc_denotation_from_flow(
             d.timing = flowc_den_mix(d.timing, item_hash)
             d.discrete_updates = flowc_den_mix(d.discrete_updates, item_hash)
             d.update_count = d.update_count + 1
-        } elif kind == FLOW_ITEM_ALWAYS or kind == FLOW_ITEM_NEVER or kind == FLOW_ITEM_GUARANTEE {
+        } elif kind == FLOW_ITEM_ALWAYS or kind == FLOW_ITEM_NEVER {
             d.constraints = flowc_den_mix(d.constraints, item_hash)
         } elif kind == FLOW_ITEM_CONNECT or kind == FLOW_ITEM_CHILD {
             d.composition = flowc_den_mix(d.composition, item_hash)

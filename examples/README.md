@@ -220,11 +220,6 @@ See the walkthrough with measured timings: [docs/tutorials/ml-on-macbook.md](../
 ### Networking (`net/`)
 - `tcp_echo.flow` - TCP listener shape demo (full echo loop planned)
 
-### Data Processing (`data/`)
-- `csv_parser.flow` - Streaming CSV parser with header and quote handling
-- `json_parser.flow` - Recursive-descent JSON parser, tree inspection, and serialization
-- `tsv_parser.flow` - Tab-separated values streaming parser with numeric aggregation
-
 ### Evolution (`evolution/`)
 The flagship suite for Flow's founding vision: systems that evolve through time
 (see [evolution/README.md](evolution/README.md)). Prefer declarative files:

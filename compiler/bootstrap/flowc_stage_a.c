@@ -1512,8 +1512,6 @@ const int32_t FLOW_ITEM_CONNECT = 9;
 const int32_t FLOW_ITEM_CHILD = 10;
 #undef FLOW_ITEM_BECOMES
 const int32_t FLOW_ITEM_BECOMES = 11;
-#undef FLOW_ITEM_GUARANTEE
-const int32_t FLOW_ITEM_GUARANTEE = 12;
 #undef AST_TYPE_SPAN_MUTABLE
 const int32_t AST_TYPE_SPAN_MUTABLE = 1;
 #undef AST_TYPE_FIXED_ARRAY
@@ -6176,9 +6174,6 @@ int32_t is_guard_attr(const char* name) {
 
 int32_t is_semantic_attr(const char* name) {
   if (streq(name, "gpu") == 1) {
-  return 1;
-}
-  if (streq(name, "hardware") == 1) {
   return 1;
 }
   if (streq(name, "rt_safe") == 1) {
@@ -21162,7 +21157,6 @@ SemStrVec* sem_known_attributes() {
   sem_sv_push(v, "flow_api");
   sem_sv_push(v, "gpu");
   sem_sv_push(v, "guard");
-  sem_sv_push(v, "hardware");
   sem_sv_push(v, "hot");
   sem_sv_push(v, "inline");
   sem_sv_push(v, "interp");
@@ -21495,7 +21489,7 @@ FlowcDenotation flowc_denotation_from_flow(AstArena arena, int32_t flow_id, uint
   (d).discrete_updates = flowc_den_mix((d).discrete_updates, item_hash);
   (d).update_count = ((d).update_count + 1);
 } else {
-  if (kind == FLOW_ITEM_ALWAYS || kind == FLOW_ITEM_NEVER || kind == FLOW_ITEM_GUARANTEE) {
+  if (kind == FLOW_ITEM_ALWAYS || kind == FLOW_ITEM_NEVER) {
   (d).constraints = flowc_den_mix((d).constraints, item_hash);
 } else {
   if (kind == FLOW_ITEM_CONNECT || kind == FLOW_ITEM_CHILD) {
@@ -30679,9 +30673,6 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
   if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "never") == 1) {
   return fb_parse_invariant(c, f, 2, "never");
 }
-  if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "guarantee") == 1) {
-  return fb_parse_invariant(c, f, 3, "guarantee");
-}
   if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "recognize") == 1) {
   if ((c[0]).f_rec[f] == 1) {
   ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
@@ -30735,7 +30726,7 @@ int32_t fb_parse_flow(Fb* c, int32_t f) {
   if (nt < 0) {
   return (0 - 1);
 }
-  { __typeof__((c[0]).f_name[f]) __flowc_st14247 = fb_tok_str(c, nt); (c[0]).f_name[f] = __flowc_st14247; }
+  { __typeof__((c[0]).f_name[f]) __flowc_st14225 = fb_tok_str(c, nt); (c[0]).f_name[f] = __flowc_st14225; }
   if (fb_expect(c, "LBRACE") < 0) {
   return (0 - 1);
 }
@@ -32116,7 +32107,7 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
 }
 }
   int32_t kind = 1;
-  while (kind <= 3) {
+  while (kind <= 2) {
   int32_t q = 0;
   for (; q < ((c[0]).niv); q = q + 1) {
   if ((c[0]).iv_flow[q] == f && (c[0]).iv_kind[q] == kind) {
@@ -32124,15 +32115,9 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   if (kind == 2) {
   word = "never";
 }
-  if (kind == 3) {
-  word = "guarantee";
-}
   const char* ws = "'always' clause";
   if (kind == 2) {
   ws = "'never' clause";
-}
-  if (kind == 3) {
-  ws = "'guarantee' clause";
 }
   if (fb_check_pure_s(c, (c[0]).iv_expr[q], f, ws, (c[0]).iv_line[q]) < 0) {
   return (0 - 1);
@@ -33047,7 +33032,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   cyclic = 1;
 } else {
   done[pick] = 1;
-  { __typeof__(order[placed]) __flowc_st26102 = fb_nth_member(c, f, MK_CHILD, pick); order[placed] = __flowc_st26102; }
+  { __typeof__(order[placed]) __flowc_st26064 = fb_nth_member(c, f, MK_CHILD, pick); order[placed] = __flowc_st26064; }
   placed = (placed + 1);
   int32_t pn = (c[0]).mm_name[order[(placed - 1)]];
   i = 0;
@@ -33064,7 +33049,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   if (cyclic == 1) {
   k = 0;
   for (; k < (n); k = k + 1) {
-  { __typeof__(order[k]) __flowc_st26215 = fb_nth_member(c, f, MK_CHILD, k); order[k] = __flowc_st26215; }
+  { __typeof__(order[k]) __flowc_st26177 = fb_nth_member(c, f, MK_CHILD, k); order[k] = __flowc_st26177; }
 }
 }
   flow_mem_free((uint8_t*)(indeg));
@@ -33122,7 +33107,7 @@ int32_t fb_count_clauses(Fb* c, int32_t f) {
 int32_t fb_nth_clause(Fb* c, int32_t f, int32_t idx) {
   int32_t n = 0;
   int32_t kind = 1;
-  while (kind <= 3) {
+  while (kind <= 2) {
   int32_t i = 0;
   for (; i < ((c[0]).niv); i = i + 1) {
   if ((c[0]).iv_flow[i] == f && (c[0]).iv_kind[i] == kind) {
@@ -33192,11 +33177,7 @@ void fb_emit_step(Fb* c, ByteBuf* b, int32_t f) {
   fb_put_fname(mb, c, f);
   bb_putc(mb, 58);
   bb_put_i32(mb, (c[0]).iv_line[cl]);
-  if ((c[0]).iv_kind[cl] == 3) {
-  bb_puts(mb, ": guarantee violated: ");
-} else {
   bb_puts(mb, ": invariant violated: ");
-}
   bb_puts(mb, (const char*)(fb_s(c, (c[0]).iv_text[cl])));
   fb_put_escaped(b, (mb[0]).p);
   bb_free(mb);
@@ -33252,7 +33233,7 @@ void fb_emit_check(Fb* c, ByteBuf* b, int32_t f) {
   int32_t q = 0;
   for (; q < (n); q = q + 1) {
   int32_t cl = fb_nth_clause(c, f, q);
-  if ((c[0]).iv_kind[cl] == 1 || (c[0]).iv_kind[cl] == 3) {
+  if ((c[0]).iv_kind[cl] == 1) {
   bb_puts(b, "if !(");
 } else {
   bb_puts(b, "if (");
@@ -33387,101 +33368,101 @@ Fb* fb_ctx_new(uint8_t* src, int32_t n) {
   (c[0]).n = n;
   int32_t tcap = (n + 2);
   (c[0]).nt = 0;
-  { __typeof__((c[0]).tk) __flowc_st27818 = fb_alloc_i32(tcap); (c[0]).tk = __flowc_st27818; }
-  { __typeof__((c[0]).top) __flowc_st27825 = fb_alloc_i32(tcap); (c[0]).top = __flowc_st27825; }
-  { __typeof__((c[0]).ts) __flowc_st27832 = fb_alloc_i32(tcap); (c[0]).ts = __flowc_st27832; }
-  { __typeof__((c[0]).te) __flowc_st27839 = fb_alloc_i32(tcap); (c[0]).te = __flowc_st27839; }
-  { __typeof__((c[0]).tl) __flowc_st27846 = fb_alloc_i32(tcap); (c[0]).tl = __flowc_st27846; }
-  { __typeof__((c[0]).tc) __flowc_st27853 = fb_alloc_i32(tcap); (c[0]).tc = __flowc_st27853; }
-  { __typeof__((c[0]).tvar) __flowc_st27860 = fb_alloc_i32(tcap); (c[0]).tvar = __flowc_st27860; }
+  { __typeof__((c[0]).tk) __flowc_st27756 = fb_alloc_i32(tcap); (c[0]).tk = __flowc_st27756; }
+  { __typeof__((c[0]).top) __flowc_st27763 = fb_alloc_i32(tcap); (c[0]).top = __flowc_st27763; }
+  { __typeof__((c[0]).ts) __flowc_st27770 = fb_alloc_i32(tcap); (c[0]).ts = __flowc_st27770; }
+  { __typeof__((c[0]).te) __flowc_st27777 = fb_alloc_i32(tcap); (c[0]).te = __flowc_st27777; }
+  { __typeof__((c[0]).tl) __flowc_st27784 = fb_alloc_i32(tcap); (c[0]).tl = __flowc_st27784; }
+  { __typeof__((c[0]).tc) __flowc_st27791 = fb_alloc_i32(tcap); (c[0]).tc = __flowc_st27791; }
+  { __typeof__((c[0]).tvar) __flowc_st27798 = fb_alloc_i32(tcap); (c[0]).tvar = __flowc_st27798; }
   (c[0]).pos = 0;
   (c[0]).nn = 0;
   (c[0]).ncap = 256;
-  { __typeof__((c[0]).nk) __flowc_st27885 = fb_alloc_i32(256); (c[0]).nk = __flowc_st27885; }
-  { __typeof__((c[0]).nop) __flowc_st27892 = fb_alloc_i32(256); (c[0]).nop = __flowc_st27892; }
-  { __typeof__((c[0]).ntok) __flowc_st27899 = fb_alloc_i32(256); (c[0]).ntok = __flowc_st27899; }
-  { __typeof__((c[0]).na) __flowc_st27906 = fb_alloc_i32(256); (c[0]).na = __flowc_st27906; }
-  { __typeof__((c[0]).nb) __flowc_st27913 = fb_alloc_i32(256); (c[0]).nb = __flowc_st27913; }
-  { __typeof__((c[0]).nc) __flowc_st27920 = fb_alloc_i32(256); (c[0]).nc = __flowc_st27920; }
-  { __typeof__((c[0]).nx) __flowc_st27927 = fb_alloc_i32(256); (c[0]).nx = __flowc_st27927; }
-  { __typeof__((c[0]).nfs) __flowc_st27934 = fb_alloc_i32(256); (c[0]).nfs = __flowc_st27934; }
-  { __typeof__((c[0]).nfe) __flowc_st27941 = fb_alloc_i32(256); (c[0]).nfe = __flowc_st27941; }
-  { __typeof__((c[0]).nm) __flowc_st27948 = bb_new(4096); (c[0]).nm = __flowc_st27948; }
+  { __typeof__((c[0]).nk) __flowc_st27823 = fb_alloc_i32(256); (c[0]).nk = __flowc_st27823; }
+  { __typeof__((c[0]).nop) __flowc_st27830 = fb_alloc_i32(256); (c[0]).nop = __flowc_st27830; }
+  { __typeof__((c[0]).ntok) __flowc_st27837 = fb_alloc_i32(256); (c[0]).ntok = __flowc_st27837; }
+  { __typeof__((c[0]).na) __flowc_st27844 = fb_alloc_i32(256); (c[0]).na = __flowc_st27844; }
+  { __typeof__((c[0]).nb) __flowc_st27851 = fb_alloc_i32(256); (c[0]).nb = __flowc_st27851; }
+  { __typeof__((c[0]).nc) __flowc_st27858 = fb_alloc_i32(256); (c[0]).nc = __flowc_st27858; }
+  { __typeof__((c[0]).nx) __flowc_st27865 = fb_alloc_i32(256); (c[0]).nx = __flowc_st27865; }
+  { __typeof__((c[0]).nfs) __flowc_st27872 = fb_alloc_i32(256); (c[0]).nfs = __flowc_st27872; }
+  { __typeof__((c[0]).nfe) __flowc_st27879 = fb_alloc_i32(256); (c[0]).nfe = __flowc_st27879; }
+  { __typeof__((c[0]).nm) __flowc_st27886 = bb_new(4096); (c[0]).nm = __flowc_st27886; }
   (c[0]).nf = 0;
-  { __typeof__((c[0]).f_name) __flowc_st27961 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_name = __flowc_st27961; }
-  { __typeof__((c[0]).f_line) __flowc_st27968 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_line = __flowc_st27968; }
-  { __typeof__((c[0]).f_start) __flowc_st27975 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st27975; }
-  { __typeof__((c[0]).f_end) __flowc_st27982 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st27982; }
-  { __typeof__((c[0]).f_solver) __flowc_st27989 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st27989; }
-  { __typeof__((c[0]).f_dt_ns) __flowc_st28005 = (int64_t*)(flow_mem_malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st28005; }
-  { __typeof__((c[0]).f_dt_text) __flowc_st28012 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st28012; }
-  { __typeof__((c[0]).f_method) __flowc_st28019 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st28019; }
-  { __typeof__((c[0]).f_solver_line) __flowc_st28026 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st28026; }
-  { __typeof__((c[0]).f_rec) __flowc_st28033 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec = __flowc_st28033; }
-  { __typeof__((c[0]).f_rec_line) __flowc_st28040 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec_line = __flowc_st28040; }
-  { __typeof__((c[0]).f_out) __flowc_st28047 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_out = __flowc_st28047; }
+  { __typeof__((c[0]).f_name) __flowc_st27899 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_name = __flowc_st27899; }
+  { __typeof__((c[0]).f_line) __flowc_st27906 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_line = __flowc_st27906; }
+  { __typeof__((c[0]).f_start) __flowc_st27913 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st27913; }
+  { __typeof__((c[0]).f_end) __flowc_st27920 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st27920; }
+  { __typeof__((c[0]).f_solver) __flowc_st27927 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st27927; }
+  { __typeof__((c[0]).f_dt_ns) __flowc_st27943 = (int64_t*)(flow_mem_malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st27943; }
+  { __typeof__((c[0]).f_dt_text) __flowc_st27950 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st27950; }
+  { __typeof__((c[0]).f_method) __flowc_st27957 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st27957; }
+  { __typeof__((c[0]).f_solver_line) __flowc_st27964 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st27964; }
+  { __typeof__((c[0]).f_rec) __flowc_st27971 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec = __flowc_st27971; }
+  { __typeof__((c[0]).f_rec_line) __flowc_st27978 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec_line = __flowc_st27978; }
+  { __typeof__((c[0]).f_out) __flowc_st27985 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_out = __flowc_st27985; }
   int32_t icap = ((tcap * 2) + 16);
   (c[0]).icap = icap;
   (c[0]).nmm = 0;
-  { __typeof__((c[0]).mm_flow) __flowc_st28073 = fb_alloc_i32(icap); (c[0]).mm_flow = __flowc_st28073; }
-  { __typeof__((c[0]).mm_kind) __flowc_st28080 = fb_alloc_i32(icap); (c[0]).mm_kind = __flowc_st28080; }
-  { __typeof__((c[0]).mm_name) __flowc_st28087 = fb_alloc_i32(icap); (c[0]).mm_name = __flowc_st28087; }
-  { __typeof__((c[0]).mm_type) __flowc_st28094 = fb_alloc_i32(icap); (c[0]).mm_type = __flowc_st28094; }
-  { __typeof__((c[0]).mm_init) __flowc_st28101 = fb_alloc_i32(icap); (c[0]).mm_init = __flowc_st28101; }
-  { __typeof__((c[0]).mm_line) __flowc_st28108 = fb_alloc_i32(icap); (c[0]).mm_line = __flowc_st28108; }
-  { __typeof__((c[0]).mm_synth) __flowc_st28115 = fb_alloc_i32(icap); (c[0]).mm_synth = __flowc_st28115; }
-  { __typeof__((c[0]).mm_params) __flowc_st28122 = fb_alloc_i32(icap); (c[0]).mm_params = __flowc_st28122; }
-  { __typeof__((c[0]).mm_pipe_m) __flowc_st28129 = fb_alloc_i32(icap); (c[0]).mm_pipe_m = __flowc_st28129; }
-  { __typeof__((c[0]).mm_pipe_p) __flowc_st28136 = fb_alloc_i32(icap); (c[0]).mm_pipe_p = __flowc_st28136; }
+  { __typeof__((c[0]).mm_flow) __flowc_st28011 = fb_alloc_i32(icap); (c[0]).mm_flow = __flowc_st28011; }
+  { __typeof__((c[0]).mm_kind) __flowc_st28018 = fb_alloc_i32(icap); (c[0]).mm_kind = __flowc_st28018; }
+  { __typeof__((c[0]).mm_name) __flowc_st28025 = fb_alloc_i32(icap); (c[0]).mm_name = __flowc_st28025; }
+  { __typeof__((c[0]).mm_type) __flowc_st28032 = fb_alloc_i32(icap); (c[0]).mm_type = __flowc_st28032; }
+  { __typeof__((c[0]).mm_init) __flowc_st28039 = fb_alloc_i32(icap); (c[0]).mm_init = __flowc_st28039; }
+  { __typeof__((c[0]).mm_line) __flowc_st28046 = fb_alloc_i32(icap); (c[0]).mm_line = __flowc_st28046; }
+  { __typeof__((c[0]).mm_synth) __flowc_st28053 = fb_alloc_i32(icap); (c[0]).mm_synth = __flowc_st28053; }
+  { __typeof__((c[0]).mm_params) __flowc_st28060 = fb_alloc_i32(icap); (c[0]).mm_params = __flowc_st28060; }
+  { __typeof__((c[0]).mm_pipe_m) __flowc_st28067 = fb_alloc_i32(icap); (c[0]).mm_pipe_m = __flowc_st28067; }
+  { __typeof__((c[0]).mm_pipe_p) __flowc_st28074 = fb_alloc_i32(icap); (c[0]).mm_pipe_p = __flowc_st28074; }
   (c[0]).nev = 0;
-  { __typeof__((c[0]).ev_flow) __flowc_st28149 = fb_alloc_i32(icap); (c[0]).ev_flow = __flowc_st28149; }
-  { __typeof__((c[0]).ev_target) __flowc_st28156 = fb_alloc_i32(icap); (c[0]).ev_target = __flowc_st28156; }
-  { __typeof__((c[0]).ev_expr) __flowc_st28163 = fb_alloc_i32(icap); (c[0]).ev_expr = __flowc_st28163; }
-  { __typeof__((c[0]).ev_line) __flowc_st28170 = fb_alloc_i32(icap); (c[0]).ev_line = __flowc_st28170; }
+  { __typeof__((c[0]).ev_flow) __flowc_st28087 = fb_alloc_i32(icap); (c[0]).ev_flow = __flowc_st28087; }
+  { __typeof__((c[0]).ev_target) __flowc_st28094 = fb_alloc_i32(icap); (c[0]).ev_target = __flowc_st28094; }
+  { __typeof__((c[0]).ev_expr) __flowc_st28101 = fb_alloc_i32(icap); (c[0]).ev_expr = __flowc_st28101; }
+  { __typeof__((c[0]).ev_line) __flowc_st28108 = fb_alloc_i32(icap); (c[0]).ev_line = __flowc_st28108; }
   (c[0]).nwh = 0;
-  { __typeof__((c[0]).wh_flow) __flowc_st28183 = fb_alloc_i32(icap); (c[0]).wh_flow = __flowc_st28183; }
-  { __typeof__((c[0]).wh_target) __flowc_st28190 = fb_alloc_i32(icap); (c[0]).wh_target = __flowc_st28190; }
-  { __typeof__((c[0]).wh_thr) __flowc_st28197 = fb_alloc_i32(icap); (c[0]).wh_thr = __flowc_st28197; }
-  { __typeof__((c[0]).wh_line) __flowc_st28204 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28204; }
+  { __typeof__((c[0]).wh_flow) __flowc_st28121 = fb_alloc_i32(icap); (c[0]).wh_flow = __flowc_st28121; }
+  { __typeof__((c[0]).wh_target) __flowc_st28128 = fb_alloc_i32(icap); (c[0]).wh_target = __flowc_st28128; }
+  { __typeof__((c[0]).wh_thr) __flowc_st28135 = fb_alloc_i32(icap); (c[0]).wh_thr = __flowc_st28135; }
+  { __typeof__((c[0]).wh_line) __flowc_st28142 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28142; }
   (c[0]).ney = 0;
-  { __typeof__((c[0]).ey_flow) __flowc_st28217 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28217; }
-  { __typeof__((c[0]).ey_ns) __flowc_st28233 = (int64_t*)(flow_mem_malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28233; }
-  { __typeof__((c[0]).ey_text) __flowc_st28240 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28240; }
-  { __typeof__((c[0]).ey_line) __flowc_st28247 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28247; }
+  { __typeof__((c[0]).ey_flow) __flowc_st28155 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28155; }
+  { __typeof__((c[0]).ey_ns) __flowc_st28171 = (int64_t*)(flow_mem_malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28171; }
+  { __typeof__((c[0]).ey_text) __flowc_st28178 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28178; }
+  { __typeof__((c[0]).ey_line) __flowc_st28185 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28185; }
   (c[0]).nbc = 0;
-  { __typeof__((c[0]).bc_kind) __flowc_st28260 = fb_alloc_i32(icap); (c[0]).bc_kind = __flowc_st28260; }
-  { __typeof__((c[0]).bc_owner) __flowc_st28267 = fb_alloc_i32(icap); (c[0]).bc_owner = __flowc_st28267; }
-  { __typeof__((c[0]).bc_target) __flowc_st28274 = fb_alloc_i32(icap); (c[0]).bc_target = __flowc_st28274; }
-  { __typeof__((c[0]).bc_expr) __flowc_st28281 = fb_alloc_i32(icap); (c[0]).bc_expr = __flowc_st28281; }
-  { __typeof__((c[0]).bc_line) __flowc_st28288 = fb_alloc_i32(icap); (c[0]).bc_line = __flowc_st28288; }
+  { __typeof__((c[0]).bc_kind) __flowc_st28198 = fb_alloc_i32(icap); (c[0]).bc_kind = __flowc_st28198; }
+  { __typeof__((c[0]).bc_owner) __flowc_st28205 = fb_alloc_i32(icap); (c[0]).bc_owner = __flowc_st28205; }
+  { __typeof__((c[0]).bc_target) __flowc_st28212 = fb_alloc_i32(icap); (c[0]).bc_target = __flowc_st28212; }
+  { __typeof__((c[0]).bc_expr) __flowc_st28219 = fb_alloc_i32(icap); (c[0]).bc_expr = __flowc_st28219; }
+  { __typeof__((c[0]).bc_line) __flowc_st28226 = fb_alloc_i32(icap); (c[0]).bc_line = __flowc_st28226; }
   (c[0]).niv = 0;
-  { __typeof__((c[0]).iv_flow) __flowc_st28301 = fb_alloc_i32(icap); (c[0]).iv_flow = __flowc_st28301; }
-  { __typeof__((c[0]).iv_kind) __flowc_st28308 = fb_alloc_i32(icap); (c[0]).iv_kind = __flowc_st28308; }
-  { __typeof__((c[0]).iv_expr) __flowc_st28315 = fb_alloc_i32(icap); (c[0]).iv_expr = __flowc_st28315; }
-  { __typeof__((c[0]).iv_line) __flowc_st28322 = fb_alloc_i32(icap); (c[0]).iv_line = __flowc_st28322; }
-  { __typeof__((c[0]).iv_text) __flowc_st28329 = fb_alloc_i32(icap); (c[0]).iv_text = __flowc_st28329; }
+  { __typeof__((c[0]).iv_flow) __flowc_st28239 = fb_alloc_i32(icap); (c[0]).iv_flow = __flowc_st28239; }
+  { __typeof__((c[0]).iv_kind) __flowc_st28246 = fb_alloc_i32(icap); (c[0]).iv_kind = __flowc_st28246; }
+  { __typeof__((c[0]).iv_expr) __flowc_st28253 = fb_alloc_i32(icap); (c[0]).iv_expr = __flowc_st28253; }
+  { __typeof__((c[0]).iv_line) __flowc_st28260 = fb_alloc_i32(icap); (c[0]).iv_line = __flowc_st28260; }
+  { __typeof__((c[0]).iv_text) __flowc_st28267 = fb_alloc_i32(icap); (c[0]).iv_text = __flowc_st28267; }
   (c[0]).ncn = 0;
-  { __typeof__((c[0]).cn_flow) __flowc_st28342 = fb_alloc_i32(icap); (c[0]).cn_flow = __flowc_st28342; }
-  { __typeof__((c[0]).cn_sm) __flowc_st28349 = fb_alloc_i32(icap); (c[0]).cn_sm = __flowc_st28349; }
-  { __typeof__((c[0]).cn_sp) __flowc_st28356 = fb_alloc_i32(icap); (c[0]).cn_sp = __flowc_st28356; }
-  { __typeof__((c[0]).cn_dm) __flowc_st28363 = fb_alloc_i32(icap); (c[0]).cn_dm = __flowc_st28363; }
-  { __typeof__((c[0]).cn_dp) __flowc_st28370 = fb_alloc_i32(icap); (c[0]).cn_dp = __flowc_st28370; }
-  { __typeof__((c[0]).cn_line) __flowc_st28377 = fb_alloc_i32(icap); (c[0]).cn_line = __flowc_st28377; }
+  { __typeof__((c[0]).cn_flow) __flowc_st28280 = fb_alloc_i32(icap); (c[0]).cn_flow = __flowc_st28280; }
+  { __typeof__((c[0]).cn_sm) __flowc_st28287 = fb_alloc_i32(icap); (c[0]).cn_sm = __flowc_st28287; }
+  { __typeof__((c[0]).cn_sp) __flowc_st28294 = fb_alloc_i32(icap); (c[0]).cn_sp = __flowc_st28294; }
+  { __typeof__((c[0]).cn_dm) __flowc_st28301 = fb_alloc_i32(icap); (c[0]).cn_dm = __flowc_st28301; }
+  { __typeof__((c[0]).cn_dp) __flowc_st28308 = fb_alloc_i32(icap); (c[0]).cn_dp = __flowc_st28308; }
+  { __typeof__((c[0]).cn_line) __flowc_st28315 = fb_alloc_i32(icap); (c[0]).cn_line = __flowc_st28315; }
   (c[0]).nrc = 0;
-  { __typeof__((c[0]).rc_flow) __flowc_st28390 = fb_alloc_i32(icap); (c[0]).rc_flow = __flowc_st28390; }
-  { __typeof__((c[0]).rc_name) __flowc_st28397 = fb_alloc_i32(icap); (c[0]).rc_name = __flowc_st28397; }
+  { __typeof__((c[0]).rc_flow) __flowc_st28328 = fb_alloc_i32(icap); (c[0]).rc_flow = __flowc_st28328; }
+  { __typeof__((c[0]).rc_name) __flowc_st28335 = fb_alloc_i32(icap); (c[0]).rc_name = __flowc_st28335; }
   (c[0]).nnames = 0;
-  { __typeof__((c[0]).nx_kind) __flowc_st28410 = fb_alloc_i32(icap); (c[0]).nx_kind = __flowc_st28410; }
-  { __typeof__((c[0]).nx_name) __flowc_st28417 = fb_alloc_i32(icap); (c[0]).nx_name = __flowc_st28417; }
+  { __typeof__((c[0]).nx_kind) __flowc_st28348 = fb_alloc_i32(icap); (c[0]).nx_kind = __flowc_st28348; }
+  { __typeof__((c[0]).nx_name) __flowc_st28355 = fb_alloc_i32(icap); (c[0]).nx_name = __flowc_st28355; }
   (c[0]).err = 0;
   (c[0]).err_flow = (0 - 1);
   (c[0]).err_line = 0;
   (c[0]).err_col = 0;
-  { __typeof__((c[0]).emsg) __flowc_st28450 = bb_new(256); (c[0]).emsg = __flowc_st28450; }
-  { __typeof__((c[0]).ehint) __flowc_st28457 = bb_new(256); (c[0]).ehint = __flowc_st28457; }
+  { __typeof__((c[0]).emsg) __flowc_st28388 = bb_new(256); (c[0]).emsg = __flowc_st28388; }
+  { __typeof__((c[0]).ehint) __flowc_st28395 = bb_new(256); (c[0]).ehint = __flowc_st28395; }
   (c[0]).has_hint = 0;
   (c[0]).cur = 0;
-  { __typeof__((c[0]).out) __flowc_st28480 = bb_new(((n * 2) + 1024)); (c[0]).out = __flowc_st28480; }
+  { __typeof__((c[0]).out) __flowc_st28418 = bb_new(((n * 2) + 1024)); (c[0]).out = __flowc_st28418; }
   return c;
 }
 
@@ -34862,7 +34843,7 @@ void flowc_parser_free(Parser p) {
 }
 
 void flowc_parser_advance(Parser* p) {
-  { __typeof__((p[0]).cur) __flowc_st891 = flowc_lexer_next((&(p[0]).lex)); (p[0]).cur = __flowc_st891; }
+  { __typeof__((p[0]).cur) __flowc_st890 = flowc_lexer_next((&(p[0]).lex)); (p[0]).cur = __flowc_st890; }
 }
 
 int32_t flowc_parser_check(Parser p, int32_t kind) {
@@ -35318,7 +35299,7 @@ int32_t flowc_parse_atom(Parser* p) {
 }
   (((p[0]).arena).nodes[id]).name_start = (tok).start;
   (((p[0]).arena).nodes[id]).name_end = (tok).end;
-  { __typeof__((((p[0]).arena).nodes[id]).ival) __flowc_st2993 = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end); (((p[0]).arena).nodes[id]).ival = __flowc_st2993; }
+  { __typeof__((((p[0]).arena).nodes[id]).ival) __flowc_st2992 = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end); (((p[0]).arena).nodes[id]).ival = __flowc_st2992; }
   flowc_parser_advance(p);
   return flowc_parse_quantity(p, id, (tok).end);
 }
@@ -36689,7 +36670,7 @@ int32_t flowc_parse_apply_pipe(Parser* p, int32_t left, int32_t right) {
   prev = arg;
   arg = (((p[0]).arena).nodes[arg]).next;
 }
-  { __typeof__((((p[0]).arena).nodes[right]).a) __flowc_st9257 = flowc_ast_chain_push((&(p[0]).arena), left, (((p[0]).arena).nodes[right]).a); (((p[0]).arena).nodes[right]).a = __flowc_st9257; }
+  { __typeof__((((p[0]).arena).nodes[right]).a) __flowc_st9256 = flowc_ast_chain_push((&(p[0]).arena), left, (((p[0]).arena).nodes[right]).a); (((p[0]).arena).nodes[right]).a = __flowc_st9256; }
   return right;
 }
   int32_t name_src = right;
@@ -36701,7 +36682,7 @@ int32_t flowc_parse_apply_pipe(Parser* p, int32_t left, int32_t right) {
   flowc_parser_fail(p);
   return AST_NONE;
 }
-  { __typeof__((((p[0]).arena).nodes[id]).a) __flowc_st9324 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, left); (((p[0]).arena).nodes[id]).a = __flowc_st9324; }
+  { __typeof__((((p[0]).arena).nodes[id]).a) __flowc_st9323 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, left); (((p[0]).arena).nodes[id]).a = __flowc_st9323; }
   (((p[0]).arena).nodes[id]).name_start = (((p[0]).arena).nodes[name_src]).name_start;
   (((p[0]).arena).nodes[id]).name_end = (((p[0]).arena).nodes[name_src]).name_end;
   (((p[0]).arena).nodes[id]).ival = (((p[0]).arena).nodes[name_src]).ival;
@@ -36731,7 +36712,7 @@ int32_t flowc_parse_if_chain(Parser* p, int32_t start) {
   flowc_parser_fail(p);
   return AST_NONE;
 }
-  { __typeof__((((p[0]).arena).nodes[eb2]).a) __flowc_st9501 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, nested); (((p[0]).arena).nodes[eb2]).a = __flowc_st9501; }
+  { __typeof__((((p[0]).arena).nodes[eb2]).a) __flowc_st9500 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, nested); (((p[0]).arena).nodes[eb2]).a = __flowc_st9500; }
   elif_else = eb2;
 } else {
   if (flowc_parser_check_kw(p[0], KW_ELSE) == 1) {
@@ -36884,7 +36865,7 @@ int32_t flowc_parse_stmt_inner(Parser* p) {
   flowc_parser_fail(p);
   return AST_NONE;
 }
-  { __typeof__((((p[0]).arena).nodes[eb2]).a) __flowc_st10264 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, nested); (((p[0]).arena).nodes[eb2]).a = __flowc_st10264; }
+  { __typeof__((((p[0]).arena).nodes[eb2]).a) __flowc_st10263 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, nested); (((p[0]).arena).nodes[eb2]).a = __flowc_st10263; }
   elif_else = eb2;
 } else {
   if (flowc_parser_check_kw(p[0], KW_ELSE) == 1) {
@@ -36905,7 +36886,7 @@ int32_t flowc_parse_stmt_inner(Parser* p) {
   flowc_parser_fail(p);
   return AST_NONE;
 }
-  { __typeof__((((p[0]).arena).nodes[eb]).a) __flowc_st10383 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, elif_id); (((p[0]).arena).nodes[eb]).a = __flowc_st10383; }
+  { __typeof__((((p[0]).arena).nodes[eb]).a) __flowc_st10382 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, elif_id); (((p[0]).arena).nodes[eb]).a = __flowc_st10382; }
   else_b = eb;
 } else {
   if (flowc_parser_check_kw(p[0], KW_ELSE) == 1) {
@@ -37125,7 +37106,7 @@ int32_t flowc_parse_stmt_inner(Parser* p) {
 }
   (((p[0]).arena).nodes[sub]).name_start = (tok).start;
   (((p[0]).arena).nodes[sub]).name_end = (tok).end;
-  { __typeof__((((p[0]).arena).nodes[sub]).ival) __flowc_st11490 = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end); (((p[0]).arena).nodes[sub]).ival = __flowc_st11490; }
+  { __typeof__((((p[0]).arena).nodes[sub]).ival) __flowc_st11489 = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end); (((p[0]).arena).nodes[sub]).ival = __flowc_st11489; }
   flowc_parser_advance(p);
 } else {
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
@@ -39559,8 +39540,7 @@ int32_t flowc_parse_flow_item(Parser* p) {
   return flowc_parse_flow_item_new(p, FLOW_ITEM_SOLVER, start, ws, we);
 }
   int32_t is_always = flowc_parser_ident_is(q, "always");
-  int32_t is_guarantee = flowc_parser_ident_is(q, "guarantee");
-  if (is_always == 1 || flowc_parser_ident_is(q, "never") == 1 || is_guarantee == 1) {
+  if (is_always == 1 || flowc_parser_ident_is(q, "never") == 1) {
   flowc_parser_advance(p);
   flowc_parser_advance(p);
   int32_t clauses = AST_NONE;
@@ -39583,10 +39563,6 @@ int32_t flowc_parse_flow_item(Parser* p) {
   int32_t ik = FLOW_ITEM_NEVER;
   if (is_always == 1) {
   ik = FLOW_ITEM_ALWAYS;
-} else {
-  if (is_guarantee == 1) {
-  ik = FLOW_ITEM_GUARANTEE;
-}
 }
   int32_t it = flowc_parse_flow_item_new(p, ik, start, ws, we);
   if (it == AST_NONE) {
@@ -69857,7 +69833,6 @@ typedef struct CgenBuf {
   int32_t eff_len;
   int32_t fiber_main;
   int32_t checks;
-  int32_t safety;
   int32_t lval;
   const char* dbg_file;
   int32_t dbg_pos;
@@ -70345,7 +70320,7 @@ CgenBuf flowc_cgen_buf_init(uint8_t* out, int32_t cap) {
   CgenBuf __flowc_sret_slot;
   CgenBuf* __flowc_sret = &__flowc_sret_slot;
   flow_mem_note_copy(sizeof(*__flowc_sret));
-  *__flowc_sret = (CgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0, .sigs = NULL, .sigs_len = 0, .cembed_names = NULL, .cembed_offs = NULL, .cembed_lens = NULL, .cembed_count = 0, .cap_starts = NULL, .cap_ends = NULL, .cap_count = 0, .in_lambda = 0, .lambda_cap_lambda = NULL, .lambda_cap_start = NULL, .lambda_cap_end = NULL, .lambda_cap_count = 0, .mono_tp_starts = NULL, .mono_tp_ends = NULL, .mono_tp_concrete = NULL, .mono_ntp = 0, .cur_fn = AST_NONE, .defer_ids = NULL, .defer_len = 0, .loop_defer_base = 0, .tail_fn = AST_NONE, .eff = NULL, .eff_len = 0, .fiber_main = 0, .checks = 0, .safety = 0, .lval = 0, .dbg_file = (const char*)(NULL), .dbg_pos = 0, .dbg_line = 1, .plan_order = NULL, .plan_has = NULL, .plan_lo = NULL, .plan_hi = NULL, .plan_seen = NULL, .explain = 0, .perf_report = 0, .handle_ids = NULL, .handle_len = 0, .bounds_loop_start = (-1), .bounds_loop_end = (-1), .bounds_span_start = (-1), .bounds_span_end = (-1), .len_hoist_span_start = (-1), .len_hoist_span_end = (-1), .len_hoist_id = AST_NONE, .bounds_hi_val = (-1), .bounds_hi_body = AST_NONE, .root = AST_NONE, .na_clone = 0, .sret = 0, .sig_head = NULL, .sig_next = NULL, .sig_off = NULL, .sig_mask = 0 };
+  *__flowc_sret = (CgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0, .sigs = NULL, .sigs_len = 0, .cembed_names = NULL, .cembed_offs = NULL, .cembed_lens = NULL, .cembed_count = 0, .cap_starts = NULL, .cap_ends = NULL, .cap_count = 0, .in_lambda = 0, .lambda_cap_lambda = NULL, .lambda_cap_start = NULL, .lambda_cap_end = NULL, .lambda_cap_count = 0, .mono_tp_starts = NULL, .mono_tp_ends = NULL, .mono_tp_concrete = NULL, .mono_ntp = 0, .cur_fn = AST_NONE, .defer_ids = NULL, .defer_len = 0, .loop_defer_base = 0, .tail_fn = AST_NONE, .eff = NULL, .eff_len = 0, .fiber_main = 0, .checks = 0, .lval = 0, .dbg_file = (const char*)(NULL), .dbg_pos = 0, .dbg_line = 1, .plan_order = NULL, .plan_has = NULL, .plan_lo = NULL, .plan_hi = NULL, .plan_seen = NULL, .explain = 0, .perf_report = 0, .handle_ids = NULL, .handle_len = 0, .bounds_loop_start = (-1), .bounds_loop_end = (-1), .bounds_span_start = (-1), .bounds_span_end = (-1), .len_hoist_span_start = (-1), .len_hoist_span_end = (-1), .len_hoist_id = AST_NONE, .bounds_hi_val = (-1), .bounds_hi_body = AST_NONE, .root = AST_NONE, .na_clone = 0, .sret = 0, .sig_head = NULL, .sig_next = NULL, .sig_off = NULL, .sig_mask = 0 };
   return *__flowc_sret;
 }
 
@@ -76504,11 +76479,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st28395 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st28395; }
-  { __typeof__((w[0]).plan_has) __flowc_st28407 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st28407; }
-  { __typeof__((w[0]).plan_seen) __flowc_st28419 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st28419; }
-  { __typeof__((w[0]).plan_lo) __flowc_st28431 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st28431; }
-  { __typeof__((w[0]).plan_hi) __flowc_st28443 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st28443; }
+  { __typeof__((w[0]).plan_order) __flowc_st28385 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st28385; }
+  { __typeof__((w[0]).plan_has) __flowc_st28397 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st28397; }
+  { __typeof__((w[0]).plan_seen) __flowc_st28409 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st28409; }
+  { __typeof__((w[0]).plan_lo) __flowc_st28421 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st28421; }
+  { __typeof__((w[0]).plan_hi) __flowc_st28433 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st28433; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -77736,9 +77711,7 @@ void flowc_cgen_emit_checks_prelude(CgenBuf* w) {
   flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_MOD\n#define FLOW_CHECKED_MOD(L, R) (((R) != 0) ? ((L) % (R)) : (flow_div_by_zero_handler(), (L) * 0))\n#endif\n");
   flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHL\n#define FLOW_CHECKED_SHL(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull)) && ((L) >= 0)) ? ((L) << (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n");
   flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHR\n#define FLOW_CHECKED_SHR(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull))) ? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n");
-  if ((w[0]).safety == 1) {
   flowc_cgen_puts(w, "#ifndef FLOW_NONNULL\n#define FLOW_NONNULL(P) ((P) != NULL ? (P) : (flow_fault_handler(\"null pointer dereference\"), (P)))\n#endif\n");
-}
   flowc_cgen_puts(w, "#endif\n");
 }
 
@@ -78644,7 +78617,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t uk = ((arena).nodes[((arena).nodes[id]).a]).kind;
   if (uk != AST_IDENT && uk != AST_INT && uk != AST_FLOAT && uk != AST_BOOL && uk != AST_STRING && uk != AST_CALL && uk != AST_INDEX && uk != AST_FIELD_ACCESS) {
   flowc_cgen_putc(w, 40);
-  if (((arena).nodes[id]).ival == TOK_STAR && (w[0]).safety == 1) {
+  if (((arena).nodes[id]).ival == TOK_STAR && (w[0]).checks == 1) {
   flowc_cgen_puts(w, "FLOW_NONNULL(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_putc(w, 41);
@@ -78656,7 +78629,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   if (((arena).nodes[id]).ival == TOK_AMP) {
   (w[0]).lval = 1;
 }
-  if (((arena).nodes[id]).ival == TOK_STAR && (w[0]).safety == 1) {
+  if (((arena).nodes[id]).ival == TOK_STAR && (w[0]).checks == 1) {
   flowc_cgen_puts(w, "FLOW_NONNULL(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_putc(w, 41);
@@ -78802,7 +78775,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_emit_array_lit_ctype(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
 } else {
-  if ((w[0]).safety == 1 && flowc_cgen_base_is_ptr(w, arena, src, ((arena).nodes[id]).a) == 1) {
+  if ((w[0]).checks == 1 && flowc_cgen_base_is_ptr(w, arena, src, ((arena).nodes[id]).a) == 1) {
   flowc_cgen_puts(w, "FLOW_NONNULL(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_putc(w, 41);
@@ -79607,7 +79580,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   int32_t is_ptr = flowc_cgen_base_is_ptr(w, arena, src, base);
   if (is_ptr == 1) {
-  if ((w[0]).safety == 1) {
+  if ((w[0]).checks == 1) {
   flowc_cgen_puts(w, "FLOW_NONNULL(");
 }
   bool wrap = base != AST_NONE && ((arena).nodes[base]).kind == AST_CAST;
@@ -79618,7 +79591,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   if (wrap) {
   flowc_cgen_putc(w, 41);
 }
-  if ((w[0]).safety == 1) {
+  if ((w[0]).checks == 1) {
   flowc_cgen_putc(w, 41);
 }
   flowc_cgen_puts(w, "->");
@@ -85754,19 +85727,6 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
   (w).checks = 1;
 }
 }
-  const char* prof = getenv("FLOW_PROFILE");
-  if ((uint8_t*)(prof) != NULL) {
-  if (strcmp(prof, "safety") == 0 || strcmp(prof, "flight") == 0) {
-  (w).safety = 1;
-}
-}
-  const char* sft = getenv("FLOWC_SAFETY");
-  if ((uint8_t*)(sft) != NULL) {
-  uint8_t* sp = (uint8_t*)((uint8_t*)(sft));
-  if (sp[0] == 49 && sp[1] == 0) {
-  (w).safety = 1;
-}
-}
   uint8_t* prf = (uint8_t*)((uint8_t*)(getenv("FLOWC_PERF_REPORT")));
   if (prf != NULL) {
   if (prf[0] == 49 && prf[1] == 0) {
@@ -85775,7 +85735,6 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
 }
   if (flowc_cgen_library_mode() == 1) {
   (w).checks = 0;
-  (w).safety = 0;
   (w).fiber_main = 0;
 }
   uint8_t* dbg_env = (uint8_t*)((uint8_t*)(getenv("FLOWC_DEBUG_INFO")));
@@ -86001,7 +85960,7 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
   if (flowc_cgen_uses_ui_state(arena, src) == 1) {
   flowc_cgen_puts((&w), "#ifndef FLOWC_UI_STATE\n#define FLOWC_UI_STATE\nvoid* _ui_state = NULL;\n#endif\n");
 }
-  if ((w).checks == 1 || (w).safety == 1) {
+  if ((w).checks == 1) {
   flowc_cgen_emit_checks_prelude((&w));
 }
   int32_t param_span_buf[128] = {  };

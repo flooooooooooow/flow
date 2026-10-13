@@ -1,9 +1,7 @@
 # Flow 2.0 Ergonomic Memory Safety Architecture
 
-> Note: this document tracks the design checklist for Epic [#679](https://github.com/flooooooooooow/flow/issues/679) (compile-time spatial and temporal memory safety). For the primary Flow roadmap across all domains, see [ROADMAP.md](../../ROADMAP.md).
-
 ## Overview
-Flow 2.0 achieves compile-time spatial and temporal memory safety without verbose lifetime annotations or restrictive ownership constraints.
+Flow 2.0 aims to achieve compile-time spatial and temporal memory safety without verbose lifetime annotations or restrictive ownership constraints.
 
 Tracker: GitHub epic [#679](https://github.com/flooooooooooow/flow/issues/679).
 Design: [lifetime-domains.md](../language/lifetime-domains.md).

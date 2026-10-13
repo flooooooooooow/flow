@@ -2616,9 +2616,6 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
     if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "never") == 1 {
         return fb_parse_invariant(c, f, 2, "never")
     }
-    if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "guarantee") == 1 {
-        return fb_parse_invariant(c, f, 3, "guarantee")
-    }
     if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "recognize") == 1 {
         if c[0].f_rec[f] == 1 {
             let m3: ptr<ByteBuf> = fb_perr(c)
@@ -3961,18 +3958,16 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
         }
         v = v + 1
     }
-    # always, then never, then guarantee
+    # always, then never
     let mut kind: i32 = 1
-    while kind <= 3 {
+    while kind <= 2 {
         let mut q: i32 = 0
         while q < c[0].niv {
             if c[0].iv_flow[q] == f and c[0].iv_kind[q] == kind {
                 let mut word: string = "always"
                 if kind == 2 { word = "never" }
-                if kind == 3 { word = "guarantee" }
                 let mut ws: string = "'always' clause"
                 if kind == 2 { ws = "'never' clause" }
-                if kind == 3 { ws = "'guarantee' clause" }
                 if fb_check_pure_s(c, c[0].iv_expr[q], f, ws, c[0].iv_line[q]) < 0 { return 0 - 1 }
                 if fb_check_booleanish(c, c[0].iv_expr[q], f, word, c[0].iv_line[q]) < 0 { return 0 - 1 }
             }
@@ -4938,11 +4933,11 @@ function fb_count_clauses(c: ptr<Fb>, f: i32) -> i32 {
     return n
 }
 
-# The idx-th invariant clause (always clauses first, then never, then guarantee).
+# The idx-th invariant clause (always clauses first, then never).
 function fb_nth_clause(c: ptr<Fb>, f: i32, idx: i32) -> i32 {
     let mut n: i32 = 0
     let mut kind: i32 = 1
-    while kind <= 3 {
+    while kind <= 2 {
         let mut i: i32 = 0
         while i < c[0].niv {
             if c[0].iv_flow[i] == f and c[0].iv_kind[i] == kind {
@@ -5012,11 +5007,7 @@ function fb_emit_step(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
             fb_put_fname(mb, c, f)
             bb_putc(mb, 58)
             bb_put_i32(mb, c[0].iv_line[cl])
-            if c[0].iv_kind[cl] == 3 {
-                bb_puts(mb, ": guarantee violated: ")
-            } else {
-                bb_puts(mb, ": invariant violated: ")
-            }
+            bb_puts(mb, ": invariant violated: ")
             bb_puts(mb, fb_s(c, c[0].iv_text[cl]) as string)
             fb_put_escaped(b, mb[0].p)
             bb_free(mb)
@@ -5074,7 +5065,7 @@ function fb_emit_check(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
     let mut q: i32 = 0
     while q < n {
         let cl: i32 = fb_nth_clause(c, f, q)
-        if c[0].iv_kind[cl] == 1 or c[0].iv_kind[cl] == 3 {
+        if c[0].iv_kind[cl] == 1 {
             bb_puts(b, "if !(")
         } else {
             bb_puts(b, "if (")

@@ -44,13 +44,10 @@ Welcome to the Flow programming language documentation!
 - [flow-verify](third-party/flow-verify.md) - Formal math proofs and Claim Paths
 - [Proof Catalog](third-party/flow-verify-catalog.md) - Auto-generated proof index
 
-## Strategy and Roadmaps
+## Documentation Project
 
-- [Language Roadmap](../ROADMAP.md) - Strategic roadmap and physical beachhead phases
-- [Vision](../VISION.md) - Physical systems evolution thesis and architecture
-- [Memory Safety Architecture](project/roadmap-2.0.md) - Design checklist for Epic #679
-- [Wiki Roadmap](wiki-roadmap.md) - Documentation platform delivery plan
 - [Wiki Strategy](wiki-strategy.md) - Long-term documentation architecture
+- [Wiki Roadmap](wiki-roadmap.md) - Phased wiki delivery plan
 
 ## Verification
 
@@ -69,7 +66,7 @@ Welcome to the Flow programming language documentation!
 
 - [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
 - [Changelog](project/CHANGELOG.md) - Version history and audit fixes
-- [Navigation Index](NEXT.md) - Documentation navigation surface
+- [What's Next](NEXT.md) - Prioritized roadmap
 - [Audit Report (2026-02-10)](project/archive/AUDIT_2026-02-10.md) - Latest full audit findings
 - [Development](DEVELOPMENT.md) - Building Flow
 

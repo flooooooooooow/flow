@@ -1,32 +1,6 @@
-# FLOW_NONNULL pointer dereference guards under safety profile.
-struct Point {
-    x: f64,
-    y: f64
-}
-
-function get_x(p: ptr<Point>) -> f64 {
-    return p.x
-}
-
-function get_elem(p: ptr<i32>) -> i32 {
-    return p[0]
-}
-
-function get_val(p: ptr<i32>) -> i32 {
-    return *p
-}
-
+# A null dereference should output FLOW_NONNULL.
 function main() -> i32 {
-    let mut pt: Point = Point { x: 42.0, y: 10.0 }
-    let mut val: i32 = 7
-    if get_x(&pt) != 42.0 {
-        return 1
-    }
-    if get_elem(&val) != 7 {
-        return 2
-    }
-    if get_val(&val) != 7 {
-        return 3
-    }
-    return 0
+    let p: ptr<i32> = null
+    let x: i32 = p[0]
+    return x
 }

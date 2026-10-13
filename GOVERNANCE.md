@@ -2,7 +2,7 @@
 
 Flow version 2.0.0 and later are proprietary. All rights reserved. See the
 [LICENSE](LICENSE) for terms. Version 1.0.2 and earlier remain available under
-the MIT License ([licenses/LICENSE-1.x-MIT](licenses/LICENSE-1.x-MIT)).
+the MIT License ([LICENSE-1.x-MIT](LICENSE-1.x-MIT)).
 
 ## Decision authority
 

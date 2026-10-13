@@ -38,7 +38,7 @@ import .ast {
     PIPE_BLOCK_FORK, PIPE_BLOCK_STAGE, PIPE_BLOCK_CHOOSE,
     FLOW_ITEM_MEMBER, FLOW_ITEM_EVOLVES, FLOW_ITEM_WHEN, FLOW_ITEM_EVERY,
     FLOW_ITEM_SOLVER, FLOW_ITEM_ALWAYS, FLOW_ITEM_NEVER, FLOW_ITEM_RECOGNIZE,
-    FLOW_ITEM_CONNECT, FLOW_ITEM_CHILD, FLOW_ITEM_BECOMES, FLOW_ITEM_GUARANTEE,
+    FLOW_ITEM_CONNECT, FLOW_ITEM_CHILD, FLOW_ITEM_BECOMES,
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push,
     flowc_ast_type_set_span_mutable
 }
@@ -5108,10 +5108,9 @@ function flowc_parse_flow_item(p: ptr<Parser>) -> i32 {
             flowc_parser_advance(p)
             return flowc_parse_flow_item_new(p, FLOW_ITEM_SOLVER, start, ws, we)
         }
-        # always { expr+ } / never { expr+ } / guarantee { expr+ }
+        # always { expr+ } / never { expr+ }
         let is_always: i32 = flowc_parser_ident_is(q, "always")
-        let is_guarantee: i32 = flowc_parser_ident_is(q, "guarantee")
-        if is_always == 1 or flowc_parser_ident_is(q, "never") == 1 or is_guarantee == 1 {
+        if is_always == 1 or flowc_parser_ident_is(q, "never") == 1 {
             flowc_parser_advance(p)
             flowc_parser_advance(p)
             let mut clauses: i32 = AST_NONE
@@ -5134,8 +5133,6 @@ function flowc_parse_flow_item(p: ptr<Parser>) -> i32 {
             let mut ik: i32 = FLOW_ITEM_NEVER
             if is_always == 1 {
                 ik = FLOW_ITEM_ALWAYS
-            } elif is_guarantee == 1 {
-                ik = FLOW_ITEM_GUARANTEE
             }
             let it: i32 = flowc_parse_flow_item_new(p, ik, start, ws, we)
             if it == AST_NONE {
