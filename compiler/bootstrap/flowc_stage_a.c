@@ -6178,6 +6178,9 @@ int32_t is_semantic_attr(const char* name) {
   if (streq(name, "gpu") == 1) {
   return 1;
 }
+  if (streq(name, "hardware") == 1) {
+  return 1;
+}
   if (streq(name, "rt_safe") == 1) {
   return 1;
 }
@@ -21159,6 +21162,7 @@ SemStrVec* sem_known_attributes() {
   sem_sv_push(v, "flow_api");
   sem_sv_push(v, "gpu");
   sem_sv_push(v, "guard");
+  sem_sv_push(v, "hardware");
   sem_sv_push(v, "hot");
   sem_sv_push(v, "inline");
   sem_sv_push(v, "interp");

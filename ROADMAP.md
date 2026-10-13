@@ -37,7 +37,7 @@ grammar cards in [north-star.md](docs/vision/north-star.md).
 | **W2** | MMIO, bitfields, fixed-point + saturating | ✅ complete: `lib/stdlib/mmio.flow`, `lib/stdlib/bitfield.flow`, `lib/stdlib/fixed_point.flow` (`Q16_16`, `Q8_24`), `saturating_*` helpers in `checked_arith.flow` |
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
 | **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
-| **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
+| **W5** | `@hardware` → RTL; CDC; deploy partitions | ✅ complete: `lib/stdlib/hardware.flow` (`ClockDomain`, `Register`, `cdc_sync`), `@hardware` compiler attribute validation, `examples/hardware/blink.flow`, and `tests/lang/test_hardware_cdc.flow`. |
 | **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial: Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null/fault handler: #288. |
 
 Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.

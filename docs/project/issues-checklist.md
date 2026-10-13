@@ -151,5 +151,5 @@
 - [x] #1498 [roadmap:w2] **W2** https://github.com/flooooooooooow/flow/issues/1498
 - [ ] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
 - [ ] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
-- [ ] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
+- [x] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
 - [ ] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502

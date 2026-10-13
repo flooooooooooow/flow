@@ -9,7 +9,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 
 ## Totals
 
-- **1617** files checked, **1443** pass (89.2%), **174** fail
+- **1618** files checked, **1444** pass (89.2%), **174** fail
   - parser: 156
   - transpile error: 16
   - cgen (invalid C): 2
@@ -58,6 +58,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/generics_traits/` | 10 | 0 |
 | `examples/gpu/` | 36 | 0 |
 | `examples/graphics/` | 4 | 0 |
+| `examples/hardware/` | 1 | 0 |
 | `examples/interop/` | 1 | 0 |
 | `examples/linalg/` | 4 | 0 |
 | `examples/ml/` | 19 | 0 |
@@ -679,6 +680,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/graphics/graphics.flow` | pass |  |
 | `examples/graphics/shader_demo.flow` | pass |  |
 | `examples/graphics/text_demo.flow` | pass |  |
+| `examples/hardware/blink.flow` | pass |  |
 | `examples/interop/python_embed.flow` | pass |  |
 | `examples/linalg/blas_demo.flow` | pass |  |
 | `examples/linalg/lu_decomposition.flow` | pass |  |
