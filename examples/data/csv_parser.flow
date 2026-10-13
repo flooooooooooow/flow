@@ -196,10 +196,10 @@ function main() -> i32 {
         56, 55, 10,             # "87\n"
         67, 104, 97, 114, 108, 105, 101, 44,  # "Charlie,"
         50, 50, 44,             # "22,"
-        57, 49               # "91\0"
+        57, 49, 0               # "91\0"
     ]
     let data_ptr: ptr<u8> = csv_data
-    let data_len: i32 = 50
+    let data_len: i32 = 51
     
     # Create parser
     let parser: CSVParser = parser_create(44, 34, 1)  # delimiter=',', quote='"'

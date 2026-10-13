@@ -183,7 +183,7 @@ function python_setup(rev: string) {
     let tar: string = WORK + "/pyref.tar"
     let ga: ptr<ProcStrs> = sl_of3("git", "archive", "-o")
     sl_push2(ga, tar, rev)
-    sl_push2(ga, "src/flow", "compiler/bootstrap/flowc_stage_a.c")
+    sl_push(ga, "compiler/bootstrap/flowc_stage_a.c")
     check(run_argv(ga))
     let tx: ptr<ProcStrs> = sl_of3("tar", "-x", "-f")
     sl_push(tx, tar)

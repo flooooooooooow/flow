@@ -142,10 +142,10 @@ function main() -> i32 {
         56, 55, 10,             # "87\n"
         51, 9,                 # "3\t"
         67, 104, 97, 114, 108, 105, 101, 9,  # "Charlie\t"
-        57, 49               # "91\0"
+        57, 49, 0               # "91\0"
     ]
     let data_ptr: ptr<u8> = tsv_data
-    let data_len: i32 = 46
+    let data_len: i32 = 47
 
     println("Parsing TSV data:")
     println("  id\tname\tscore")
