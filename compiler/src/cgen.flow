@@ -7520,6 +7520,7 @@ function flowc_cgen_emit_checks_prelude(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_MOD\n#define FLOW_CHECKED_MOD(L, R) (((R) != 0) ? ((L) % (R)) : (flow_div_by_zero_handler(), (L) * 0))\n#endif\n")
     flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHL\n#define FLOW_CHECKED_SHL(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull)) && ((L) >= 0)) ? ((L) << (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n")
     flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHR\n#define FLOW_CHECKED_SHR(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull))) ? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n")
+    flowc_cgen_puts(w, "#ifndef FLOW_NONNULL\n#define FLOW_NONNULL(P) ((P) != NULL ? (P) : (flow_fault_handler(\"null pointer dereference\"), (P)))\n#endif\n")
     flowc_cgen_puts(w, "#endif\n")
 }
 
@@ -8496,14 +8497,26 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let uk: i32 = arena.nodes[arena.nodes[id].a].kind
         if uk != AST_IDENT and uk != AST_INT and uk != AST_FLOAT and uk != AST_BOOL and uk != AST_STRING and uk != AST_CALL and uk != AST_INDEX and uk != AST_FIELD_ACCESS {
             flowc_cgen_putc(w, 40)
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            if arena.nodes[id].ival == TOK_STAR and w[0].checks == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
             flowc_cgen_putc(w, 41)
         } else {
             # `&a[i]` takes the address of an lvalue.
             if arena.nodes[id].ival == TOK_AMP {
                 w[0].lval = 1
             }
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            if arena.nodes[id].ival == TOK_STAR and w[0].checks == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
             w[0].lval = 0
         }
         flowc_cgen_putc(w, 41)
@@ -8662,7 +8675,13 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_emit_array_lit_ctype(w, arena, src, arena.nodes[id].a)
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         } else {
-            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            if w[0].checks == 1 and flowc_cgen_base_is_ptr(w, arena, src, arena.nodes[id].a) == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_putc(w, 41)
+            } else {
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            }
         }
         flowc_cgen_putc(w, 91)
         w[0].lval = 0
@@ -9455,6 +9474,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         # a call or a cast returning ptr<P> reads through it too (#1065).
         let is_ptr: i32 = flowc_cgen_base_is_ptr(w, arena, src, base)
         if is_ptr == 1 {
+            if w[0].checks == 1 {
+                flowc_cgen_puts(w, "FLOW_NONNULL(")
+            }
             # A cast binds looser than `->` in C: ((P*)(x))->f.
             let wrap: bool = base != AST_NONE and arena.nodes[base].kind == AST_CAST
             if wrap {
@@ -9462,6 +9484,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             }
             flowc_cgen_emit_expr(w, arena, src, base)
             if wrap {
+                flowc_cgen_putc(w, 41)
+            }
+            if w[0].checks == 1 {
                 flowc_cgen_putc(w, 41)
             }
             flowc_cgen_puts(w, "->")

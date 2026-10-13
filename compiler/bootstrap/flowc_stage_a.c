@@ -77711,6 +77711,7 @@ void flowc_cgen_emit_checks_prelude(CgenBuf* w) {
   flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_MOD\n#define FLOW_CHECKED_MOD(L, R) (((R) != 0) ? ((L) % (R)) : (flow_div_by_zero_handler(), (L) * 0))\n#endif\n");
   flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHL\n#define FLOW_CHECKED_SHL(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull)) && ((L) >= 0)) ? ((L) << (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n");
   flowc_cgen_puts(w, "#ifndef FLOW_CHECKED_SHR\n#define FLOW_CHECKED_SHR(L, R) ((((R) >= 0) && ((unsigned long long)(R) < (sizeof(L) * 8ull))) ? ((L) >> (R)) : (flow_shift_ub_handler(), (L) * 0))\n#endif\n");
+  flowc_cgen_puts(w, "#ifndef FLOW_NONNULL\n#define FLOW_NONNULL(P) ((P) != NULL ? (P) : (flow_fault_handler(\"null pointer dereference\"), (P)))\n#endif\n");
   flowc_cgen_puts(w, "#endif\n");
 }
 
@@ -78616,13 +78617,25 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t uk = ((arena).nodes[((arena).nodes[id]).a]).kind;
   if (uk != AST_IDENT && uk != AST_INT && uk != AST_FLOAT && uk != AST_BOOL && uk != AST_STRING && uk != AST_CALL && uk != AST_INDEX && uk != AST_FIELD_ACCESS) {
   flowc_cgen_putc(w, 40);
+  if (((arena).nodes[id]).ival == TOK_STAR && (w[0]).checks == 1) {
+  flowc_cgen_puts(w, "FLOW_NONNULL(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_putc(w, 41);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+}
   flowc_cgen_putc(w, 41);
 } else {
   if (((arena).nodes[id]).ival == TOK_AMP) {
   (w[0]).lval = 1;
 }
+  if (((arena).nodes[id]).ival == TOK_STAR && (w[0]).checks == 1) {
+  flowc_cgen_puts(w, "FLOW_NONNULL(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_putc(w, 41);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+}
   (w[0]).lval = 0;
 }
   flowc_cgen_putc(w, 41);
@@ -78762,7 +78775,13 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_emit_array_lit_ctype(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
 } else {
+  if ((w[0]).checks == 1 && flowc_cgen_base_is_ptr(w, arena, src, ((arena).nodes[id]).a) == 1) {
+  flowc_cgen_puts(w, "FLOW_NONNULL(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_putc(w, 41);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+}
 }
 }
   flowc_cgen_putc(w, 91);
@@ -79561,12 +79580,18 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   int32_t is_ptr = flowc_cgen_base_is_ptr(w, arena, src, base);
   if (is_ptr == 1) {
+  if ((w[0]).checks == 1) {
+  flowc_cgen_puts(w, "FLOW_NONNULL(");
+}
   bool wrap = base != AST_NONE && ((arena).nodes[base]).kind == AST_CAST;
   if (wrap) {
   flowc_cgen_putc(w, 40);
 }
   flowc_cgen_emit_expr(w, arena, src, base);
   if (wrap) {
+  flowc_cgen_putc(w, 41);
+}
+  if ((w[0]).checks == 1) {
   flowc_cgen_putc(w, 41);
 }
   flowc_cgen_puts(w, "->");
@@ -102151,20 +102176,33 @@ int32_t flowc_bytes_contains(uint8_t* hay, int32_t hay_len, const char* needle) 
   return 0;
 }
   int32_t i = 0;
+  { int32_t __flowc_iter_2133 = 0;
   while (i <= (hay_len - nlen)) {
+  if (__flowc_iter_2133 >= 1000000) { fprintf(stderr, "flow: while exceeded @max_iterations(1000000)\n"); abort(); }
+  __flowc_iter_2133++;
+{
   int32_t j = 0;
   int32_t ok = 1;
-  for (; j < (nlen); j = j + 1) {
+  { int32_t __flowc_iter_2119 = 0;
+  while (j < nlen) {
+  if (__flowc_iter_2119 >= 1000) { fprintf(stderr, "flow: while exceeded @max_iterations(1000)\n"); abort(); }
+  __flowc_iter_2119++;
+{
   if (hay[(i + j)] != np[j]) {
   ok = 0;
   break;
 }
+  j = (j + 1);
 }
+}
+  }
   if (ok == 1) {
   return 1;
 }
   i = (i + 1);
 }
+}
+  }
   return 0;
 }
 
@@ -104118,25 +104156,44 @@ int32_t test_type_id() {
 int32_t test_region_find(AstArena arena, uint8_t* src, int32_t kind, const char* lit) {
   uint8_t* p = (uint8_t*)(lit);
   int32_t n = 0;
+  { int32_t __flowc_iter_12999 = 0;
   while (p[n] != 0) {
+  if (__flowc_iter_12999 >= 128) { fprintf(stderr, "flow: while exceeded @max_iterations(128)\n"); abort(); }
+  __flowc_iter_12999++;
+{
   n = (n + 1);
 }
+}
+  }
   int32_t i = 0;
-  for (; i < ((arena).len); i = i + 1) {
+  { int32_t __flowc_iter_13079 = 0;
+  while (i < (arena).len) {
+  if (__flowc_iter_13079 >= 100000) { fprintf(stderr, "flow: while exceeded @max_iterations(100000)\n"); abort(); }
+  __flowc_iter_13079++;
+{
   if (((arena).nodes[i]).kind == kind) {
   int32_t ns = ((arena).nodes[i]).name_start;
   int32_t ne = ((arena).nodes[i]).name_end;
   if ((ne - ns) == n) {
   int32_t k = 0;
+  { int32_t __flowc_iter_13061 = 0;
   while (k < n && src[(ns + k)] == p[k]) {
+  if (__flowc_iter_13061 >= 1000) { fprintf(stderr, "flow: while exceeded @max_iterations(1000)\n"); abort(); }
+  __flowc_iter_13061++;
+{
   k = (k + 1);
 }
+}
+  }
   if (k == n) {
   return i;
 }
 }
 }
+  i = (i + 1);
 }
+}
+  }
   return AST_NONE;
 }
 

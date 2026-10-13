@@ -683,9 +683,11 @@ function flowc_bytes_contains(hay: ptr<u8>, hay_len: i32, needle: string) -> i32
         return 0
     }
     let mut i: i32 = 0
+    @max_iterations(1000000)
     while i <= hay_len - nlen {
         let mut j: i32 = 0
         let mut ok: i32 = 1
+        @max_iterations(1000)
         while j < nlen {
             if hay[i + j] != np[j] {
                 ok = 0
@@ -2634,16 +2636,19 @@ function test_type_id() -> i32 {
 function test_region_find(arena: AstArena, src: ptr<u8>, kind: i32, lit: string) -> i32 {
     let p: ptr<u8> = lit
     let mut n: i32 = 0
+    @max_iterations(128)
     while p[n] != 0 {
         n = n + 1
     }
     let mut i: i32 = 0
+    @max_iterations(100000)
     while i < arena.len {
         if arena.nodes[i].kind == kind {
             let ns: i32 = arena.nodes[i].name_start
             let ne: i32 = arena.nodes[i].name_end
             if ne - ns == n {
                 let mut k: i32 = 0
+                @max_iterations(1000)
                 while k < n and src[ns + k] == p[k] {
                     k = k + 1
                 }
