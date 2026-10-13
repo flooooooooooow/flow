@@ -100,24 +100,24 @@
 - [x] #101 [CI-M2] CI: lint job is syntax-only; missing ruff/mypy/shellcheck (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/101
 - [x] #102 [CI-M3] CI: no SAST/dependency/security scanning (enhancement, ci, medium) https://github.com/flooooooooooow/flow/issues/102
 - [x] #110 [roadmap:async-primitives] Async primitives https://github.com/flooooooooooow/flow/issues/110
-- [ ] #111 [roadmap:windows-graphics-support] Windows graphics support https://github.com/flooooooooooow/flow/issues/111
+- [x] #111 [roadmap:windows-graphics-support] Windows graphics support https://github.com/flooooooooooow/flow/issues/111
 - [x] #112 [roadmap:implement-closure-environment-capture-automatic-captures-not-just-explicit-self] Implement closure environment capture (automatic captures, not just explicit self) https://github.com/flooooooooooow/flow/issues/112
-- [ ] #113 [roadmap:loop-vectorization-partial-elementwise-f32-transfer-path-exists] Loop vectorization (partial: elementwise f32 transfer_* path exists) https://github.com/flooooooooooow/flow/issues/113
+- [x] #113 [roadmap:loop-vectorization-partial-elementwise-f32-transfer-path-exists] Loop vectorization (partial: elementwise f32 transfer_* path exists) https://github.com/flooooooooooow/flow/issues/113
 - [ ] #114 [roadmap:real-world-projects] Real-world projects https://github.com/flooooooooooow/flow/issues/114
 - [x] #115 [roadmap:integer-match-exhaustiveness-is-only-a-minimal-warning-stub-no-range-gap-analysis] Integer match exhaustiveness is only a minimal warning stub (no range/gap analysis) https://github.com/flooooooooooow/flow/issues/115
-- [ ] #116 [roadmap:rt-safety-policy-no-alloc-audio-thread] RT-safety policy (no-alloc audio thread) https://github.com/flooooooooooow/flow/issues/116
+- [x] #116 [roadmap:rt-safety-policy-no-alloc-audio-thread] RT-safety policy (no-alloc audio thread) https://github.com/flooooooooooow/flow/issues/116
 - [x] #117 [roadmap:break-continue-have-no-dedicated-ast-nodes-lexed-as-identifiers-special-cased-in-c-generator] break/continue have no dedicated AST nodes (lexed as identifiers, special-cased in C generator) https://github.com/flooooooooooow/flow/issues/117
-- [ ] #118 [roadmap:gpu-autodiff] GPU autodiff https://github.com/flooooooooooow/flow/issues/118
+- [x] #118 [roadmap:gpu-autodiff] GPU autodiff https://github.com/flooooooooooow/flow/issues/118
 - [ ] #119 [roadmap:three-older-effects-demos-transpile-but-do-not-link-capability-parameter-style] Three older effects demos transpile but do not link (capability parameter style) https://github.com/flooooooooooow/flow/issues/119
-- [ ] #120 [roadmap:dead-code-elimination] Dead code elimination https://github.com/flooooooooooow/flow/issues/120
+- [x] #120 [roadmap:dead-code-elimination] Dead code elimination https://github.com/flooooooooooow/flow/issues/120
 - [x] #121 [roadmap:wasm-target] WASM target https://github.com/flooooooooooow/flow/issues/121
 - [x] #122 [roadmap:record-tetris-demo-gif] Record Tetris demo GIF https://github.com/flooooooooooow/flow/issues/122
-- [ ] #123 [roadmap:function-inlining] Function inlining https://github.com/flooooooooooow/flow/issues/123
+- [x] #123 [roadmap:function-inlining] Function inlining https://github.com/flooooooooooow/flow/issues/123
 - [ ] #124 [roadmap:mlir-backend-not-exercised-against-new-chained-ast-shapes] MLIR backend not exercised against new chained AST shapes https://github.com/flooooooooooow/flow/issues/124
 - [x] #125 [roadmap:cross-platform-graphics-linux] Cross-platform graphics (Linux) https://github.com/flooooooooooow/flow/issues/125
-- [ ] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
+- [x] #126 [roadmap:constant-propagation] Constant propagation https://github.com/flooooooooooow/flow/issues/126
 - [ ] #127 [roadmap:debugger] Debugger https://github.com/flooooooooooow/flow/issues/127
-- [ ] #128 [roadmap:self-hosting-components] Self-hosting components https://github.com/flooooooooooow/flow/issues/128
+- [x] #128 [roadmap:self-hosting-components] Self-hosting components https://github.com/flooooooooooow/flow/issues/128
 - [x] #159 [roadmap:canonicalize-evolution-demos-onto-flow-evolves] Canonicalize evolution demos onto flow/evolves https://github.com/flooooooooooow/flow/issues/159
 - [x] #160 [roadmap:closed-loop-plant-step-from-dsys-connect] Closed-loop plant.step from dsys/connect https://github.com/flooooooooooow/flow/issues/160
 - [x] #161 [roadmap:dual-tensor-operators-mutable-params] Dual + Tensor operators + mutable params https://github.com/flooooooooooow/flow/issues/161
@@ -145,11 +145,15 @@
 - [x] #1492 [roadmap:networking] Networking https://github.com/flooooooooooow/flow/issues/1492
 - [x] #1493 [roadmap:physics-dsl-honesty] Physics DSL honesty https://github.com/flooooooooooow/flow/issues/1493
 - [x] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
-- [ ] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
-- [ ] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
+- [x] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
+- [x] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
 - [x] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
 - [x] #1498 [roadmap:w2] **W2** https://github.com/flooooooooooow/flow/issues/1498
-- [ ] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
+- [x] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
 - [ ] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
 - [x] #1501 [roadmap:w5] **W5** https://github.com/flooooooooooow/flow/issues/1501
-- [ ] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502
+- [x] #1502 [roadmap:w6] **W6** https://github.com/flooooooooooow/flow/issues/1502
+- [ ] #1546 [roadmap:certified-safety-profiles] Certified safety profiles https://github.com/flooooooooooow/flow/issues/1546
+- [ ] #1547 [roadmap:distributed-digital-twins] Distributed digital twins https://github.com/flooooooooooow/flow/issues/1547
+- [ ] #1548 [roadmap:hardware-synthesis-and-partitioning] Hardware synthesis and partitioning https://github.com/flooooooooooow/flow/issues/1548
+- [ ] #1549 [roadmap:orchestration-syntax] Orchestration syntax https://github.com/flooooooooooow/flow/issues/1549
