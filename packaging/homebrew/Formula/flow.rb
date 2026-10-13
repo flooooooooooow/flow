@@ -3,8 +3,8 @@ class Flow < Formula
 
   desc "Statically typed language with algebraic effects, autodiff, and a C backend"
   homepage "https://flooooooooooow.github.io/flow/"
-  url "https://github.com/flooooooooooow/flow/releases/download/v1.0.1/flow-v1.0.1.tar.gz"
-  sha256 "deb4978f97cb5643c29fcb9d73ab72a8eb121e2e31c60df73ba6870d04f5229b"
+  url "https://github.com/flooooooooooow/flow/releases/download/v2.0.0/flow-v2.0.0.tar.gz"
+  sha256 "5d1011ec3cb113fe3bd23fe31921933b9b31d64907ae4abc49ea1cc379dc66a0"
   license "MIT"
   head "https://github.com/flooooooooooow/flow.git", branch: "main"
 
