@@ -225,6 +225,16 @@ failed with undefined `flow_thread_*` and `__atomic_*_n` symbols although
 the compiler handles them. tests/scripts/bootstrap_suite_doc.flow runs the
 command above on those three files.
 
+## AI Safety and Enforceable Authority
+
+Per RFC #1544, source code and explanations authored by an AI agent carry no inherent authority. To maintain a safe repository lifecycle:
+- Implementation of safety policies must be opt-in and backwards-compatible. New syntax or security-policy changes require a recorded design decision.
+- All trust boundaries (source -> compiler, compiler -> backend, executable -> OS, PR author -> CI, CI -> protected branch, branch -> release) must be verified through independent, observable evidence.
+- The `agent_sandbox` tool enforces OS containment. Do not assume safety solely based on static compiler effects without runtime confinement.
+- Security-critical pull requests touching compiler, runtime, `agent_sandbox`, or workflows require review by a human CODEOWNER.
+- Agents record and preserve competing claims and counterexamples during dispute resolution.
+- A clean CI run is necessary but insufficient. Adversarial behavior must be demonstrably denied (such as through network or filesystem isolation) even if generated code bypasses safe subsets.
+
 ## Meta-Agents and Repositories
 
 When building a repository or project with the Flow language, agents are encouraged to:

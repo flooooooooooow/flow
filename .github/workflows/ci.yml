@@ -78,10 +78,9 @@ permissions:
 # that every run needs for Detect changes and CI.
 #
 # Every routed job uses the `&flow-runner` anchor on `changes`, which picks
-# the VPS only for trusted events: a push to main, a merge queue batch, and
-# a pull request from a branch of this repository. A pull request from a
-# fork, and any other event, runs on ubuntu-latest, so outside code never
-# reaches the VPS.
+# the VPS only for trusted events: a push to main, and a merge queue batch.
+# Pull requests, including those from branches of this repository, run exclusively
+# on ubuntu-latest to ensure untrusted code never executes on privileged self-hosted runners.
 #
 # If the VPS runners are down, routed jobs wait in the queue for them.
 # Set the repository variable FLOW_VPS_RUNNERS to `off` to send every job
@@ -106,7 +105,7 @@ jobs:
   # them again and report the error where it matters.
   changes:
     name: Detect changes
-    runs-on: &flow-runner ${{ vars.FLOW_VPS_RUNNERS != 'off' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","flow-vps"]') || 'ubuntu-latest' }}
+    runs-on: &flow-runner ${{ vars.FLOW_VPS_RUNNERS != 'off' && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group') && fromJSON('["self-hosted","flow-vps"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     outputs:
       src: ${{ steps.filter.outcome == 'success' && steps.filter.outputs.src || 'true' }}

@@ -15,7 +15,8 @@ jobs:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.head_ref, 'release/') &&
-      endsWith(github.head_ref, '-final')
+      endsWith(github.head_ref, '-final') &&
+      github.actor == 'godofecht'
     runs-on: ubuntu-latest
     concurrency:
       group: release-pr-prepare-${{ github.head_ref }}
