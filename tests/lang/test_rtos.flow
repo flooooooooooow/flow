@@ -1,0 +1,102 @@
+import "stdlib/rtos.flow"
+
+function main() -> i32 {
+    # 1. Scheduler and deterministic tick
+    let mut sched: RtosScheduler = scheduler_new()
+    scheduler_add_task(&sched, 1, PRIO_LOW, 1)
+    scheduler_add_task(&sched, 2, PRIO_HIGH, 2)
+    scheduler_add_task(&sched, 3, PRIO_REALTIME, 5)
+
+    # Tick 1: task 3 has highest priority and period ready
+    let t1: i32 = scheduler_tick(&sched)
+    if t1 != 3 {
+        scheduler_free(&sched)
+        return 1
+    }
+
+    # Tick 2: task 3 next_release_tick is 1 + 5 = 6, so task 2 (PRIO_HIGH) should run
+    let t2: i32 = scheduler_tick(&sched)
+    if t2 != 2 {
+        scheduler_free(&sched)
+        return 2
+    }
+
+    # Suspend task 1
+    scheduler_set_state(&sched, 1, TASK_STATE_SUSPENDED)
+    scheduler_free(&sched)
+
+    # 2. Semaphore
+    let mut sem: RtosSemaphore = sem_new(1, 2)
+    if not sem_take(&sem) {
+        return 3
+    }
+    if sem_take(&sem) {
+        return 4
+    }
+    if not sem_give(&sem) {
+        return 5
+    }
+    if not sem_give(&sem) {
+        return 6
+    }
+    if sem_give(&sem) {
+        # Already at max_count 2
+        return 7
+    }
+
+    # 3. Mutex
+    let mut mtx: RtosMutex = mutex_new()
+    if not mutex_lock(&mtx, 42) {
+        return 8
+    }
+    # Another task cannot lock
+    if mutex_lock(&mtx, 99) {
+        return 9
+    }
+    # Unlock by non-owner fails
+    if mutex_unlock(&mtx, 99) {
+        return 10
+    }
+    # Unlock by owner succeeds
+    if not mutex_unlock(&mtx, 42) {
+        return 11
+    }
+
+    # 4. SPSC Ring Buffer
+    let mut rb: RtosRingBuffer = ring_buffer_new(4)
+    if not ring_buffer_is_empty(&rb) {
+        ring_buffer_free(&rb)
+        return 12
+    }
+
+    if not ring_buffer_push(&rb, 100) {
+        ring_buffer_free(&rb)
+        return 13
+    }
+    if not ring_buffer_push(&rb, 200) {
+        ring_buffer_free(&rb)
+        return 14
+    }
+
+    if ring_buffer_count(&rb) != 2 {
+        ring_buffer_free(&rb)
+        return 15
+    }
+
+    let mut out_val: i32 = 0
+    if not ring_buffer_pop(&rb, &out_val) or out_val != 100 {
+        ring_buffer_free(&rb)
+        return 16
+    }
+    if not ring_buffer_pop(&rb, &out_val) or out_val != 200 {
+        ring_buffer_free(&rb)
+        return 17
+    }
+    if not ring_buffer_is_empty(&rb) {
+        ring_buffer_free(&rb)
+        return 18
+    }
+
+    ring_buffer_free(&rb)
+    return 0
+}
