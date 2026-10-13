@@ -1025,6 +1025,10 @@
           "path": "design/denotational-mlir.md"
         },
         {
+          "label": "Representation Aware",
+          "path": "design/representation-aware.md"
+        },
+        {
           "label": "Tests in Flow",
           "path": "project/tests-in-flow.md"
         },
