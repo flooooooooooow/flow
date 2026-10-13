@@ -147,7 +147,7 @@
 - [x] #1494 [roadmap:regenerate-examples-status-md-after-layout-settles] Regenerate examples/STATUS.md after layout settles https://github.com/flooooooooooow/flow/issues/1494
 - [ ] #1495 [roadmap:shader-sim] Shader × sim https://github.com/flooooooooooow/flow/issues/1495
 - [ ] #1496 [roadmap:verify-repair] Verify repair https://github.com/flooooooooooow/flow/issues/1496
-- [ ] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
+- [x] #1497 [roadmap:w1] **W1** https://github.com/flooooooooooow/flow/issues/1497
 - [x] #1498 [roadmap:w2] **W2** https://github.com/flooooooooooow/flow/issues/1498
 - [ ] #1499 [roadmap:w3] **W3** https://github.com/flooooooooooow/flow/issues/1499
 - [ ] #1500 [roadmap:w4] **W4** https://github.com/flooooooooooow/flow/issues/1500
