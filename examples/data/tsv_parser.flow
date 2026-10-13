@@ -1,0 +1,227 @@
+# TSV Parser Demo
+# Streaming TSV parser demonstrating data processing in Flow
+
+extern {
+    function putchar(c: i32) -> i32
+}
+
+# ============================================================================
+# PARSING FUNCTIONS
+# ============================================================================
+
+function parse_row(data: ptr<u8>, start: i32, len: i32,
+                   delimiter: i32, quote_char: i32,
+                   field_starts: ptr<i32>, field_lengths: ptr<i32>) -> i32 {
+    let mut num_fields: i32 = 0
+    let mut field_start: i32 = start
+    let mut i: i32 = start
+    let mut in_quotes: i32 = 0
+
+    while i < len {
+        let c: i32 = data[i]
+
+        if c == quote_char {
+            in_quotes = 1 - in_quotes
+        }
+
+        if c == delimiter and in_quotes == 0 {
+            # End of field
+            field_starts[num_fields] = field_start
+            field_lengths[num_fields] = i - field_start
+            num_fields = num_fields + 1
+            field_start = i + 1
+        }
+
+        if c == 10 or c == 13 {  # Newline
+            if in_quotes == 0 {
+                # End of row
+                field_starts[num_fields] = field_start
+                field_lengths[num_fields] = i - field_start
+                num_fields = num_fields + 1
+                return num_fields
+            }
+        }
+
+        i = i + 1
+    }
+
+    # Handle last field (no trailing newline)
+    if i > field_start {
+        field_starts[num_fields] = field_start
+        field_lengths[num_fields] = i - field_start
+        num_fields = num_fields + 1
+    }
+
+    return num_fields
+}
+
+function find_next_row(data: ptr<u8>, start: i32, len: i32) -> i32 {
+    let mut i: i32 = start
+    while i < len {
+        if data[i] == 10 {  # \n
+            return i + 1
+        }
+        i = i + 1
+    }
+    return len
+}
+
+function count_rows(data: ptr<u8>, len: i32) -> i32 {
+    let mut count: i32 = 1
+    for i in 0 to len {
+        if data[i] == 10 {
+            count = count + 1
+        }
+    }
+    return count
+}
+
+function get_field_as_int(data: ptr<u8>, start: i32, length: i32) -> i32 {
+    let mut result: i32 = 0
+    let mut negative: i32 = 0
+    let mut i: i32 = start
+
+    # Skip leading whitespace and quotes
+    while i < start + length {
+        let c: i32 = data[i]
+        if c != 32 and c != 34 and c != 9 {  # space, quote, or tab
+            break
+        }
+        i = i + 1
+    }
+
+    # Check for negative
+    if i < start + length and data[i] == 45 {  # '-'
+        negative = 1
+        i = i + 1
+    }
+
+    # Parse digits
+    while i < start + length {
+        let c: i32 = data[i]
+        if c >= 48 and c <= 57 {  # '0'-'9'
+            result = result * 10 + (c - 48)
+        } elif c == 34 or c == 32 or c == 9 {  # quote, space, tab
+            break
+        }
+        i = i + 1
+    }
+
+    if negative == 1 {
+        result = 0 - result
+    }
+
+    return result
+}
+
+function print_field(data: ptr<u8>, start: i32, length: i32) {
+    for i in 0 to length {
+        let c: i32 = data[start + i]
+        if c != 34 {  # Skip quotes
+            putchar(c)
+        }
+    }
+}
+
+function main() -> i32 {
+    println("TSV Parser Demo")
+    println("===============")
+    println("")
+
+    # Sample TSV data (embedded as bytes)
+    # "id\tname\tscore\n1\tAlice\t95\n2\tBob\t87\n3\tCharlie\t91"
+    let tsv_data: array<u8, 100> = [
+        105, 100, 9,           # "id\t"
+        110, 97, 109, 101, 9,  # "name\t"
+        115, 99, 111, 114, 101, 10,  # "score\n"
+        49, 9,                 # "1\t"
+        65, 108, 105, 99, 101, 9,    # "Alice\t"
+        57, 53, 10,             # "95\n"
+        50, 9,                 # "2\t"
+        66, 111, 98, 9,        # "Bob\t"
+        56, 55, 10,             # "87\n"
+        51, 9,                 # "3\t"
+        67, 104, 97, 114, 108, 105, 101, 9,  # "Charlie\t"
+        57, 49               # "91\0"
+    ]
+    let data_ptr: ptr<u8> = tsv_data
+    let data_len: i32 = 46
+
+    println("Parsing TSV data:")
+    println("  id\tname\tscore")
+    println("  1\tAlice\t95")
+    println("  2\tBob\t87")
+    println("  3\tCharlie\t91")
+    println("")
+
+    let num_rows: i32 = count_rows(data_ptr, data_len)
+    print("Total rows: ")
+    println(num_rows)
+    println("")
+
+    let field_starts: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let field_lengths: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let starts_ptr: ptr<i32> = field_starts
+    let lengths_ptr: ptr<i32> = field_lengths
+
+    let mut pos: i32 = 0
+    let mut row_idx: i32 = 0
+
+    println("Parsed rows:")
+    while pos < data_len {
+        let num_fields: i32 = parse_row(data_ptr, pos, data_len, 9, 34, starts_ptr, lengths_ptr) # 9 is TAB
+
+        if num_fields > 0 {
+            print("  Row ")
+            print(row_idx)
+            print(": ")
+            print(num_fields)
+            println(" fields")
+
+            for f in 0 to num_fields {
+                print("    [")
+                print(f)
+                print("]: ")
+                print_field(data_ptr, field_starts[f], field_lengths[f])
+                println("")
+            }
+
+            row_idx = row_idx + 1
+        }
+
+        pos = find_next_row(data_ptr, pos, data_len)
+    }
+
+    println("")
+
+    # Demonstrate aggregate: sum of scores
+    println("=== Aggregate: Sum of Scores ===")
+
+    pos = 0
+    pos = find_next_row(data_ptr, pos, data_len)  # Skip header
+
+    let mut total_score: i32 = 0
+    let mut count: i32 = 0
+
+    while pos < data_len {
+        let num_fields: i32 = parse_row(data_ptr, pos, data_len, 9, 34, starts_ptr, lengths_ptr)
+
+        if num_fields >= 3 {
+            let score: i32 = get_field_as_int(data_ptr, field_starts[2], field_lengths[2])
+            total_score = total_score + score
+            count = count + 1
+        }
+
+        pos = find_next_row(data_ptr, pos, data_len)
+    }
+
+    print("Total score: ")
+    println(total_score)
+    print("Average score: ")
+    println(total_score / count)
+
+    println("")
+    println("TSV Parser demo complete!")
+
+    return 0
+}

@@ -1,0 +1,85 @@
+# JSON Parser Demo
+# Uses the existing JSON parser library to parse a sample JSON string
+
+import "scripts/tools/lib/json.flow"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    puts("JSON Parser Demo")
+    puts("================")
+    puts("")
+
+    let data: string = "{\n  \"name\": \"Alice\",\n  \"age\": 25,\n  \"scores\": [95, 87, 91],\n  \"active\": true\n}"
+
+    puts("Parsing JSON data:")
+    puts(data)
+    puts("")
+
+    let doc: ptr<Json> = json_parse(data)
+    if json_error(doc) != "" {
+        puts("Error parsing JSON")
+        json_free(doc)
+        return 1
+    }
+
+    puts("Parsed structure:")
+
+    let name_id: i32 = json_get(doc, 0, "name")
+    if name_id >= 0 {
+        print("  name: ")
+        puts(json_str(doc, name_id))
+    }
+
+    let age_id: i32 = json_get(doc, 0, "age")
+    if age_id >= 0 {
+        print("  age: ")
+        println(json_int(doc, age_id) as i32)
+    }
+
+    let active_id: i32 = json_get(doc, 0, "active")
+    if active_id >= 0 {
+        print("  active: ")
+        if json_kind(doc, active_id) == json_kind_true() {
+            puts("true")
+        } else {
+            puts("false")
+        }
+    }
+
+    let scores_id: i32 = json_get(doc, 0, "scores")
+    if scores_id >= 0 and json_kind(doc, scores_id) == json_kind_array() {
+        print("  scores: ")
+        let mut total: i64 = 0
+        let len: i32 = json_len(doc, scores_id)
+        let mut first: bool = true
+        print("[")
+        let mut c: i32 = json_first(doc, scores_id)
+        while c >= 0 {
+            if not first {
+                print(", ")
+            }
+            first = false
+            let score: i64 = json_int(doc, c)
+            print(score as i32)
+            total = total + score
+            c = json_next(doc, c)
+        }
+        puts("]")
+
+        print("  average score: ")
+        if len > 0 {
+            println((total / (len as i64)) as i32)
+        } else {
+            println(0)
+        }
+    }
+
+    puts("")
+    puts("JSON Parser demo complete!")
+
+    json_free(doc)
+    return 0
+}
