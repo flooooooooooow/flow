@@ -52,6 +52,8 @@ test.o
 
 # Logs
 *.log
+jules_dispatch_decisions.jsonl
+jules_dispatch_state.json
 
 # Coverage reports
 htmlcov/
