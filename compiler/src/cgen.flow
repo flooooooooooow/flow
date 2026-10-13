@@ -13479,6 +13479,7 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     let mut want_always: i32 = 0
     let mut want_noinline: i32 = 0
     let mut external: i32 = 0
+    let mut want_interrupt: i32 = 0
     let mut target: string = ""
     # With an index, walk only the attributes on `id`, still in id order.
     let ix: ptr<AstIndex> = flowc_ast_ix_shape(arena)
@@ -13513,6 +13514,8 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
             } elif flowc_cgen_span_is(src, ns, ne, "noinline") == 1 {
                 want_noinline = 1
             } elif flowc_cgen_span_is(src, ns, ne, "flow_api") == 1 {
+            } elif flowc_cgen_span_is(src, ns, ne, "interrupt") == 1 {
+                want_interrupt = 1
                 external = 1
             } elif flowc_cgen_span_is(src, ns, ne, "target") == 1 {
                 if (arena.nodes[at].ival & AST_ATTR_HAS_ARGS) != 0 {
@@ -13537,6 +13540,9 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     if want_noinline == 1 {
         flowc_cgen_puts(w, "__attribute__((noinline)) ")
     } elif want_always == 1 {
+    if want_interrupt == 1 {
+        flowc_cgen_puts(w, "__attribute__((interrupt)) ")
+    }
         flowc_cgen_puts(w, "__attribute__((always_inline)) ")
     }
     if strlen(target) > 0 and flowc_validate_target_spec(target) == 1 {

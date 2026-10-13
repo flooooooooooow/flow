@@ -1,0 +1,42 @@
+# A classic state machine using constants, suitable for bare-metal
+
+let LIGHT_STATE_OFF: i32 = 0
+let LIGHT_STATE_ON: i32 = 1
+let LIGHT_STATE_BLINKING: i32 = 2
+
+let LIGHT_EVENT_TOGGLE: i32 = 0
+let LIGHT_EVENT_TIMER_EXPIRED: i32 = 1
+
+function process_event(state: i32, event: i32) -> i32 {
+    if state == LIGHT_STATE_OFF {
+        if event == LIGHT_EVENT_TOGGLE {
+            return LIGHT_STATE_ON
+        }
+    } elif state == LIGHT_STATE_ON {
+        if event == LIGHT_EVENT_TOGGLE {
+            return LIGHT_STATE_OFF
+        } elif event == LIGHT_EVENT_TIMER_EXPIRED {
+            return LIGHT_STATE_BLINKING
+        }
+    } elif state == LIGHT_STATE_BLINKING {
+        if event == LIGHT_EVENT_TOGGLE {
+            return LIGHT_STATE_OFF
+        }
+    }
+    return state
+}
+
+function main() -> i32 {
+    let mut state: i32 = LIGHT_STATE_OFF
+
+    state = process_event(state, LIGHT_EVENT_TOGGLE)
+    # state is now On
+
+    state = process_event(state, LIGHT_EVENT_TIMER_EXPIRED)
+    # state is now Blinking
+
+    state = process_event(state, LIGHT_EVENT_TOGGLE)
+    # state is now Off
+
+    return 0
+}

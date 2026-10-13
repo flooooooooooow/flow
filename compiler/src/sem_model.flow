@@ -2212,6 +2212,7 @@ function sem_known_attributes() -> ptr<SemStrVec> {
     sem_sv_push(v, "inline")
     sem_sv_push(v, "interp")
     sem_sv_push(v, "jit")
+    sem_sv_push(v, "interrupt")
     sem_sv_push(v, "libm")
     sem_sv_push(v, "lifetime")
     sem_sv_push(v, "mlir")
