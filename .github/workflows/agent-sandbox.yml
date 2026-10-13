@@ -1,0 +1,31 @@
+# Security proof runs in a hosted runner; never execute untrusted PR code on
+# a self-hosted runner or with secrets/publishing privileges.
+name: Agent sandbox boundary
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolate:
+    name: Linux namespace enforcement
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install required namespace isolation helper
+        run: |
+          if ! test -x /usr/bin/bwrap; then
+            sudo apt-get install -y --no-install-recommends bubblewrap
+          fi
+          test -x /usr/bin/bwrap
+      - name: Run adversarial isolation tests (no mocks)
+        run: ./flow tool tools/agent_sandbox/test.flow
