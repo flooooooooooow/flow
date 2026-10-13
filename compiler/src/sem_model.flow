@@ -2208,6 +2208,7 @@ function sem_known_attributes() -> ptr<SemStrVec> {
     sem_sv_push(v, "flow_api")
     sem_sv_push(v, "gpu")
     sem_sv_push(v, "guard")
+    sem_sv_push(v, "hardware")
     sem_sv_push(v, "hot")
     sem_sv_push(v, "inline")
     sem_sv_push(v, "interp")

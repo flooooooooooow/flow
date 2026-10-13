@@ -1,0 +1,26 @@
+import "stdlib/hardware.flow"
+import "stdlib/rf.flow"
+
+@hardware
+function shift_register(input_val: i32) -> i32 {
+    let mut r1: Register<i32> = register_new<i32>(0)
+    let mut r2: Register<i32> = register_new<i32>(0)
+    let mut r3: Register<i32> = register_new<i32>(0)
+
+    let sync_in: i32 = cdc_sync<Hz44100, i32>(input_val)
+
+    r3.value = register_read<i32>(r2)
+    r2.value = register_read<i32>(r1)
+    r1.value = sync_in
+
+    return register_read<i32>(r3)
+}
+
+function main() -> i32 {
+    let mut out: i32 = shift_register(42)
+    out = shift_register(10)
+    if out != 0 {
+        return 1
+    }
+    return 0
+}
