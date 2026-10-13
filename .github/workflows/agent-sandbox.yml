@@ -17,7 +17,9 @@ permissions:
 jobs:
   isolate:
     name: Linux namespace enforcement
-    runs-on: ubuntu-latest
+    # Ubuntu 24.04 hosted runners may block unprivileged bwrap networking via
+    # AppArmor; use the maintained 22.04 image without weakening host policy.
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
