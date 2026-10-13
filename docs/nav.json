@@ -981,6 +981,10 @@
           "path": "project/agentic-loop.md"
         },
         {
+          "label": "AI Safety Architecture",
+          "path": "security/ai-safety-architecture.md"
+        },
+        {
           "label": "Repository Structure",
           "path": "project/repository-structure.md"
         },
