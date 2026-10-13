@@ -31,6 +31,12 @@ function add(c: ptr<ProcCmd>, flag: string, value: string) {
     proc_arg(c, value)
 }
 
+function guest_env(c: ptr<ProcCmd>, name: string, value: string) {
+    proc_arg(c, "--setenv")
+    proc_arg(c, name)
+    proc_arg(c, value)
+}
+
 function main() -> i32 {
     let mut workspace: string = ""
     let mut output: string = ""
@@ -121,14 +127,10 @@ function main() -> i32 {
     add(c, "--proc", "/proc")
     add(c, "--dev", "/dev")
     add(c, "--chdir", "/workspace")
-    add(c, "--setenv", "PATH")
-    proc_arg(c, "/usr/bin:/bin")
-    add(c, "--setenv", "HOME")
-    proc_arg(c, "/tmp")
-    add(c, "--setenv", "TMPDIR")
-    proc_arg(c, "/tmp")
-    add(c, "--setenv", "LC_ALL")
-    proc_arg(c, "C")
+    guest_env(c, "PATH", "/usr/bin:/bin")
+    guest_env(c, "HOME", "/tmp")
+    guest_env(c, "TMPDIR", "/tmp")
+    guest_env(c, "LC_ALL", "C")
     proc_arg(c, "--")
     while i < argc {
         proc_arg(c, proc_argv(i))
