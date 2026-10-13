@@ -9,7 +9,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 
 ## Totals
 
-- **1615** files checked, **1441** pass (89.2%), **174** fail
+- **1617** files checked, **1443** pass (89.2%), **174** fail
   - parser: 156
   - transpile error: 16
   - cgen (invalid C): 2
@@ -45,7 +45,7 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/compilers/` | 10 | 0 |
 | `examples/concurrency/` | 27 | 0 |
 | `examples/crypto/` | 2 | 0 |
-| `examples/data/` | 1 | 0 |
+| `examples/data/` | 3 | 0 |
 | `examples/demos/` | 15 | 0 |
 | `examples/dsp/` | 1 | 0 |
 | `examples/dynamics/` | 9 | 0 |
@@ -490,6 +490,8 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/crypto/runtime_sha256.flow` | pass |  |
 | `examples/crypto/sha256.flow` | pass |  |
 | `examples/data/csv_parser.flow` | pass |  |
+| `examples/data/json_parser.flow` | pass |  |
+| `examples/data/tsv_parser.flow` | pass |  |
 | `examples/demos/ui_layout_flow/src/main.flow` | pass |  |
 | `examples/demos/ui_layout_window_flow/src/main.flow` | pass |  |
 | `examples/demos/vulkan_2048_flow/src/game.flow` | pass |  |
