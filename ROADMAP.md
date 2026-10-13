@@ -112,7 +112,7 @@ a proof corpus rather than the showcase.
 
 | Domain | Intent | Status |
 |--------|--------|--------|
-| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | 🔲 |
+| Crypto beyond SHA | More than `examples/crypto/` SHA-256 | ✅ |
 | JSON / TSV | Data interchange demos | 🔲 |
 | Compiler dogfood | Grow `examples/compilers/` into a real lexer/parser story | partial |
 | Physics DSL honesty | Document what `physics/` can/can't do | partial |
