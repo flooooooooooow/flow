@@ -1,0 +1,107 @@
+# Runtime integration proof for the Linux namespace sandbox.
+# A mock policy checker is not enough: each case starts a real guest binary.
+# Run on Linux with bubblewrap installed and user namespaces available:
+#   ./flow tool tools/agent_sandbox/test.flow
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_run, proc_timeout_ms, proc_cwd, proc_pid }
+
+function guest(root: string, out: string, timeout: string, program: string, a: string, b: string) -> ptr<ProcResult> {
+    let c: ptr<ProcCmd> = proc_cmd(root + "/flow")
+    proc_arg(c, "tool")
+    proc_arg(c, "agent_sandbox")
+    proc_arg(c, "--workspace")
+    proc_arg(c, root)
+    proc_arg(c, "--output")
+    proc_arg(c, out)
+    proc_arg(c, "--timeout-ms")
+    proc_arg(c, timeout)
+    proc_arg(c, "--")
+    proc_arg(c, program)
+    if s_len(a) > 0 {
+        proc_arg(c, a)
+    }
+    if s_len(b) > 0 {
+        proc_arg(c, b)
+    }
+    proc_cwd(c, root)
+    proc_timeout_ms(c, 90000)
+    return proc_run(c)
+}
+
+function check_code(r: ptr<ProcResult>, expected: i32, name: string) -> bool {
+    if r.exit_code == expected and not r.timed_out {
+        outln("PASS " + name)
+        return true
+    }
+    errln("FAIL " + name + ": exit=" + s_itoa(r.exit_code) + " timed_out=" + s_itoa(r.timed_out as i32))
+    errln(r.stdout)
+    errln(r.stderr)
+    return false
+}
+
+function main() -> i32 {
+    let root: string = abs_dir_physical(env("FLOW_REPO_ROOT"))
+    if s_len(root) == 0 {
+        root = cwd_physical()
+    }
+    let out: string = tmp_base() + "/flow-agent-sandbox-" + s_itoa(proc_pid())
+    if not mkdir_p(out) {
+        errln("FAIL cannot create output fixture")
+        return 1
+    }
+    # Fail closed on platforms that cannot supply the requested isolation.
+    let read_ok: ptr<ProcResult> = guest(root, out, "5000", "/bin/sh", "-c", "test -r /workspace/README.md")
+    if not check_code(read_ok, 0, "read allowed workspace") {
+        return 1
+    }
+    let write_ok: ptr<ProcResult> = guest(root, out, "5000", "/bin/sh", "-c", "printf 'ALLOW' > /output/allowed.txt")
+    if not check_code(write_ok, 0, "write explicit output mount") {
+        return 1
+    }
+    if not s_eq(read_text(out + "/allowed.txt"), "ALLOW") {
+        errln("FAIL output content")
+        return 1
+    }
+
+    let deny_work: ptr<ProcResult> = guest(root, out, "5000", "/bin/sh", "-c", "printf 'DENY' > /workspace/forbidden.txt")
+    if deny_work.exit_code == 0 or exists(root + "/forbidden.txt") {
+        errln("FAIL read-only workspace was writable")
+        return 1
+    }
+    outln("PASS deny workspace write")
+    let deny_host: ptr<ProcResult> = guest(root, out, "5000", "/bin/sh", "-c", "test -r /etc/passwd")
+    if deny_host.exit_code == 0 {
+        errln("FAIL host /etc/passwd was exposed")
+        return 1
+    }
+    outln("PASS deny host filesystem")
+
+    # /proc is newly mounted within the PID namespace. The network
+    # namespace identity must differ from that of the parent host.
+    let host_cmd: ptr<ProcCmd> = proc_cmd("/usr/bin/readlink")
+    proc_arg(host_cmd, "/proc/self/ns/net")
+    let host: ptr<ProcResult> = proc_run(host_cmd)
+    let net: ptr<ProcResult> = guest(root, out, "5000", "/usr/bin/readlink", "/proc/self/ns/net", "")
+    if host.exit_code != 0 or net.exit_code != 0 or s_eq(host.stdout, net.stdout) {
+        errln("FAIL network namespace not isolated")
+        errln("host=" + host.stdout + " guest=" + net.stdout + " " + net.stderr)
+        return 1
+    }
+    outln("PASS separate network namespace")
+
+    let exit_guest: ptr<ProcResult> = guest(root, out, "5000", "/bin/sh", "-c", "exit 37")
+    if not check_code(exit_guest, 37, "propagate guest exit code") {
+        return 1
+    }
+    let late: ptr<ProcResult> = guest(root, out, "200", "/bin/sh", "-c", "sleep 3")
+    if not check_code(late, 124, "wall-time timeout") {
+        return 1
+    }
+    let badpath: ptr<ProcResult> = guest(root, "/does-not-exist-flow-sandbox", "5000", "/bin/true", "", "")
+    if not check_code(badpath, 2, "invalid output fails closed") {
+        return 1
+    }
+    outln("agent_sandbox: all real runtime probes passed")
+    return 0
+}
