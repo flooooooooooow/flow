@@ -1,0 +1,502 @@
+# JSON Parser and Data Interchange Demo
+# Demonstrates recursive-descent JSON parsing, node tree inspection,
+# field query, and serialization in pure Flow.
+#
+# Run: ./flow run examples/data/json_parser.flow
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+}
+
+const JSON_NULL: i32 = 0
+const JSON_BOOL: i32 = 1
+const JSON_INT: i32 = 2
+const JSON_FLOAT: i32 = 3
+const JSON_STRING: i32 = 4
+const JSON_ARRAY: i32 = 5
+const JSON_OBJECT: i32 = 6
+
+struct JsonNode {
+    kind: i32,
+    int_val: i64,
+    float_val: f64,
+    str_val: string,
+    key: string,
+    first_child: i32,
+    next_sibling: i32
+}
+
+struct JsonDoc {
+    nodes: ptr<JsonNode>,
+    count: i32,
+    capacity: i32
+}
+
+function json_doc_new(capacity: i32) -> JsonDoc {
+    let size: i64 = (capacity as i64) * 64
+    let p: ptr<JsonNode> = malloc(size) as ptr<JsonNode>
+    return JsonDoc {
+        nodes: p,
+        count: 0,
+        capacity: capacity
+    }
+}
+
+function json_doc_free(doc: ptr<JsonDoc>) {
+    if doc[0].nodes != null {
+        free(doc[0].nodes as ptr<void>)
+        doc[0].nodes = null
+        doc[0].count = 0
+        doc[0].capacity = 0
+    }
+}
+
+function json_alloc_node(doc: ptr<JsonDoc>, kind: i32) -> i32 {
+    let idx: i32 = doc[0].count
+    if idx >= doc[0].capacity {
+        return -1
+    }
+    doc[0].count = doc[0].count + 1
+    let n: ptr<JsonNode> = &doc[0].nodes[idx]
+    n[0].kind = kind
+    n[0].int_val = 0
+    n[0].float_val = 0.0
+    n[0].str_val = ""
+    n[0].key = ""
+    n[0].first_child = -1
+    n[0].next_sibling = -1
+    return idx
+}
+
+struct JsonParser {
+    src: string,
+    pos: i32,
+    len: i32
+}
+
+function is_whitespace(c: u8) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 {
+        return 1
+    }
+    return 0
+}
+
+function skip_whitespace(p: ptr<JsonParser>) {
+    let s: ptr<u8> = p[0].src as ptr<u8>
+    while p[0].pos < p[0].len and is_whitespace(s[p[0].pos]) == 1 {
+        p[0].pos = p[0].pos + 1
+    }
+}
+
+function parse_string_literal(p: ptr<JsonParser>) -> string {
+    let s: ptr<u8> = p[0].src as ptr<u8>
+    if p[0].pos >= p[0].len or s[p[0].pos] != 34 {
+        return ""
+    }
+    p[0].pos = p[0].pos + 1
+    let start: i32 = p[0].pos
+    while p[0].pos < p[0].len and s[p[0].pos] != 34 {
+        if s[p[0].pos] == 92 {
+            p[0].pos = p[0].pos + 1
+        }
+        if p[0].pos < p[0].len {
+            p[0].pos = p[0].pos + 1
+        }
+    }
+    let str_len: i32 = p[0].pos - start
+    if p[0].pos < p[0].len and s[p[0].pos] == 34 {
+        p[0].pos = p[0].pos + 1
+    }
+    let buf: ptr<u8> = malloc((str_len + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < str_len {
+        buf[i] = s[start + i]
+        i = i + 1
+    }
+    buf[str_len] = 0
+    return buf as string
+}
+
+function parse_value(doc: ptr<JsonDoc>, p: ptr<JsonParser>) -> i32 {
+    skip_whitespace(p)
+    if p[0].pos >= p[0].len {
+        return -1
+    }
+    let s: ptr<u8> = p[0].src as ptr<u8>
+    let c: u8 = s[p[0].pos]
+
+    # Object
+    if c == 123 {
+        return parse_object(doc, p)
+    }
+
+    # Array
+    if c == 91 {
+        return parse_array(doc, p)
+    }
+
+    # String
+    if c == 34 {
+        let str: string = parse_string_literal(p)
+        let idx: i32 = json_alloc_node(doc, JSON_STRING)
+        doc[0].nodes[idx].str_val = str
+        return idx
+    }
+
+    # Boolean: true
+    if c == 116 and p[0].pos + 4 <= p[0].len {
+        if s[p[0].pos + 1] == 114 and s[p[0].pos + 2] == 117 and s[p[0].pos + 3] == 101 {
+            p[0].pos = p[0].pos + 4
+            let idx: i32 = json_alloc_node(doc, JSON_BOOL)
+            doc[0].nodes[idx].int_val = 1
+            return idx
+        }
+    }
+
+    # Boolean: false
+    if c == 102 and p[0].pos + 5 <= p[0].len {
+        if s[p[0].pos + 1] == 97 and s[p[0].pos + 2] == 108 and s[p[0].pos + 3] == 115 and s[p[0].pos + 4] == 101 {
+            p[0].pos = p[0].pos + 5
+            let idx: i32 = json_alloc_node(doc, JSON_BOOL)
+            doc[0].nodes[idx].int_val = 0
+            return idx
+        }
+    }
+
+    # Null: null
+    if c == 110 and p[0].pos + 4 <= p[0].len {
+        if s[p[0].pos + 1] == 117 and s[p[0].pos + 2] == 108 and s[p[0].pos + 3] == 108 {
+            p[0].pos = p[0].pos + 4
+            let idx: i32 = json_alloc_node(doc, JSON_NULL)
+            return idx
+        }
+    }
+
+    # Number: [0-9] or '-'
+    if (c >= 48 and c <= 57) or c == 45 {
+        let mut sign: i64 = 1
+        if c == 45 {
+            sign = -1
+            p[0].pos = p[0].pos + 1
+        }
+        let mut int_val: i64 = 0
+        while p[0].pos < p[0].len and s[p[0].pos] >= 48 and s[p[0].pos] <= 57 {
+            int_val = int_val * 10 + ((s[p[0].pos] - 48) as i64)
+            p[0].pos = p[0].pos + 1
+        }
+        # Check for fractional part
+        if p[0].pos < p[0].len and s[p[0].pos] == 46 {
+            p[0].pos = p[0].pos + 1
+            let mut frac_val: f64 = 0.0
+            let mut div: f64 = 10.0
+            while p[0].pos < p[0].len and s[p[0].pos] >= 48 and s[p[0].pos] <= 57 {
+                frac_val = frac_val + ((s[p[0].pos] - 48) as f64) / div
+                div = div * 10.0
+                p[0].pos = p[0].pos + 1
+            }
+            let total_float: f64 = (sign as f64) * ((int_val as f64) + frac_val)
+            let idx: i32 = json_alloc_node(doc, JSON_FLOAT)
+            doc[0].nodes[idx].float_val = total_float
+            return idx
+        }
+        let total_int: i64 = sign * int_val
+        let idx: i32 = json_alloc_node(doc, JSON_INT)
+        doc[0].nodes[idx].int_val = total_int
+        return idx
+    }
+
+    return -1
+}
+
+function parse_object(doc: ptr<JsonDoc>, p: ptr<JsonParser>) -> i32 {
+    let obj_idx: i32 = json_alloc_node(doc, JSON_OBJECT)
+    p[0].pos = p[0].pos + 1  # skip '{'
+    skip_whitespace(p)
+    let s: ptr<u8> = p[0].src as ptr<u8>
+    if p[0].pos < p[0].len and s[p[0].pos] == 125 {
+        p[0].pos = p[0].pos + 1  # empty object '}'
+        return obj_idx
+    }
+
+    let mut last_child: i32 = -1
+    while p[0].pos < p[0].len {
+        skip_whitespace(p)
+        if s[p[0].pos] == 125 {
+            p[0].pos = p[0].pos + 1
+            break
+        }
+        let key: string = parse_string_literal(p)
+        skip_whitespace(p)
+        if p[0].pos < p[0].len and s[p[0].pos] == 58 {
+            p[0].pos = p[0].pos + 1  # skip ':'
+        }
+        let val_idx: i32 = parse_value(doc, p)
+        if val_idx >= 0 {
+            doc[0].nodes[val_idx].key = key
+            if last_child < 0 {
+                doc[0].nodes[obj_idx].first_child = val_idx
+            } else {
+                doc[0].nodes[last_child].next_sibling = val_idx
+            }
+            last_child = val_idx
+        } else {
+            p[0].pos = p[0].pos + 1
+        }
+        skip_whitespace(p)
+        if p[0].pos < p[0].len and s[p[0].pos] == 44 {
+            p[0].pos = p[0].pos + 1  # skip ','
+        } elif p[0].pos < p[0].len and s[p[0].pos] == 125 {
+            p[0].pos = p[0].pos + 1
+            break
+        }
+    }
+    return obj_idx
+}
+
+function parse_array(doc: ptr<JsonDoc>, p: ptr<JsonParser>) -> i32 {
+    let arr_idx: i32 = json_alloc_node(doc, JSON_ARRAY)
+    p[0].pos = p[0].pos + 1  # skip '['
+    skip_whitespace(p)
+    let s: ptr<u8> = p[0].src as ptr<u8>
+    if p[0].pos < p[0].len and s[p[0].pos] == 93 {
+        p[0].pos = p[0].pos + 1  # empty array ']'
+        return arr_idx
+    }
+
+    let mut last_child: i32 = -1
+    while p[0].pos < p[0].len {
+        skip_whitespace(p)
+        if s[p[0].pos] == 93 {
+            p[0].pos = p[0].pos + 1
+            break
+        }
+        let val_idx: i32 = parse_value(doc, p)
+        if val_idx >= 0 {
+            if last_child < 0 {
+                doc[0].nodes[arr_idx].first_child = val_idx
+            } else {
+                doc[0].nodes[last_child].next_sibling = val_idx
+            }
+            last_child = val_idx
+        } else {
+            p[0].pos = p[0].pos + 1
+        }
+        skip_whitespace(p)
+        if p[0].pos < p[0].len and s[p[0].pos] == 44 {
+            p[0].pos = p[0].pos + 1  # skip ','
+        } elif p[0].pos < p[0].len and s[p[0].pos] == 93 {
+            p[0].pos = p[0].pos + 1
+            break
+        }
+    }
+    return arr_idx
+}
+
+function json_parse(doc: ptr<JsonDoc>, src: string) -> i32 {
+    let mut p: JsonParser = JsonParser {
+        src: src,
+        pos: 0,
+        len: strlen(src) as i32
+    }
+    return parse_value(doc, &p)
+}
+
+function json_get_field(doc: ptr<JsonDoc>, obj_idx: i32, key: string) -> i32 {
+    if obj_idx < 0 or doc[0].nodes[obj_idx].kind != JSON_OBJECT {
+        return -1
+    }
+    let mut curr: i32 = doc[0].nodes[obj_idx].first_child
+    while curr >= 0 {
+        if strcmp(doc[0].nodes[curr].key, key) == 0 {
+            return curr
+        }
+        curr = doc[0].nodes[curr].next_sibling
+    }
+    return -1
+}
+
+function json_get_elem(doc: ptr<JsonDoc>, arr_idx: i32, elem_idx: i32) -> i32 {
+    if arr_idx < 0 or doc[0].nodes[arr_idx].kind != JSON_ARRAY {
+        return -1
+    }
+    let mut curr: i32 = doc[0].nodes[arr_idx].first_child
+    let mut idx: i32 = 0
+    while curr >= 0 {
+        if idx == elem_idx {
+            return curr
+        }
+        curr = doc[0].nodes[curr].next_sibling
+        idx = idx + 1
+    }
+    return -1
+}
+
+function json_array_len(doc: ptr<JsonDoc>, arr_idx: i32) -> i32 {
+    if arr_idx < 0 or doc[0].nodes[arr_idx].kind != JSON_ARRAY {
+        return 0
+    }
+    let mut curr: i32 = doc[0].nodes[arr_idx].first_child
+    let mut count: i32 = 0
+    while curr >= 0 {
+        count = count + 1
+        curr = doc[0].nodes[curr].next_sibling
+    }
+    return count
+}
+
+function print_indent(level: i32) {
+    let mut i: i32 = 0
+    while i < level {
+        print("  ")
+        i = i + 1
+    }
+}
+
+function print_json(doc: ptr<JsonDoc>, idx: i32, level: i32) {
+    if idx < 0 or idx >= doc[0].count {
+        return
+    }
+    let n: ptr<JsonNode> = &doc[0].nodes[idx]
+    if n[0].kind == JSON_NULL {
+        print("null")
+    } elif n[0].kind == JSON_BOOL {
+        if n[0].int_val == 1 {
+            print("true")
+        } else {
+            print("false")
+        }
+    } elif n[0].kind == JSON_INT {
+        print(n[0].int_val as i32)
+    } elif n[0].kind == JSON_FLOAT {
+        let f: f64 = n[0].float_val
+        let integer_part: i32 = f as i32
+        let frac_part: i32 = ((f - (integer_part as f64)) * 100.0) as i32
+        print(integer_part)
+        print(".")
+        if frac_part < 10 {
+            print("0")
+        }
+        print(frac_part)
+    } elif n[0].kind == JSON_STRING {
+        print("\"")
+        print(n[0].str_val)
+        print("\"")
+    } elif n[0].kind == JSON_ARRAY {
+        println("[")
+        let mut curr: i32 = n[0].first_child
+        while curr >= 0 {
+            print_indent(level + 1)
+            print_json(doc, curr, level + 1)
+            if doc[0].nodes[curr].next_sibling >= 0 {
+                println(",")
+            } else {
+                println("")
+            }
+            curr = doc[0].nodes[curr].next_sibling
+        }
+        print_indent(level)
+        print("]")
+    } elif n[0].kind == JSON_OBJECT {
+        println("{")
+        let mut curr: i32 = n[0].first_child
+        while curr >= 0 {
+            print_indent(level + 1)
+            print("\"")
+            print(doc[0].nodes[curr].key)
+            print("\": ")
+            print_json(doc, curr, level + 1)
+            if doc[0].nodes[curr].next_sibling >= 0 {
+                println(",")
+            } else {
+                println("")
+            }
+            curr = doc[0].nodes[curr].next_sibling
+        }
+        print_indent(level)
+        print("}")
+    }
+}
+
+function main() -> i32 {
+    let payload: string = "{\"service\": \"telemetry\", \"version\": 2, \"active\": true, \"rate_hz\": 50.25, \"nodes\": [\"sensor_a\", \"sensor_b\"], \"config\": {\"buffer\": 1024, \"enabled\": true}}"
+
+    println("=== JSON Data Interchange Demo ===")
+    println("")
+    println("Source JSON string:")
+    println(payload)
+    println("")
+
+    let mut doc: JsonDoc = json_doc_new(128)
+    let root: i32 = json_parse(&doc, payload)
+
+    if root < 0 {
+        println("FAIL: Failed to parse JSON payload")
+        json_doc_free(&doc)
+        return 1
+    }
+
+    println("Parsed JSON Structure:")
+    print_json(&doc, root, 0)
+    println("")
+    println("")
+
+    # Query fields
+    let service_idx: i32 = json_get_field(&doc, root, "service")
+    if service_idx < 0 or strcmp(doc.nodes[service_idx].str_val, "telemetry") != 0 {
+        println("FAIL: Expected service == telemetry")
+        json_doc_free(&doc)
+        return 2
+    }
+    print("Field 'service': ")
+    println(doc.nodes[service_idx].str_val)
+
+    let ver_idx: i32 = json_get_field(&doc, root, "version")
+    if ver_idx < 0 or doc.nodes[ver_idx].int_val != 2 {
+        println("FAIL: Expected version == 2")
+        json_doc_free(&doc)
+        return 3
+    }
+    print("Field 'version': ")
+    println(doc.nodes[ver_idx].int_val as i32)
+
+    let active_idx: i32 = json_get_field(&doc, root, "active")
+    if active_idx < 0 or doc.nodes[active_idx].int_val != 1 {
+        println("FAIL: Expected active == true")
+        json_doc_free(&doc)
+        return 4
+    }
+    println("Field 'active': true")
+
+    let nodes_idx: i32 = json_get_field(&doc, root, "nodes")
+    let num_nodes: i32 = json_array_len(&doc, nodes_idx)
+    if num_nodes != 2 {
+        println("FAIL: Expected 2 array elements")
+        json_doc_free(&doc)
+        return 5
+    }
+    print("Array 'nodes' length: ")
+    println(num_nodes)
+
+    let first_node: i32 = json_get_elem(&doc, nodes_idx, 0)
+    print("Array 'nodes[0]': ")
+    println(doc.nodes[first_node].str_val)
+
+    let config_idx: i32 = json_get_field(&doc, root, "config")
+    let buf_idx: i32 = json_get_field(&doc, config_idx, "buffer")
+    if buf_idx < 0 or doc.nodes[buf_idx].int_val != 1024 {
+        println("FAIL: Expected config.buffer == 1024")
+        json_doc_free(&doc)
+        return 6
+    }
+    print("Nested field 'config.buffer': ")
+    println(doc.nodes[buf_idx].int_val as i32)
+
+    json_doc_free(&doc)
+    println("")
+    println("OK: JSON parse, tree query, and serialization verified.")
+    return 0
+}
