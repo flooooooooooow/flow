@@ -98303,7 +98303,11 @@ int32_t flowc_expand_for_mlir_in_place(uint8_t* src, int32_t n, int32_t cap) {
   if (m < 0) {
   return m;
 }
-  return flowc_append_range_helpers(src, m, cap);
+  int32_t m2 = flowc_impl_expand_in_place(src, m, cap);
+  if (m2 < 0) {
+  return m2;
+}
+  return flowc_append_range_helpers(src, m2, cap);
 }
 
 int32_t flowc_has_range_sum(uint8_t* src, int32_t n) {
@@ -100495,13 +100499,13 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
 }
   flowc_prof_note_source(src, nsrc, ((p).arena).len);
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st12049 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st12049; }
+  { __typeof__(tpl_len[0]) __flowc_st12062 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st12062; }
 }
   if (nsrc > ext0) {
   flowc_resolve_unlink_from((p).arena, root, ext0);
 }
   if (decl != NULL) {
-  { __typeof__(decl_len[0]) __flowc_st12080 = flowc_resolve_add_decls((p).arena, root, src, own, decl, decl_cap, decl_len[0]); decl_len[0] = __flowc_st12080; }
+  { __typeof__(decl_len[0]) __flowc_st12093 = flowc_resolve_add_decls((p).arena, root, src, own, decl, decl_cap, decl_len[0]); decl_len[0] = __flowc_st12093; }
 }
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
@@ -100512,8 +100516,8 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st12147 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12147; }
-  { __typeof__(siglen[0]) __flowc_st12161 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12161; }
+  { __typeof__(siglen[0]) __flowc_st12160 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12160; }
+  { __typeof__(siglen[0]) __flowc_st12174 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12174; }
 }
   flowc_parser_free(p);
   flow_mem_free(src);
@@ -100795,8 +100799,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st13600 = sem_error_count(c); counts[0] = __flowc_st13600; }
-  { __typeof__(counts[1]) __flowc_st13606 = sem_fatal_count(c); counts[1] = __flowc_st13606; }
+  { __typeof__(counts[0]) __flowc_st13613 = sem_error_count(c); counts[0] = __flowc_st13613; }
+  { __typeof__(counts[1]) __flowc_st13619 = sem_fatal_count(c); counts[1] = __flowc_st13619; }
   return 0;
 }
 
