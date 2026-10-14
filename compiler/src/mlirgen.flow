@@ -5928,8 +5928,22 @@ function mlg_struct_addr0(m: ptr<Mlg>, e: i32, sk: ptr<i32>) -> i32 {
             }
             let sft: i32 = m[0].arena.nodes[m[0].sv_node[sk0]].a
             if mlg_ft_is_pointer(m, sft) == 1 {
-                mlg_refuse(m, e, "field through a pointer static")
-                return V_NONE
+                # A module-scope ptr<Struct>: the address is its current
+                # value, as for a pointer local (#1078).
+                let kp: i32 = mlg_ft_struct(m, m[0].arena.nodes[sft].a)
+                if kp < 0 {
+                    mlg_refuse(m, e, "field through a pointer static")
+                    return V_NONE
+                }
+                let gp: i32 = mlg_new_val(m, MT_PTR)
+                mlg_line(m)
+                mlg_v(m, gp)
+                mlg_s(m, " = llvm.mlir.addressof @")
+                mlg_span(m, mlg_ns(m, e), mlg_ne(m, e))
+                mlg_s(m, " : !llvm.ptr")
+                mlg_nl(m)
+                sk[0] = kp
+                return mlg_load(m, gp, MT_PTR)
             }
             let k0: i32 = mlg_ft_struct(m, sft)
             if k0 < 0 {
