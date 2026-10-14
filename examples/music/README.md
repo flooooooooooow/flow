@@ -33,7 +33,9 @@ The reusable core lives in `lib/stdlib/music/representation.flow`.
 
 ## Research trajectory
 
-The core also exposes `music_find_onset_collision`, which returns an explicit pair of distinct source onsets that collapse after the fixed-grid projection. This is a concrete, inspectable distinction-loss witness, rather than relying on a single aggregate error.\n\nThe first test answers a narrow question: can a representation learned from a phrase keep distinctions a fixed semitone grid removes? The example deliberately places two synthetic landmarks at 180 and 220 cents; both round to 200 cents in the baseline. The learned codebook preserves both. The held-out notes reuse observed onset locations with new gestures, so the result demonstrates **expressive transfer with known pitch landmarks**, not generalization to novel modes.
+The core also exposes `music_find_onset_collision`, which returns an explicit pair of distinct source onsets that collapse after the fixed-grid projection. This is a concrete, inspectable distinction-loss witness, rather than relying on a single aggregate error.
+
+The first test answers a narrow question: can a representation learned from a phrase keep distinctions a fixed semitone grid removes? The example deliberately places two synthetic landmarks at 180 and 220 cents; both round to 200 cents in the baseline. The learned codebook preserves both. The held-out notes reuse observed onset locations with new gestures, so the result demonstrates **expressive transfer with known pitch landmarks**, not generalization to novel modes.
 
 The next substantive research stage is **representation induction, not merely codebook growth**. Introduce phrase-conditioned, time-varying latent features and competing candidate model families: onset dictionaries; directional phrase-transition models; relative interval distributions; continuous contour families; rhythmic/contextual grammars; and articulations learned from recordings. Separate observed frequency ratios from asserted cultural or perceptual interpretations. Optimize predictive/interventional usefulness under a complexity budget, with an explicit unrepresented-information ledger.
 
