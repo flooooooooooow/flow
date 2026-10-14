@@ -167,3 +167,45 @@ export function music_pitch_at(e: MusicGesture, phase: f64) -> f64 {
     }
     return e.crest_cents + (e.release_cents - e.crest_cents) * ((phase - 0.4) / 0.6)
 }
+
+# Return a concrete counterexample: two distinguishable observed onsets
+# which are identical after projection to the fixed 100-cent grid.
+# This is a witness of representation loss, not a value judgment.
+export struct MusicPitchCollision {
+    found: bool,
+    left_index: i32,
+    right_index: i32,
+    original_separation_cents: f64,
+    projected_separation_cents: f64
+}
+
+export function music_find_onset_collision(events: ptr<MusicGesture>, count: i32, minimum_separation_cents: f64) -> MusicPitchCollision {
+    let mut i: i32 = 0
+    while i < count {
+        let mut j: i32 = i + 1
+        while j < count {
+            let original: f64 = music_abs(events[i].onset_cents - events[j].onset_cents)
+            let pi: MusicGesture = music_project_fixed_grid(events[i])
+            let pj: MusicGesture = music_project_fixed_grid(events[j])
+            let projected: f64 = music_abs(pi.onset_cents - pj.onset_cents)
+            if original > minimum_separation_cents and projected < 0.001 {
+                return MusicPitchCollision {
+                    found: true,
+                    left_index: i,
+                    right_index: j,
+                    original_separation_cents: original,
+                    projected_separation_cents: projected
+                }
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return MusicPitchCollision {
+        found: false,
+        left_index: -1,
+        right_index: -1,
+        original_separation_cents: 0.0,
+        projected_separation_cents: 0.0
+    }
+}
