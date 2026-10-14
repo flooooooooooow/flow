@@ -1,0 +1,115 @@
+# Audible A/B: four synthetic melodic gestures, first through a
+# deliberately lossy fixed-note export, then through the discovered landmarks
+# with their original pitch trajectories and articulations intact.
+#
+# Listen:
+#   ./flow audio examples/music/representation_audition.flow
+# Render without an audio device:
+#   FLOW_AUDIO_RENDER=build/audio/representation_audition.wav \
+#     ./flow audio examples/music/representation_audition.flow
+#
+# This is an illustrative synthetic phrase, NOT an imitation or encoding
+# of a raga, maqam, or any named musical tradition.
+
+import "stdlib/music/representation.flow"
+import "stdlib/audio.flow"
+import "stdlib/audio/oscillators.flow"
+import "stdlib/audio/safety.flow"
+import "stdlib/audio/sink.flow"
+
+extern {
+    function pow(x: f64, y: f64) -> f64
+}
+
+const RATE_HZ: i32 = 48000
+const BLOCK: i32 = 256
+const SECONDS: f32 = 8.0
+const NOTE_FRAMES: i32 = 48000
+
+function audition_envelope(phase: f64, articulation: i32) -> f64 {
+    let mut attack: f64 = 0.03
+    let mut release: f64 = 0.12
+    if articulation == 1 {
+        attack = 0.06
+        release = 0.20
+    }
+    if articulation == 2 {
+        attack = 0.008
+        release = 0.10
+    }
+    if articulation == 3 {
+        attack = 0.003
+        release = 0.05
+    }
+    let mut gain: f64 = 1.0
+    if phase < attack {
+        gain = phase / attack
+    }
+    let remain: f64 = 1.0 - phase
+    if remain < release {
+        let fade: f64 = remain / release
+        if fade < gain {
+            gain = fade
+        }
+    }
+    return gain
+}
+
+function main() -> i32 {
+    let phrase: array<MusicGesture, 4> = [
+        music_gesture(180.0, 230.0, 167.0, 0.92, 1),
+        music_gesture(220.0, 257.0, 219.0, 1.05, 2),
+        music_gesture(360.0, 331.0, 367.0, 0.85, 3),
+        music_gesture(180.0, 202.0, 175.0, 1.15, 1)
+    ]
+    let mut centers: array<f64, 8> = [0.0; 8]
+    let count: i32 = music_discover_landmarks(phrase, 4, centers, 8, 10.0)
+    if count != 3 {
+        println("FAIL: unexpected number of synthetic landmarks")
+        return 1
+    }
+    println("Music representation audition")
+    println("0-4 seconds: fixed 100-cent notes, no trajectories")
+    println("4-8 seconds: pitch landmarks and continuous gestures")
+
+    let rate: SampleRate = sample_rate_48000()
+    let mut sink: AudioSink = sink_open(RATE_HZ, 2, BLOCK)
+    let sp: ptr<AudioSink> = &sink
+    let mut safety: SafetyChain = safety_new(rate, SECONDS)
+    let cp: ptr<SafetyChain> = &safety
+    let buffer: AudioBufferF32 = audio_buffer_alloc_f32(BLOCK, 2, layout_interleaved())
+    let mut oscillator: Phasor = phasor_new(220.0, rate)
+    let mut frame: i32 = 0
+
+    while !safety_finished(cp) {
+        let frames: i32 = safety_next_block(cp, BLOCK)
+        let mut i: i32 = 0
+        while i < frames {
+            let slot: i32 = frame / NOTE_FRAMES
+            let index: i32 = slot % 4
+            let position: f64 = (frame - slot * NOTE_FRAMES) as f64
+            let phase: f64 = position / (NOTE_FRAMES as f64)
+            let gesture: MusicGesture = phrase[index]
+            let mut selected: MusicGesture = music_project_fixed_grid(gesture)
+            if slot >= 4 {
+                selected = music_project_gesture(gesture, centers, count)
+            }
+            let cents: f64 = music_pitch_at(selected, phase)
+            let hz: f64 = 220.0 * pow(2.0, cents / 1200.0)
+            oscillator = phasor_set_freq(oscillator, hz, rate)
+            let envelope: f32 = audition_envelope(phase, selected.articulation) as f32
+            let sample: f32 = sine(phasor_value(oscillator)) * 0.22 * envelope
+            oscillator = phasor_tick(oscillator)
+            let safe: Frame = safety_process_frame(cp, sample, sample)
+            audio_buffer_set_f32(buffer, i, 0, safe.left)
+            audio_buffer_set_f32(buffer, i, 1, safe.right)
+            frame = frame + 1
+            i = i + 1
+        }
+        sink_write(sp, buffer.data, frames)
+    }
+    sink_close(sp)
+    audio_buffer_free_f32(buffer)
+    safety_report(cp)
+    return 0
+}
