@@ -430,7 +430,7 @@ function flowc_cgen_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
 
 # 1 for libc names the preamble's headers declare that a Flow program may
 # define with its own signature.
-function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
+export function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if flowc_cgen_span_is(src, s, e, "heapsort") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "alloca") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "mergesort") == 1 { return 1 }
