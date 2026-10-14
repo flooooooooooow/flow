@@ -11,7 +11,7 @@
 # This is an illustrative synthetic phrase, NOT an imitation or encoding
 # of a raga, maqam, or any named musical tradition.
 
-import "stdlib/music/representation.flow"
+import .representation
 import "stdlib/audio.flow"
 import "stdlib/audio/oscillators.flow"
 import "stdlib/audio/safety.flow"
