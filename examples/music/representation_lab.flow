@@ -41,6 +41,11 @@ function main() -> i32 {
         println("FAIL: the fixed-grid counterexample no longer collides")
         return 2
     }
+    let witness: MusicPitchCollision = music_find_onset_collision(training, 7, 10.0)
+    if !witness.found or witness.original_separation_cents < 39.0 {
+        println("FAIL: representation loss witness not found")
+        return 13
+    }
     let learned_a: f64 = music_nearest(180.0, landmarks, learned)
     let learned_b: f64 = music_nearest(220.0, landmarks, learned)
     if music_abs(learned_a - learned_b) < 39.0 {
