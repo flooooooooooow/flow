@@ -19,7 +19,7 @@ The audition plays eight seconds. Seconds 0-4 use a 100-cent fixed-grid, note-on
 
 ## Representation
 
-The reusable core lives in `lib/stdlib/music/representation.flow`.
+The experimental core lives in `examples/music/representation.flow` and is imported directly by both examples. Promotion to the standard library is deferred until the API and documentation are stabilized.
 
 `MusicGesture` carries an onset pitch, a crest pitch at 40% of the gesture, a release pitch, duration in beats, and an opaque articulation code. All three pitch values are **cents relative to a caller-provided reference**. They are not MIDI numbers, note names, or degrees of any predefined musical scale. Reference frequency, tonic stability, and phrase function are not yet learned.
 
