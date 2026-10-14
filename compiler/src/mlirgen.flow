@@ -2780,58 +2780,86 @@ function mlg_is_cmp_op(op: i32) -> i32 {
 }
 
 
-# Python generate_vector_literal: vector.undef, one insertelement per
-# element, then `%r = %last : vector<NxT>`, typed from the first element.
+# A vector literal <a, b, ...>: vector.from_elements, typed from the first
+# element, every element cast to that type. The declared vecN<T> it meets
+# converts it with mlg_cast. (vector.undef and vector.insertelement, which
+# the Python generator wrote, are gone from MLIR.)
 function mlg_emit_vector_lit(m: ptr<Mlg>, e: i32) -> i32 {
     let n: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
     if n == 0 {
         mlg_refuse(m, e, "empty vector literal")
         return V_NONE
     }
+    let et: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
+    if mlg_is_int_mt(et) == 0 and mlg_is_float_mt(et) == 0 {
+        mlg_refuse(m, e, "vector literal of a non-scalar element")
+        return V_NONE
+    }
     let vals: ptr<i32> = mlg_alloc_i32(n + 1)
     let mut x: i32 = m[0].arena.nodes[e].a
     let mut i: i32 = 0
     while x != AST_NONE {
-        vals[i] = mlg_emit_expr(m, x)
+        let xv: i32 = mlg_emit_expr(m, x)
+        vals[i] = mlg_cast(m, xv, mlg_expr_mt(m, x), et)
         i = i + 1
         x = m[0].arena.nodes[x].next
     }
-    let et: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
     let vt: i32 = mlg_vector_of(m, et, n)
-    let mut cur: i32 = mlg_new_val(m, vt)
-    mlg_line(m)
-    mlg_v(m, cur)
-    mlg_s(m, " = vector.undef : ")
-    mlg_put_type(m, vt)
-    mlg_nl(m)
-    i = 0
-    while i < n {
-        let ix: i32 = mlg_emit_idx_const(m, i)
-        let nx: i32 = mlg_new_val(m, vt)
-        mlg_line(m)
-        mlg_v(m, nx)
-        mlg_s(m, " = vector.insertelement ")
-        mlg_v(m, vals[i])
-        mlg_s(m, ", ")
-        mlg_v(m, cur)
-        mlg_s(m, "[")
-        mlg_v(m, ix)
-        mlg_s(m, "] : ")
-        mlg_put_type(m, vt)
-        mlg_nl(m)
-        cur = nx
-        i = i + 1
-    }
-    let r: i32 = mlg_new_val(m, MT_NONE)
+    let r: i32 = mlg_new_val(m, vt)
     mlg_line(m)
     mlg_v(m, r)
-    mlg_s(m, " = ")
-    mlg_v(m, cur)
+    mlg_s(m, " = vector.from_elements ")
+    i = 0
+    while i < n {
+        if i > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_v(m, vals[i])
+        i = i + 1
+    }
     mlg_s(m, " : ")
     mlg_put_type(m, vt)
     mlg_nl(m)
     mlg_free_i32(vals)
     return r
+}
+
+# An elementwise conversion between vectors of the same length (the
+# scalar rules of mlg_cast, on every lane). V_NONE when they differ in
+# length or an element is not a scalar.
+function mlg_vec_cast(m: ptr<Mlg>, v: i32, from: i32, dst: i32) -> i32 {
+    let fk: i32 = from - MT_VECTOR
+    let dk: i32 = dst - MT_VECTOR
+    if m[0].vc_n[fk] != m[0].vc_n[dk] {
+        return V_NONE
+    }
+    let fe: i32 = m[0].vc_elem[fk]
+    let de: i32 = m[0].vc_elem[dk]
+    let mut op: string = ""
+    if mlg_is_float_mt(fe) == 1 and mlg_is_float_mt(de) == 1 {
+        op = if fe == MT_F32 { "arith.extf" } else { "arith.truncf" }
+    } elif mlg_is_int_mt(fe) == 1 and mlg_is_float_mt(de) == 1 {
+        op = "arith.sitofp"
+    } elif mlg_is_float_mt(fe) == 1 and mlg_is_int_mt(de) == 1 {
+        op = "arith.fptosi"
+    } elif mlg_is_int_mt(fe) == 1 and mlg_is_int_mt(de) == 1 {
+        op = if mlg_width(fe) < mlg_width(de) { "arith.extsi" } else { "arith.trunci" }
+    } else {
+        return V_NONE
+    }
+    let c: i32 = mlg_new_val(m, dst)
+    mlg_line(m)
+    mlg_v(m, c)
+    mlg_s(m, " = ")
+    mlg_s(m, op)
+    mlg_s(m, " ")
+    mlg_v(m, v)
+    mlg_s(m, " : ")
+    mlg_put_type(m, from)
+    mlg_s(m, " to ")
+    mlg_put_type(m, dst)
+    mlg_nl(m)
+    return c
 }
 
 # A `test "name"` function (its name span is the string literal): Python's
@@ -2912,8 +2940,15 @@ function mlg_len_mt(m: ptr<Mlg>, e: i32) -> i32
 function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_sugar_rewrite(m, e)
     let kind: i32 = mlg_kind(m, e)
-    # Python get_expression_type has no VectorLiteral case: i32.
-    if kind == AST_VECTOR_LIT { return MT_I32 }
+    if kind == AST_VECTOR_LIT {
+        # vector<N x T>, T the first element's type (mlg_emit_vector_lit).
+        let vn: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
+        let vel: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
+        if vn > 0 and (mlg_is_int_mt(vel) == 1 or mlg_is_float_mt(vel) == 1) {
+            return mlg_vector_of(m, vel, vn)
+        }
+        return MT_I32
+    }
     if kind == AST_INT { return mlg_int_lit_mt(m, e) }
     if kind == AST_FLOAT { return MT_F64 }
     if kind == AST_BOOL { return MT_I1 }
@@ -2962,6 +2997,10 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
                 return MT_I64
             }
             return MT_PTR
+        }
+        if mlg_is_vector_mt(rt) == 1 and mlg_kind(m, m[0].arena.nodes[e].a) == AST_VECTOR_LIT and mlg_kind(m, m[0].arena.nodes[e].b) != AST_VECTOR_LIT {
+            # A vector literal takes the other operand's type (mlg_emit_binop).
+            return rt
         }
         return mlg_resolve_operand(lt, rt)
     }
@@ -3366,6 +3405,12 @@ function mlg_cast(m: ptr<Mlg>, v: i32, from_in: i32, dst: i32) -> i32 {
     }
     if from == dst {
         return v
+    }
+    if mlg_is_vector_mt(from) == 1 and mlg_is_vector_mt(dst) == 1 {
+        let vc: i32 = mlg_vec_cast(m, v, from, dst)
+        if vc != V_NONE {
+            return vc
+        }
     }
     if from == MT_INDEX and mlg_is_float_mt(dst) == 1 {
         let mid: i32 = mlg_new_val(m, MT_I64)
@@ -8205,6 +8250,15 @@ function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
         ot = lt
         if mlg_is_vector_mt(lt) == 0 {
             ot = rt
+        }
+        # A vector literal takes the other operand's vector type.
+        if lt != rt and mlg_is_vector_mt(lt) == 1 and mlg_is_vector_mt(rt) == 1 {
+            if mlg_kind(m, r) == AST_VECTOR_LIT {
+                rv = mlg_cast(m, rv, rt, lt)
+            } elif mlg_kind(m, l) == AST_VECTOR_LIT {
+                lv = mlg_cast(m, lv, lt, rt)
+                ot = rt
+            }
         }
     } else {
         if lt != ot {
