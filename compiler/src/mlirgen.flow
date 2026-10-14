@@ -76,6 +76,10 @@ extern {
     function getenv(name: string) -> string
     function strcmp(a: string, b: string) -> i32
     function atoi(s: string) -> i32
+    function popen(cmd: string, mode: string) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function fgets(buf: ptr<u8>, n: i32, fp: ptr<void>) -> ptr<u8>
+    function unlink(path: string) -> i32
 }
 
 # ---------------------------------------------------------------------------
@@ -127,6 +131,8 @@ const MLG_MAX_MERGE: i32 = 128
 const MLG_MAX_DEFERS: i32 = 1024
 const MLG_MAX_ENUMS: i32 = 256
 const MLG_MAX_UK: i32 = 256
+# C type names resolved from the program's headers
+const MLG_MAX_CTYPES: i32 = 64
 # Room after the source for synthesized names (enum layouts).
 const MLG_XSRC_CAP: i32 = 65536
 # lifted lambdas and callback adapters
@@ -322,7 +328,13 @@ export struct Mlg {
     fk_root: i32,
     fk_mod: i32,
     # 1 while emitting `__flowc_na_<name>` (#731 mixed-site clone).
-    na_clone: i32
+    na_clone: i32,
+    # C types from the program's headers (mlg_ctype_mt): name span and
+    # MLIR type, MT_NONE for a name the headers do not define
+    ct_ns: ptr<i32>,
+    ct_ne: ptr<i32>,
+    ct_mt: ptr<i32>,
+    nct: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -1518,6 +1530,205 @@ function mlg_check_struct(m: ptr<Mlg>, k: i32, depth: i32) {
     }
 }
 
+# ---------------------------------------------------------------------------
+# C types from the program's headers. A name such as pthread_mutex_t that
+# only an @cImport / @cInclude header (or @cEmbed C) defines has the size,
+# alignment and kind the C compiler gives it on this target, so clang is
+# asked: the headers and embedded C, then
+#     char __flow_probe_sz[sizeof(T)];
+#     char __flow_probe_al[_Alignof(T)];
+#     char __flow_probe_cl[__builtin_classify_type(*(T*)0)];
+# compiled to LLVM IR, where each array's length is the answer. An integer
+# or pointer is that scalar, a float f32 or f64, and anything else (a
+# struct, a union) storage of its size made of integers of its alignment.
+# ---------------------------------------------------------------------------
+
+# Append s[0, len) to buf at n (stopping short of cap); the new length.
+function mlg_ct_put(buf: ptr<u8>, n: i32, cap: i32, s: ptr<u8>, len: i32) -> i32 {
+    let mut k: i32 = n
+    let mut i: i32 = 0
+    while i < len and k < cap - 1 {
+        buf[k] = s[i]
+        k = k + 1
+        i = i + 1
+    }
+    return k
+}
+
+function mlg_ct_puts(buf: ptr<u8>, n: i32, cap: i32, s: string) -> i32 {
+    let p: ptr<u8> = s
+    return mlg_ct_put(buf, n, cap, p, strlen(s) as i32)
+}
+
+# The length of `[N x i8]` on the IR line in buf that defines @name, or -1.
+function mlg_ct_read_len(buf: ptr<u8>, n: i32, name: string) -> i32 {
+    let np: ptr<u8> = name
+    let nl: i32 = strlen(name) as i32
+    let mut i: i32 = 0
+    while i + nl < n {
+        let mut hit: i32 = 1
+        let mut j: i32 = 0
+        while hit == 1 and j < nl {
+            if buf[i + j] != np[j] {
+                hit = 0
+            }
+            j = j + 1
+        }
+        if hit == 1 and (i == 0 or buf[i - 1] == 10) {
+            let mut q: i32 = i + nl
+            while q < n and buf[q] != 10 and buf[q] != 91 {
+                q = q + 1
+            }
+            if q < n and buf[q] == 91 {
+                q = q + 1
+                let mut v: i32 = 0
+                let mut digits: i32 = 0
+                while q < n and buf[q] >= 48 and buf[q] <= 57 and v < 100000000 {
+                    v = v * 10 + (buf[q] as i32 - 48)
+                    q = q + 1
+                    digits = digits + 1
+                }
+                if digits > 0 {
+                    return v
+                }
+            }
+            return 0 - 1
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# The MLIR type of a C type of size sz, alignment al and
+# __builtin_classify_type cl; MT_NONE when it has no lowering.
+function mlg_ct_layout_mt(m: ptr<Mlg>, sz: i32, al: i32, cl: i32) -> i32 {
+    if sz <= 0 or al <= 0 or sz % al != 0 {
+        return MT_NONE
+    }
+    if cl == 5 and sz == 8 {
+        return MT_PTR
+    }
+    if cl == 8 {
+        if sz == 4 { return MT_F32 }
+        if sz == 8 { return MT_F64 }
+        return MT_NONE
+    }
+    let mut el: i32 = MT_NONE
+    if al == 1 { el = MT_I8 }
+    if al == 2 { el = MT_I16 }
+    if al == 4 { el = MT_I32 }
+    if al == 8 { el = MT_I64 }
+    if al == 16 { el = MT_I128 }
+    if el == MT_NONE {
+        return MT_NONE
+    }
+    if sz == al {
+        return el
+    }
+    return mlg_llarr_of(m, el, sz / al)
+}
+
+# Ask clang for the layout of the C type src[ns, ne); MT_NONE when the
+# program has no C headers, clang is missing or the name is no C type.
+function mlg_ct_probe(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
+    let cap: i32 = 1048576
+    let buf: ptr<u8> = malloc(cap as i64)
+    let mut n: i32 = 0
+    let mut hdrs: i32 = 0
+    let mut i: i32 = 0
+    while i < m[0].arena.len {
+        let k: i32 = m[0].arena.nodes[i].kind
+        let hs: i32 = m[0].arena.nodes[i].name_start
+        let he: i32 = m[0].arena.nodes[i].name_end
+        if (k == AST_C_IMPORT or k == AST_C_INCLUDE) and he - hs >= 2 {
+            # #include "header", as the C backend writes it.
+            n = mlg_ct_puts(buf, n, cap, "#include \"")
+            n = mlg_ct_put(buf, n, cap, &m[0].src[hs + 1], he - hs - 2)
+            n = mlg_ct_puts(buf, n, cap, "\"\n")
+            hdrs = hdrs + 1
+        }
+        if k == AST_C_EMBED and mlg_ne(m, i) - mlg_ns(m, i) >= 2 {
+            n = mlg_ct_put(buf, n, cap, &m[0].src[mlg_ns(m, i) + 1], mlg_ne(m, i) - mlg_ns(m, i) - 2)
+            n = mlg_ct_puts(buf, n, cap, "\n")
+            hdrs = hdrs + 1
+        }
+        i = i + 1
+    }
+    let outp: string = getenv("FLOWC_OUT")
+    let op: ptr<u8> = outp
+    if hdrs == 0 or op == null {
+        free(buf)
+        return MT_NONE
+    }
+    n = mlg_ct_puts(buf, n, cap, "char __flow_probe_sz[sizeof(")
+    n = mlg_ct_put(buf, n, cap, &m[0].src[ns], ne - ns)
+    n = mlg_ct_puts(buf, n, cap, ")];\nchar __flow_probe_al[_Alignof(")
+    n = mlg_ct_put(buf, n, cap, &m[0].src[ns], ne - ns)
+    n = mlg_ct_puts(buf, n, cap, ")];\nchar __flow_probe_cl[__builtin_classify_type(*(")
+    n = mlg_ct_put(buf, n, cap, &m[0].src[ns], ne - ns)
+    n = mlg_ct_puts(buf, n, cap, "*)0)];\n")
+    let path: string = outp + ".ctype.c"
+    if flowc_write_file(path, buf, n) != 0 {
+        free(buf)
+        return MT_NONE
+    }
+    # -I for the entry program's directory, where a quoted header sits.
+    let inp: string = getenv("FLOWC_IN")
+    let ip: ptr<u8> = inp
+    let mut dir: string = "."
+    if ip != null {
+        let il: i32 = strlen(inp) as i32
+        let mut s: i32 = il - 1
+        while s > 0 and ip[s] != 47 {
+            s = s - 1
+        }
+        if s > 0 {
+            let db: ptr<u8> = malloc((s + 1) as i64)
+            let _dl: i32 = mlg_ct_put(db, 0, s + 1, ip, s)
+            db[s] = 0
+            dir = db as string
+        }
+    }
+    let fp: ptr<void> = popen("clang -S -emit-llvm -w -o - -I . -I '" + dir + "' '" + path + "' 2>/dev/null", "r")
+    if fp == null {
+        free(buf)
+        return MT_NONE
+    }
+    n = 0
+    let mut line: ptr<u8> = buf
+    while n < cap - 4096 and fgets(line, 4096, fp) != null {
+        let ls: string = line as string
+        n = n + (strlen(ls) as i32)
+        line = &buf[n]
+    }
+    let _rc: i32 = pclose(fp)
+    let _ul: i32 = unlink(path)
+    let sz: i32 = mlg_ct_read_len(buf, n, "@__flow_probe_sz = ")
+    let al: i32 = mlg_ct_read_len(buf, n, "@__flow_probe_al = ")
+    let cl: i32 = mlg_ct_read_len(buf, n, "@__flow_probe_cl = ")
+    free(buf)
+    return mlg_ct_layout_mt(m, sz, al, cl)
+}
+
+# The MLIR type of the C type named src[ns, ne), probed once per name.
+function mlg_ctype_mt(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < m[0].nct {
+        if mlg_span_eq(m, ns, ne, m[0].ct_ns[i], m[0].ct_ne[i]) == 1 {
+            return m[0].ct_mt[i]
+        }
+        i = i + 1
+    }
+    let t: i32 = mlg_ct_probe(m, ns, ne)
+    if m[0].nct < MLG_MAX_CTYPES {
+        m[0].ct_ns[m[0].nct] = ns
+        m[0].ct_ne[m[0].nct] = ne
+        m[0].ct_mt[m[0].nct] = t
+        m[0].nct = m[0].nct + 1
+    }
+    return t
+}
+
 # Python flow_type_to_mlir. `at` is the node blamed on refusal.
 function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     if ft <= FT_STRUCT {
@@ -1688,8 +1899,13 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     }
     let k: i32 = mlg_struct_index(m, ns, ne)
     if k < 0 {
-        # A name that is no type the emitter knows (a C type from a header,
-        # a generic parameter left over) is refused; it used to become
+        # A C type from the program's headers has the layout clang gives it.
+        let ct: i32 = mlg_ctype_mt(m, ns, ne)
+        if ct != MT_NONE {
+            return ct
+        }
+        # A name that is no type the emitter knows (a generic parameter
+        # left over, a misspelling) is refused; it used to become
         # memref<16xi8>, storage of the wrong size and kind (#1063).
         mlg_refuse(m, at, "unknown type name")
         return MT_NONE
@@ -21715,7 +21931,8 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         vraw: mlg_alloc_i32(MLG_VAL_CAP), rawbuf: malloc(MLG_RAW_CAP as i64), rawlen: 0,
         vtx: mlg_alloc_i32(MLG_VAL_CAP), vtxi: mlg_alloc_i32(MLG_VAL_CAP),
         vc_elem: mlg_alloc_i32(MLG_MAX_ARRS), vc_n: mlg_alloc_i32(MLG_MAX_ARRS), nvc: 0,
-        fk_root: AST_NONE, fk_mod: 0, na_clone: 0
+        fk_root: AST_NONE, fk_mod: 0, na_clone: 0,
+        ct_ns: mlg_alloc_i32(MLG_MAX_CTYPES), ct_ne: mlg_alloc_i32(MLG_MAX_CTYPES), ct_mt: mlg_alloc_i32(MLG_MAX_CTYPES), nct: 0
     }
     let m: ptr<Mlg> = &mg
     mlg_mark_pipe_calls(m)
