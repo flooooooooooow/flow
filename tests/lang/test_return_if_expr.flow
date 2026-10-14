@@ -1,0 +1,30 @@
+# `return if c { a } else { b }` returns the if-expression's value. The
+# parser took `if` as the start of a statement, so this was a bare return
+# followed by an if, and the function "returned void".
+
+function pick(a: i32, b: i32) -> i32 {
+    return if a < b { a } else { b }
+}
+
+function label(n: i32) -> string {
+    return if n == 1 { "one" } else { "many" }
+}
+
+let mut HITS: i32 = 0
+
+# A bare return with an if on the next line stays a bare return.
+function early(n: i32) {
+    HITS = HITS + 1
+    return
+    if n > 0 { HITS = HITS + 100 }
+}
+
+function main() -> i32 {
+    if pick(3, 9) != 3 { return 1 }
+    if pick(9, 3) != 3 { return 2 }
+    if not (label(1) == "one") { return 3 }
+    if not (label(5) == "many") { return 4 }
+    early(3)
+    if HITS != 1 { return 5 }
+    return 0
+}
