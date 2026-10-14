@@ -2068,6 +2068,7 @@ const LC_ABORT: i32 = 64
 const LC_EXIT: i32 = 128
 const LC_FREE: i32 = 256
 const LC_MEMPROF: i32 = 512
+const LC_GETENV: i32 = 1024
 const HP_CONCAT: i32 = 1
 const HP_STREQ: i32 = 2
 const HP_STR_I64: i32 = 4
@@ -2077,6 +2078,7 @@ const HP_STRLEN: i32 = 32
 const HP_FAULT: i32 = 64
 const HP_PANIC: i32 = 128
 const HP_UISTATE: i32 = 256
+const HP_EFFECT: i32 = 512
 
 function mlg_lc_use(m: ptr<Mlg>, b: i32) {
     m[0].lc_need = m[0].lc_need | b
@@ -2159,6 +2161,12 @@ function mlg_hp_use(m: ptr<Mlg>, b: i32) {
         mlg_lc_use(m, LC_STRLEN | LC_WRITE | LC_ABORT)
         mlg_intern_lit(m, "\"flow: \"")
         mlg_intern_lit(m, "\"\\n\"")
+    }
+    if b == HP_EFFECT {
+        mlg_lc_use(m, LC_STRLEN | LC_WRITE | LC_ABORT | LC_GETENV)
+        mlg_intern_lit(m, "\"flow: unhandled effect \"")
+        mlg_intern_lit(m, "\" (set FLOW_PERMISSIVE_EFFECTS=1 to allow zero defaults)\\n\"")
+        mlg_intern_lit(m, "\"FLOW_PERMISSIVE_EFFECTS\"")
     }
     if b == HP_STR_I64 {
         mlg_lc_use(m, LC_MALLOC | LC_SNPRINTF)
@@ -16478,6 +16486,49 @@ function mlg_ret_of(m: ptr<Mlg>, rnode: i32, at: i32) -> i32 {
     return mlg_ft_to_mt(m, rnode, at)
 }
 
+# Intern `"E.op"` for the unhandled-effect message.
+function mlg_intern_eff_op(m: ptr<Mlg>, d: i32, op: i32) -> i32 {
+    let es: i32 = mlg_ns(m, d)
+    let ee: i32 = mlg_ne(m, d)
+    let os: i32 = mlg_ns(m, op)
+    let oe: i32 = mlg_ne(m, op)
+    let n: i32 = (ee - es) + (oe - os) + 3
+    let tmp: ptr<u8> = malloc((n + 1) as i64)
+    tmp[0] = 34
+    let mut i: i32 = 0
+    while i < ee - es {
+        tmp[1 + i] = m[0].src[es + i]
+        i = i + 1
+    }
+    tmp[1 + i] = 46
+    let mut j: i32 = 0
+    while j < oe - os {
+        tmp[2 + i + j] = m[0].src[os + j]
+        j = j + 1
+    }
+    tmp[n - 1] = 34
+    let k: i32 = mlg_intern(m, tmp, n)
+    free(tmp)
+    return k
+}
+
+# func.call @__flow_unhandled_effect(@str_k): the C backend's
+# _flow_unhandled_effect, taken when no installed handler has the op.
+function mlg_emit_unhandled_call(m: ptr<Mlg>, k: i32) {
+    let p: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, p)
+    mlg_s(m, " = llvm.mlir.addressof @str_")
+    mlg_i(m, k)
+    mlg_s(m, " : !llvm.ptr")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "func.call @__flow_unhandled_effect(")
+    mlg_v(m, p)
+    mlg_s(m, ") : (!llvm.ptr) -> ()")
+    mlg_nl(m)
+}
+
 function mlg_emit_effect(m: ptr<Mlg>, d: i32) {
     let ns: i32 = mlg_ns(m, d)
     let ne: i32 = mlg_ne(m, d)
@@ -16511,6 +16562,8 @@ function mlg_emit_effect(m: ptr<Mlg>, d: i32) {
         let params: i32 = m[0].arena.nodes[op].a
         let np: i32 = mlg_chain_len(m, params)
         let rt: i32 = mlg_ret_of(m, m[0].arena.nodes[op].b, op)
+        mlg_hp_use(m, HP_EFFECT)
+        let eff_k: i32 = mlg_intern_eff_op(m, d, op)
         mlg_line(m)
         mlg_s(m, "func.func @")
         mlg_span(m, ns, ne)
@@ -16653,11 +16706,14 @@ function mlg_emit_effect(m: ptr<Mlg>, d: i32) {
             mlg_s(m, " : ")
             mlg_put_type(m, rt)
             mlg_nl(m)
-            m[0].ind = m[0].ind - 1
-            mlg_line(m)
-            mlg_s(m, "} else {")
-            mlg_nl(m)
-            m[0].ind = m[0].ind + 1
+        }
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "} else {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        mlg_emit_unhandled_call(m, eff_k)
+        if rt != MT_VOID {
             let d1: i32 = mlg_effect_default(m, rt)
             mlg_line(m)
             mlg_s(m, "scf.yield ")
@@ -16677,11 +16733,14 @@ function mlg_emit_effect(m: ptr<Mlg>, d: i32) {
             mlg_s(m, " : ")
             mlg_put_type(m, rt)
             mlg_nl(m)
-            m[0].ind = m[0].ind - 1
-            mlg_line(m)
-            mlg_s(m, "} else {")
-            mlg_nl(m)
-            m[0].ind = m[0].ind + 1
+        }
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "} else {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        mlg_emit_unhandled_call(m, eff_k)
+        if rt != MT_VOID {
             let d2: i32 = mlg_effect_default(m, rt)
             mlg_line(m)
             mlg_s(m, "scf.yield ")
@@ -21317,6 +21376,84 @@ function mlg_put_lc_decls(m: ptr<Mlg>) {
         mlg_s(m, "  func.func private @free(!llvm.ptr) -> ()")
         mlg_nl(m)
     }
+    # mlg_put_mem_profile declares getenv itself.
+    if (m[0].lc_need & LC_GETENV) != 0 and (m[0].lc_need & LC_MEMPROF) == 0 and mlg_lc_declared(m, "getenv") == 0 {
+        mlg_s(m, "  func.func private @getenv(!llvm.ptr) -> !llvm.ptr")
+        mlg_nl(m)
+    }
+}
+
+# 1 when the program is compiled with strict effects fixed on, as the C
+# backend's flowc_cgen_eff_strict: FLOWC_STRICT_EFFECTS=1 and no
+# FLOWC_PERMISSIVE_EFFECTS=1. Otherwise FLOW_PERMISSIVE_EFFECTS=1 at run
+# time turns the unhandled abort off.
+function mlg_eff_strict_compile() -> i32 {
+    let pe: string = getenv("FLOWC_PERMISSIVE_EFFECTS")
+    let pep: ptr<u8> = pe as ptr<u8>
+    if pep != null and pep[0] == 49 {
+        return 0
+    }
+    let se: string = getenv("FLOWC_STRICT_EFFECTS")
+    let sep: ptr<u8> = se as ptr<u8>
+    if sep != null and sep[0] == 49 {
+        return 1
+    }
+    return 0
+}
+
+# The C backend's _flow_unhandled_effect: under strict effects, print
+# `flow: unhandled effect E.op (...)` to stderr and abort. arg0 is "E.op".
+function mlg_put_unhandled_effect(m: ptr<Mlg>) {
+    let sz: string = mlg_szs(m)
+    mlg_s(m, "  func.func private @__flow_unhandled_effect(%arg0: !llvm.ptr) {\n")
+    if mlg_eff_strict_compile() == 1 {
+        mlg_s(m, "    %strict = arith.constant true\n")
+    } else {
+        mlg_s(m, "    %name = llvm.mlir.addressof @str_")
+        mlg_i(m, mlg_intern_lit(m, "\"FLOW_PERMISSIVE_EFFECTS\""))
+        mlg_s(m, " : !llvm.ptr\n")
+        mlg_s(m, "    %env = func.call @getenv(%name) : (!llvm.ptr) -> !llvm.ptr\n")
+        mlg_s(m, "    %z = llvm.mlir.zero : !llvm.ptr\n")
+        mlg_s(m, "    %has = llvm.icmp \"ne\" %env, %z : !llvm.ptr\n")
+        mlg_s(m, "    %perm = scf.if %has -> (i1) {\n")
+        mlg_s(m, "      %ch = llvm.load %env : !llvm.ptr -> i8\n")
+        mlg_s(m, "      %one = arith.constant 49 : i8\n")
+        mlg_s(m, "      %eq = arith.cmpi eq, %ch, %one : i8\n")
+        mlg_s(m, "      scf.yield %eq : i1\n")
+        mlg_s(m, "    } else {\n")
+        mlg_s(m, "      %f = arith.constant false\n")
+        mlg_s(m, "      scf.yield %f : i1\n")
+        mlg_s(m, "    }\n")
+        mlg_s(m, "    %t = arith.constant true\n")
+        mlg_s(m, "    %strict = arith.xori %perm, %t : i1\n")
+    }
+    mlg_s(m, "    scf.if %strict {\n")
+    mlg_s(m, "      %fd = arith.constant 2 : i32\n")
+    mlg_s(m, "      %pre = llvm.mlir.addressof @str_")
+    mlg_i(m, mlg_intern_lit(m, "\"flow: unhandled effect \""))
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %post = llvm.mlir.addressof @str_")
+    mlg_i(m, mlg_intern_lit(m, "\" (set FLOW_PERMISSIVE_EFFECTS=1 to allow zero defaults)\\n\""))
+    mlg_s(m, " : !llvm.ptr\n")
+    mlg_s(m, "      %n0 = func.call @strlen(%pre) : (!llvm.ptr) -> ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n      %w0 = func.call @write(%fd, %pre, %n0) : (i32, !llvm.ptr, ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n      %n1 = func.call @strlen(%arg0) : (!llvm.ptr) -> ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n      %w1 = func.call @write(%fd, %arg0, %n1) : (i32, !llvm.ptr, ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n      %n2 = func.call @strlen(%post) : (!llvm.ptr) -> ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n      %w2 = func.call @write(%fd, %post, %n2) : (i32, !llvm.ptr, ")
+    mlg_s(m, sz)
+    mlg_s(m, ") -> ")
+    mlg_s(m, sz)
+    mlg_s(m, "\n      func.call @abort() : () -> ()\n    }\n    func.return\n  }\n")
 }
 
 function mlg_put_str_of(m: ptr<Mlg>, name: string, arg_t: string, fmt: string, cap: string) {
@@ -21482,6 +21619,9 @@ function mlg_put_helpers(m: ptr<Mlg>) {
         mlg_s(m, ") -> ")
         mlg_s(m, sz)
         mlg_s(m, "\n    func.call @abort() : () -> ()\n    func.return\n  }\n")
+    }
+    if (m[0].hp_need & HP_EFFECT) != 0 {
+        mlg_put_unhandled_effect(m)
     }
     if (m[0].hp_need & HP_STR_I64) != 0 {
         mlg_put_str_of(m, "__flow_str_of_i64", "i64", "\"%lld\"", "32")
