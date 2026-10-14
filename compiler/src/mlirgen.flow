@@ -8658,6 +8658,25 @@ function mlg_emit_addr(m: ptr<Mlg>, a: i32) -> i32 {
 }
 
 # Python CastExpression lowering.
+# 1 when SSA value v is a parameter or a local's current value, so that
+# changing its signedness in place would change the variable's.
+function mlg_val_is_bound(m: ptr<Mlg>, v: i32) -> i32 {
+    if v < 0 {
+        if v > V_NONE {
+            return 1
+        }
+        return 0
+    }
+    let mut l: i32 = 0
+    while l < m[0].nloc {
+        if m[0].l_ssa[l] == v {
+            return 1
+        }
+        l = l + 1
+    }
+    return 0
+}
+
 function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
     let a: i32 = m[0].arena.nodes[e].a
     let tt: i32 = m[0].arena.nodes[e].b
@@ -8679,11 +8698,24 @@ function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
         from_eff = from
     }
     if from_eff == dst {
-        if tu == 0 {
-            mlg_set_vuns(m, v, 0)
-        } else {
-            mlg_set_vuns(m, v, 1)
+        if mlg_vuns(m, v) != tu and mlg_starts_i(dst) == 1 and dst != MT_INDEX and mlg_val_is_bound(m, v) == 1 {
+            # `a as u64` for an i64 a: the same bits read with the other
+            # signedness. A new value carries it, so a, which may be a
+            # local or a parameter, keeps comparing as it was declared.
+            let rv: i32 = mlg_new_val(m, dst)
+            mlg_line(m)
+            mlg_v(m, rv)
+            mlg_s(m, " = arith.bitcast ")
+            mlg_v(m, v)
+            mlg_s(m, " : ")
+            mlg_put_type(m, dst)
+            mlg_s(m, " to ")
+            mlg_put_type(m, dst)
+            mlg_nl(m)
+            mlg_set_vuns(m, rv, tu)
+            return rv
         }
+        mlg_set_vuns(m, v, tu)
         return v
     }
     if tu == 1 and mlg_is_float_mt(from_eff) == 1 and mlg_starts_i(dst) == 1 {
