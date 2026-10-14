@@ -7,7 +7,7 @@
 # EXIT 0: landmarks discovered, neighboring pitches remain distinguishable,
 # and contour, articulation, and timing are preserved on held-out gestures.
 
-import "stdlib/music/representation.flow"
+import .representation
 
 extern {
     function printf(fmt: string, ...) -> i32
