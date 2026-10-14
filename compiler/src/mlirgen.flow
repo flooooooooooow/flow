@@ -20014,11 +20014,15 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                         return
                     }
                     while ef != AST_NONE {
-                        if mlg_kind(m, ef) != AST_FN {
-                            mlg_refuse(m, ef, "extern type")
+                        let ek: i32 = mlg_kind(m, ef)
+                        if ek == AST_FN {
+                            mlg_add_fn(m, ef, 1)
+                        } elif ek != AST_EXTERN_TYPE {
+                            # An opaque `type X` needs no declaration: a
+                            # ptr<X> is !llvm.ptr whatever X is.
+                            mlg_refuse(m, ef, "extern const")
                             return
                         }
-                        mlg_add_fn(m, ef, 1)
                         ef = m[0].arena.nodes[ef].next
                     }
                 } else {
@@ -20048,6 +20052,10 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                                         # trait / impl / test blocks: Python's MLIR
                                         # generator emits nothing for them.
                                         let _skip: i32 = 0
+                                    } elif k == AST_EXTERN_TYPE {
+                                        # An opaque C type is only reached
+                                        # through ptr<X>, which is !llvm.ptr.
+                                        let _opaque: i32 = 0
                                     } elif k == AST_C_INCLUDE or k == AST_C_IMPORT {
                                         # A C header only matters to the C
                                         # backend; the functions the program
