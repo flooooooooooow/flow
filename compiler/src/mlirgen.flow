@@ -20,6 +20,7 @@
 # the text to recorded goldens as a regression check.
 
 import .fileio { flowc_write_file }
+import .cgen { flowc_cgen_is_libc_clash }
 import .proof_lower { flowc_proof_erase }
 import .type_id {
     flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
@@ -4395,6 +4396,12 @@ function mlg_libc_mode(m: ptr<Mlg>, k: i32) -> i32 {
     }
     let params: i32 = m[0].arena.nodes[f].a
     if params != AST_NONE and mlg_ft_struct(m, m[0].arena.nodes[params].a) >= 0 {
+        return 2
+    }
+    if m[0].arena.nodes[f].c != AST_NONE and flowc_cgen_is_libc_clash(m[0].src, mlg_ns(m, f), mlg_ne(m, f)) == 1 {
+        # The C backend renames a Flow definition of these names
+        # (`abs(x: f32)` in stdlib/math.flow) for the whole unit, so every
+        # call reaches the Flow function.
         return 2
     }
     if mlg_chain_len(m, params) != np {
