@@ -1,0 +1,37 @@
+# MLIR parity fixture: C types that only a header defines take the size,
+# alignment and kind the C compiler gives them. ldiv_t is a 16-byte
+# struct (storage of two i64), time_t an integer. The types are the same
+# on every 64-bit target the goldens run on.
+
+@cImport("stdlib.h")
+@cImport("time.h")
+@cImport("string.h")
+
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+struct Holder {
+    before: i32,
+    q: ldiv_t,
+    stamp: time_t,
+    after: i32
+}
+
+function fill(h: ptr<Holder>) {
+    # Write all 16 bytes of q: before and after must stay as they were.
+    memset(&h.q, 255, 16)
+    h.stamp = 42
+}
+
+function main() -> i32 {
+    let mut h: Holder = Holder { before: 1, after: 2 }
+    fill(&h)
+    printf("before %d after %d stamp %d\n", h.before, h.after, h.stamp as i32)
+    let mut copy: ldiv_t
+    memcpy(&copy, &h.q, 16)
+    if memcmp(&copy, &h.q, 16) == 0 {
+        printf("copied\n")
+    }
+    return 0
+}
