@@ -1279,6 +1279,440 @@ function mlg_span_mt(m: ptr<Mlg>, at: i32) -> i32 {
     return MT_STRUCT + m[0].span_st
 }
 
+# ---------------------------------------------------------------------------
+# Complex numbers. c64 is C's float complex and c128 its double complex: a
+# value is !llvm.struct<(f32, f32)> or !llvm.struct<(f64, f64)>, real part
+# first, which is how C lays them out. The struct is synthesized under a
+# name a program cannot spell. Arithmetic is C's: an operand that is real
+# scales or shifts the parts one by one, the type is the wider of the two,
+# and the <complex.h> builtins (creal, cimag, cabs, conj, cexp) are
+# computed inline from their real formulas.
+# ---------------------------------------------------------------------------
+function mlg_cplx_mt(m: ptr<Mlg>, wide: i32, at: i32) -> i32 {
+    let nm: string = if wide == 1 { "#c128" } else { "#c64" }
+    let mut i: i32 = 0
+    while i < m[0].nst {
+        let s0: i32 = m[0].st_node[i]
+        if mlg_span_is(m, mlg_ns(m, s0), mlg_ne(m, s0), nm) == 1 {
+            return MT_STRUCT + i
+        }
+        i = i + 1
+    }
+    if m[0].nst >= MLG_MAX_STRUCTS {
+        mlg_refuse(m, at, "too many structs")
+        return MT_NONE
+    }
+    let el: string = if wide == 1 { "f64" } else { "f32" }
+    let np: ptr<u8> = nm
+    let ep: ptr<u8> = el
+    let rp: ptr<u8> = "re"
+    let ip: ptr<u8> = "im"
+    let nl: i32 = strlen(nm) as i32
+    let a0: i32 = mlg_xput(m, np, nl)
+    let a1: i32 = mlg_xput(m, rp, 2)
+    let a2: i32 = mlg_xput(m, ip, 2)
+    let a3: i32 = mlg_xput(m, ep, 3)
+    if a0 < 0 or a1 < 0 or a2 < 0 or a3 < 0 {
+        return MT_NONE
+    }
+    let s: i32 = mlg_new_node(m, AST_STRUCT, 0)
+    if s == AST_NONE {
+        return MT_NONE
+    }
+    m[0].arena.nodes[s].name_start = a0
+    m[0].arena.nodes[s].name_end = a0 + nl
+    let f0: i32 = mlg_synth_field(m, a1, a1 + 2, a3, a3 + 3, 0)
+    let f1: i32 = mlg_synth_field(m, a2, a2 + 2, a3, a3 + 3, 0)
+    if f0 == AST_NONE or f1 == AST_NONE {
+        return MT_NONE
+    }
+    m[0].arena.nodes[s].a = f0
+    m[0].arena.nodes[f0].next = f1
+    m[0].st_node[m[0].nst] = s
+    m[0].st_enum[m[0].nst] = 0
+    m[0].nst = m[0].nst + 1
+    return MT_STRUCT + m[0].nst - 1
+}
+
+# 1 for a c64 type, 2 for c128, 0 for anything else.
+function mlg_cplx_kind(m: ptr<Mlg>, t: i32) -> i32 {
+    if mlg_is_struct_mt(t) == 0 {
+        return 0
+    }
+    let s: i32 = m[0].st_node[t - MT_STRUCT]
+    if mlg_span_is(m, mlg_ns(m, s), mlg_ne(m, s), "#c64") == 1 {
+        return 1
+    }
+    if mlg_span_is(m, mlg_ns(m, s), mlg_ne(m, s), "#c128") == 1 {
+        return 2
+    }
+    return 0
+}
+
+# The part type of complex type t.
+function mlg_cplx_elem(m: ptr<Mlg>, t: i32) -> i32 {
+    if mlg_cplx_kind(m, t) == 2 {
+        return MT_F64
+    }
+    return MT_F32
+}
+
+# A complex value of type t from parts re and im (already of its part type).
+function mlg_cplx_make(m: ptr<Mlg>, re: i32, im: i32, t: i32) -> i32 {
+    let u: i32 = mlg_new_val(m, t)
+    mlg_line(m)
+    mlg_v(m, u)
+    mlg_s(m, " = llvm.mlir.undef : ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    let a: i32 = mlg_new_val(m, t)
+    mlg_line(m)
+    mlg_v(m, a)
+    mlg_s(m, " = llvm.insertvalue ")
+    mlg_v(m, re)
+    mlg_s(m, ", ")
+    mlg_v(m, u)
+    mlg_s(m, "[0] : ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    let b: i32 = mlg_new_val(m, t)
+    mlg_line(m)
+    mlg_v(m, b)
+    mlg_s(m, " = llvm.insertvalue ")
+    mlg_v(m, im)
+    mlg_s(m, ", ")
+    mlg_v(m, a)
+    mlg_s(m, "[1] : ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    return b
+}
+
+# Part idx (0 real, 1 imaginary) of complex value v of type t.
+function mlg_cplx_part(m: ptr<Mlg>, v: i32, t: i32, idx: i32) -> i32 {
+    let r: i32 = mlg_new_val(m, mlg_cplx_elem(m, t))
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = llvm.extractvalue ")
+    mlg_v(m, v)
+    mlg_s(m, "[")
+    mlg_i(m, idx)
+    mlg_s(m, "] : ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    return r
+}
+
+# %r = <op> a, b : t (or `<op> a : t` when b is V_NONE).
+function mlg_cplx_op(m: ptr<Mlg>, op: string, a: i32, b: i32, t: i32) -> i32 {
+    let r: i32 = mlg_new_val(m, t)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = ")
+    mlg_s(m, op)
+    mlg_s(m, " ")
+    mlg_v(m, a)
+    if b != V_NONE {
+        mlg_s(m, ", ")
+        mlg_v(m, b)
+    }
+    mlg_s(m, " : ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    return r
+}
+
+# Value v of type from as complex type dst: a complex value with its parts
+# converted, a real number as (v, 0).
+function mlg_cplx_conv(m: ptr<Mlg>, v: i32, from: i32, dst: i32) -> i32 {
+    if from == dst {
+        return v
+    }
+    let de: i32 = mlg_cplx_elem(m, dst)
+    if mlg_cplx_kind(m, from) != 0 {
+        let fe: i32 = mlg_cplx_elem(m, from)
+        let re: i32 = mlg_cast(m, mlg_cplx_part(m, v, from, 0), fe, de)
+        let im: i32 = mlg_cast(m, mlg_cplx_part(m, v, from, 1), fe, de)
+        return mlg_cplx_make(m, re, im, dst)
+    }
+    let rv: i32 = mlg_cast(m, v, from, de)
+    let z: i32 = mlg_new_val(m, de)
+    mlg_line(m)
+    mlg_v(m, z)
+    mlg_s(m, " = arith.constant 0.0 : ")
+    mlg_put_type(m, de)
+    mlg_nl(m)
+    return mlg_cplx_make(m, rv, z, dst)
+}
+
+# The <complex.h> builtin call e names: 1 c64(), 2 c128(), 3 creal, 4 cimag,
+# 5 cabs, 6 conj, 7 cexp, 8 crealf, 9 cimagf, 10 cabsf; 0 for any other call, or one to a function the
+# program defines.
+function mlg_cplx_builtin(m: ptr<Mlg>, e: i32) -> i32 {
+    if mlg_kind(m, e) != AST_CALL or m[0].arena.nodes[e].start != m[0].arena.nodes[e].name_start {
+        return 0
+    }
+    let ns: i32 = mlg_ns(m, e)
+    let ne: i32 = mlg_ne(m, e)
+    let mut c: i32 = 0
+    if mlg_span_is(m, ns, ne, "c64") == 1 { c = 1 }
+    if mlg_span_is(m, ns, ne, "c128") == 1 { c = 2 }
+    if mlg_span_is(m, ns, ne, "creal") == 1 { c = 3 }
+    if mlg_span_is(m, ns, ne, "cimag") == 1 { c = 4 }
+    if mlg_span_is(m, ns, ne, "cabs") == 1 { c = 5 }
+    if mlg_span_is(m, ns, ne, "conj") == 1 { c = 6 }
+    if mlg_span_is(m, ns, ne, "cexp") == 1 { c = 7 }
+    if mlg_span_is(m, ns, ne, "crealf") == 1 { c = 8 }
+    if mlg_span_is(m, ns, ne, "cimagf") == 1 { c = 9 }
+    if mlg_span_is(m, ns, ne, "cabsf") == 1 { c = 10 }
+    if c == 0 or mlg_find_fn(m, ns, ne) >= 0 {
+        return 0
+    }
+    let n: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
+    if n == 0 or n > 2 or (n == 2 and c > 2) {
+        return 0
+    }
+    return c
+}
+
+# The complex type of builtin call e's argument, c64 when it is real.
+function mlg_cplx_arg_mt(m: ptr<Mlg>, e: i32) -> i32 {
+    let t: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
+    if mlg_cplx_kind(m, t) != 0 {
+        return t
+    }
+    return mlg_cplx_mt(m, if t == MT_F64 { 1 } else { 0 }, e)
+}
+
+# The type of a complex builtin call, MT_NONE when e is none. creal and
+# cimag are double, as C's are; cabs is float for a c64 (cabsf).
+function mlg_cplx_call_mt(m: ptr<Mlg>, e: i32) -> i32 {
+    let c: i32 = mlg_cplx_builtin(m, e)
+    if c == 1 { return mlg_cplx_mt(m, 0, e) }
+    if c == 2 { return mlg_cplx_mt(m, 1, e) }
+    if c == 3 or c == 4 { return MT_F64 }
+    if c == 5 { return mlg_cplx_elem(m, mlg_cplx_arg_mt(m, e)) }
+    if c == 6 or c == 7 { return mlg_cplx_arg_mt(m, e) }
+    if c >= 8 { return MT_F32 }
+    return MT_NONE
+}
+
+# The Flow type of a complex builtin call, FT_NONE when e is none.
+function mlg_cplx_call_ft(m: ptr<Mlg>, e: i32) -> i32 {
+    let t: i32 = mlg_cplx_call_mt(m, e)
+    if t == MT_NONE {
+        return FT_NONE
+    }
+    if t == MT_F64 { return mlg_named_ft(m, 3, "f64") }
+    if t == MT_F32 { return mlg_named_ft(m, 7, "f32") }
+    if mlg_cplx_kind(m, t) == 2 { return mlg_named_ft(m, 6, "c128") }
+    return mlg_named_ft(m, 5, "c64")
+}
+
+function mlg_cplx_math(m: ptr<Mlg>, fname: string, a: i32, t: i32) -> i32 {
+    return mlg_cplx_op(m, fname, a, V_NONE, t)
+}
+
+# A complex builtin call (mlg_cplx_builtin code c).
+function mlg_emit_cplx_call(m: ptr<Mlg>, e: i32, c: i32) -> i32 {
+    let a0: i32 = m[0].arena.nodes[e].a
+    if c == 1 or c == 2 {
+        let t: i32 = mlg_cplx_mt(m, c - 1, e)
+        let el: i32 = mlg_cplx_elem(m, t)
+        let v0: i32 = mlg_emit_expr(m, a0)
+        let t0: i32 = mlg_val_mt(m, v0, a0)
+        let a1: i32 = m[0].arena.nodes[a0].next
+        if a1 == AST_NONE {
+            # c64(x): x + 0i, or a complex value converted.
+            return mlg_cplx_conv(m, v0, t0, t)
+        }
+        let v1: i32 = mlg_emit_expr(m, a1)
+        let re: i32 = mlg_cast(m, v0, t0, el)
+        let im: i32 = mlg_cast(m, v1, mlg_val_mt(m, v1, a1), el)
+        return mlg_cplx_make(m, re, im, t)
+    }
+    let ct: i32 = mlg_cplx_arg_mt(m, e)
+    let el2: i32 = mlg_cplx_elem(m, ct)
+    let av: i32 = mlg_emit_expr(m, a0)
+    let zv: i32 = mlg_cplx_conv(m, av, mlg_val_mt(m, av, a0), ct)
+    let re2: i32 = mlg_cplx_part(m, zv, ct, 0)
+    let im2: i32 = mlg_cplx_part(m, zv, ct, 1)
+    if c == 3 or c == 8 {
+        return mlg_cast(m, re2, el2, if c == 3 { MT_F64 } else { MT_F32 })
+    }
+    if c == 4 or c == 9 {
+        return mlg_cast(m, im2, el2, if c == 4 { MT_F64 } else { MT_F32 })
+    }
+    if c == 5 or c == 10 {
+        # hypot of the parts, computed in double: exact for float parts.
+        let rd: i32 = mlg_cast(m, re2, el2, MT_F64)
+        let id: i32 = mlg_cast(m, im2, el2, MT_F64)
+        let r2: i32 = mlg_cplx_op(m, "arith.mulf", rd, rd, MT_F64)
+        let i2: i32 = mlg_cplx_op(m, "arith.mulf", id, id, MT_F64)
+        let s: i32 = mlg_cplx_op(m, "arith.addf", r2, i2, MT_F64)
+        let q: i32 = mlg_cplx_math(m, "math.sqrt", s, MT_F64)
+        return mlg_cast(m, q, MT_F64, el2)
+    }
+    if c == 6 {
+        let ni: i32 = mlg_cplx_op(m, "arith.negf", im2, V_NONE, el2)
+        return mlg_cplx_make(m, re2, ni, ct)
+    }
+    # cexp(x + iy) = e^x (cos y + i sin y)
+    let ex: i32 = mlg_cplx_math(m, "math.exp", re2, el2)
+    let cy: i32 = mlg_cplx_math(m, "math.cos", im2, el2)
+    let sy: i32 = mlg_cplx_math(m, "math.sin", im2, el2)
+    let er: i32 = mlg_cplx_op(m, "arith.mulf", ex, cy, el2)
+    let ei: i32 = mlg_cplx_op(m, "arith.mulf", ex, sy, el2)
+    return mlg_cplx_make(m, er, ei, ct)
+}
+
+# The result type of `l op r` when either side is complex: the complex
+# type of the wider part (a real f64 operand widens a c64), or MT_NONE when
+# neither side is complex.
+function mlg_cplx_binop_mt(m: ptr<Mlg>, lt: i32, rt: i32, at: i32) -> i32 {
+    let lk: i32 = mlg_cplx_kind(m, lt)
+    let rk: i32 = mlg_cplx_kind(m, rt)
+    if lk == 0 and rk == 0 {
+        return MT_NONE
+    }
+    if lk == 2 or rk == 2 or lt == MT_F64 or rt == MT_F64 {
+        return mlg_cplx_mt(m, 1, at)
+    }
+    return mlg_cplx_mt(m, 0, at)
+}
+
+# `l op r` with a complex operand: + - * / componentwise against a real
+# operand, the complex formulas otherwise; == and != on both parts.
+function mlg_emit_cplx_binop(m: ptr<Mlg>, e: i32, op: i32, lv: i32, lt: i32, rv: i32, rt: i32) -> i32 {
+    let t: i32 = mlg_cplx_binop_mt(m, lt, rt, e)
+    let el: i32 = mlg_cplx_elem(m, t)
+    let lc: i32 = if mlg_cplx_kind(m, lt) != 0 { 1 } else { 0 }
+    let rc: i32 = if mlg_cplx_kind(m, rt) != 0 { 1 } else { 0 }
+    # A real operand is one part; the other part of it is absent.
+    let mut a: i32 = V_NONE
+    let mut b: i32 = V_NONE
+    let mut c: i32 = V_NONE
+    let mut d: i32 = V_NONE
+    if lc == 1 {
+        let lz: i32 = mlg_cplx_conv(m, lv, lt, t)
+        a = mlg_cplx_part(m, lz, t, 0)
+        b = mlg_cplx_part(m, lz, t, 1)
+    } else {
+        a = mlg_cast(m, lv, lt, el)
+    }
+    if rc == 1 {
+        let rz: i32 = mlg_cplx_conv(m, rv, rt, t)
+        c = mlg_cplx_part(m, rz, t, 0)
+        d = mlg_cplx_part(m, rz, t, 1)
+    } else {
+        c = mlg_cast(m, rv, rt, el)
+    }
+    if op == TOK_EQEQ or op == TOK_NE {
+        let mut zb: i32 = b
+        let mut zd: i32 = d
+        if zb == V_NONE or zd == V_NONE {
+            let z0: i32 = mlg_new_val(m, el)
+            mlg_line(m)
+            mlg_v(m, z0)
+            mlg_s(m, " = arith.constant 0.0 : ")
+            mlg_put_type(m, el)
+            mlg_nl(m)
+            if zb == V_NONE { zb = z0 }
+            if zd == V_NONE { zd = z0 }
+        }
+        let pred: string = if op == TOK_EQEQ { "arith.cmpf oeq," } else { "arith.cmpf une," }
+        let e0: i32 = mlg_new_val(m, MT_I1)
+        mlg_line(m)
+        mlg_v(m, e0)
+        mlg_s(m, " = ")
+        mlg_s(m, pred)
+        mlg_s(m, " ")
+        mlg_v(m, a)
+        mlg_s(m, ", ")
+        mlg_v(m, c)
+        mlg_s(m, " : ")
+        mlg_put_type(m, el)
+        mlg_nl(m)
+        let e1: i32 = mlg_new_val(m, MT_I1)
+        mlg_line(m)
+        mlg_v(m, e1)
+        mlg_s(m, " = ")
+        mlg_s(m, pred)
+        mlg_s(m, " ")
+        mlg_v(m, zb)
+        mlg_s(m, ", ")
+        mlg_v(m, zd)
+        mlg_s(m, " : ")
+        mlg_put_type(m, el)
+        mlg_nl(m)
+        let join: string = if op == TOK_EQEQ { "arith.andi" } else { "arith.ori" }
+        return mlg_cplx_op(m, join, e0, e1, MT_I1)
+    }
+    let mut re: i32 = V_NONE
+    let mut im: i32 = V_NONE
+    if op == TOK_PLUS or op == TOK_MINUS {
+        let fop: string = if op == TOK_PLUS { "arith.addf" } else { "arith.subf" }
+        re = mlg_cplx_op(m, fop, a, c, el)
+        if b != V_NONE and d != V_NONE {
+            im = mlg_cplx_op(m, fop, b, d, el)
+        } elif b != V_NONE {
+            im = b
+        } elif op == TOK_PLUS {
+            im = d
+        } else {
+            im = mlg_cplx_op(m, "arith.negf", d, V_NONE, el)
+        }
+        return mlg_cplx_make(m, re, im, t)
+    }
+    if op == TOK_STAR {
+        if b == V_NONE {
+            # real * complex
+            return mlg_cplx_make(m, mlg_cplx_op(m, "arith.mulf", a, c, el), mlg_cplx_op(m, "arith.mulf", a, d, el), t)
+        }
+        if d == V_NONE {
+            return mlg_cplx_make(m, mlg_cplx_op(m, "arith.mulf", a, c, el), mlg_cplx_op(m, "arith.mulf", b, c, el), t)
+        }
+        # (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+        let ac: i32 = mlg_cplx_op(m, "arith.mulf", a, c, el)
+        let bd: i32 = mlg_cplx_op(m, "arith.mulf", b, d, el)
+        let ad: i32 = mlg_cplx_op(m, "arith.mulf", a, d, el)
+        let bc: i32 = mlg_cplx_op(m, "arith.mulf", b, c, el)
+        re = mlg_cplx_op(m, "arith.subf", ac, bd, el)
+        im = mlg_cplx_op(m, "arith.addf", ad, bc, el)
+        return mlg_cplx_make(m, re, im, t)
+    }
+    if op == TOK_SLASH {
+        if d == V_NONE {
+            return mlg_cplx_make(m, mlg_cplx_op(m, "arith.divf", a, c, el), mlg_cplx_op(m, "arith.divf", b, c, el), t)
+        }
+        if b == V_NONE {
+            # a real dividend is a + 0i
+            let z1: i32 = mlg_new_val(m, el)
+            mlg_line(m)
+            mlg_v(m, z1)
+            mlg_s(m, " = arith.constant 0.0 : ")
+            mlg_put_type(m, el)
+            mlg_nl(m)
+            b = z1
+        }
+        # (a + bi)/(c + di) = ((ac + bd) + (bc - ad)i) / (c^2 + d^2)
+        let cc: i32 = mlg_cplx_op(m, "arith.mulf", c, c, el)
+        let dd: i32 = mlg_cplx_op(m, "arith.mulf", d, d, el)
+        let den: i32 = mlg_cplx_op(m, "arith.addf", cc, dd, el)
+        let ac2: i32 = mlg_cplx_op(m, "arith.mulf", a, c, el)
+        let bd2: i32 = mlg_cplx_op(m, "arith.mulf", b, d, el)
+        let bc2: i32 = mlg_cplx_op(m, "arith.mulf", b, c, el)
+        let ad2: i32 = mlg_cplx_op(m, "arith.mulf", a, d, el)
+        let rn: i32 = mlg_cplx_op(m, "arith.addf", ac2, bd2, el)
+        let inn: i32 = mlg_cplx_op(m, "arith.subf", bc2, ad2, el)
+        re = mlg_cplx_op(m, "arith.divf", rn, den, el)
+        im = mlg_cplx_op(m, "arith.divf", inn, den, el)
+        return mlg_cplx_make(m, re, im, t)
+    }
+    mlg_refuse(m, e, "operator on a complex value")
+    return V_NONE
+}
+
 # `(A, B) -> R`: a Flow function value (Python fn_* types).
 function mlg_ft_is_fn(m: ptr<Mlg>, ft: i32) -> i32 {
     if ft < 0 {
@@ -1564,6 +1998,8 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     if mlg_span_is(m, ns, ne, "bool") == 1 { return MT_I1 }
     if mlg_span_is(m, ns, ne, "void") == 1 { return MT_VOID }
     if mlg_span_is(m, ns, ne, "string") == 1 or mlg_span_is(m, ns, ne, "str") == 1 { return MT_PTR }
+    if mlg_span_is(m, ns, ne, "c64") == 1 and m[0].arena.nodes[ft].a == AST_NONE { return mlg_cplx_mt(m, 0, at) }
+    if mlg_span_is(m, ns, ne, "c128") == 1 and m[0].arena.nodes[ft].a == AST_NONE { return mlg_cplx_mt(m, 1, at) }
     if mlg_span_is(m, ns, ne, "ptr") == 1 {
         if m[0].arena.nodes[ft].a == AST_NONE {
             mlg_refuse(m, at, "bare ptr type")
@@ -2733,6 +3169,9 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         if k >= 0 {
             return m[0].arena.nodes[m[0].fn_node[k]].b
         }
+        if cl < 0 {
+            return mlg_cplx_call_ft(m, e)
+        }
         return FT_NONE
     }
     if kind == AST_STRUCT_LIT {
@@ -2954,6 +3393,10 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         if mlg_is_cmp_op(op) == 1 or op == TOK_AMPAMP or op == TOK_BARBAR or op == TOK_IN {
             return MT_I1
         }
+        let cbt: i32 = mlg_cplx_binop_mt(m, lt, rt, e)
+        if cbt != MT_NONE {
+            return cbt
+        }
         if op == TOK_PLUS and (lt == MT_PTR or rt == MT_PTR) {
             return MT_PTR
         }
@@ -3009,6 +3452,12 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         }
         if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "len") == 1 {
             return mlg_len_mt(m, e)
+        }
+        if cl < 0 {
+            let cxt: i32 = mlg_cplx_call_mt(m, e)
+            if cxt != MT_NONE {
+                return cxt
+            }
         }
         if mlg_sizeof_mt(m, e) != MT_NONE {
             return MT_I64
@@ -3366,6 +3815,9 @@ function mlg_cast(m: ptr<Mlg>, v: i32, from_in: i32, dst: i32) -> i32 {
     }
     if from == dst {
         return v
+    }
+    if mlg_cplx_kind(m, dst) != 0 and (mlg_cplx_kind(m, from) != 0 or mlg_is_float_mt(from) == 1 or mlg_is_int_mt(from) == 1) {
+        return mlg_cplx_conv(m, v, from, dst)
     }
     if from == MT_INDEX and mlg_is_float_mt(dst) == 1 {
         let mid: i32 = mlg_new_val(m, MT_I64)
@@ -4124,6 +4576,26 @@ function mlg_emit_print_value(m: ptr<Mlg>, arg: i32, nl: i32) {
     let mut vt: i32 = mlg_vty(m, av)
     if vt == MT_NONE {
         vt = t
+    }
+    if mlg_cplx_kind(m, vt) != 0 {
+        # `(re + im j)`, as the C backend's __flowc_pr_c64 / _c128 print it.
+        let pe: i32 = mlg_cplx_elem(m, vt)
+        let pr: i32 = mlg_cast(m, mlg_cplx_part(m, av, vt, 0), pe, MT_F64)
+        let pi: i32 = mlg_cast(m, mlg_cplx_part(m, av, vt, 1), pe, MT_F64)
+        let ck: i32 = if nl == 1 { mlg_intern_lit(m, "\"(%f + %f j)\\n\"") } else { mlg_intern_lit(m, "\"(%f + %f j)\"") }
+        let cf: i32 = mlg_emit_addressof_str(m, ck)
+        let cr: i32 = mlg_new_val(m, MT_I32)
+        mlg_line(m)
+        mlg_v(m, cr)
+        mlg_s(m, " = llvm.call @printf(")
+        mlg_v(m, cf)
+        mlg_s(m, ", ")
+        mlg_v(m, pr)
+        mlg_s(m, ", ")
+        mlg_v(m, pi)
+        mlg_s(m, ") vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64, f64) -> i32")
+        mlg_nl(m)
+        return
     }
     let mut uns: i32 = mlg_vuns(m, av)
     if uns == 0 {
@@ -5488,6 +5960,10 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, ns, ne))
     if mlg_span_is(m, ns, ne, "register_tile_outer_product") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 {
         return mlg_emit_register_tile_outer_product(m, e)
+    }
+    let cxc: i32 = mlg_cplx_builtin(m, e)
+    if cxc != 0 {
+        return mlg_emit_cplx_call(m, e, cxc)
     }
     # Elementwise tensor intrinsics over memrefs and tensors, unless the
     # program defines the operation itself.
@@ -8175,6 +8651,16 @@ function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_nl(m)
         return dq
     }
+    let clt: i32 = mlg_expr_mt(m, l)
+    let crt: i32 = mlg_expr_mt(m, r)
+    if mlg_cplx_kind(m, clt) != 0 or mlg_cplx_kind(m, crt) != 0 {
+        let clv: i32 = mlg_emit_expr(m, l)
+        let crv: i32 = mlg_emit_expr(m, r)
+        if m[0].err != 0 {
+            return V_NONE
+        }
+        return mlg_emit_cplx_binop(m, e, op, clv, mlg_val_mt(m, clv, l), crv, mlg_val_mt(m, crv, r))
+    }
     if op == TOK_PLUS or op == TOK_MINUS {
         let fr: i32 = mlg_try_fma(m, e)
         if fr != V_NONE or m[0].err != 0 {
@@ -8382,6 +8868,12 @@ function mlg_emit_unary(m: ptr<Mlg>, e: i32) -> i32 {
     }
     let av: i32 = mlg_emit_expr(m, a)
     let t: i32 = mlg_val_mt(m, av, a)
+    if op == TOK_MINUS and mlg_cplx_kind(m, t) != 0 {
+        let ce: i32 = mlg_cplx_elem(m, t)
+        let nr: i32 = mlg_cplx_op(m, "arith.negf", mlg_cplx_part(m, av, t, 0), V_NONE, ce)
+        let ni: i32 = mlg_cplx_op(m, "arith.negf", mlg_cplx_part(m, av, t, 1), V_NONE, ce)
+        return mlg_cplx_make(m, nr, ni, t)
+    }
     if op == TOK_MINUS {
         # Python: negf when the type text holds f32 or f64 (a struct of
         # floats too).
