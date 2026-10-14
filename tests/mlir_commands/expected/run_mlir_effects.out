@@ -1,8 +1,6 @@
-unhandled 0.000000
 info 2
 handled 6.000000
 info 7
-clock 1234
-partial 0.000000
 4-5 3
-✅ Program finished with exit code: 0
+clock 1234
+flow: unhandled effect Log.info (set FLOW_PERMISSIVE_EFFECTS=1 to allow zero defaults)
