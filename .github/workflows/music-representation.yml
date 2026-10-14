@@ -25,3 +25,10 @@ jobs:
           mkdir -p build/audio
           FLOW_AUDIO_RENDER=build/audio/representation_audition.wav ./flow audio examples/music/representation_audition.flow
           test -s build/audio/representation_audition.wav
+      - name: Publish audition WAV
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-representation-audition
+          path: build/audio/representation_audition.wav
+          if-no-files-found: error
+          retention-days: 14
