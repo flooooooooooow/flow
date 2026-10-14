@@ -1,0 +1,30 @@
+# MLIR parity fixture: a field read and store through a module-level
+# ptr<Struct> (#1078), the shape tools/flow_cli/sys.flow uses for its
+# string lists. The address is the static's current value.
+
+struct Table {
+    len: i32
+    cap: i32
+}
+
+let mut tab: ptr<Table> = null
+
+function table_len() -> i32 {
+    return tab.len
+}
+
+function table_grow(by: i32) {
+    tab.cap = tab.cap + by
+}
+
+function main() -> i32 {
+    tab = malloc(16) as ptr<Table>
+    tab[0] = Table { len: 3, cap: 8 }
+    println(table_len())
+    table_grow(2)
+    println(tab[0].cap)
+    tab.len = 4
+    println(tab.len)
+    free(tab)
+    return 0
+}
