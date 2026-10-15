@@ -288,6 +288,29 @@ function write_corpus(header2: string, rows: string) {
     let _w: bool = write_text(FIX + "/corpus.txt", "# Corpus programs the Flow MLIR emitter " + header2 + rows)
 }
 
+# The corpus line `want path`, as `read -r want f` splits it.
+function corpus_line_parts(line: string) -> ptr<ProcStrs> {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = s_len(line)
+    let mut i: i32 = 0
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let ws: i32 = i
+    while i < n and p[i] != 32 and p[i] != 9 {
+        i = i + 1
+    }
+    let want: string = s_slice(line, ws, i)
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let mut e: i32 = n
+    while e > i and (p[e - 1] == 32 or p[e - 1] == 9) {
+        e = e - 1
+    }
+    return sl_of2(want, s_slice(line, i, e))
+}
+
 # A source-path-scoped override avoids touching the central corpus.txt.
 # The mirrored directory structure prevents name collisions.
 function corpus_override_path(f: string) -> string {
@@ -462,29 +485,6 @@ function fixture_mode(f: string, base: string, fl: string, mode: string, golden_
     }
     errln("FAIL " + f + ": " + label + "-mode MLIR differs from " + base + golden_ext)
     return false
-}
-
-# The corpus line `want path`, as `read -r want f` splits it.
-function corpus_line_parts(line: string) -> ptr<ProcStrs> {
-    let p: ptr<u8> = line as ptr<u8>
-    let n: i32 = s_len(line)
-    let mut i: i32 = 0
-    while i < n and (p[i] == 32 or p[i] == 9) {
-        i = i + 1
-    }
-    let ws: i32 = i
-    while i < n and p[i] != 32 and p[i] != 9 {
-        i = i + 1
-    }
-    let want: string = s_slice(line, ws, i)
-    while i < n and (p[i] == 32 or p[i] == 9) {
-        i = i + 1
-    }
-    let mut e: i32 = n
-    while e > i and (p[e - 1] == 32 or p[e - 1] == 9) {
-        e = e - 1
-    }
-    return sl_of2(want, s_slice(line, i, e))
 }
 
 # 4. Live comparison with the Python generator at <rev>; the failures.
