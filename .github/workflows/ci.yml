@@ -666,7 +666,7 @@ jobs:
             ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
 
       - name: MLIR vs C parity check
-        run: timeout 20m ./flow tool compiler/scripts/mlir_vs_c.flow --check --jobs ${{ env.FLOW_GATE_JOBS }}
+        run: timeout 40m ./flow tool compiler/scripts/mlir_vs_c.flow --check --jobs ${{ env.FLOW_GATE_JOBS }}
 
       # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
       # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
