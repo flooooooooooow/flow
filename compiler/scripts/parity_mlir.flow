@@ -37,11 +37,11 @@
 #       tracked corpus program flowc accepts. Review the diff before committing it.
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --record-case <tracked-path.flow>
-#       Record just one corpus program in corpus.d/<tracked-path.flow>.sha256,
-#       leaving the shared corpus.txt unchanged. The parity gate uses that
-#       checksum instead of the corpus.txt digest for this program. Intended
-#       for independent backend fixes; --record still refreshes the legacy
-#       corpus and full fixture goldens.
+#       Record one tracked program in corpus.d/<tracked-path.flow>.sha256
+#       without rewriting the shared corpus.txt. The parity gate uses the
+#       scoped digest in preference to an old entry, or as a new corpus entry.
+#       Intended for independent backend fixes; --record still refreshes
+#       the legacy corpus and full fixture goldens.
 #
 # GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
 # and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
@@ -323,24 +323,10 @@ function mode_record_case(f: string) -> i32 {
         return 2
     }
 
-    # Overrides may only replace an existing baseline. New corpus entries
-    # continue to use --record until their initial baseline is established.
-    let corpus: ptr<ProcStrs> = gl_file_lines(FIX + "/corpus.txt")
-    let mut found: bool = false
-    let mut i: i32 = 0
-    while i < sl_len(corpus) {
-        let line: string = sl_get(corpus, i)
-        if not s_starts(line, "#") {
-            let parts: ptr<ProcStrs> = corpus_line_parts(line)
-            if s_eq(sl_get(parts, 1), f) {
-                found = true
-                break
-            }
-        }
-        i = i + 1
-    }
-    if not found {
-        errln("record-case: no baseline in " + FIX + "/corpus.txt for " + f)
+    # Only tracked inputs may become persistent regression goldens.
+    let tracked: ptr<ProcStrs> = gl_git_ls(f)
+    if not sl_has(tracked, f) {
+        errln("record-case: program is not tracked by git: " + f)
         return 2
     }
 
@@ -758,9 +744,14 @@ function main() -> i32 {
     let mut corpus_fail: i32 = 0
     let lines: ptr<ProcStrs> = gl_file_lines(FIX + "/corpus.txt")
     let total_lines: i32 = sl_len(lines)
+    # Independent tracked per-program digests supplement/override the
+    # historical list. Reserve capacity for new programs from the shards.
+    let shards: ptr<ProcStrs> = sl_new()
+    gl_find_files(FIX + "/corpus.d", ".sha256", shards)
+    gl_sort(shards)
     let files: ptr<ProcStrs> = sl_new()
     let wants: ptr<ProcStrs> = sl_new()
-    let cmds: ptr<ptr<ProcCmd>> = malloc(((total_lines + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
+    let cmds: ptr<ptr<ProcCmd>> = malloc(((total_lines + sl_len(shards) + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
     let logs: ptr<ProcStrs> = sl_new()
 
     let mut k: i32 = 0
@@ -797,6 +788,36 @@ function main() -> i32 {
         sl_push(logs, fl + ".mlir.log")
         sl_push(files, f)
         sl_push(wants, want)
+        corpus_n = corpus_n + 1
+    }
+
+    # A scoped golden for a program absent from corpus.txt is a new corpus
+    # entry. Existing programs are already queued with their override hash.
+    let mut si: i32 = 0
+    while si < sl_len(shards) {
+        let shard: string = sl_get(shards, si)
+        si = si + 1
+        let f: string = s_slice(shard, s_len(FIX + "/corpus.d/"), s_len(shard) - s_len(".sha256"))
+        if sl_has(files, f) {
+            continue
+        }
+        let digest_lines: ptr<ProcStrs> = gl_file_lines(shard)
+        if sl_len(digest_lines) != 1 or s_len(sl_get(digest_lines, 0)) != 64 or not is_file(f) {
+            corpus_fail = corpus_fail + 1
+            errln("FAIL corpus: invalid scoped entry " + shard)
+            continue
+        }
+        let fl: string = WORK + "/flowc/" + key_of(f)
+        rm_f(fl + ".mlir")
+        let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc_bin()))
+        proc_env(c, "FLOWC_LENIENT", "1")
+        proc_env(c, "FLOWC_EMIT", "mlir")
+        proc_env(c, "FLOWC_IN", f)
+        proc_env(c, "FLOWC_OUT", fl + ".mlir")
+        cmds[corpus_n] = c
+        sl_push(logs, fl + ".mlir.log")
+        sl_push(files, f)
+        sl_push(wants, sl_get(digest_lines, 0))
         corpus_n = corpus_n + 1
     }
 
