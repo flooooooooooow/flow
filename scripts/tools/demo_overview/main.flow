@@ -99,6 +99,34 @@ function card(j: ptr<Json>, item: i32, featured: bool) -> string {
     return s
 }
 
+# An externally hosted Flow program is part of the demo catalog too; keep
+# the showcase page derived instead of editing its generated HTML by hand.
+function external_card(j: ptr<Json>, item: i32) -> string {
+    let title: string = dg_html_escape(val(j, item, "title"))
+    let description: string = dg_html_escape(val(j, item, "description"))
+    let page: string = dg_html_escape(val(j, item, "page"))
+    let preview: string = dg_html_escape(val(j, item, "preview"))
+    let section: string = dg_html_escape(val(j, item, "section"))
+    let alt: string = dg_html_escape(val(j, item, "alt"))
+    let aria: string = dg_html_escape(val(j, item, "aria_label"))
+    let count: string = dg_html_escape(val(j, item, "count"))
+    let runtime: string = dg_html_escape(val(j, item, "runtime"))
+    let cta: string = dg_html_escape(val(j, item, "cta"))
+    let mut s: string = "<article class=\"demo-collection-card\">\n"
+    s = s + "  <a class=\"demo-collection-media\" href=\"" + page + "\" aria-label=\"" + aria + "\">\n"
+    s = s + "    <img src=\"" + preview + "\" alt=\"" + alt + "\" loading=\"lazy\">\n"
+    s = s + "  </a>\n"
+    s = s + "  <div class=\"demo-collection-body\">\n"
+    s = s + "    <div class=\"demo-collection-kicker\">" + section + "</div>\n"
+    s = s + "    <h3><a href=\"" + page + "\">" + title + "</a></h3>\n"
+    s = s + "    <p>" + description + "</p>\n"
+    s = s + "    <div class=\"demo-collection-meta\"><span>" + count + "</span><span>" + runtime + "</span></div>\n"
+    s = s + "    <a class=\"demo-collection-open\" href=\"" + page + "\">" + cta + "</a>\n"
+    s = s + "  </div>\n"
+    s = s + "</article>"
+    return s
+}
+
 function build(j: ptr<Json>, coll: i32) -> string {
     let sections: ptr<StrList> = ft_list_new()
     let mut n: i32 = 0
@@ -147,6 +175,20 @@ function build(j: ptr<Json>, coll: i32) -> string {
         }
         out = out + "</div>\n\n"
         si = si + 1
+    }
+    let external: i32 = json_get(j, 0, "external_projects")
+    if external >= 0 {
+        let mut e: i32 = json_first(j, external)
+        if e >= 0 {
+            out = out + "## Built with Flow\n\n"
+            out = out + "Whole programs written in Flow, outside this repository.\n\n"
+            out = out + "<div class=\"demo-collection-grid\">\n"
+            while e >= 0 {
+                out = out + external_card(j, e) + "\n"
+                e = json_next(j, e)
+            }
+            out = out + "</div>\n\n"
+        }
     }
     out = out + "## Run and record\n\n"
     out = out + "CPU `gfx` demos use the cross-platform headless recorder; FSL shaders use the \n"
@@ -233,6 +275,20 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             }
             c = json_next(j, c)
         }
+        let external: i32 = json_get(j, 0, "external_projects")
+        if external >= 0 {
+            c = json_first(j, external)
+            while c >= 0 {
+                if json_get(j, c, "preview") < 0 {
+                    return key_error("preview")
+                }
+                let pv: string = val(j, c, "preview")
+                if ft_exists("docs/demos/" + pv) == false {
+                    ft_list_push(missing, pv)
+                }
+                c = json_next(j, c)
+            }
+        }
         if ft_list_len(missing) > 0 {
             let mut msg: string = "missing gallery preview assets: "
             let mut mi: i32 = 0
@@ -273,6 +329,33 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             return key_error(miss2)
         }
         c = json_next(j, c)
+    }
+
+    let external: i32 = json_get(j, 0, "external_projects")
+    if external >= 0 {
+        let mut e: i32 = json_first(j, external)
+        while e >= 0 {
+            let keys: ptr<StrList> = ft_list_new()
+            ft_list_push(keys, "title")
+            ft_list_push(keys, "page")
+            ft_list_push(keys, "preview")
+            ft_list_push(keys, "section")
+            ft_list_push(keys, "description")
+            ft_list_push(keys, "count")
+            ft_list_push(keys, "runtime")
+            ft_list_push(keys, "alt")
+            ft_list_push(keys, "aria_label")
+            ft_list_push(keys, "cta")
+            let mut k: i32 = 0
+            while k < ft_list_len(keys) {
+                let key: string = ft_list_get(keys, k)
+                if json_get(j, e, key) < 0 {
+                    return key_error(key)
+                }
+                k = k + 1
+            }
+            e = json_next(j, e)
+        }
     }
 
     let generated: string = build(j, coll)
