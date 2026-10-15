@@ -605,6 +605,7 @@ jobs:
   flowc-goldens:
     name: flowc goldens and MLIR (no Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     needs: changes
     if: needs.changes.outputs.goldens == 'true'
     env:
@@ -666,7 +667,7 @@ jobs:
             ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
 
       - name: MLIR vs C parity check
-        run: timeout 90m ./flow tool compiler/scripts/mlir_vs_c.flow --check --jobs ${{ env.FLOW_GATE_JOBS }}
+        run: timeout 90m ./flow tool compiler/scripts/mlir_vs_c.flow --check --jobs 8
 
       # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
       # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
