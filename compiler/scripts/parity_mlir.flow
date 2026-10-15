@@ -317,16 +317,34 @@ function corpus_override_path(f: string) -> string {
     return FIX + "/corpus.d/" + f + ".sha256"
 }
 
+# A SHA-256 checksum must be exactly 64 lowercase hex digits; otherwise a
+# malformed or hand-edited golden must fail closed, never silently match.
+function corpus_digest_valid(digest: string) -> bool {
+    if s_len(digest) != 64 {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < 64 {
+        let b: i32 = s_byte(digest, i)
+        if not ((b >= 48 and b <= 57) or (b >= 97 and b <= 102)) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
 function mode_record_case(f: string) -> i32 {
     if not s_ends(f, ".flow") or not is_file(f) {
         errln("record-case: expected an existing, repository-relative .flow file")
         return 2
     }
 
-    # Only tracked inputs may become persistent regression goldens.
-    let tracked: ptr<ProcStrs> = gl_git_ls(f)
+    # Only the tracked corpus input set is eligible: no scripts, temporary
+    # files, or out-of-tree paths masquerading as persistent goldens.
+    let tracked: ptr<ProcStrs> = corpus_files()
     if not sl_has(tracked, f) {
-        errln("record-case: program is not tracked by git: " + f)
+        errln("record-case: file is not an eligible tracked corpus program: " + f)
         return 2
     }
 
@@ -749,6 +767,7 @@ function main() -> i32 {
     let shards: ptr<ProcStrs> = sl_new()
     gl_find_files(FIX + "/corpus.d", ".sha256", shards)
     gl_sort(shards)
+    let eligible: ptr<ProcStrs> = corpus_files()
     let files: ptr<ProcStrs> = sl_new()
     let wants: ptr<ProcStrs> = sl_new()
     let cmds: ptr<ptr<ProcCmd>> = malloc(((total_lines + sl_len(shards) + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
@@ -770,7 +789,7 @@ function main() -> i32 {
         let override_path: string = corpus_override_path(f)
         if is_file(override_path) {
             let override_lines: ptr<ProcStrs> = gl_file_lines(override_path)
-            if sl_len(override_lines) != 1 or s_len(sl_get(override_lines, 0)) != 64 {
+            if sl_len(override_lines) != 1 or not corpus_digest_valid(sl_get(override_lines, 0)) {
                 corpus_fail = corpus_fail + 1
                 errln("FAIL corpus " + f + ": malformed override " + override_path)
                 continue
@@ -802,7 +821,7 @@ function main() -> i32 {
             continue
         }
         let digest_lines: ptr<ProcStrs> = gl_file_lines(shard)
-        if sl_len(digest_lines) != 1 or s_len(sl_get(digest_lines, 0)) != 64 or not is_file(f) {
+        if sl_len(digest_lines) != 1 or not corpus_digest_valid(sl_get(digest_lines, 0)) or not sl_has(eligible, f) or not is_file(f) {
             corpus_fail = corpus_fail + 1
             errln("FAIL corpus: invalid scoped entry " + shard)
             continue
