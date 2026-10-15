@@ -40,6 +40,34 @@ flap when the corpus runs in parallel.
 now recorded from flowc with `--record`, and each change to them comes with
 the fix that caused it.
 
+### Conflict-free incremental corpus updates
+
+The historical `compiler/fixtures/mlir/corpus.txt` remains the baseline.
+When an MLIR fix changes the normalized output of an existing corpus program,
+record only that program's digest:
+
+```bash
+./flow tool compiler/scripts/parity_mlir.flow --record-case benchmarks/aosoa.flow
+./flow tool compiler/scripts/parity_mlir.flow
+```
+
+`--record-case` writes
+`compiler/fixtures/mlir/corpus.d/benchmarks/aosoa.flow.sha256`.
+The path mirrors the source program, so independent programs receive
+independent files. During normal parity runs, the one-line 64-character
+SHA-256 override takes precedence over the legacy digest. A malformed
+override fails verification rather than silently dropping coverage.
+
+For a new corpus program that has no legacy entry, establish its baseline
+with `--record` first. Retain `--record` for the full historical corpus
+and fixture refresh; it still updates `corpus.txt`. Backend PRs should
+avoid that large shared-file rewrite when they only need changed digests.
+Do not record a changed golden without establishing that the change is
+intentional and verifying the C-backend parity separately.
+
+This is an incremental migration, not removal of the full corpus or a
+change to the bootstrapping fixed-point guarantee.
+
 ### What changed
 
 * Issues: forward declarations emit nothing and overloads get the C
