@@ -36,6 +36,13 @@
 #       too), run output where mlir-opt is installed, and the digest of every
 #       tracked corpus program flowc accepts. Review the diff before committing it.
 #
+#   ./flow tool compiler/scripts/parity_mlir.flow --record-case <tracked-path.flow>
+#       Record just one corpus program in corpus.d/<tracked-path.flow>.sha256,
+#       leaving the shared corpus.txt unchanged. The parity gate uses that
+#       checksum instead of the corpus.txt digest for this program. Intended
+#       for independent backend fixes; --record still refreshes the legacy
+#       corpus and full fixture goldens.
+#
 # GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
 # and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
 # only. With --python, every accepted program that has an @gpu kernel is
@@ -279,6 +286,56 @@ function stem(f: string) -> string {
 
 function write_corpus(header2: string, rows: string) {
     let _w: bool = write_text(FIX + "/corpus.txt", "# Corpus programs the Flow MLIR emitter " + header2 + rows)
+}
+
+# A source-path-scoped override avoids touching the central corpus.txt.
+# The mirrored directory structure prevents name collisions.
+function corpus_override_path(f: string) -> string {
+    return FIX + "/corpus.d/" + f + ".sha256"
+}
+
+function mode_record_case(f: string) -> i32 {
+    if not s_ends(f, ".flow") or not is_file(f) {
+        errln("record-case: expected an existing, repository-relative .flow file")
+        return 2
+    }
+
+    # Overrides may only replace an existing baseline. New corpus entries
+    # continue to use --record until their initial baseline is established.
+    let corpus: ptr<ProcStrs> = gl_file_lines(FIX + "/corpus.txt")
+    let mut found: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(corpus) {
+        let line: string = sl_get(corpus, i)
+        if not s_starts(line, "#") {
+            let parts: ptr<ProcStrs> = corpus_line_parts(line)
+            if s_eq(sl_get(parts, 1), f) {
+                found = true
+                break
+            }
+        }
+        i = i + 1
+    }
+    if not found {
+        errln("record-case: no baseline in " + FIX + "/corpus.txt for " + f)
+        return 2
+    }
+
+    let output: string = WORK + "/flowc/" + key_of(f) + ".mlir"
+    if flowc_emit(f, output, "") != 0 {
+        errln("record-case: flowc refused " + f)
+        return 1
+    }
+    let normalized: string = WORK + "/flowc/" + key_of(f) + ".norm"
+    norm_to(output, normalized)
+    let dest: string = corpus_override_path(f)
+    mkdir_p_or_exit(path_dirname(dest))
+    if not write_text(dest, digest_of(normalized) + "\n") {
+        errln("record-case: could not write " + dest)
+        return 1
+    }
+    outln("record-case: wrote " + dest)
+    return 0
 }
 
 function mode_write_golden(fixtures: ptr<ProcStrs>, rev: string) -> i32 {
@@ -557,8 +614,8 @@ function main() -> i32 {
     let args: ptr<ProcStrs> = proc_args()
     let mode: string = sl_get(args, 0)
     let rev: string = sl_get(args, 1)
-    if not (s_empty(mode) or s_eq(mode, "--python") or s_eq(mode, "--write-golden") or s_eq(mode, "--record")) {
-        errln("usage: " + USAGE_NAME + " [--python <rev> | --write-golden <rev> | --record]")
+    if not (s_empty(mode) or s_eq(mode, "--python") or s_eq(mode, "--write-golden") or s_eq(mode, "--record") or s_eq(mode, "--record-case")) {
+        errln("usage: " + USAGE_NAME + " [--python <rev> | --write-golden <rev> | --record | --record-case <path.flow>]")
         return 2
     }
     if not s_empty(mode) and not s_eq(mode, "--record") and s_empty(rev) {
@@ -611,6 +668,9 @@ function main() -> i32 {
     }
     if s_eq(mode, "--record") {
         return mode_record(fixtures)
+    }
+    if s_eq(mode, "--record-case") {
+        return mode_record_case(rev)
     }
 
     let mut fail: i32 = 0
@@ -711,10 +771,20 @@ function main() -> i32 {
             continue
         }
         let parts: ptr<ProcStrs> = corpus_line_parts(line)
-        let want: string = sl_get(parts, 0)
+        let mut want: string = sl_get(parts, 0)
         let f: string = sl_get(parts, 1)
         if s_empty(want) or s_eq(want, "#") {
             continue
+        }
+        let override_path: string = corpus_override_path(f)
+        if is_file(override_path) {
+            let override_lines: ptr<ProcStrs> = gl_file_lines(override_path)
+            if sl_len(override_lines) != 1 or s_len(sl_get(override_lines, 0)) != 64 {
+                corpus_fail = corpus_fail + 1
+                errln("FAIL corpus " + f + ": malformed override " + override_path)
+                continue
+            }
+            want = sl_get(override_lines, 0)
         }
         let fl: string = WORK + "/flowc/" + key_of(f)
         rm_f(fl + ".mlir")
