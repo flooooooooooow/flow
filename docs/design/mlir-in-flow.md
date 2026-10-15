@@ -58,10 +58,11 @@ independent files. During normal parity runs, the one-line 64-character
 SHA-256 override takes precedence over the legacy digest. A malformed
 override fails verification rather than silently dropping coverage.
 
-For a new corpus program that has no legacy entry, establish its baseline
-with `--record` first. Retain `--record` for the full historical corpus
-and fixture refresh; it still updates `corpus.txt`. Backend PRs should
-avoid that large shared-file rewrite when they only need changed digests.
+The command also accepts newly tracked corpus programs: their scoped
+digest becomes an additional corpus entry without changing `corpus.txt`.
+Retain `--record` for a deliberate full historical corpus and fixture
+refresh; it still updates `corpus.txt`. Backend PRs should prefer scoped
+recording to rewriting the global manifest.
 Do not record a changed golden without establishing that the change is
 intentional and verifying the C-backend parity separately.
 
