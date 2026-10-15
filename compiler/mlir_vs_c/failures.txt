@@ -1,0 +1,36 @@
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of lib/stdlib/concurrent.flow
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: import that does not resolve at line N
+unknown_program.flow	mlir-lower	error: use of value 'X' expects different type than prior uses: 'X' vs 'X'
+unknown_program.flow	mlir-link	clang: error: linker command failed with exit code N (use -v to see invocation)
+unknown_program.flow	run-exit	exit code differs (C 139, MLIR 0)
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: extern type at line N
+unknown_program.flow	run-stdout	stdout differs at line 4
+unknown_program.flow	run-stdout	stdout differs at line 11
+unknown_program.flow	run-exit	exit code differs (C timeout, MLIR 1)
+unknown_program.flow	run-exit	exit code differs (C timeout, MLIR 0)
+unknown_program.flow	run-exit	exit code differs (C 132, MLIR 0)
+unknown_program.flow	mlir-lower	error: custom op 'X' is unknown
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of lib/stdlib/rf.flow
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: field of a value whose type is not known at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: expression form at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: argument of this type to an undeclared function at line N
+unknown_program.flow	run-stdout	stdout differs at line 7
+unknown_program.flow	run-stdout	stdout differs at line 58
+unknown_program.flow	run-stdout	stdout differs at line 33
+unknown_program.flow	run-stdout	stdout differs at line 3
+unknown_program.flow	run-stdout	stdout differs at line 10
+unknown_program.flow	run-exit	exit code differs (C timeout, MLIR 139)
+unknown_program.flow	run-exit	exit code differs (C 144, MLIR 16)
+unknown_program.flow	run-exit	exit code differs (C 139, MLIR 133)
+unknown_program.flow	run-exit	exit code differs (C 132, MLIR 32)
+unknown_program.flow	run-exit	exit code differs (C 0, MLIR 3)
+unknown_program.flow	run-exit	exit code differs (C 0, MLIR 24)
+unknown_program.flow	run-exit	exit code differs (C 0, MLIR 133)
+unknown_program.flow	mlir-lower	error: 'X' op along control flow edge from Operation scf.yield to parent: successor operand type #N 'X' should match successor input type #N 'X'
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of lib/stdlib/complex_linalg.flow
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: sort or find key of this type at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: slice of a value that is not a pointer, array or span at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: nested, struct or list pattern in an or-pattern or guarded arm at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: generic call or range sum at line N
+unknown_program.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N

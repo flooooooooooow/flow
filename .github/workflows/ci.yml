@@ -622,6 +622,11 @@ jobs:
       - name: flow python generator goldens (tests/pywheel)
         run: ./flow tool tests/pywheel/run.flow
 
+      - name: MLIR vs C parity (mlir_vs_c.flow)
+        run: timeout 20m ./flow tool compiler/scripts/mlir_vs_c.flow --check --jobs 4
+
+
+
       - name: Project test runner parity (flow test)
         run: ./flow tool compiler/scripts/parity_project_test.flow
 

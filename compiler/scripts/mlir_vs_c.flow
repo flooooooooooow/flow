@@ -357,6 +357,7 @@ function main() -> i32 {
     let mut m_built: i32 = 0
     let statuses: ptr<ProcStrs> = sl_new()
     let causes: ptr<ProcStrs> = sl_new()
+    let failures_list: ptr<ProcStrs> = sl_new()
     let mut k: i32 = 0
     while k < sl_len(joined) {
         let row: string = sl_get(joined, k)
@@ -370,6 +371,7 @@ function main() -> i32 {
         }
         if is_failure(st) {
             sl_push(causes, st + "\t" + gl_field(row, 4))
+            sl_push(failures_list, gl_field(row, 0) + "\t" + st + "\t" + gl_field(row, 4))
         }
         k = k + 1
     }
@@ -419,6 +421,8 @@ function main() -> i32 {
         }
         floor_text = floor_text + os + " " + s_itoa(same - margin) + "\n"
         let _f: bool = write_text(FLOOR_FILE, floor_text)
+        let failures_path: string = DATA + "/failures.txt"
+        let _f2: bool = write_text(failures_path, gl_join_lines(failures_list))
         outln("")
         outln("wrote " + REPORT + " and floor " + os + " " + s_itoa(same - margin) + " (" + s_itoa(same) + " same)")
     }
