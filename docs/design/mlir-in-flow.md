@@ -116,7 +116,8 @@ What the gate still reports, largest first:
   name types the emitter has no layout for (12); `extern type` handles
   and helpers defined in an included header (3).
 * Forms the emitter refuses: `impl Trait for Type` methods, which the
-  parser skips; fields of a generic struct inferred at the call; SIMD vector ops that
+  parser skips; fields of a generic struct inferred at the call; two
+  lowered forms of `test_lowered_forms.flow`; SIMD vector ops that
   mlir-opt does not know.
 * A C-side reference that is itself undefined. Signed overflow in the
   LCGs of `stdlib/tensor.flow`, `examples/ml` and `hash_table.flow`
