@@ -5928,8 +5928,22 @@ function mlg_struct_addr0(m: ptr<Mlg>, e: i32, sk: ptr<i32>) -> i32 {
             }
             let sft: i32 = m[0].arena.nodes[m[0].sv_node[sk0]].a
             if mlg_ft_is_pointer(m, sft) == 1 {
-                mlg_refuse(m, e, "field through a pointer static")
-                return V_NONE
+                # A module-scope ptr<Struct>: the address is its current
+                # value, as for a pointer local (#1078).
+                let kp: i32 = mlg_ft_struct(m, m[0].arena.nodes[sft].a)
+                if kp < 0 {
+                    mlg_refuse(m, e, "field through a pointer static")
+                    return V_NONE
+                }
+                let gp: i32 = mlg_new_val(m, MT_PTR)
+                mlg_line(m)
+                mlg_v(m, gp)
+                mlg_s(m, " = llvm.mlir.addressof @")
+                mlg_span(m, mlg_ns(m, e), mlg_ne(m, e))
+                mlg_s(m, " : !llvm.ptr")
+                mlg_nl(m)
+                sk[0] = kp
+                return mlg_load(m, gp, MT_PTR)
             }
             let k0: i32 = mlg_ft_struct(m, sft)
             if k0 < 0 {
@@ -15046,6 +15060,13 @@ function mlg_emit_extern_fn(m: ptr<Mlg>, f0: i32) {
         # Python never declares its tensor elementwise intrinsics.
         return
     }
+    if mlg_span_is(m, ns, ne, "flow_mem_note_alloc") == 1 or mlg_span_is(m, ns, ne, "flow_mem_note_copy") == 1 or mlg_span_is(m, ns, ne, "flow_mem_note_temp") == 1 or mlg_span_is(m, ns, ne, "flow_mem_note_stack") == 1 or mlg_span_is(m, ns, ne, "flow_mem_note_arena") == 1 {
+        # The #740 profiler defines these (mlg_put_mem_profile), as the C
+        # prelude does; an extern of one (lib/stdlib/memory.flow) declares
+        # nothing more.
+        mlg_mem_use(m)
+        return
+    }
     let k: i32 = mlg_find_fn(m, ns, ne)
     if k < 0 or m[0].fn_ext[k] != 1 or mlg_libc_mode(m, k) == 1 {
         return
@@ -20972,8 +20993,13 @@ function mlg_put_mem_profile(m: ptr<Mlg>) {
     let k_promo: i32 = mlg_intern_lit(m, "\"promotion_bytes: %llu\\n\"")
     let k_ovf: i32 = mlg_intern_lit(m, "\"live_map_overflow: %llu\\n\"")
     let k_concat: i32 = mlg_intern_lit(m, "\"site_concat: %llu\\n\"")
-    mlg_s(m, "  func.func private @getenv(!llvm.ptr) -> !llvm.ptr\n")
-    mlg_s(m, "  func.func private @atexit(!llvm.ptr) -> i32\n")
+    # A program's own extern getenv or atexit is declared already.
+    if mlg_lc_declared(m, "getenv") == 0 {
+        mlg_s(m, "  func.func private @getenv(!llvm.ptr) -> !llvm.ptr\n")
+    }
+    if mlg_lc_declared(m, "atexit") == 0 {
+        mlg_s(m, "  func.func private @atexit(!llvm.ptr) -> i32\n")
+    }
     if m[0].needs_printf == 0 {
         mlg_s(m, "  llvm.func @printf(!llvm.ptr, ...) -> i32\n")
     }
