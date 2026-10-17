@@ -8679,10 +8679,25 @@ function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
         from_eff = from
     }
     if from_eff == dst {
-        if tu == 0 {
-            mlg_set_vuns(m, v, 0)
-        } else {
-            mlg_set_vuns(m, v, 1)
+        let vuns_v: i32 = mlg_vuns(m, v)
+        let tu_val: i32 = if tu == 0 { 0 } else { 1 }
+        let vuns_val: i32 = if vuns_v == 0 { 0 } else { 1 }
+        if tu_val == vuns_val {
+            return v
+        }
+        if mlg_is_int_mt(dst) == 1 {
+            let cu: i32 = mlg_new_val(m, dst)
+            mlg_line(m)
+            mlg_v(m, cu)
+            mlg_s(m, " = arith.ori ")
+            mlg_v(m, v)
+            mlg_s(m, ", ")
+            mlg_v(m, v)
+            mlg_s(m, " : ")
+            mlg_put_type(m, dst)
+            mlg_nl(m)
+            mlg_set_vuns(m, cu, tu)
+            return cu
         }
         return v
     }
