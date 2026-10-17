@@ -634,6 +634,9 @@ export function flowc_attr_mode_active(mode: string) -> i32 {
     if streq(mode, "compile") == 1 {
         return 1
     }
+    if streq(mode, "c") == 1 {
+        return 1
+    }
     let mut backend: string = "c"
     let emit: string = getenv("FLOWC_EMIT")
     if emit as ptr<u8> != null and streq(emit, "mlir") == 1 {
