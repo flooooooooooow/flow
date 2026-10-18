@@ -126,6 +126,8 @@ What the gate still reports, largest first:
   (`spring_mass_control`); reads past an array in `ok_namespaced`,
   `matmul_benchmark` and `livecode_demo`; type-error fixtures whose C
   build crashes.
+* Divergences fixed: Casts changing unsignedness no longer mutate shared variables
+  (e.g., bounds check bypass causing C 0 vs MLIR 133 or C 0 vs MLIR 24).
 * Floating point that still parts in the last bits and then grows:
   `double_pendulum` (chaotic) and `policy_pong`.
 * Build-mode guards: `test_only_guard` expects the C build's modes, and
