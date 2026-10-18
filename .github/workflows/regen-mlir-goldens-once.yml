@@ -1,0 +1,41 @@
+name: Refresh compiler goldens for unsignedness fix
+
+on:
+  push:
+    branches:
+      - mlir-parity-fix-run-exit-8884590759992762889
+    paths:
+      - '.github/workflows/regen-mlir-goldens-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - uses: ./.github/actions/flow-bin-cache
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+      - name: Record current canonical Flow MLIR outputs
+        run: timeout 30m ./flow tool compiler/scripts/parity_mlir.flow --record
+      - name: Regenerate demo overview without losing external projects
+        run: ./flow tool demo_overview
+      - name: Check resulting diff and commit
+        run: |
+          git status --short
+          git add compiler/fixtures/mlir/ docs/demos/overview.md
+          git diff --cached --stat
+          if git diff --cached --quiet; then
+            echo "No regenerated changes to commit"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "Regenerate MLIR goldens for signedness-safe cast lowering"
+          git push origin HEAD:mlir-parity-fix-run-exit-8884590759992762889
