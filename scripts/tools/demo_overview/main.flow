@@ -148,6 +148,14 @@ function build(j: ptr<Json>, coll: i32) -> string {
         out = out + "</div>\n\n"
         si = si + 1
     }
+    # The catalog owns gallery cards; externally hosted Flow projects live in
+    # a small source fragment so regeneration preserves them too.
+    let external: string = ft_read_file("docs/demos/external_projects.md")
+    if external as ptr<u8> == null {
+        ft_errln("demo_overview: missing docs/demos/external_projects.md")
+        return ""
+    }
+    out = out + external
     out = out + "## Run and record\n\n"
     out = out + "CPU `gfx` demos use the cross-platform headless recorder; FSL shaders use the \n"
     out = out + "offscreen Metal recorder so the published GIFs are produced by the real shader pipeline.\n\n"
