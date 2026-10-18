@@ -2780,86 +2780,58 @@ function mlg_is_cmp_op(op: i32) -> i32 {
 }
 
 
-# A vector literal <a, b, ...>: vector.from_elements, typed from the first
-# element, every element cast to that type. The declared vecN<T> it meets
-# converts it with mlg_cast. (vector.undef and vector.insertelement, which
-# the Python generator wrote, are gone from MLIR.)
+# Python generate_vector_literal: vector.undef, one insertelement per
+# element, then `%r = %last : vector<NxT>`, typed from the first element.
 function mlg_emit_vector_lit(m: ptr<Mlg>, e: i32) -> i32 {
     let n: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
     if n == 0 {
         mlg_refuse(m, e, "empty vector literal")
         return V_NONE
     }
-    let et: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
-    if mlg_is_int_mt(et) == 0 and mlg_is_float_mt(et) == 0 {
-        mlg_refuse(m, e, "vector literal of a non-scalar element")
-        return V_NONE
-    }
     let vals: ptr<i32> = mlg_alloc_i32(n + 1)
     let mut x: i32 = m[0].arena.nodes[e].a
     let mut i: i32 = 0
     while x != AST_NONE {
-        let xv: i32 = mlg_emit_expr(m, x)
-        vals[i] = mlg_cast(m, xv, mlg_expr_mt(m, x), et)
+        vals[i] = mlg_emit_expr(m, x)
         i = i + 1
         x = m[0].arena.nodes[x].next
     }
+    let et: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
     let vt: i32 = mlg_vector_of(m, et, n)
-    let r: i32 = mlg_new_val(m, vt)
+    let mut cur: i32 = mlg_new_val(m, vt)
     mlg_line(m)
-    mlg_v(m, r)
-    mlg_s(m, " = vector.from_elements ")
+    mlg_v(m, cur)
+    mlg_s(m, " = vector.undef : ")
+    mlg_put_type(m, vt)
+    mlg_nl(m)
     i = 0
     while i < n {
-        if i > 0 {
-            mlg_s(m, ", ")
-        }
+        let ix: i32 = mlg_emit_idx_const(m, i)
+        let nx: i32 = mlg_new_val(m, vt)
+        mlg_line(m)
+        mlg_v(m, nx)
+        mlg_s(m, " = vector.insertelement ")
         mlg_v(m, vals[i])
+        mlg_s(m, ", ")
+        mlg_v(m, cur)
+        mlg_s(m, "[")
+        mlg_v(m, ix)
+        mlg_s(m, "] : ")
+        mlg_put_type(m, vt)
+        mlg_nl(m)
+        cur = nx
         i = i + 1
     }
+    let r: i32 = mlg_new_val(m, MT_NONE)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = ")
+    mlg_v(m, cur)
     mlg_s(m, " : ")
     mlg_put_type(m, vt)
     mlg_nl(m)
     mlg_free_i32(vals)
     return r
-}
-
-# An elementwise conversion between vectors of the same length (the
-# scalar rules of mlg_cast, on every lane). V_NONE when they differ in
-# length or an element is not a scalar.
-function mlg_vec_cast(m: ptr<Mlg>, v: i32, from: i32, dst: i32) -> i32 {
-    let fk: i32 = from - MT_VECTOR
-    let dk: i32 = dst - MT_VECTOR
-    if m[0].vc_n[fk] != m[0].vc_n[dk] {
-        return V_NONE
-    }
-    let fe: i32 = m[0].vc_elem[fk]
-    let de: i32 = m[0].vc_elem[dk]
-    let mut op: string = ""
-    if mlg_is_float_mt(fe) == 1 and mlg_is_float_mt(de) == 1 {
-        op = if fe == MT_F32 { "arith.extf" } else { "arith.truncf" }
-    } elif mlg_is_int_mt(fe) == 1 and mlg_is_float_mt(de) == 1 {
-        op = "arith.sitofp"
-    } elif mlg_is_float_mt(fe) == 1 and mlg_is_int_mt(de) == 1 {
-        op = "arith.fptosi"
-    } elif mlg_is_int_mt(fe) == 1 and mlg_is_int_mt(de) == 1 {
-        op = if mlg_width(fe) < mlg_width(de) { "arith.extsi" } else { "arith.trunci" }
-    } else {
-        return V_NONE
-    }
-    let c: i32 = mlg_new_val(m, dst)
-    mlg_line(m)
-    mlg_v(m, c)
-    mlg_s(m, " = ")
-    mlg_s(m, op)
-    mlg_s(m, " ")
-    mlg_v(m, v)
-    mlg_s(m, " : ")
-    mlg_put_type(m, from)
-    mlg_s(m, " to ")
-    mlg_put_type(m, dst)
-    mlg_nl(m)
-    return c
 }
 
 # A `test "name"` function (its name span is the string literal): Python's
@@ -3405,12 +3377,6 @@ function mlg_cast(m: ptr<Mlg>, v: i32, from_in: i32, dst: i32) -> i32 {
     }
     if from == dst {
         return v
-    }
-    if mlg_is_vector_mt(from) == 1 and mlg_is_vector_mt(dst) == 1 {
-        let vc: i32 = mlg_vec_cast(m, v, from, dst)
-        if vc != V_NONE {
-            return vc
-        }
     }
     if from == MT_INDEX and mlg_is_float_mt(dst) == 1 {
         let mid: i32 = mlg_new_val(m, MT_I64)
