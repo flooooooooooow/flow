@@ -1,0 +1,34 @@
+name: Music representation lab
+
+on:
+  pull_request:
+    paths:
+      - 'examples/music/**'
+      - '.github/workflows/music-representation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/music/**'
+      - '.github/workflows/music-representation.yml'
+  workflow_dispatch:
+
+jobs:
+  representation-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run the information-loss regression
+        run: ./flow run examples/music/representation_lab.flow
+      - name: Render the A/B audio without a sound device
+        run: |
+          mkdir -p build/audio
+          FLOW_AUDIO_RENDER=build/audio/representation_audition.wav ./flow audio examples/music/representation_audition.flow
+          test -s build/audio/representation_audition.wav
+      - name: Publish audition WAV
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-representation-audition
+          path: build/audio/representation_audition.wav
+          if-no-files-found: error
+          retention-days: 14
