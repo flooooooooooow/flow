@@ -2705,6 +2705,11 @@ errno, signals and the C constants that go with them (issue #1075).  import std.
 
 planet: a procedural planet as a system that evolves through time.  A planet is not a texture. It is the fixed point of a few slow processes
 
+**Constants:**
+
+- `HACK_LO: f64`
+- `HACK_HI: f64`
+
 **Functions:**
 
 | Name | Signature | Docs |
