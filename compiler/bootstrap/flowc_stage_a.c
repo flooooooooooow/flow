@@ -98023,6 +98023,7 @@ int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap);
 int32_t flowc_resolve_normalize(uint8_t* p, int32_t n);
 int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path);
 int32_t flowc_resolve_import_at_raw(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path);
+int32_t flowc_resolve_module_import(const char* mpath, uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path);
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
 int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, const char* project_root, uint8_t* path_store);
 int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const char* project_root, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path);
@@ -99918,6 +99919,14 @@ int32_t flowc_resolve_import_at_raw(uint8_t* src, int32_t s, int32_t e, int32_t 
   return (0 - 3);
 }
 
+int32_t flowc_resolve_module_import(const char* mpath, uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path) {
+  if (form == 2 && flowc_resolve_unsafe_import(src, s, e, mod_search) == 1) {
+  flowc_resolve_unsafe_import_error(mpath, src, s, e);
+  return (0 - 4);
+}
+  return flowc_resolve_import_at(src, s, e, form, mod_search, search_dir, project_root, imp_path);
+}
+
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path) {
   uint8_t* path_p = (uint8_t*)(path);
   if (flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, path_p) >= 0) {
@@ -99992,15 +100001,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   int32_t ii = 0;
   for (; ii < (((p).arena).len); ii = ii + 1) {
   if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
-  if ((((p).arena).nodes[ii]).ival == 2 && flowc_resolve_unsafe_import(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search) == 1) {
-  flowc_resolve_unsafe_import_error(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end);
-  flowc_parser_free(p);
-  flow_mem_free(mod_dir);
-  flow_mem_free(imp_path);
-  flow_mem_free(src);
-  return (0 - 1);
-}
-  int32_t plen = flowc_resolve_import_at(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
+  int32_t plen = flowc_resolve_module_import(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
   if (plen != (0 - 3)) {
   if (plen < 0) {
   if (plen == (0 - 1)) {
@@ -100498,13 +100499,13 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
 }
   flowc_prof_note_source(src, nsrc, ((p).arena).len);
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st12049 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st12049; }
+  { __typeof__(tpl_len[0]) __flowc_st12047 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st12047; }
 }
   if (nsrc > ext0) {
   flowc_resolve_unlink_from((p).arena, root, ext0);
 }
   if (decl != NULL) {
-  { __typeof__(decl_len[0]) __flowc_st12080 = flowc_resolve_add_decls((p).arena, root, src, own, decl, decl_cap, decl_len[0]); decl_len[0] = __flowc_st12080; }
+  { __typeof__(decl_len[0]) __flowc_st12078 = flowc_resolve_add_decls((p).arena, root, src, own, decl, decl_cap, decl_len[0]); decl_len[0] = __flowc_st12078; }
 }
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
@@ -100515,8 +100516,8 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st12147 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12147; }
-  { __typeof__(siglen[0]) __flowc_st12161 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12161; }
+  { __typeof__(siglen[0]) __flowc_st12145 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12145; }
+  { __typeof__(siglen[0]) __flowc_st12159 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12159; }
 }
   flowc_parser_free(p);
   flow_mem_free(src);
@@ -100798,8 +100799,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st13600 = sem_error_count(c); counts[0] = __flowc_st13600; }
-  { __typeof__(counts[1]) __flowc_st13606 = sem_fatal_count(c); counts[1] = __flowc_st13606; }
+  { __typeof__(counts[0]) __flowc_st13598 = sem_error_count(c); counts[0] = __flowc_st13598; }
+  { __typeof__(counts[1]) __flowc_st13604 = sem_fatal_count(c); counts[1] = __flowc_st13604; }
   return 0;
 }
 
@@ -101149,10 +101150,7 @@ typedef struct MlirBundle {
   int32_t* starts;
   int32_t norder;
   uint8_t* project_root;
-  uint8_t* stdlib_root;
-  uint8_t* compiler_root;
-  uint8_t* toml;
-  int32_t toml_len;
+  uint8_t* search_dir;
   int32_t err;
 } MlirBundle;
 
@@ -101175,11 +101173,7 @@ int32_t mb_cstr_len(uint8_t* p);
 int32_t mb_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t mb_module(MlirBundle* b, uint8_t* p);
 int32_t mb_realpath(const char* p, uint8_t* out);
-int32_t mb_try(uint8_t* cand, uint8_t* out);
-int32_t mb_join(uint8_t* buf, uint8_t* dir, uint8_t* rel, int32_t rn);
-int32_t mb_toml_value(MlirBundle* b, const char* table, uint8_t* key, int32_t kn, uint8_t* out, int32_t cap);
-int32_t mb_try_parts(uint8_t* root, uint8_t* src, int32_t* ps, int32_t* pe, int32_t first, int32_t np, uint8_t* out);
-int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uint8_t* base_dir, uint8_t* out);
+int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, const char* mpath, uint8_t* mod_dir, uint8_t* out);
 void mb_visit(MlirBundle* b, int32_t k);
 int32_t flowc_mlir_wants_modules(const char* in_path);
 int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out);
@@ -101350,278 +101344,25 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
   return 1;
 }
 
-int32_t mb_try(uint8_t* cand, uint8_t* out) {
-  const char* s = (const char*)(cand);
-  if (flowc_io_exists(s) == 0) {
-  return 0;
-}
-  if (mb_realpath(s, out) == 0) {
-  return 0;
-}
-  return 1;
-}
-
-int32_t mb_join(uint8_t* buf, uint8_t* dir, uint8_t* rel, int32_t rn) {
-  int32_t o = mb_put(buf, 0, MB_PATH, dir, mb_cstr_len(dir));
-  o = mb_puts(buf, o, MB_PATH, "/");
-  o = mb_put(buf, o, MB_PATH, rel, rn);
-  if (o < 0) {
-  return 0;
-}
-  return 1;
-}
-
-int32_t mb_toml_value(MlirBundle* b, const char* table, uint8_t* key, int32_t kn, uint8_t* out, int32_t cap) {
-  uint8_t* t = (uint8_t*)((b[0]).toml);
-  int32_t n = (b[0]).toml_len;
-  uint8_t* tp = (uint8_t*)(table);
-  int32_t tn = (int32_t)(strlen(table));
-  int32_t in_table = 0;
-  int32_t i = 0;
-  while (i < n) {
-  int32_t e = i;
-  while (e < n && t[e] != 10) {
-  e = (e + 1);
-}
-  int32_t s = i;
-  while (s < e && (t[s] == 32 || t[s] == 9)) {
-  s = (s + 1);
-}
-  if (s < e && t[s] == 91) {
-  in_table = 0;
-  if (((s + tn) + 2) <= e && t[((s + tn) + 1)] == 93) {
-  int32_t same = 1;
-  int32_t q = 0;
-  for (; q < (tn); q = q + 1) {
-  if (t[((s + 1) + q)] != tp[q]) {
-  same = 0;
-}
-}
-  in_table = same;
-}
-} else {
-  if (in_table == 1 && (s + kn) < e) {
-  int32_t same2 = 1;
-  int32_t q2 = 0;
-  for (; q2 < (kn); q2 = q2 + 1) {
-  if (t[(s + q2)] != key[q2]) {
-  same2 = 0;
-}
-}
-  int32_t j = (s + kn);
-  while (j < e && (t[j] == 32 || t[j] == 9)) {
-  j = (j + 1);
-}
-  if (same2 == 1 && j < e && t[j] == 61) {
-  j = (j + 1);
-  while (j < e && (t[j] == 32 || t[j] == 9)) {
-  j = (j + 1);
-}
-  if (j < e && t[j] == 34) {
-  int32_t vs = (j + 1);
-  int32_t ve = vs;
-  while (ve < e && t[ve] != 34) {
-  ve = (ve + 1);
-}
-  if (mb_put(out, 0, cap, (t + vs), (ve - vs)) < 0) {
-  return 0;
-}
-  return 1;
-}
-  out[0] = 0;
-  return 1;
-}
-}
-}
-  i = (e + 1);
-}
-  return 0;
-}
-
-int32_t mb_try_parts(uint8_t* root, uint8_t* src, int32_t* ps, int32_t* pe, int32_t first, int32_t np, uint8_t* out) {
-  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  int32_t o = mb_put(cand, 0, MB_PATH, root, mb_cstr_len(root));
-  int32_t i = first;
-  for (; i < ((first + np)); i = i + 1) {
-  o = mb_puts(cand, o, MB_PATH, "/");
-  o = mb_put(cand, o, MB_PATH, (src + ps[i]), (pe[i] - ps[i]));
-}
+int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, const char* mpath, uint8_t* mod_dir, uint8_t* out) {
+  uint8_t* found = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
+  mb_zero(found, MB_PATH);
+  const char* ms = (const char*)(mod_dir);
+  const char* sd = (const char*)((b[0]).search_dir);
+  const char* pr = (const char*)((b[0]).project_root);
+  int32_t r = flowc_resolve_module_import(mpath, src, ((arena).nodes[imp]).name_start, ((arena).nodes[imp]).name_end, ((arena).nodes[imp]).ival, ms, sd, pr, found);
   int32_t ok = 0;
-  if (o >= 0) {
-  int32_t has_ext = 0;
-  if (o >= 5 && cand[(o - 5)] == 46 && cand[(o - 4)] == 102 && cand[(o - 3)] == 108 && cand[(o - 2)] == 111 && cand[(o - 1)] == 119) {
-  has_ext = 1;
-}
-  if (has_ext == 0) {
-  o = mb_puts(cand, o, MB_PATH, ".flow");
-}
-  if (o >= 0) {
-  ok = mb_try(cand, out);
-}
-}
-  flow_mem_free(cand);
-  return ok;
-}
-
-int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uint8_t* base_dir, uint8_t* out) {
-  int32_t form = ((arena).nodes[imp]).ival;
-  int32_t s = ((arena).nodes[imp]).name_start;
-  int32_t e = ((arena).nodes[imp]).name_end;
-  if (((arena).nodes[imp]).b != AST_NONE) {
-  return 0;
-}
-  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  int32_t ok = 0;
-  if (form == 2) {
-  s = (s + 1);
-  e = (e - 1);
-  int32_t bad = 0;
-  if (e <= s || src[s] == 47 || src[s] == 126) {
-  bad = 1;
-}
-  int32_t q = s;
-  while ((q + 1) < e) {
-  if (src[q] == 46 && src[(q + 1)] == 46 && (q == s || src[(q - 1)] == 47) && ((q + 2) == e || src[(q + 2)] == 47)) {
-  bad = 1;
-}
-  q = (q + 1);
-}
-  if (bad == 0) {
-  uint8_t* file = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  int32_t fo = mb_put(file, 0, MB_PATH, (src + s), (e - s));
-  int32_t has_ext = 0;
-  if (fo >= 5 && file[(fo - 5)] == 46 && file[(fo - 4)] == 102 && file[(fo - 3)] == 108 && file[(fo - 2)] == 111 && file[(fo - 1)] == 119) {
-  has_ext = 1;
-}
-  if (has_ext == 0) {
-  fo = mb_puts(file, fo, MB_PATH, ".flow");
-}
-  if (fo > 0) {
-  if (mb_join(cand, base_dir, file, fo) == 1 && mb_try(cand, out) == 1) {
+  if (r > 0) {
+  const char* fs = (const char*)(found);
+  if (mb_realpath(fs, out) == 1) {
   ok = 1;
-}
-  if (ok == 0 && fo > 7 && file[0] == 115 && file[1] == 116 && file[2] == 100 && file[3] == 108 && file[4] == 105 && file[5] == 98 && file[6] == 47) {
-  if (mb_join(cand, (b[0]).stdlib_root, (file + 7), (fo - 7)) == 1 && mb_try(cand, out) == 1) {
-  ok = 1;
-}
-}
-  if (ok == 0 && mb_join(cand, (b[0]).stdlib_root, file, fo) == 1 && mb_try(cand, out) == 1) {
-  ok = 1;
-}
-  if (ok == 0) {
-  uint8_t* pk = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  int32_t po = mb_put(pk, 0, MB_PATH, (b[0]).compiler_root, mb_cstr_len((b[0]).compiler_root));
-  mb_puts(pk, po, MB_PATH, "/packages");
-  if (mb_join(cand, pk, file, fo) == 1 && mb_try(cand, out) == 1) {
-  ok = 1;
-}
-  flow_mem_free(pk);
-}
-  if (ok == 0 && mb_join(cand, (b[0]).project_root, file, fo) == 1 && mb_try(cand, out) == 1) {
-  ok = 1;
-}
-}
-  flow_mem_free(file);
-}
-  flow_mem_free(cand);
-  return ok;
-}
-  int32_t* ps = (int32_t*)(mb_alloc_i32(64));
-  int32_t* pe = (int32_t*)(mb_alloc_i32(64));
-  int32_t np = 0;
-  int32_t i = s;
-  if (form == 1) {
-  i = (s + 1);
-}
-  int32_t ps0 = i;
-  while (i <= e && np < 64) {
-  if (i == e || src[i] == 46) {
-  ps[np] = ps0;
-  pe[np] = i;
-  np = (np + 1);
-  ps0 = (i + 1);
-}
-  i = (i + 1);
-}
-  int32_t j = 0;
-  for (; j < (np); j = j + 1) {
-  if (pe[j] <= ps[j] || (pe[j] - ps[j]) == 2 && src[ps[j]] == 46) {
-  np = 0;
-}
-}
-  if (np == 0) {
-  flow_mem_free(cand);
-  return 0;
-}
-  if (form == 1) {
-  int32_t k = np;
-  while (k > 0 && ok == 0) {
-  ok = mb_try_parts(base_dir, src, ps, pe, 0, k, out);
-  k = (k - 1);
-}
-  flow_mem_free(cand);
-  return ok;
-}
-  uint8_t* key = (uint8_t*)((src + ps[0]));
-  int32_t kn = (pe[0] - ps[0]);
-  uint8_t* val = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  uint8_t* root_a = (uint8_t*)(NULL);
-  int32_t first_a = 1;
-  uint8_t* root_b = (uint8_t*)(NULL);
-  int32_t first_b = 0;
-  uint8_t* root_c = (uint8_t*)(NULL);
-  int32_t first_c = 0;
-  if (kn == 3 && key[0] == 115 && key[1] == 116 && key[2] == 100) {
-  root_a = (b[0]).stdlib_root;
-} else {
-  if (mb_toml_value(b, "paths", key, kn, val, MB_PATH) == 1) {
-  uint8_t* pv = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  if (mb_join(pv, (b[0]).project_root, val, mb_cstr_len(val)) == 1) {
-  root_a = pv;
 }
 } else {
-  if (mb_toml_value(b, "dependencies", key, kn, val, MB_PATH) == 1) {
-  uint8_t* fp = (uint8_t*)("flow_packages");
-  uint8_t* pkd = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  uint8_t* pk = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  uint8_t* pks = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  uint8_t* sp = (uint8_t*)("src");
-  if (mb_join(pkd, (b[0]).project_root, fp, 13) == 1 && mb_join(pk, pkd, key, kn) == 1 && mb_join(pks, pk, sp, 3) == 1) {
-  root_a = pks;
-  root_b = pk;
-  first_b = 1;
-}
-  flow_mem_free(pkd);
-} else {
-  if (kn == 6 && key[0] == 115 && key[1] == 116 && key[2] == 100 && key[3] == 108 && key[4] == 105 && key[5] == 98) {
-  root_a = (b[0]).stdlib_root;
-  root_b = (b[0]).stdlib_root;
-  root_c = (b[0]).project_root;
-} else {
-  root_b = (b[0]).stdlib_root;
-  root_c = (b[0]).project_root;
-  root_a = NULL;
+  if (r != (0 - 1)) {
+  ok = r;
 }
 }
-}
-}
-  int32_t k2 = (np - first_a);
-  while (root_a != NULL && k2 > 0 && ok == 0) {
-  ok = mb_try_parts(root_a, src, ps, pe, first_a, k2, out);
-  k2 = (k2 - 1);
-}
-  int32_t k3 = (np - first_b);
-  while (root_b != NULL && k3 > 0 && ok == 0) {
-  ok = mb_try_parts(root_b, src, ps, pe, first_b, k3, out);
-  k3 = (k3 - 1);
-}
-  int32_t k4 = (np - first_c);
-  while (root_c != NULL && k4 > 0 && ok == 0) {
-  ok = mb_try_parts(root_c, src, ps, pe, first_c, k4, out);
-  k4 = (k4 - 1);
-}
-  flow_mem_free(val);
-  flow_mem_free(cand);
+  flow_mem_free(found);
   return ok;
 }
 
@@ -101665,7 +101406,13 @@ void mb_visit(MlirBundle* b, int32_t k) {
   while (item != AST_NONE && (b[0]).err == 0) {
   if ((((p).arena).nodes[item]).kind == AST_IMPORT) {
   mb_zero(dep, MB_PATH);
-  if (mb_resolve(b, (p).arena, src, item, dir, dep) == 0) {
+  int32_t res = mb_resolve(b, (p).arena, src, item, path, dir, dep);
+  if (res < 0) {
+  if (res != (0 - 3)) {
+  (b[0]).err = 1;
+}
+} else {
+  if (res == 0) {
   int32_t line = 1;
   int32_t q = 0;
   for (; q < ((((p).arena).nodes[item]).start); q = q + 1) {
@@ -101679,6 +101426,7 @@ void mb_visit(MlirBundle* b, int32_t k) {
   int32_t d = mb_module(b, dep);
   if (d >= 0) {
   mb_visit(b, d);
+}
 }
 }
 }
@@ -101779,60 +101527,22 @@ int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out) {
 }
 
 int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_cap, int32_t typecheck) {
-  MlirBundle mb = (MlirBundle){ .paths = flow_mem_malloc((int64_t)((MB_MAX_MODS * MB_PATH))), .n = 0, .state = mb_alloc_i32(MB_MAX_MODS), .all = flow_mem_malloc((int64_t)(MB_ALL_CAP)), .all_len = 0, .order = mb_alloc_i32(MB_MAX_MODS), .starts = mb_alloc_i32((MB_MAX_MODS + 1)), .norder = 0, .project_root = flow_mem_malloc((int64_t)(MB_PATH)), .stdlib_root = flow_mem_malloc((int64_t)(MB_PATH)), .compiler_root = flow_mem_malloc((int64_t)(MB_PATH)), .toml = flow_mem_malloc((int64_t)(MB_SRC_CAP)), .toml_len = 0, .err = 0 };
+  MlirBundle mb = (MlirBundle){ .paths = flow_mem_malloc((int64_t)((MB_MAX_MODS * MB_PATH))), .n = 0, .state = mb_alloc_i32(MB_MAX_MODS), .all = flow_mem_malloc((int64_t)(MB_ALL_CAP)), .all_len = 0, .order = mb_alloc_i32(MB_MAX_MODS), .starts = mb_alloc_i32((MB_MAX_MODS + 1)), .norder = 0, .project_root = flow_mem_malloc((int64_t)(MB_PATH)), .search_dir = flow_mem_malloc((int64_t)(MB_PATH)), .err = 0 };
   MlirBundle* b = (MlirBundle*)((&mb));
   mb_zero((mb).all, MB_ALL_CAP);
   mb_zero((mb).project_root, MB_PATH);
-  mb_zero((mb).stdlib_root, MB_PATH);
-  mb_zero((mb).compiler_root, MB_PATH);
-  mb_zero((mb).toml, MB_SRC_CAP);
-  const char* croot = getenv("FLOWC_ROOT");
-  uint8_t* crp = (uint8_t*)(croot);
-  if (crp == NULL || crp[0] == 0) {
-  croot = ".";
+  mb_zero((mb).search_dir, MB_PATH);
+  const char* sdir = getenv("FLOWC_DIR");
+  uint8_t* sdp = (uint8_t*)(sdir);
+  if (sdp == NULL || sdp[0] == 0) {
+  sdir = getenv("FLOWC_ROOT");
+  sdp = sdir;
 }
-  if (mb_realpath(croot, (mb).compiler_root) == 0) {
-  mb_puts((mb).compiler_root, 0, MB_PATH, croot);
+  if (sdp == NULL || sdp[0] == 0) {
+  sdir = ".";
 }
-  uint8_t* pr = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  mb_zero(pr, MB_PATH);
-  if (flowc_resolve_project_root(in_path, pr, MB_PATH) <= 0) {
-  puts("flowc mlir: unsupported: imports without a flow.toml above the program at line 0");
-  return (0 - 1);
-}
-  const char* prs = (const char*)(pr);
-  if (mb_realpath(prs, (mb).project_root) == 0) {
-  mb_put((mb).project_root, 0, MB_PATH, pr, mb_cstr_len(pr));
-}
-  flow_mem_free(pr);
-  uint8_t* tp = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  int32_t tpo = mb_put(tp, 0, MB_PATH, (mb).project_root, mb_cstr_len((mb).project_root));
-  mb_puts(tp, tpo, MB_PATH, "/flow.toml");
-  const char* tps = (const char*)(tp);
-  int32_t tn = flowc_read_file(tps, (mb).toml, (MB_SRC_CAP - 1));
-  flow_mem_free(tp);
-  if (tn > 0) {
-  (mb).toml_len = tn;
-}
-  uint8_t* sv = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  uint8_t* stdlib_key = (uint8_t*)("stdlib");
-  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
-  int32_t have = 0;
-  if (mb_toml_value(b, "paths", stdlib_key, 6, sv, MB_PATH) == 1) {
-  have = mb_join(cand, (mb).project_root, sv, mb_cstr_len(sv));
-} else {
-  uint8_t* libs = (uint8_t*)("lib/stdlib");
-  have = mb_join(cand, (mb).project_root, libs, 10);
-}
-  const char* cs = (const char*)(cand);
-  if (have == 1 && flowc_io_exists(cs) == 1) {
-  mb_put((mb).stdlib_root, 0, MB_PATH, cand, mb_cstr_len(cand));
-} else {
-  uint8_t* libs2 = (uint8_t*)("lib/stdlib");
-  mb_join((mb).stdlib_root, (mb).compiler_root, libs2, 10);
-}
-  flow_mem_free(cand);
-  flow_mem_free(sv);
+  mb_puts((mb).search_dir, 0, MB_PATH, sdir);
+  flowc_resolve_project_root(in_path, (mb).project_root, MB_PATH);
   uint8_t* rootp = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   mb_zero(rootp, MB_PATH);
   if (mb_realpath(in_path, rootp) == 0) {
