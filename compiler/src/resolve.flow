@@ -2139,6 +2139,31 @@ function flowc_resolve_import_at_raw(
     return 0 - 3
 }
 
+# One import of the module at mpath, by the rules of the C bundle: a string
+# import with an unsafe path is refused (and reported), then
+# flowc_resolve_import_at. mod_search is the module's directory. Writes the
+# normalized path to imp_path (FLOWC_RESOLVE_PATH_CAP bytes) and returns its
+# length; -1 when the import does not resolve, -2 when a package import
+# fails (reported), -3 for a form that names no module, -4 for an unsafe
+# path. The MLIR bundle (mlir_bundle.flow) resolves through this too.
+export function flowc_resolve_module_import(
+    mpath: string,
+    src: ptr<u8>,
+    s: i32,
+    e: i32,
+    form: i32,
+    mod_search: string,
+    search_dir: string,
+    project_root: string,
+    imp_path: ptr<u8>
+) -> i32 {
+    if form == 2 and flowc_resolve_unsafe_import(src, s, e, mod_search) == 1 {
+        flowc_resolve_unsafe_import_error(mpath, src, s, e)
+        return 0 - 4
+    }
+    return flowc_resolve_import_at(src, s, e, form, mod_search, search_dir, project_root, imp_path)
+}
+
 function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 {
     let path_p: ptr<u8> = path
     if flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, path_p) >= 0 {
@@ -2224,15 +2249,7 @@ function flowc_resolve_gather(
         let mut ii: i32 = 0
         while ii < p.arena.len {
             if p.arena.nodes[ii].kind == AST_IMPORT {
-                if p.arena.nodes[ii].ival == 2 and flowc_resolve_unsafe_import(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, mod_search) == 1 {
-                    flowc_resolve_unsafe_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
-                    flowc_parser_free(p)
-                    free(mod_dir)
-                    free(imp_path)
-                    free(src)
-                    return 0 - 1
-                }
-                let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
+                let plen: i32 = flowc_resolve_module_import(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
                 if plen != 0 - 3 {
                     if plen < 0 {
                         if plen == 0 - 1 {
