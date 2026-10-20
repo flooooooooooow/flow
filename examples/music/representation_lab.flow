@@ -1,0 +1,130 @@
+# An executable, deterministic counterexample to collapsing musical gestures
+# onto equal-tempered notes. No claim is made about any actual musical
+# tradition: these are synthetic gestures in cents relative to a tonic.
+#
+# Run: ./flow run examples/music/representation_lab.flow
+#
+# EXIT 0: landmarks discovered, neighboring pitches remain distinguishable,
+# and contour, articulation, and timing are preserved on held-out gestures.
+
+import .representation
+
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function main() -> i32 {
+    let training: array<MusicGesture, 7> = [
+        music_gesture(0.0, 14.0, 0.0, 1.00, 1),
+        music_gesture(180.0, 211.0, 170.0, 0.75, 2),
+        music_gesture(220.0, 254.0, 205.0, 0.85, 2),
+        music_gesture(360.0, 320.0, 347.0, 0.65, 1),
+        music_gesture(500.0, 521.0, 500.0, 1.10, 3),
+        music_gesture(680.0, 704.0, 667.0, 0.90, 1),
+        music_gesture(860.0, 820.0, 855.0, 1.20, 2)
+    ]
+    let held_out: array<MusicGesture, 2> = [
+        music_gesture(220.0, 260.0, 210.0, 0.92, 3),
+        music_gesture(180.0, 156.0, 184.0, 0.73, 1)
+    ]
+    let mut landmarks: array<f64, 16> = [0.0; 16]
+    let learned: i32 = music_discover_landmarks(training, 7, landmarks, 16, 10.0)
+    if learned != 7 {
+        println("FAIL: landmark discovery did not resolve seven distinct onsets")
+        return 1
+    }
+
+    # A 100-cent grid merges two intentionally distinct observed pitches.
+    let grid_a: f64 = music_round_to(180.0, 100.0)
+    let grid_b: f64 = music_round_to(220.0, 100.0)
+    if grid_a != grid_b {
+        println("FAIL: the fixed-grid counterexample no longer collides")
+        return 2
+    }
+    let witness: MusicPitchCollision = music_find_onset_collision(training, 7, 10.0)
+    if !witness.found or witness.original_separation_cents < 39.0 {
+        println("FAIL: representation loss witness not found")
+        return 13
+    }
+    let learned_a: f64 = music_nearest(180.0, landmarks, learned)
+    let learned_b: f64 = music_nearest(220.0, landmarks, learned)
+    if music_abs(learned_a - learned_b) < 39.0 {
+        println("FAIL: learned representation merged distinct pitches")
+        return 3
+    }
+
+    let mut total_grid_pitch: f64 = 0.0
+    let mut total_grid_contour: f64 = 0.0
+    let mut total_grid_duration: f64 = 0.0
+    let mut total_grid_articulation: i32 = 0
+    let mut total_model_pitch: f64 = 0.0
+    let mut total_model_contour: f64 = 0.0
+    let mut total_model_duration: f64 = 0.0
+    let mut total_model_articulation: i32 = 0
+    let mut i: i32 = 0
+    while i < 2 {
+        let source: MusicGesture = held_out[i]
+        let fixed: MusicGesture = music_project_fixed_grid(source)
+        let adaptive: MusicGesture = music_project_gesture(source, landmarks, learned)
+        let fixed_loss: MusicLoss = music_measure_loss(source, fixed)
+        let adaptive_loss: MusicLoss = music_measure_loss(source, adaptive)
+        total_grid_pitch = total_grid_pitch + fixed_loss.onset_squared_cents
+        total_grid_contour = total_grid_contour + fixed_loss.contour_squared_cents
+        total_grid_duration = total_grid_duration + fixed_loss.duration_squared_beats
+        total_grid_articulation = total_grid_articulation + fixed_loss.articulation_mismatches
+        total_model_pitch = total_model_pitch + adaptive_loss.onset_squared_cents
+        total_model_contour = total_model_contour + adaptive_loss.contour_squared_cents
+        total_model_duration = total_model_duration + adaptive_loss.duration_squared_beats
+        total_model_articulation = total_model_articulation + adaptive_loss.articulation_mismatches
+        if music_abs(music_pitch_at(adaptive, 0.4) - source.crest_cents) > 0.001 {
+            println("FAIL: expressive crest lost")
+            return 4
+        }
+        i = i + 1
+    }
+
+    println("MUSIC_REPRESENTATION_LAB")
+    printf("landmarks,%d\n", learned)
+    printf("fixed_pitch_squared_cents,%f\n", total_grid_pitch)
+    printf("adaptive_pitch_squared_cents,%f\n", total_model_pitch)
+    printf("fixed_contour_squared_cents,%f\n", total_grid_contour)
+    printf("adaptive_contour_squared_cents,%f\n", total_model_contour)
+    printf("fixed_duration_squared_beats,%f\n", total_grid_duration)
+    printf("adaptive_duration_squared_beats,%f\n", total_model_duration)
+    printf("fixed_articulation_mismatches,%d\n", total_grid_articulation)
+    printf("adaptive_articulation_mismatches,%d\n", total_model_articulation)
+
+    if total_grid_pitch <= total_model_pitch {
+        println("FAIL: no improvement over fixed pitch grid")
+        return 5
+    }
+    if total_grid_contour <= 0.0 or total_grid_articulation != 2 {
+        println("FAIL: fixed-grid loss is unexpectedly zero")
+        return 6
+    }
+    if total_model_pitch > 0.001 or total_model_contour > 0.001 {
+        println("FAIL: adaptive pitch or contour residual")
+        return 7
+    }
+    if total_model_duration > 0.001 or total_model_articulation != 0 {
+        println("FAIL: adaptive timing or articulation residual")
+        return 8
+    }
+
+    # The pitch trajectory must interpolate independent crest/release points.
+    let probe: MusicGesture = music_gesture(-40.0, 65.0, -25.0, 0.7, 3)
+    if music_abs(music_pitch_at(probe, 0.0) + 40.0) > 0.001 {
+        return 9
+    }
+    if music_abs(music_pitch_at(probe, 0.4) - 65.0) > 0.001 {
+        return 10
+    }
+    if music_abs(music_pitch_at(probe, 1.0) + 25.0) > 0.001 {
+        return 11
+    }
+    if music_round_to(-180.0, 100.0) != -200.0 {
+        return 12
+    }
+    println("PASS: representation collisions found; expressive residual preserved")
+    return 0
+}
