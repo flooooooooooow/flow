@@ -8676,7 +8676,6 @@ function mlg_val_is_bound(m: ptr<Mlg>, v: i32) -> i32 {
     }
     return 0
 }
-
 function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
     let a: i32 = m[0].arena.nodes[e].a
     let tt: i32 = m[0].arena.nodes[e].b
