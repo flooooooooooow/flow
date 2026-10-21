@@ -103,6 +103,15 @@ jobs:
           FLOWC_VERSION: ${{ steps.tag.outputs.name }}
         run: ./flow tool compiler/scripts/package_flowc.flow
 
+      - name: Upload qualified flowc compiler archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowc-${{ matrix.os }}
+          path: |
+            dist/flowc-*.tar.gz
+            dist/flowc-*.tar.gz.sha256
+          if-no-files-found: error
+
       - name: Unpack release compiler archive
         shell: bash
         run: |
@@ -157,12 +166,19 @@ jobs:
           ref: ${{ steps.tag.outputs.name }}
           fetch-depth: 0
 
+      - name: Download qualified flowc compiler archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: flowc-*
+          path: dist/flowc
+          merge-multiple: true
+
       - name: Create source archives
         run: |
           TAG="${{ steps.tag.outputs.name }}"
           git archive --format=tar.gz --prefix="flow-${TAG#v}/" -o "flow-${TAG}.tar.gz" "$TAG"
           git archive --format=zip --prefix="flow-${TAG#v}/" -o "flow-${TAG}.zip" "$TAG"
-          shasum -a 256 "flow-${TAG}.tar.gz" "flow-${TAG}.zip" | tee SHA256SUMS.txt
+          shasum -a 256 "flow-${TAG}.tar.gz" "flow-${TAG}.zip" dist/flowc/flowc-*.tar.gz | tee SHA256SUMS.txt
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
@@ -174,6 +190,8 @@ jobs:
           files: |
             flow-*.tar.gz
             flow-*.zip
+            dist/flowc/flowc-*.tar.gz
+            dist/flowc/flowc-*.tar.gz.sha256
             SHA256SUMS.txt
           fail_on_unmatched_files: true
 
