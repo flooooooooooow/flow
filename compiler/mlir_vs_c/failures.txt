@@ -1,0 +1,931 @@
+apps/cartpole/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+apps/flow-http/http.flow	mlir-lower	error: custom op <file>.zero' is unknown
+apps/flowdb/flowdb.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/aosoa.flow	mlir-lower	error: use of value 'X' expects different type than prior uses: 'X' vs 'X'
+benchmarks/baselines/numeric.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/baselines/rbf_elementwise.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/baselines/startup.flow	mlir-lower	error: expected 'X'
+benchmarks/baselines/string_io.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/concurrency/chan_pingpong.flow	mlir-lower	error: expected 'X'
+benchmarks/concurrency/chan_pingpong_fiber.flow	mlir-lower	error: expected 'X'
+benchmarks/concurrency/channel_throughput.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+benchmarks/concurrency/fiber_fanout.flow	mlir-lower	error: expected 'X'
+benchmarks/concurrency/multicore_scaling.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/concurrency/parallel_sum.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/concurrency/run.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/cross_harness/cold/file_transform/transform.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/cold/hello/hello.flow	mlir-lower	error: expected 'X'
+benchmarks/cross_harness/cold/json_parse/json_parse.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/compiler/fusion_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/compiler/run_fusion_benchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/cross_harness/memory/allocation_copy/allocation_copy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/memory/ffi_copy/ffi_copy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/memory/ffi_handoff/ffi_handoff.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/memory/peak_rss/peak_rss.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/allocation/allocation.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/arrays/arrays.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/buffered_io/buffered_io.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/ffi_batch/ffi_batch.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/ffi_buffer/ffi_buffer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/hashmap/hashmap.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/numerical/numerical.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/parse_format/parse_format.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/sorting/sorting.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/string_concat/string_concat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/runtime/strings/strings.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/cross_harness/tests/rbf_kernel.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/crossover/calibrate.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/gpu/gpu_microbenchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/micro/codegen_taxes.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+benchmarks/micro/complex_vectorization.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+benchmarks/micro/ffi_boundary_benchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/micro/ffi_breakeven.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/micro/fft_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/frame_arena_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/mandelbrot_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/matmul_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/nbody_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/parallel_scaling.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/shape_specialization_benchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/micro/sort_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/micro/transform_tuning_benchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/mlir_fusion/benchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/mlir_pipelining/benchmark.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/ordering/adaptive_sort_bench.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/ordering/run.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/publish/flow/fib.flow	mlir-lower	error: expected 'X'
+benchmarks/publish/flow/mandelbrot.flow	mlir-lower	error: expected 'X'
+benchmarks/publish/flow/matmul.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/publish/flow/nbody.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/publish/flow/spectral.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/runner.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/standardized/bench.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+benchmarks/standardized/json/json.flow	mlir-lower	error: expected 'X'
+benchmarks/standardized/record/record.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/submission/programming-language-benchmarks/record.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/suite/flow/01_fibonacci.flow	mlir-lower	error: expected 'X'
+benchmarks/suite/flow/02_nbody.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/suite/flow/03_matmul.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/suite/flow/04_spectral.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/suite/flow/05_spmv.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/suite/flow/06_audio_rt.flow	mlir-lower	error: custom op <file>.zero' is unknown
+benchmarks/suite/run_benchmarks.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+compiler/fixtures/dynamics_dsl/ex_chain4_lqr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ex_ga_dsys_namespaced.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ex_ga_dsys_syntax.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ex_ga_wfc_coupled.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ex_pendulum_represent_linear.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ex_spring_mass_control.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ex_spring_mass_lqr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_continuous.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_discrete.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_dynamics_block.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_existing_import.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_ga_closed_analyze.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_lqr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_namespaced.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_one_line_main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_one_line_swallow.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_redeclare_merge.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_represent_linear.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_represent_toplevel.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/dynamics_dsl/ok_wfc_couple_guide.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/arg_type.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/cap_method_print.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/multi_handle.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+compiler/fixtures/effects/row_unknown_effect.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/runtime_default.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/runtime_strict_abort.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/strict_ok.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/strict_row_call.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/effects/strict_unhandled.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/flow_blocks/run_features.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/flow_blocks/run_guarantee.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/flow_blocks/run_invariant.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/arith.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/arrays.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/consts_calls.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/control.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/data.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/defer_addr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/effects.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/gpu_ops.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/imports_resolve.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/imports_statics.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/loops.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/merges.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/mlir_dep.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/print_logic.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/record_update.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/record_update_return.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/rotate_dual.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/span_elem_addr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/mlir/structs.flow	mlir-lower	error: expected 'X'
+compiler/fixtures/mlir/wasm_abi.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/rt_summary/channel_caller.flow	mlir-emit	error: RT-safety violation: 'X' is marked 'X' but calls 'X', which is not RT-safe because it calls 'X' (forbidden on an RT-safe path; see docs/library/rt-safety
+compiler/fixtures/rt_summary/rt_safe_caller.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/stage_a_array_else.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/stage_a_sizeof.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/stage_a_strcat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_coverage_known_bugs_002.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_coverage_known_bugs_003.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_coverage_known_bugs_006.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_coverage_known_bugs_010.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_coverage_match_007.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_escaping_closures_001.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_pthread_binding_001.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+compiler/fixtures/typecheck_parity/unit/test_span_data_field_001.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_001.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_002.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_004.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_005.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_007.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_008.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_009.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_011.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_spans_013.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_gaps_004.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_gaps_005.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_gaps_006.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_gaps_007.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+compiler/fixtures/typecheck_parity/unit/test_strict_gaps_008.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+compiler/fixtures/typecheck_parity/unit/test_strict_lambda_types_001.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_lambda_types_002.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_lambda_types_003.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_parity/unit/test_strict_lambda_types_005.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/borrow_mut_of_let.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/callback_domain_alloc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/cast_invalid.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_escape_frame_alloc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_escape_local.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_escape_ptr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_escape_session.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_escape_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_escape_unannotated.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_ok_malloc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_ok_param.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_ok_same.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_ok_session.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_ok_unannotated.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_arena_param_writer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_array_field_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_array_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_escape_field_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_escape_heap.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_escape_return.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_escape_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_field_nested_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_field_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_frame_heap.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_frame_heap_transitive.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_field.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_frame.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_lit.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_ptr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_same.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_shorter_field.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_static_src.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_unannotated_field.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_ld5_unannotated_fn.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_param_composite_unbounded.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_param_field_unbounded.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_persistent_pointer_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_persistent_string_array.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_request_escape_return.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_request_escape_session.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_request_ok_malloc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_return_struct.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/domain_struct_lit_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/effect_argument_type.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/extent_dynamic.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/extent_length.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/find_element_type.flow	mlir-emit	flowc mlir: unsupported: sort or find key of this type at line N
+compiler/fixtures/typecheck_rules/find_not_array.flow	mlir-emit	flowc mlir: unsupported: generic call or range sum at line N
+compiler/fixtures/typecheck_rules/find_target_type.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/for_step_zero.flow	run-exit	exit code differs (C 48, MLIR 0)
+compiler/fixtures/typecheck_rules/gpu_ok_descriptors.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/gpu_ok_runtime_backstop.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/if_expr_branches.flow	mlir-lower	error: 'X' op  along control flow edge from Region #N to parent results: source type #N 'X' should match input type #N 'X'
+compiler/fixtures/typecheck_rules/match_list_element.flow	mlir-emit	flowc mlir: unsupported: nested, struct or list pattern in an or-pattern or guarded arm at line N
+compiler/fixtures/typecheck_rules/match_list_not_array.flow	mlir-lower	error: use of value 'X' expects different type than prior uses: 'X' vs 'X'
+compiler/fixtures/typecheck_rules/match_literal_incompatible.flow	mlir-lower	error: use of value 'X' expects different type than prior uses: 'X' vs 'X'
+compiler/fixtures/typecheck_rules/match_struct_field_literal.flow	run-exit	exit code differs (C 139, MLIR 0)
+compiler/fixtures/typecheck_rules/param_escapes_to_static.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_closure_escape.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_hof_bad_closure.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_hof_bad_fn.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_hof_ok.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_indirect_bad_bind.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_indirect_bad_call.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_malloc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/rt_safe_transitive.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/safety_flight_no_heap.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/slice_bound_not_int.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/slice_not_storage.flow	mlir-emit	flowc mlir: unsupported: slice of a value that is not a pointer, array or span at line N
+compiler/fixtures/typecheck_rules/sort_element_type.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/sort_key_type.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/span_outlives.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/static_array_element.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/static_array_not_constant.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/static_array_too_long.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/static_pointer_not_null.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/strict_effects_call.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/fixtures/typecheck_rules/strict_effects_unhandled.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/src/driver.flow	mlir-slow	no diagnostic
+compiler/src/main.flow	mlir-slow	no diagnostic
+compiler/src/pkg_main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+compiler/src/test_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+demos/ui_layout_flow/src/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+docs/project/linguist/samples/Flow/channels.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+docs/project/linguist/samples/Flow/effects_showcase.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ai/flowlm_charlm.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ai/ga_flappy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ai/policy_pong.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ai/q_snake.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/adsr_vs_click.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/audio_probe.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/bus_graph_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/delay_feedback_guard.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/drum_machine.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/evening_piece.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/filter_sweep.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/fm_voice.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/hot_cross_buns.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/hot_cross_buns_play.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/hot_cross_buns_simple.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/hot_cross_buns_working.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/karplus_strong.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/lattice_allpass_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/lattice_allpass_phase_engine.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/lifetime_domains.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/livecode_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/loopback_effects.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/notation_player.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/offline_graph_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/rt_safe_callback.flow	mlir-lower	error: expected 'X'
+examples/audio/sine_playback.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/audio/stereo_width.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/basics/bigint_smoke.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/basics/declarative_sort.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/basics/hashmap_i64_smoke.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/basics/match_enums.flow	mlir-lower	error: expected 'X'
+examples/basics/pipeline_choose.flow	mlir-lower	error: expected 'X'
+examples/basics/pipeline_fork.flow	mlir-lower	error: expected 'X'
+examples/basics/pipeline_fork_inferred.flow	mlir-lower	error: expected 'X'
+examples/basics/pipeline_placeholder.flow	mlir-lower	error: expected 'X'
+examples/basics/result_pipeline.flow	mlir-lower	error: expected 'X'
+examples/basics/simple_for.flow	mlir-lower	error: expected 'X'
+examples/basics/spans.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/basics/type_safety_demo.flow	mlir-lower	error: expected 'X'
+examples/bench/matmul_optimizations.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/01_hello.flow	mlir-lower	error: expected 'X'
+examples/book/02_values.flow	mlir-lower	error: expected 'X'
+examples/book/03_control.flow	mlir-lower	error: expected 'X'
+examples/book/04_functions.flow	mlir-lower	error: expected 'X'
+examples/book/05_records_arrays.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/06_pipeline_result.flow	mlir-lower	error: expected 'X'
+examples/book/07_decay.flow	mlir-lower	error: expected 'X'
+examples/book/08_types_patterns.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/09_memory_cleanup.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/10_effect_handler.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/11_closure_snapshot.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/12_parallel_transform.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/book/13_rk4_decay.flow	mlir-lower	error: expected 'X'
+examples/book/14_numeric_gradient.flow	mlir-lower	error: expected 'X'
+examples/circuits/bjt_curves.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/buck_converter.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/chua.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/diode_iv.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/lc_tank.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/logic_delays.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/mna_dc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/netlist_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/opamp.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/oscillator_colpitts.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/pll.flow	mlir-lower	error: expected 'X'
+examples/circuits/rc_rl_rlc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/circuits/transmission_line.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/calculator.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/claim_address_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/flow_identifier_lexer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/flow_lexer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/flow_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/know_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/know_index_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/lsp_ordering_port.flow	mlir-lower	error: expected 'X'
+examples/compilers/math_prose_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/math_prose_expr_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/compilers/proof_parse_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/channels.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/channels_i64.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/cont_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/cont_flow_resume.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/cont_multishot.flow	mlir-lower	error: expected 'X'
+examples/concurrency/cont_reset.flow	mlir-lower	error: expected 'X'
+examples/concurrency/cont_scaffold.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/cont_stackcopy.flow	mlir-lower	error: expected 'X'
+examples/concurrency/fiber_async.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/fiber_netpoll.flow	mlir-lower	error: expected 'X'
+examples/concurrency/fiber_suspend.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/generic_channel.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/gomaxprocs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/http_fiber.flow	mlir-lower	error: expected 'X'
+examples/concurrency/http_hello.flow	mlir-lower	error: expected 'X'
+examples/concurrency/http_middleware.flow	mlir-lower	error: expected 'X'
+examples/concurrency/http_routed.flow	mlir-lower	error: expected 'X'
+examples/concurrency/http_tls.flow	mlir-lower	error: expected 'X'
+examples/concurrency/netpoll.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/parallel_for.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/pipeline.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/race_hooks.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/select.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/select4.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/concurrency/tcp_echo_once.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/threaded_async.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/concurrency/work_steal.flow	mlir-lower	error: expected 'X'
+examples/crypto/hmac_sha256.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/crypto/runtime_sha256.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/crypto/sha256.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/data/csv_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/data/json_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/data/tsv_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/demos/ui_layout_flow/src/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/demos/wasm/examples/particles/particles.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dsp/pipeline.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/controllability_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/ga_control.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/ga_dsys_namespaced.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/ga_dsys_syntax.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/ga_full_analysis.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/ga_wfc_coupled.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/gramian_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/lorenz_attractor.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/dynamics/wfc_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/effects/async_effects.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/effects/async_primitives.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/effects/dependency_injection.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/effects/effect_rows.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/effects/showcase.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/effects/state_effects.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/embedded/fsm_controller.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/embedded/rt_pid_controller.flow	mlir-lower	error: expected 'X'
+examples/evolution/age_structured.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/bouncing_ball.flow	mlir-lower	error: expected 'X'
+examples/evolution/bouncing_ball_energy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/bouncing_ball_evolves.flow	mlir-lower	error: expected 'X'
+examples/evolution/chain4_lqr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/chemostat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/cruise_control.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/digital_twin_lite.flow	mlir-lower	error: expected 'X'
+examples/evolution/double_pendulum.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/duffing.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/flow_pipeline_stages.flow	mlir-lower	error: expected 'X'
+examples/evolution/heat_diffusion.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/logistic_bifurcation.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/lotka_volterra.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/pacemaker.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/parent_input_connect.flow	mlir-lower	error: expected 'X'
+examples/evolution/pendulum.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/pendulum_always.flow	mlir-lower	error: expected 'X'
+examples/evolution/pendulum_evolves.flow	mlir-lower	error: expected 'X'
+examples/evolution/pendulum_represent_linear.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/pendulum_rk4.flow	mlir-lower	error: expected 'X'
+examples/evolution/pid_tuning.flow	mlir-lower	error: expected 'X'
+examples/evolution/robot_connect.flow	mlir-lower	error: expected 'X'
+examples/evolution/rossler.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/sir_epidemic.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/spring_chain.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/spring_mass_control.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/spring_mass_lqr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/thermostat_evolves.flow	mlir-lower	error: expected 'X'
+examples/evolution/thermostat_hysteresis.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/traffic_lights.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/units_kinematics.flow	mlir-lower	error: expected 'X'
+examples/evolution/van_der_pol.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/evolution/water_tank_cascade.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/flow_way/sensor_calibration.flow	mlir-lower	error: expected 'X'
+examples/flow_way/swappable_telemetry.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/games/2048.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/games/chetris.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/games/chetris_test.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/games/lunar_lander_ui.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/generics_traits/closures_demo.flow	mlir-lower	error: expected 'X'
+examples/generics_traits/enum_match_exhaustive.flow	mlir-lower	error: expected 'X'
+examples/generics_traits/enums_demo.flow	mlir-lower	error: expected 'X'
+examples/generics_traits/generics_demo.flow	mlir-lower	error: expected 'X'
+examples/generics_traits/option_result_demo.flow	mlir-lower	error: expected 'X'
+examples/generics_traits/traits_demo.flow	mlir-emit	flowc mlir: unsupported: argument of this type to an undeclared function at line N
+examples/gpu/flow_gpu_grid_launch.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/flow_gpu_matrix_add.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/flow_gpu_tensor3d_add.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/flow_gpu_vector_add.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/gpu_memory_roundtrip.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/gpu_mul_backward.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/metal_gpu_demo.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/simd_saxpy.flow	mlir-lower	error: expected 'X'
+examples/gpu/vector_add_gpu.flow	mlir-lower	error: expected 'X'
+examples/gpu/vgpu/anti_aliasing.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/batch_rendering.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/clipping.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/depth_estimation.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/earth.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/environment_map.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/export_fluid_graph.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/export_ocean_graph.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/fft_ocean.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/fluid.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/graph_device.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/instanced_rendering.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/mnist.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/sampled_quad.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/gpu/vgpu/transmission.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/graphics/gif_writer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/graphics/graphics.flow	mlir-lower	error: expected 'X'
+examples/graphics/shader_demo.flow	mlir-lower	error: expected 'X'
+examples/hardware/blink.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/interop/python_embed.flow	mlir-lower	error: expected 'X'
+examples/linalg/lu_decomposition_pedagogical.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/linalg/matrix_ops.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/autodiff/autodiff_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/autodiff/autodiff_clean_syntax.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/autodiff/dual_ops.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/autodiff/neural_network.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/autodiff/neural_network_backprop.flow	mlir-lower	error: expected 'X'
+examples/ml/autodiff/nn_gradcheck.flow	mlir-lower	error: expected 'X'
+examples/ml/autodiff/nn_xor.flow	mlir-lower	error: expected 'X'
+examples/ml/autodiff/tensor_ops.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/digits_mlp.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/digits_mlp_metal.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/digits_mlp_parallel.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/mlir_tensor_bench.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/models/mlp_xor.flow	mlir-lower	error: expected 'X'
+examples/ml/models/mlp_xor_adam.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/models/mlp_xor_from_scratch.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/nn_layers.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/optimizers.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/tape_mul.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ml/tensor.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/music/representation_audition.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/music/representation_lab.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/net/http_hello.flow	mlir-lower	error: expected 'X'
+examples/net/tcp_echo.flow	mlir-lower	error: expected 'X'
+examples/numerical/fmm_selftest.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/numerical/ode_solver.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/numerical/optimization.flow	mlir-lower	error: expected 'X'
+examples/packages/use_hello_lib/src/main.flow	mlir-lower	error: expected 'X'
+examples/physics/natural_physics.flow	mlir-lower	error: expected 'X'
+examples/physics/natural_syntax_demo.flow	mlir-lower	error: expected 'X'
+examples/rf/dft.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+examples/rf/iq_mixer.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+examples/rf/sdr_receiver.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/rosetta/ackermann-function.flow	mlir-lower	error: expected 'X'
+examples/rosetta/binary-search.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/rosetta/factorial.flow	mlir-lower	error: expected 'X'
+examples/rosetta/fibonacci-sequence.flow	mlir-lower	error: expected 'X'
+examples/rosetta/fizzbuzz.flow	mlir-lower	error: expected 'X'
+examples/rosetta/greatest-common-divisor.flow	mlir-lower	error: expected 'X'
+examples/rosetta/hundred-doors.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/rosetta/sieve-of-eratosthenes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/rosetta/string-reversal.flow	mlir-emit	flowc mlir: unsupported: index into a pointer of unknown element type at line N
+examples/rosetta/towers-of-hanoi.flow	mlir-lower	error: expected 'X'
+examples/stats/regression_gd.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/systems/distributed_digital_twins.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+examples/systems/hash_table.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/systems/manual_memory.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/systems/memory_pool.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/systems/ring_buffer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/systems/system_info.flow	mlir-lower	error: expected 'X'
+examples/systems/tiny_pointers.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/ui/layout_hello.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/verify/circuits/full_adder.flow	mlir-lower	error: expected 'X'
+examples/wasm/fs_counter.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/wasm/fs_preload.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/wasm/hello_wasm.flow	mlir-lower	error: expected 'X'
+examples/wasm/parallel_scaling.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/wasm/parallel_sum.flow	mlir-lower	error: custom op <file>.zero' is unknown
+examples/wasm/python_embed.flow	mlir-lower	error: expected 'X'
+lib/stdlib/gpu_gradients.flow	mlir-lower	error: expected 'X'
+lib/stdlib/gpu_kernels.flow	mlir-lower	error: expected 'X'
+lib/verify/SchurLattice.flow	mlir-lower	error: custom op <file>.zero' is unknown
+packaging/homebrew/sync-tap.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/bench_tiny_pointers.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/build_wasm_hello.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/check_pkg_commands.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/check_pkg_parity.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/check_run_without_python.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/compile_spirv_metal.flow	mlir-emit	flowc mlir: unsupported: top-level let that is not `let mut name: T = value` at line N
+scripts/publish_vscode_extension.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/record_demo_gif.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/run_abi_tests.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/test_ci_locally.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/tools/install/setup.flow	mlir-lower	error: custom op <file>.zero' is unknown
+scripts/tools/jit_specialize/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+scripts/tools/jules_dispatch/test.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+scripts/tools/mlir_async/main.flow	mlir-emit	flowc mlir: unsupported: index into a pointer of unknown element type at line N of <file>
+scripts/tools/mlir_pipeline/main.flow	mlir-emit	flowc mlir: unsupported: index into a pointer of unknown element type at line N
+scripts/tools/mlir_static_memory/main.flow	mlir-emit	flowc mlir: unsupported: index into a pointer of unknown element type at line N of <file>
+scripts/tools/mlir_tune/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+scripts/tools/pkg_sync/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/arrays/test_array_types.flow	mlir-lower	error: expected 'X'
+tests/benchmarks/micro/fft_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/micro/mandelbrot_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/micro/matmul_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/micro/nbody_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/micro/sort_benchmark.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/runner.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/standardized/json/json.flow	mlir-lower	error: expected 'X'
+tests/benchmarks/standardized/record/record.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/suite/flow/01_fibonacci.flow	mlir-lower	error: expected 'X'
+tests/benchmarks/suite/flow/02_nbody.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/suite/flow/03_matmul.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/suite/flow/05_spmv.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/benchmarks/suite/flow/06_audio_rt.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/arena_bump.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/array_bounds_elision.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/array_bounds_kept.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/array_bounds_rebound.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/array_literal_value.flow	mlir-lower	error: use of value 'X' expects different type than prior uses: 'X' vs 'X'
+tests/cgen/array_return_by_value.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/c_abi_callback_adapter.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/c_abi_effect_tls.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/c_abi_struct_array.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/c_abi_unhandled_effect.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/c_import_no_redeclare_extern_type.flow	mlir-emit	flowc mlir: unsupported: extern type at line N
+tests/cgen/closure_import.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/complex_real_scale.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+tests/cgen/complex_types_arith.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+tests/cgen/concurrency_effect_tls.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/copy_elision.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/copy_elision_matrix.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/cov_effects_multi.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/cov_known_bugs_calls.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+tests/cgen/cov_match_patterns.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/domain_fields_no_trace.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/dual_ops_sugar.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/escaped_strings_quotes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/escaping_closures_fn_type.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/evolves_pendulum.flow	mlir-lower	error: expected 'X'
+tests/cgen/explain_sort_plans.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/export_alias_bundle.flow	mlir-lower	error: expected 'X'
+tests/cgen/extern_variadic_prototype.flow	mlir-lower	error: expected 'X'
+tests/cgen/flow_dimensioned_state_pendulum.flow	mlir-lower	error: expected 'X'
+tests/cgen/for_copy_disjoint.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_copy_overlap.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_range_affine.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_clip.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_dependence.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_hot_loops.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_kernel_checked.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_kernel_disjoint.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_kernel_overlap.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_proven_reduction.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_select_noelse.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_simd_while.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_vectorize_pragma.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/for_vectorize_pragma_skip.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/grow_helpers_memory.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/imported_string_field_eq.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/library_mode.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/lifetime_domains_no_trace.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/match_exhaustive_else.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/module_statics_lowering.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/noalias_restrict.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/noalias_vectorize.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/overload_resolver_policy.flow	mlir-lower	error: custom op 'X' N operands present, but expected N
+tests/cgen/parallel_for_openmp.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/pipeline_choose.flow	mlir-lower	error: expected 'X'
+tests/cgen/pipeline_fusion_scale.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/postfix_chaining_array_struct.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/postfix_chaining_ptr_struct.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/range_algebra_union.flow	mlir-lower	error: expected 'X'
+tests/cgen/region_inference.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/region_unproven.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/rf_types_signal.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/cgen/sort_expr_float_key.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/sort_plan_budget.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/sort_plan_counting.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/sort_plan_insertion.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/sort_plan_provenance.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/span_bounds_elision.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/span_bounds_rebinding.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/span_bounds_retained.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/span_len_hoisting.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/span_static_extent.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/spans_lowering.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/stdlib_c_decls_math.flow	mlir-lower	error: expected 'X'
+tests/cgen/store_after_call.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/strict_gaps_overload_calls.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/string_concat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/string_concat_chain.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/string_concat_forms.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/string_concat_mixed.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/string_concat_stack_local.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/string_eq_len.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/user_named_builtins.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/zero_cost_effects_direct.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cgen/zero_cost_effects_nested.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/cli/fixtures/exit3.flow	mlir-lower	error: expected 'X'
+tests/cli/fixtures/hello.flow	mlir-lower	error: expected 'X'
+tests/cli/fixtures/proj/examples/greet/src/main.flow	mlir-lower	error: expected 'X'
+tests/conformance/03_arrays.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_arrays_len.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_closure_capture.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_coverage_effects.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_coverage_flow_instances.flow	mlir-lower	error: expected 'X'
+tests/core/test_coverage_match_deep.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_distinct_types.flow	mlir-lower	error: expected 'X'
+tests/core/test_evolves_bouncing_ball.flow	mlir-lower	error: expected 'X'
+tests/core/test_evolves_pendulum.flow	mlir-lower	error: expected 'X'
+tests/core/test_evolves_time_blocks.flow	mlir-lower	error: expected 'X'
+tests/core/test_extern.flow	mlir-lower	error: expected 'X'
+tests/core/test_extern_multi.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_gpu_sim_grid.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_gpu_sim_layout2d.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_gpu_sim_layout3d.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_gpu_sim_props.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_match_advanced.flow	mlir-lower	error: expected 'X'
+tests/core/test_match_enum_exhaustive.flow	mlir-lower	error: expected 'X'
+tests/core/test_match_nested.flow	mlir-lower	error: expected 'X'
+tests/core/test_native_testing.flow	mlir-lower	error: expected 'X'
+tests/core/test_println.flow	mlir-lower	error: expected 'X'
+tests/core/test_production_features.flow	mlir-emit	flowc mlir: unsupported: expression form at line N
+tests/core/test_type_alias.flow	mlir-lower	error: expected 'X'
+tests/core/test_ui_layout.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_ui_layout_positions.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_ui_layout_snapshot.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/core/test_units_basic.flow	mlir-lower	error: expected 'X'
+tests/fir/programs/analysis.flow	mlir-lower	error: expected 'X'
+tests/flow_run/progs/exit42.flow	mlir-lower	error: expected 'X'
+tests/flow_run/progs/hello.flow	mlir-lower	error: expected 'X'
+tests/gpu/crossing.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tests/lang/json_parser_arena.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_arena_domains.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_array_repeat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_array_struct_pointers.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_array_types.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_arrays.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_ast_names_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_ast_span_mutability.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_attributes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_basics_smokes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_bounds_elision.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_c_embed_quotes.flow	mlir-link	error: expected expression
+tests/lang/test_c_gen_externs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_c_import.flow	mlir-link	clang: error: linker command failed with exit code N (use -v to see invocation)
+tests/lang/test_c_import_auto.flow	mlir-lower	error: expected 'X'
+tests/lang/test_c_import_dirs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_c_import_string_time.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_c_import_struct.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_c_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_c_type_map.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_cast_in_string_concat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_chained_assign.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_claim_path_latex.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_claim_path_tier.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_closure_abi.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_closure_import.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_closures.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_complex_builtins.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+tests/lang/test_complex_scaling.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+tests/lang/test_concurrent_link.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/lang/test_const_string_concat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_constraints.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_conventions.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_copy_elision.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_defer_ordering.flow	mlir-lower	error: expected 'X'
+tests/lang/test_distributed_digital_twins.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/lang/test_dlopen.flow	mlir-emit	flowc mlir: unsupported: extern type at line N
+tests/lang/test_domain_fields.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_dynamic_invariants.flow	run-exit	exit code differs (C 0, MLIR 24)
+tests/lang/test_dynamics_dsl.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_effects_tail_resumptive.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_enum_match_arms.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_expr_type_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_extern_const.flow	mlir-emit	flowc mlir: unsupported: extern type at line N of <file>
+tests/lang/test_extern_type.flow	mlir-emit	flowc mlir: unsupported: extern type at line N
+tests/lang/test_ffi_boundary_audit.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_ffi_buffer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_field_named_capital_i.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N
+tests/lang/test_fileio_subproc.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_fir_analysis.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_fir_opts.flow	mlir-lower	error: expected 'X'
+tests/lang/test_fir_route.flow	mlir-lower	error: expected 'X'
+tests/lang/test_fixed_array_before_fn.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_flowlm.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_for_step.flow	mlir-lower	error: expected 'X'
+tests/lang/test_fsm.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_function_as_value.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_ga_hash.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_generic_channels.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/lang/test_geometry_diagram.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_gif_encoder.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_gpu_graph.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_gpu_render_job.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_gpu_shader.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_gpu_stage_codegen.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_gpu_texture_binding.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_hardware_cdc.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/lang/test_hashmap_i64.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_hashmap_string_i32.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_hybrid_events.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_import_field_chain.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_import_normalized_path.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_import_stdlib_bare.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/lang/test_import_struct_array_field.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_imported_pointer_field.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_in_operator.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_integration.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_is_geometry_expr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_know.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_lambda_block_locals.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_len_sized_array.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_libc_externs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_libc_names_return_void.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_libc_posix_externs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_lifetime_domains.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_lifetime_request_persistent.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_literal_dollar_interpolation.flow	run-stdout	stdout differs at line 1
+tests/lang/test_lsp_dynamics.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_lsp_ordering.flow	mlir-lower	error: expected 'X'
+tests/lang/test_lsp_syntax.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_lsp_utils.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_match_break.flow	mlir-lower	error: expected 'X'
+tests/lang/test_match_patterns.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_math_case_condition.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_memory_bounds.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_memref_param.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_misra_scan.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_module_statics.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_defs_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_function_call_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_plan_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_program_usages_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_request_args_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_requests_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_struct_literal_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_subst_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_type_encode_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_usage_body_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_usage_body_requests_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_usage_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_mono_usage_program_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_noalias_mix_clone.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_noalias_overlap_copy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_noalias_struct_fields.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_notation_parser.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_only_guard.flow	mlir-link	clang: error: linker command failed with exit code N (use -v to see invocation)
+tests/lang/test_orchestrate.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_ordering_hints_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_overload_call_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_overload_registry_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_overload_select_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_overload_table_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_parallel_for.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_parallel_for_forms.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_parser_python_forms.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_pipeline_fusion.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_pipeline_fusion_map.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_pointer_structs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_print.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_proof_doc_render.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_proof_document.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_proof_kernel.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_proof_sub_gen.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_pthread.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_ptr_field_of_call.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_qsort.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_range_algebra.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_range_sum_step.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_recognition_ssa.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_recognition_ssa_budget.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_recognition_ssa_gate.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_region_inference.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_rt_safe_callable.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_rt_safe_indirect.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_rt_safe_trait.flow	mlir-emit	flowc mlir: unsupported: argument of this type to an undeclared function at line N
+tests/lang/test_rtos.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_runtime_checks.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_shader_dsl_port.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_sizeof_generic.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_slice_f64_param.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_sort.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_sort_modifier_names.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_sort_nan.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_sort_plan_results.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_span_borrow_once.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_span_forward_same_name.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_span_mut_array_arg.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_span_null_init.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_span_param_cross_module.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_span_slice_f64.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_spans.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_static_ptr_field.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N
+tests/lang/test_stdlib_bytebuf.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_stdlib_process.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_stdlib_regex.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_stdlib_scales.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_stdlib_string_io.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_store_after_call.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_string_concat_chain.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_string_concat_numbers.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_string_hex_boundary.flow	run-exit	exit code differs (C 0, MLIR 1)
+tests/lang/test_string_ptr_index_concat.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_strings.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_struct_lit_array_field.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_struct_literal_return.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_struct_order_shadow_array_assign.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_struct_self_ptr_ptr.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_structs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_trait.flow	mlir-lower	error: expected 'X'
+tests/lang/test_trait_impl.flow	mlir-emit	flowc mlir: unsupported: argument of this type to an undeclared function at line N
+tests/lang/test_type_identity.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_type_schema_layout.flow	mlir-link	clang: error: linker command failed with exit code N (use -v to see invocation)
+tests/lang/test_user_named_builtins.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_user_named_builtins_import.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_utf8_policy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_variadic_externs.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/lang/test_wide_ints.flow	mlir-lower	error: expected 'X'
+tests/memory/test_struct_layout.flow	mlir-lower	error: expected 'X'
+tests/memory/test_struct_memory.flow	mlir-lower	error: expected 'X'
+tests/misc/test_loop_carried.flow	mlir-lower	error: expected 'X'
+tests/misc/test_optimization.flow	mlir-lower	error: expected 'X'
+tests/runtime/gpu_features.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/interop/python_embed.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_arithmetic.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_array_ops.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_async_primitives.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_channel_select.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/runtime/test_channel_select4.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/runtime/test_comparisons.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_concurrent_channels.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/runtime/test_control_flow.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_crypto.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_effects.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_fiber_async.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_functions.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_generics.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_gpu_graph_exec.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_gpu_launch_validation.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_gpu_memory_bounds.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_match.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_module_statics.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_netpoll.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_parallel_for.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/test_printf_hello.flow	mlir-lower	error: expected 'X'
+tests/runtime/test_threaded_async.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/runtime/wip/test_short_circuit.flow	mlir-lower	error: expected 'X'
+tests/simd/test_for_parallel.flow	mlir-lower	error: expected 'X'
+tests/simd/test_simd_vector.flow	mlir-lower	error: custom op 'X' is unknown
+tests/simd/test_simple_simd.flow	mlir-lower	error: custom op 'X' is unknown
+tests/stdlib/audio/test_audio_core.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/audio/test_bus_graph.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/audio/test_envelopes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/audio/test_graph_scheduler.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/audio/test_oscillators.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/audio/test_safety.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/audio/test_simd_gain.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_backward_a_dense_shapes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_backward_a_from_layer.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_bool_simple.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_complex_linalg.flow	mlir-emit	flowc mlir: unsupported: unknown type name at line N of <file>
+tests/stdlib/test_dense2d_backward_only.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_backward.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_backward_call_only.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_backward_inline_free.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_backward_no_forward.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_grad_bias_only.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_grad_dim1_only.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_grad_dims_diag.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_grad_dims_nofree.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dense_matmul_b_only.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_dynamics_gramian.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_ga_analysis.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_gpu_model.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_matmul_backward.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_matmul_backward_dense_shapes.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_matmul_grad_weights.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_memory_advanced.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_memory_benchmarks.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_memory_lib.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_memory_minimal.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_memory_simple.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_ml_autograd.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_ml_opt.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_mlp2_backward.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_psychstats.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_tensor.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/stdlib/test_wfc_collapse_index.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/test_synth_dummy.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tests/wasm/compare_native_wasm.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/agent_sandbox/test.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/build_deb/main.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/check/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tools/ci_gating/main.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/compile_bench/main.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/dap/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tools/discord-welcome/build.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/dsp_bench/build.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/flow_cli/main.flow	mlir-emit	flowc mlir: unsupported: extern type at line N of <file>
+tools/gpu_test/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
+tools/qualify_linux_archive/main.flow	mlir-emit	flowc mlir: unsupported: field through a pointer static at line N of <file>
+tools/repl/main.flow	mlir-lower	error: custom op <file>.zero' is unknown
