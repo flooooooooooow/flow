@@ -40,8 +40,9 @@ const FOUR_PI: f64 = 12.5663706144
 const DISTORT_MAX: f64 = 1.45
 const LAND_TARGET: f64 = 0.29
 const LAND_TOL: f64 = 0.02
-const HACK_LO: f64 = 0.45
-const HACK_HI: f64 = 0.70
+# J.T. Hack's law exponent bounds for stream-power tests
+const HACK_EXP_LO: f64 = 0.45
+const HACK_EXP_HI: f64 = 0.70
 const R2_MIN: f64 = 0.75
 const RAIN_MIN: f64 = 1.05
 
@@ -227,9 +228,9 @@ function main() -> i32 {
     print("     Hack exponent h               : ")
     printf("%10.4f", m_hack)
     print("     gate [")
-    printf("%.2f", HACK_LO)
+    printf("%.2f", HACK_EXP_LO)
     print(", ")
-    printf("%.2f", HACK_HI)
+    printf("%.2f", HACK_EXP_HI)
     println("]")
     print("     Hack R^2                      : ")
     printf("%10.4f", m_r2)
@@ -255,7 +256,7 @@ function main() -> i32 {
         println("    FAIL: land fraction off target")
         return 5
     }
-    if m_hack < HACK_LO or m_hack > HACK_HI {
+    if m_hack < HACK_EXP_LO or m_hack > HACK_EXP_HI {
         println("    FAIL: Hack exponent outside the published band")
         return 6
     }

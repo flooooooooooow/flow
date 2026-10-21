@@ -62,8 +62,9 @@ const MAX_FRAMES: i32 = 6000
 const VERIFY_STEPS: i32 = 400
 const STEPS_PER_FRAME: i32 = 2
 
-const HACK_LO: f64 = 0.45
-const HACK_HI: f64 = 0.70
+# J.T. Hack's law exponent bounds for stream-power tests
+const HACK_EXP_LO: f64 = 0.45
+const HACK_EXP_HI: f64 = 0.70
 const R2_MIN: f64 = 0.75
 const DENS_LO: f64 = 0.05
 const DENS_HI: f64 = 0.60
@@ -445,9 +446,9 @@ function main() -> i32 {
     print("     Hack exponent h               : ")
     printf("%10.4f", fit_h)
     print("     gate [")
-    printf("%.2f", HACK_LO)
+    printf("%.2f", HACK_EXP_LO)
     print(", ")
-    printf("%.2f", HACK_HI)
+    printf("%.2f", HACK_EXP_HI)
     println("]")
     print("     R^2 of log L against log A    : ")
     printf("%10.6f", fit_r2)
@@ -467,7 +468,7 @@ function main() -> i32 {
         println("    FAIL: a measured quantity is NaN")
         return 1
     }
-    if fit_h < HACK_LO or fit_h > HACK_HI {
+    if fit_h < HACK_EXP_LO or fit_h > HACK_EXP_HI {
         println("    FAIL: Hack exponent outside the stated window")
         return 2
     }
