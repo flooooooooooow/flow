@@ -1,0 +1,3 @@
++ heat_euler_step_csr
+exit 0
+stdout 1.500000 2.500000 5.000000 6.000000
