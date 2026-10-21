@@ -1,0 +1,173 @@
+# RECURSIVE ORACLE: a complete 4x4 Connect-Three adversarial search engine.
+# It uses iterative deepening, alpha-beta negamax, deterministic move ordering,
+# base-3 board hashing, exact-score transposition caching, and line heuristics.
+# Every node, move, evaluation and cache lookup is implemented in Flow.
+extern {
+    function printf(fmt: string, ...) -> i32
+    function calloc(n: i64, s: i64) -> ptr<i64>
+    function free(p: ptr<i64>) -> void
+}
+
+struct Search {
+    nodes: i64,
+    hits: i64,
+    entries: i64,
+    keys: ptr<i64>,
+    scores: ptr<i32>,
+    depths: ptr<i32>
+}
+
+function choice(k: i32) -> i32 {
+    if k == 0 { return 1 }
+    if k == 1 { return 2 }
+    if k == 2 { return 0 }
+    return 3
+}
+
+function hash_board(b: ptr<i32>, player: i32) -> i64 {
+    let mut h: i64 = 17
+    for i in 0..16 {
+        h = h*3 + (b[i] as i64)
+    }
+    return h*3 + player as i64
+}
+
+function count_triplet(b: ptr<i32>, x: i32, y: i32, dx: i32, dy: i32, p: i32) -> i32 {
+    let mut hits: i32 = 0
+    for i in 0..3 {
+        if b[(y+dy*i)*4+(x+dx*i)] == p { hits=hits+1 }
+    }
+    return hits
+}
+
+function won(b: ptr<i32>, p: i32) -> bool {
+    for y in 0..4 {
+        for x in 0..4 {
+            if x <= 1 and count_triplet(b,x,y,1,0,p)==3 { return true }
+            if y <= 1 and count_triplet(b,x,y,0,1,p)==3 { return true }
+            if x <= 1 and y <= 1 and count_triplet(b,x,y,1,1,p)==3 { return true }
+            if x >= 2 and y <= 1 and count_triplet(b,x,y,-1,1,p)==3 { return true }
+        }
+    }
+    return false
+}
+
+function line_score(b: ptr<i32>, x: i32, y: i32, dx: i32, dy: i32, side: i32) -> i32 {
+    let mine: i32 = count_triplet(b,x,y,dx,dy,side)
+    let theirs: i32 = count_triplet(b,x,y,dx,dy,3-side)
+    if theirs>0 and mine>0 { return 0 }
+    if mine==2 { return 16 }
+    if theirs==2 { return -18 }
+    if mine==1 { return 2 }
+    if theirs==1 { return -2 }
+    return 0
+}
+
+function evaluate(b: ptr<i32>, side: i32) -> i32 {
+    let mut v: i32 = 0
+    for y in 0..4 {
+        for x in 0..4 {
+            if x <= 1 { v = v + line_score(b,x,y,1,0,side) }
+            if y <= 1 { v = v + line_score(b,x,y,0,1,side) }
+            if x <= 1 and y <= 1 { v = v + line_score(b,x,y,1,1,side) }
+            if x >= 2 and y <= 1 { v = v + line_score(b,x,y,-1,1,side) }
+        }
+    }
+    return v
+}
+
+function negamax(b: ptr<i32>, heights: ptr<i32>, s: ptr<Search>, player: i32, depth: i32, alpha: i32, beta: i32, played: i32) -> i32 {
+    s.nodes = s.nodes + 1
+    if played >= 16 { return 0 }
+    if depth <= 0 { return evaluate(b,player) }
+    let key: i64 = hash_board(b,player)
+    let slot: i32 = (key % 131071) as i32
+    if s.keys[slot] == key and s.depths[slot] >= depth {
+        s.hits = s.hits + 1
+        return s.scores[slot]
+    }
+    let mut best: i32 = -100000
+    let mut low: i32 = alpha
+    let mut cutoff: bool = false
+    for k in 0..4 {
+        let c: i32 = choice(k)
+        if heights[c] < 4 {
+            let row: i32 = 3 - heights[c]
+            b[row*4+c] = player
+            heights[c] = heights[c] + 1
+            let mut score: i32 = 0
+            if won(b,player) {
+                score = 10000 + depth*10
+            } else {
+                score = 0 - negamax(b,heights,s,3-player,depth-1,0-beta,0-low,played+1)
+            }
+            heights[c] = heights[c] - 1
+            b[row*4+c] = 0
+            if score > best { best = score }
+            if best > low { low = best }
+            if low >= beta { cutoff=true; break }
+        }
+    }
+    if not cutoff {
+        s.keys[slot] = key
+        s.scores[slot] = best
+        s.depths[slot] = depth
+        s.entries = s.entries + 1
+    }
+    return best
+}
+
+function show(b:ptr<i32>) {
+    for y in 0..4 {
+        printf("|")
+        for x in 0..4 {
+            let p: i32 = b[y*4+x]
+            if p==0 { printf(" . ") }
+            if p==1 { printf(" X ") }
+            if p==2 { printf(" O ") }
+        }
+        printf("|\n")
+    }
+    printf("  1  2  3  4\n")
+}
+
+function main() -> i32 {
+    let b: ptr<i32> = calloc(16,4) as ptr<i32>
+    let heights: ptr<i32> = calloc(4,4) as ptr<i32>
+    let keys: ptr<i64> = calloc(131071,8)
+    let scores: ptr<i32> = calloc(131071,4) as ptr<i32>
+    let depths: ptr<i32> = calloc(131071,4) as ptr<i32>
+    if b==null or heights==null or keys==null or scores==null or depths==null { return 9 }
+    let mut state: Search = Search { nodes: 0, hits: 0, entries: 0, keys: keys, scores: scores, depths: depths }
+    printf("RECURSIVE ORACLE / Connect Three, 4x4\n")
+    printf("Iterative deepening / alpha-beta / hashed exact positions\n\n")
+    show(b)
+    let mut chosen: i32 = -1
+    let mut chosen_score: i32 = -100000
+    for depth in 1..13 {
+        chosen = -1
+        chosen_score = -100000
+        let before: i64 = state.nodes
+        for k in 0..4 {
+            let c: i32 = choice(k)
+            let row: i32 = 3 - heights[c]
+            b[row*4+c] = 1
+            heights[c] = heights[c] + 1
+            let mut score: i32 = 0
+            if won(b,1) { score = 10000+depth*10 }
+            else { score = 0 - negamax(b,heights,&state,2,depth-1,-100000,100000,1) }
+            heights[c] = heights[c] - 1
+            b[row*4+c] = 0
+            if score > chosen_score { chosen_score = score; chosen = c }
+        }
+        printf("depth=%d  move=%d  score=%d  nodes=%lld  cache_hits=%lld\n",depth,chosen+1,chosen_score,state.nodes-before,state.hits)
+    }
+    printf("\nAI chooses column %d after %lld nodes and %lld cache hits.\n",chosen+1,state.nodes,state.hits)
+    free(b as ptr<i64>)
+    free(heights as ptr<i64>)
+    free(keys)
+    free(scores as ptr<i64>)
+    free(depths as ptr<i64>)
+    if chosen < 0 or chosen >= 4 or state.nodes < 100 { return 1 }
+    return 0
+}
