@@ -40,6 +40,7 @@
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"
+import "stdlib/planet.flow"
 
 extern {
     function printf(fmt: string, val: f64) -> i32
@@ -62,8 +63,6 @@ const MAX_FRAMES: i32 = 6000
 const VERIFY_STEPS: i32 = 400
 const STEPS_PER_FRAME: i32 = 2
 
-const HACK_LO: f64 = 0.45
-const HACK_HI: f64 = 0.70
 const R2_MIN: f64 = 0.75
 const DENS_LO: f64 = 0.05
 const DENS_HI: f64 = 0.60
