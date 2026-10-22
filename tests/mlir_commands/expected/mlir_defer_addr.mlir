@@ -1,9 +1,6 @@
 module {
-func.func private @strlen(!llvm.ptr) -> i64
 func.func private @malloc(i64) -> !llvm.ptr
 func.func private @memcpy(!llvm.ptr, !llvm.ptr, i64) -> !llvm.ptr
-func.func private @write(i32, !llvm.ptr, i64) -> i64
-func.func private @abort() -> ()
 func.func private @free(!llvm.ptr) -> ()
 func.func private @getenv(!llvm.ptr) -> !llvm.ptr
 func.func private @atexit(!llvm.ptr) -> i32
@@ -297,22 +294,6 @@ llvm.mlir.global internal constant @str_10("arena_bytes: %llu\0A\00") {addr_spac
 llvm.mlir.global internal constant @str_11("promotion_bytes: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<23 x i8>
 llvm.mlir.global internal constant @str_12("live_map_overflow: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<25 x i8>
 llvm.mlir.global internal constant @str_13("site_concat: %llu\0A\00") {addr_space = 0 : i32} : !llvm.array<19 x i8>
-llvm.mlir.global internal constant @str_14("flow: \00") {addr_space = 0 : i32} : !llvm.array<7 x i8>
-llvm.mlir.global internal constant @str_15("\0A\00") {addr_space = 0 : i32} : !llvm.array<2 x i8>
-llvm.mlir.global internal constant @str_16("array index out of bounds\00") {addr_space = 0 : i32} : !llvm.array<26 x i8>
-func.func private @__flow_fault(%arg0: !llvm.ptr) {
-%fd = arith.constant 2 : i32
-%pre = llvm.mlir.addressof @str_14 : !llvm.ptr
-%n6 = arith.constant 6 : i64
-%w0 = func.call @write(%fd, %pre, %n6) : (i32, !llvm.ptr, i64) -> i64
-%n = func.call @strlen(%arg0) : (!llvm.ptr) -> i64
-%w1 = func.call @write(%fd, %arg0, %n) : (i32, !llvm.ptr, i64) -> i64
-%nl = llvm.mlir.addressof @str_15 : !llvm.ptr
-%n1 = arith.constant 1 : i64
-%w2 = func.call @write(%fd, %nl, %n1) : (i32, !llvm.ptr, i64) -> i64
-func.call @abort() : () -> ()
-func.return
-}
 // Struct: Counter
 // Fields:
 //   hits: i32
@@ -430,31 +411,25 @@ llvm.store %v59, %v69 : i32, !llvm.ptr
 %v72 = llvm.getelementptr %v61[0, %v71] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
 func.call @bump(%v72) : (!llvm.ptr) -> ()
 %v73 = arith.constant 1 : i32
-%v74 = arith.constant 3 : i32
-%v75 = arith.cmpi uge, %v73, %v74 : i32
-scf.if %v75 {
-%v76 = llvm.mlir.addressof @str_16 : !llvm.ptr
-func.call @__flow_fault(%v76) : (!llvm.ptr) -> ()
-}
-%v77 = arith.extsi %v73 : i32 to i64
-%v78 = llvm.getelementptr %v61[0, %v77] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
-%v79 = llvm.load %v78 : !llvm.ptr -> i32
-%v80 = llvm.mlir.addressof @str_1 : !llvm.ptr
-%v81 = llvm.call @printf(%v80, %v79) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v82 = arith.constant 0 : i32
-%v83 = arith.constant 5 : i32
-%v84 = llvm.mlir.constant(1 : i64) : i64
-%v85 = llvm.alloca %v84 x i32 : (i64) -> !llvm.ptr
-llvm.store %v83, %v85 : i32, !llvm.ptr
+%v74 = arith.extsi %v73 : i32 to i64
+%v75 = llvm.getelementptr %v61[0, %v74] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i32>
+%v76 = llvm.load %v75 : !llvm.ptr -> i32
+%v77 = llvm.mlir.addressof @str_1 : !llvm.ptr
+%v78 = llvm.call @printf(%v77, %v76) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v79 = arith.constant 0 : i32
+%v80 = arith.constant 5 : i32
+%v81 = llvm.mlir.constant(1 : i64) : i64
+%v82 = llvm.alloca %v81 x i32 : (i64) -> !llvm.ptr
+llvm.store %v80, %v82 : i32, !llvm.ptr
 // flowc.noalias py
-%v86 = arith.constant 0 : i32
-%v87 = arith.extsi %v86 : i32 to i64
-%v88 = llvm.getelementptr %v85[%v87] : (!llvm.ptr, i64) -> !llvm.ptr, i32
-%v89 = llvm.load %v88 : !llvm.ptr -> i32
-%v90 = llvm.mlir.addressof @str_1 : !llvm.ptr
-%v91 = llvm.call @printf(%v90, %v89) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v92 = arith.constant 0 : i32
-%v93 = arith.constant 0 : i32
-func.return %v93 : i32
+%v83 = arith.constant 0 : i32
+%v84 = arith.extsi %v83 : i32 to i64
+%v85 = llvm.getelementptr %v82[%v84] : (!llvm.ptr, i64) -> !llvm.ptr, i32
+%v86 = llvm.load %v85 : !llvm.ptr -> i32
+%v87 = llvm.mlir.addressof @str_1 : !llvm.ptr
+%v88 = llvm.call @printf(%v87, %v86) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v89 = arith.constant 0 : i32
+%v90 = arith.constant 0 : i32
+func.return %v90 : i32
 }
 }
