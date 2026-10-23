@@ -1,0 +1,13 @@
+struct MyStruct {
+    a: i32
+    b: string
+}
+let mut my_static: string = "hello"
+let mut my_struct_static: MyStruct = MyStruct { a: 10, b: "world" }
+
+export function main() -> i32 {
+    if my_static != "hello" { return 1 }
+    if my_struct_static.a != 10 { return 2 }
+    if my_struct_static.b != "world" { return 3 }
+    return 0
+}
