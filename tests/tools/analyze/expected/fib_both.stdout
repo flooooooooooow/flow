@@ -2,13 +2,13 @@ Stack depth analysis: examples/basics/fibonacci.flow
 ============================================================
 Function                                  Max depth Chain
 ------------------------------------------------------------
-main                                            4 bytes  main
+main                                           68 bytes  main → println
 fibonacci                                       0 bytes  fibonacci
 
 WCET analysis: examples/basics/fibonacci.flow
 ============================================================
 Function                                   Max cost Chain
 ------------------------------------------------------------
-main                                           40 inst  main → fibonacci
+main                                          123 inst  main → println (extern)
 fibonacci                                      27 inst  fibonacci
 

@@ -33,6 +33,9 @@ extern {
     function printf(fmt: string, val: f64) -> i32
 }
 
+@cEmbed("__attribute__((weak)) void flow_net_yield(int32_t ms) {}")
+@cEmbed("__attribute__((weak)) int32_t flow_demo_port(void) { return 9506; }")
+
 const MSG_LEN: i32 = 32
 const TRIPS: i32 = 8
 const POLL_MS: i32 = 2
