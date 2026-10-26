@@ -2500,104 +2500,6 @@ function mlg_fn_ret_mt(m: ptr<Mlg>, k: i32) -> i32 {
 # ---------------------------------------------------------------------------
 function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32
 
-
-function mlg_emit_try(m: ptr<Mlg>, e: i32) -> i32 {
-    let a: i32 = m[0].arena.nodes[e].a
-    if a == AST_NONE { return V_NONE }
-
-    let try_v: i32 = mlg_emit_expr(m, a)
-    let try_mt: i32 = mlg_expr_ft(m, a)
-
-    let nfields: i32 = mlg_struct_nfields(m, try_mt)
-    let mut fi_is_ok: i32 = AST_NONE
-    let mut fi_value: i32 = AST_NONE
-
-    let mut i: i32 = 0
-    while i < nfields {
-        let f: i32 = mlg_struct_field_at(m, try_mt, i)
-        let name_start: i32 = m[0].arena.nodes[f].name_start
-        let name_end: i32 = m[0].arena.nodes[f].name_end
-        if mlg_span_is(m, name_start, name_end, "is_ok") == 1 {
-            fi_is_ok = i
-        } elif mlg_span_is(m, name_start, name_end, "value") == 1 {
-            fi_value = i
-        }
-        i = i + 1
-    }
-
-    if fi_is_ok == AST_NONE or fi_value == AST_NONE {
-        mlg_refuse(m, e, "try over a struct without is_ok and value fields")
-        return V_NONE
-    }
-
-    let is_ok_v: i32 = mlg_new_val(m, MT_I1)
-    mlg_line(m)
-    mlg_v(m, is_ok_v)
-    mlg_s(m, " = llvm.extractvalue ")
-    mlg_v(m, try_v)
-    mlg_s(m, "[")
-    mlg_i(m, fi_is_ok)
-    mlg_s(m, "] : ")
-    mlg_put_type(m, try_mt)
-    mlg_nl(m)
-
-    # scf.if %is_ok -> value_type
-    let v_field: i32 = mlg_struct_field_at(m, try_mt, fi_value)
-    let vt: i32 = mlg_field_member_mt(m, v_field)
-
-    let if_res: i32 = mlg_new_val(m, vt)
-    mlg_line(m)
-    mlg_v(m, if_res)
-    mlg_s(m, " = scf.if ")
-    mlg_v(m, is_ok_v)
-    mlg_s(m, " -> ")
-    mlg_put_type(m, vt)
-    mlg_s(m, " {\n")
-
-    let ok_val: i32 = mlg_new_val(m, vt)
-    mlg_line(m)
-    mlg_v(m, ok_val)
-    mlg_s(m, " = llvm.extractvalue ")
-    mlg_v(m, try_v)
-    mlg_s(m, "[")
-    mlg_i(m, fi_value)
-    mlg_s(m, "] : ")
-    mlg_put_type(m, try_mt)
-    mlg_nl(m)
-
-    mlg_line(m)
-    mlg_s(m, "scf.yield ")
-    mlg_v(m, ok_val)
-    mlg_s(m, " : ")
-    mlg_put_type(m, vt)
-    mlg_s(m, "\n} else {\n")
-
-    # The else branch -> early return
-    # we just func.return the error.
-    mlg_line(m)
-    mlg_s(m, "func.return ")
-    mlg_v(m, try_v)
-    mlg_s(m, " : ")
-    mlg_put_type(m, try_mt)
-    mlg_s(m, "\n")
-
-    # Since we abort (func.return), we need a dummy yield to satisfy scf.if types
-    let dummy: i32 = mlg_new_val(m, vt)
-    mlg_line(m)
-    mlg_v(m, dummy)
-    mlg_s(m, " = llvm.mlir.undef : ")
-    mlg_put_type(m, vt)
-    mlg_nl(m)
-    mlg_line(m)
-    mlg_s(m, "scf.yield ")
-    mlg_v(m, dummy)
-    mlg_s(m, " : ")
-    mlg_put_type(m, vt)
-    mlg_s(m, "\n}\n")
-
-    return if_res
-}
-
 function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32
 
 function mlg_method_call_node(m: ptr<Mlg>, e: i32) -> i32
@@ -4771,7 +4673,7 @@ function mlg_emit_unknown_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
                 if mlg_is_memref_mt(at) == 1 or mlg_kind(m, an) == AST_STRING {
                     at = MT_PTR
                 }
-                if at == MT_NONE or at == MT_VOID {
+                if at == MT_NONE or at == MT_VOID or mlg_is_struct_mt(at) == 1 {
                     mlg_refuse(m, an, "argument of this type to an undeclared function")
                     return V_NONE
                 }

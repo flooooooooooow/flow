@@ -400,19 +400,6 @@ function main() -> i32 {
         }
     }
 
-    if update {
-        let mut fail_text: string = ""
-        let mut f: i32 = 0
-        while f < sl_len(joined) {
-            let row: string = sl_get(joined, f)
-            if is_failure(gl_field(row, 1)) {
-                fail_text = fail_text + gl_field(row, 0) + "\t" + gl_field(row, 1) + "\t" + gl_field(row, 4) + "\n"
-            }
-            f = f + 1
-        }
-        let _w: bool = write_text(DATA + "/failures.txt", fail_text)
-    }
-
     let os: string = uname_s()
     let margin: i32 = s_atoi(env_or("FLOOR_MARGIN", "5"), 5)
     if update {
