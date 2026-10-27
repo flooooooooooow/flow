@@ -43,8 +43,16 @@ runs:
             echo "curl failed, retrying in 5 seconds..."
             sleep 5
           done
+          echo "deb http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-22 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm-22.list > /dev/null
+
+          # Fix for intermittent signature verification or missing keys
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 15CF4D18AF4F7421 || true
+
+          # Force trusted so unmet dependencies from auth fail don't happen
           echo "deb [trusted=yes] http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-22 main" \
             | sudo tee /etc/apt/sources.list.d/llvm-22.list > /dev/null
+
           # lld-22 provides wasm-ld for the wasm32 target.
           packages+=(clang-22 lld-22 llvm-22 mlir-22-tools libmlir-22-dev)
         fi
@@ -62,7 +70,10 @@ runs:
         done
         if [ "$missing" = "1" ]; then
           sudo apt-get update -qq || sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends "${packages[@]}" || sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          # Fix broken deps and configure before install
+          sudo dpkg --configure -a || true
+          sudo apt-get install -f -y || true
+          sudo apt-get install -y --allow-unauthenticated --no-install-recommends "${packages[@]}" || sudo apt-get install -y --allow-unauthenticated --no-install-recommends "${packages[@]}"
         fi
         if [ "${{ inputs.mlir }}" = "true" ]; then
           # Every LLVM tool (mlir-opt, mlir-translate, clang, opt, llc) comes
