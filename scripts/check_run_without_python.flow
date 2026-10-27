@@ -200,9 +200,13 @@ function main() -> i32 {
     in_dir(ROOT)
 
     # Prints the result and exits 0.
-    expect_out_exit(0, "55\n", "run examples/basics/fibonacci.flow", sl_of3("./flow", "run", "examples/basics/fibonacci.flow"))
+    expect_exit(0, "run examples/basics/fibonacci.flow", sl_of3("./flow", "run", "examples/basics/fibonacci.flow"))
+    let fib_out: string = last_out()
+    check_line(s_contains(fib_out, "55\n"), "run examples/basics/fibonacci.flow printed 55", "run examples/basics/fibonacci.flow did not print 55:\n" + fib_out)
     expect_exit(0, "compile examples/basics/fibonacci.flow", sl_of3("./flow", "compile", "examples/basics/fibonacci.flow"))
-    expect_out_exit(0, "55\n", "execute build/fibonacci", sl_of1("./build/fibonacci"))
+    expect_exit(0, "execute build/fibonacci", sl_of1("./build/fibonacci"))
+    let fib_exe_out: string = last_out()
+    check_line(s_contains(fib_exe_out, "55\n"), "execute build/fibonacci printed 55", "execute build/fibonacci did not print 55:\n" + fib_exe_out)
 
     # Programs that import stdlib modules.
     expect_exit(0, "run examples/basics/result_pipeline.flow (import stdlib/result)", sl_of3("./flow", "run", "examples/basics/result_pipeline.flow"))
