@@ -1,0 +1,39 @@
+--- compiler/src/sem_check.flow
++++ compiler/src/sem_check.flow
+@@ -5115,6 +5115,16 @@
+     if sem_is_unary_op(c, e, TOK_MINUS) {
+         return sem_is_literal(c, sem_na(c, e))
+     }
++    if sem_nk(c, e) == AST_STRUCT_LIT {
++        let mut x: i32 = sem_na(c, e)
++        while x != AST_NONE {
++            if sem_is_const_scalar(c, sem_na(c, x)) == false {
++                return false
++            }
++            x = sem_nnext(c, x)
++        }
++        return true
++    }
+     return false
+ }
+
+@@ -5203,7 +5213,7 @@
+             }
+             x = sem_nnext(c, x)
+         }
+-    } elif sem_is_static_primitive(tn) {
++    } elif sem_is_static_primitive(tn) or sem_tkind(c, sem_parse_type(c, pt)) == TK_STRUCT {
+         if sem_is_const_scalar(c, value) == false {
+             sem_err(c, "Module static '" + name + "' initializer must be a compile-time constant literal")
+             return
+--- compiler/src/mlirgen.flow
++++ compiler/src/mlirgen.flow
+@@ -15829,7 +15829,7 @@
+         }
+     } else {
+         let t: i32 = mlg_ft_to_mt(m, ty, d)
+-        if t == MT_NONE or t == MT_VOID or mlg_is_memref_mt(t) == 1 {
++        if t == MT_NONE or t == MT_VOID or (mlg_is_memref_mt(t) == 1 and mlg_is_struct_mt(t) == 0 and t != MT_PTR) {
+             mlg_refuse(m, d, "static of this type")
+             return
+         }
