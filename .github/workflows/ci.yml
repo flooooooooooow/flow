@@ -203,7 +203,7 @@ jobs:
         run: ./flow tool --path python_ratchet
       - name: Save the build cache
         if: steps.bin.outputs.cache-hit != 'true' && steps.build.outcome == 'success'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@v4
         with:
           path: ${{ steps.bin.outputs.paths }}
           key: ${{ steps.bin.outputs.key }}

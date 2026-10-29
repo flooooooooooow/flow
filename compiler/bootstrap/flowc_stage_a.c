@@ -86601,7 +86601,7 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
   span_null = 1;
 }
 }
-  if (span_null == 1) {
+  if (span_null == 1 || init != AST_NONE && ((arena).nodes[init]).kind == AST_STRUCT_LIT) {
   flowc_cgen_puts((&w), " = {0}");
 } else {
   if (init != AST_NONE) {

@@ -62,7 +62,9 @@ runs:
         done
         if [ "$missing" = "1" ]; then
           sudo apt-get update -qq || sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends "${packages[@]}" || sudo apt-get install -y --no-install-recommends "${packages[@]}"
+          sudo apt-get install -y --fix-broken
+          sudo apt-get -y --fix-broken install || true
+          sudo apt-get install -y --no-install-recommends "${packages[@]}" || (sudo apt-get -y --fix-broken install && sudo apt-get install -y --no-install-recommends "${packages[@]}")
         fi
         if [ "${{ inputs.mlir }}" = "true" ]; then
           # Every LLVM tool (mlir-opt, mlir-translate, clang, opt, llc) comes
