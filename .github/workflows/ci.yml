@@ -407,7 +407,8 @@ jobs:
 
   flow-tier2:
     name: FLOW tier-2
-    runs-on: ubuntu-latest
+    # pinned: ubuntu-26.04 apt.llvm.org libllvm22 needs uninstallable libxml2 (Oct 2026)
+    runs-on: ubuntu-24.04
     needs: changes
     if: |
       needs.changes.outputs.src == 'true' ||
@@ -604,7 +605,8 @@ jobs:
   # to everything these goldens read.
   flowc-goldens:
     name: flowc goldens and MLIR (no Python)
-    runs-on: ubuntu-latest
+    # pinned: ubuntu-26.04 apt.llvm.org libllvm22 needs uninstallable libxml2 (Oct 2026)
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     needs: changes
     if: needs.changes.outputs.goldens == 'true'
@@ -686,7 +688,8 @@ jobs:
   # files; they drive ./flow, the Flow tools and the docs as subprocesses.
   native-tools:
     name: Native tools (no Python)
-    runs-on: ubuntu-latest
+    # pinned: ubuntu-26.04 apt.llvm.org libllvm22 needs uninstallable libxml2 (Oct 2026)
+    runs-on: ubuntu-24.04
     needs: changes
     if: |
       needs.changes.outputs.tools == 'true' ||
