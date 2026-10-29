@@ -1406,15 +1406,6 @@ PDE helpers (pattern-adoption #163). Stdlib MVP for field evolution without `fie
     right_bc: f64
 ) -> void` | One explicit Euler heat step with Dirichlet ends: next[i] = u[i] + r * (u[i-1] - 2 u[i] + u[i+1])   for interior next[0] = left_bc, next[n-1] = right_bc where r = alpha * dt / dx^2 (stable for r <= 0.5 on a unit grid). |
 | `field_copy_1d` | `(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void` | Copy n samples from src into dst. |
-| `heat_euler_step_csr` | `(
-    u: ptr<f64>,
-    next: ptr<f64>,
-    n: i32,
-    r: f64,
-    row_ptrs: ptr<i32>,
-    col_indices: ptr<i32>,
-    weights: ptr<f64>
-) -> void` | Graph field evolution on an irregular neighbor network (CSR format). Computes: next[i] = u[i] + r * sum_{j in N(i)} w_ij * (u[j] - u[i]) If weights is null, w_ij = 1.0 is assumed. Boundaries: This operator is purely defined over the adjacency provided. |
 
 ### `dynamics/portrait.flow`
 
