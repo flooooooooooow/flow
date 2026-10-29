@@ -36,7 +36,8 @@ permissions:
 
 jobs:
   bpfel:
-    runs-on: ubuntu-latest
+    # pinned: ubuntu-26.04 apt.llvm.org libllvm22 needs uninstallable libxml2 (Oct 2026)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/install-toolchain
