@@ -16223,7 +16223,7 @@ while item != AST_NONE {
             # A span is a struct, so `null` there is the empty span.
             let mut span_null: i32 = 0
             if init != AST_NONE and ty != AST_NONE and arena.nodes[init].kind == AST_IDENT and flowc_cgen_span_is(src, arena.nodes[init].name_start, arena.nodes[init].name_end, "null") == 1 {
-                if flowc_cgen_type_is_span(arena, src, ty) == 1 {
+                if flowc_cgen_type_is_span(arena, src, ty) == 1 or flowc_noalias_ty_is_ptr(arena, src, ty) == 1 {
                     span_null = 1
                 }
             }
