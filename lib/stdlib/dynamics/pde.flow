@@ -43,39 +43,3 @@ export function field_copy_1d(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void {
         dst[i] = src[i]
     }
 }
-
-# Graph field evolution on an irregular neighbor network (CSR format).
-# Computes: next[i] = u[i] + r * sum_{j in N(i)} w_ij * (u[j] - u[i])
-# If weights is null, w_ij = 1.0 is assumed.
-# Boundaries: This operator is purely defined over the adjacency provided.
-# If a node should act as a fixed boundary (Dirichlet), its row should be empty
-# (no neighbors) so its value doesn't change, or the caller can manually overwrite
-# the boundary node values after each step.
-export function heat_euler_step_csr(
-    u: ptr<f64>,
-    next: ptr<f64>,
-    n: i32,
-    r: f64,
-    row_ptrs: ptr<i32>,
-    col_indices: ptr<i32>,
-    weights: ptr<f64>
-) -> void {
-    for i in 0 to n {
-        let mut lap: f64 = 0.0
-        let start: i32 = row_ptrs[i]
-        let end: i32 = row_ptrs[i + 1]
-        let ui: f64 = u[i]
-
-        let mut j: i32 = start
-        while j < end {
-            let nbr: i32 = col_indices[j]
-            let mut w: f64 = 1.0
-            if weights != null {
-                w = weights[j]
-            }
-            lap = lap + w * (u[nbr] - ui)
-            j = j + 1
-        }
-        next[i] = ui + r * lap
-    }
-}
