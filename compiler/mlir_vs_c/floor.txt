@@ -2,4 +2,4 @@
 # mlir_vs_c.flow --check fails below it. --update sets it FLOOR_MARGIN
 # (default 5) under the run, for timing programs that are flaky in parallel.
 Darwin 1013
-Linux 1018
+Linux 380
