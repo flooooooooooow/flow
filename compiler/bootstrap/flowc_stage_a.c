@@ -86597,7 +86597,7 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
 }
   int32_t span_null = 0;
   if (init != AST_NONE && ty != AST_NONE && ((arena).nodes[init]).kind == AST_IDENT && flowc_cgen_span_is(src, ((arena).nodes[init]).name_start, ((arena).nodes[init]).name_end, "null") == 1) {
-  if (flowc_cgen_type_is_span(arena, src, ty) == 1) {
+  if (flowc_cgen_type_is_span(arena, src, ty) == 1 || flowc_noalias_ty_is_ptr(arena, src, ty) == 1) {
   span_null = 1;
 }
 }
