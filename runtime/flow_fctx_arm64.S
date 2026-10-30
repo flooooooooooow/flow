@@ -53,3 +53,7 @@ SYM(flow_fctx_bootstrap):
 #if defined(__APPLE__)
 .subsections_via_symbols
 #endif
+
+#if defined(__linux__)
+.section .note.GNU-stack,"",@progbits
+#endif
