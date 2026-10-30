@@ -16227,7 +16227,7 @@ while item != AST_NONE {
                     span_null = 1
                 }
             }
-            if span_null == 1 {
+            if span_null == 1 or (init != AST_NONE and arena.nodes[init].kind == AST_STRUCT_LIT) {
                 flowc_cgen_puts(&w, " = {0}")
             } else {
                 if init != AST_NONE {

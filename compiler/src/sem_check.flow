@@ -5115,6 +5115,16 @@ function sem_is_const_scalar(c: ptr<Sem>, e: i32) -> bool {
     if sem_is_unary_op(c, e, TOK_MINUS) {
         return sem_is_literal(c, sem_na(c, e))
     }
+    if sem_nk(c, e) == AST_STRUCT_LIT {
+        let mut x: i32 = sem_na(c, e)
+        while x != AST_NONE {
+            if sem_is_const_scalar(c, sem_na(c, x)) == false {
+                return false
+            }
+            x = sem_nnext(c, x)
+        }
+        return true
+    }
     return false
 }
 
@@ -5203,7 +5213,7 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
             }
             x = sem_nnext(c, x)
         }
-    } elif sem_is_static_primitive(tn) {
+    } elif sem_is_static_primitive(tn) or sem_tkind(c, sem_parse_type(c, pt)) == TK_STRUCT {
         if sem_is_const_scalar(c, value) == false {
             sem_err(c, "Module static '" + name + "' initializer must be a compile-time constant literal")
             return
