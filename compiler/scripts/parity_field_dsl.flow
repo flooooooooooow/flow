@@ -1,7 +1,7 @@
 # Parity gate for the Field DSL expander (compiler/src/field_dsl.flow).
 #
-# The Flow port replaced src/flow/field_dsl.py. Its output was recorded from
-# that Python reference as goldens beside each fixture in
+# The Flow port replaced src/flow/field_dsl.py. Its original output was
+# recorded from that Python reference as goldens beside each fixture in
 # compiler/fixtures/field_dsl/: `<name>.expected` for the expanded source, or
 # `<name>.error` for the SyntaxError text. This gate holds flowc to them.
 #
@@ -18,6 +18,8 @@
 #       rewrite the goldens from the Python expander at <rev>.
 #
 # The last Python revision is 3dbbac87 (origin/main before the port).
+# The historical Python expander silently ignored Laplacian coefficients;
+# --python comparison intentionally differs on multiplier fixtures.
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.

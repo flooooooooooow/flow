@@ -4,9 +4,11 @@
 #         reads, so `field T : f64[N] on Line`, `T evolves as laplacian(T)`
 #         and `boundary T { left = A  right = B }` compile without Python.
 #
-# Output is byte-identical to `expand_field_dsl` in src/flow/field_dsl.py,
-# including its quirks, and compiler/scripts/parity_field_dsl.flow holds the
-# two to that. Quirks kept on purpose:
+# Output preserves the historical Python expander's lexical behavior except
+# that Laplacian multipliers are now correctly applied to the Euler ratio.
+# compiler/scripts/parity_field_dsl.flow checks current native goldens;
+# the optional old-Python byte comparison is historical, not a correctness
+# oracle for coefficient lowering. Other quirks kept on purpose:
 #
 #   * The result is the kept lines joined by "\n", so a trailing newline is
 #     dropped (Python `"\n".join(source.splitlines())`).
