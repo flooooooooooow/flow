@@ -21690,7 +21690,7 @@ typedef struct FxBuf {
 #undef FX_MAX_FIELDS
 static const int32_t FX_MAX_FIELDS = 64;
 #undef FX_REC
-static const int32_t FX_REC = 9;
+static const int32_t FX_REC = 11;
 #undef FX_NAME_S
 static const int32_t FX_NAME_S = 0;
 #undef FX_NAME_E
@@ -21709,6 +21709,10 @@ static const int32_t FX_R_S = 6;
 static const int32_t FX_R_E = 7;
 #undef FX_EVOLVED
 static const int32_t FX_EVOLVED = 8;
+#undef FX_MUL_S
+static const int32_t FX_MUL_S = 9;
+#undef FX_MUL_E
+static const int32_t FX_MUL_E = 10;
 void fx_putc(FxBuf* w, uint8_t c);
 void fx_puts(FxBuf* w, const char* s);
 void fx_put_span(FxBuf* w, uint8_t* src, int32_t s, int32_t e);
@@ -22367,7 +22371,13 @@ void fx_emit_helpers(FxBuf* w, uint8_t* p, int32_t* rec, int32_t nf) {
   fx_put_span(w, p, ns, ne);
   fx_puts(w, "_field_step(\n    u: ptr<f64>,\n    next: ptr<f64>,\n    r: f64\n) -> void {\n    heat_euler_step_1d(u, next, ");
   fx_emit_int_span(w, p, rec[(b + FX_N_S)], rec[(b + FX_N_E)]);
-  fx_puts(w, ", r, ");
+  fx_puts(w, ", r");
+  if (rec[(b + FX_MUL_S)] >= 0) {
+  fx_puts(w, " * (");
+  fx_put_span(w, p, rec[(b + FX_MUL_S)], rec[(b + FX_MUL_E)]);
+  fx_puts(w, ")");
+}
+  fx_puts(w, ", ");
   if (rec[(b + FX_L_S)] < 0) {
   fx_puts(w, "0.0");
 } else {
@@ -22462,6 +22472,8 @@ int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* 
   rec[(b + FX_R_S)] = (0 - 1);
   rec[(b + FX_R_E)] = (0 - 1);
   rec[(b + FX_EVOLVED)] = 0;
+  rec[(b + FX_MUL_S)] = (0 - 1);
+  rec[(b + FX_MUL_E)] = (0 - 1);
   nf = (nf + 1);
 }
 }
@@ -22596,7 +22608,15 @@ int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* 
   fx_err_name(err, p, "field '", en_s, en_e, "' evolves: use at most one multiplier");
   rc = (0 - 1);
 } else {
-  rec[((ev * FX_REC) + FX_EVOLVED)] = 1;
+  int32_t b = (ev * FX_REC);
+  rec[(b + FX_EVOLVED)] = 1;
+  if (caps[4] >= 0) {
+  rec[(b + FX_MUL_S)] = caps[4];
+  rec[(b + FX_MUL_E)] = caps[5];
+} else if (caps[2] >= 0) {
+  rec[(b + FX_MUL_S)] = caps[2];
+  rec[(b + FX_MUL_E)] = caps[3];
+}
 }
 }
   i = (i + 1);
