@@ -5,6 +5,26 @@ V evolves as laplacian( V ) * alpha
 boundary V {
     left=0.5 right=1.5
 }
+field Q : f64[8] on Line
+Q evolves as 2 * laplacian(Q)
+boundary Q {
+    left = 0.0
+    right = 0.0
+}
 function main() -> i32 {
-    return V_field_n
+    let v: array<f64, 8> = [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.5]
+    let vn: array<f64, 8> = [0.0]
+    V_field_step(v, vn, 0.4)
+    if vn[0] != 0.5 or vn[7] != 1.5 or
+       vn[1] < 0.939999999999 or vn[1] > 0.940000000001 or
+       vn[6] < 1.059999999999 or vn[6] > 1.060000000001 { return 1 }
+    let q: array<f64, 8> = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    let qn: array<f64, 8> = [0.0]
+    Q_field_step(q, qn, 0.1)
+    if qn[0] != 0.0 or qn[7] != 0.0 or
+       qn[2] < 0.199999999999 or qn[2] > 0.200000000001 or
+       qn[3] < 0.599999999999 or qn[3] > 0.600000000001 or
+       qn[4] < 0.199999999999 or qn[4] > 0.200000000001 { return 2 }
+    println("field-multiplier-ok")
+    return 0
 }
