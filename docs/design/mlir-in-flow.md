@@ -128,10 +128,6 @@ What the gate still reports, largest first:
   build crashes.
 * Floating point that still parts in the last bits and then grows:
   `double_pendulum` (chaotic) and `policy_pong`.
-* Build-mode guards: `test_only_guard` expects the C build's modes, and
-  the MLIR build runs under `mlir`.
-* Concurrency and network examples whose C build waits past the timeout
-  or whose output depends on scheduling.
 
 ## Finished: the Python MLIR stack is deleted
 
