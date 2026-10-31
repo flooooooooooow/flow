@@ -34,5 +34,6 @@ function main() -> i32 {
         i = i + 1
     }
     
-    return count
+    println(count)
+    return 0
 }

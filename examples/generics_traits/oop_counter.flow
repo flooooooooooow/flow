@@ -24,5 +24,6 @@ function main() -> i32 {
     let c: Counter = make_counter(5)
     let c2: Counter = counter_increment(c)
     let c3: Counter = counter_increment(c2)
-    return counter_get(c3)  # Should be 7
+    println(counter_get(c3))
+    return 0  # Should be 7
 }
