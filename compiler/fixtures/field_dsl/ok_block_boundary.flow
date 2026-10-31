@@ -7,5 +7,26 @@ boundary U {
 }
 
 function main() -> i32 {
+    let mut state: array<f64, 16> = [0.0]
+    let mut next: array<f64, 16> = [0.0]
+    state[0] = 1.0
+    state[15] = 2.0
+    for step in 0 to 64 {
+        U_field_step(state, next, 0.4)
+        if step == 0 and (next[1] < 0.099999999999 or next[1] > 0.100000000001 or
+                          next[14] < 0.199999999999 or next[14] > 0.200000000001) {
+            return 1
+        }
+        field_copy_1d(next, state, 16)
+    }
+    if state[0] != 1.0 or state[15] != 2.0 or
+       state[1] < 0.78065182732 or state[1] > 0.78065182734 or
+       state[2] < 0.57799862400 or state[2] > 0.57799862402 or
+       state[8] < 0.13097851750 or state[8] > 0.13097851752 or
+       state[13] < 1.15493637997 or state[13] > 1.15493637999 or
+       state[14] < 1.56096737879 or state[14] > 1.56096737881 {
+        return 2
+    }
+    println("field-pre-multiplier-ok")
     return 0
 }
