@@ -10,7 +10,7 @@ function V_field_step(
     next: ptr<f64>,
     r: f64
 ) -> void {
-    heat_euler_step_1d(u, next, 8, r, 0.5, 1.5)
+    heat_euler_step_1d(u, next, 8, (r * (alpha)), 0.5, 1.5)
 }
 
 function main() -> i32 {
