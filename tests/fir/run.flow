@@ -49,6 +49,9 @@ function thresholds_arg(args: ptr<ProcStrs>) -> string {
 }
 
 function main() -> i32 {
+    let args: ptr<ProcStrs> = proc_args()
+    let update: bool = sl_len(args) > 0 and s_eq(sl_get(args, 0), "--update")
+
     let root: string = tr_enter_root()
     RX_HOST = tr_rx("\"host\": \"[^\"]*\"")
     RX_BENCH = tr_rx("bench: cpu=[0-9.]+ ms")
