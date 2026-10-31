@@ -237,6 +237,50 @@ function main() -> i32 {
         errs(pl_head(read_text(WORK + "/heat_emit.log") + read_text(WORK + "/heat_cc.log"), 20))
     }
 
+    # 5. Numerical end-to-end regression: a declared coefficient must alter
+    # the real compiled stencil, not merely parse as accepted syntax.
+    # Both fixtures assert 64-step Dirichlet solutions independently calculated
+    # from the explicit Euler stencil, including boundary preservation.
+    let multiplier_cases: ptr<ProcStrs> = sl_of2(
+        FIX + "/ok_block_boundary.flow", FIX + "/ok_post_mul.flow")
+    let mut mi: i32 = 0
+    while mi < sl_len(multiplier_cases) {
+        let source: string = sl_get(multiplier_cases, mi)
+        let key: string = "multiplier_" + s_itoa(mi)
+        let emitted: string = WORK + "/" + key + ".c"
+        let executable: string = WORK + "/" + key
+        let e2e: ptr<ProcCmd> = pl_cmd1(bin())
+        cmd_env(e2e, "FLOWC_BUNDLE", "1")
+        cmd_env(e2e, "FLOWC_DIR", FIX)
+        cmd_env(e2e, "FLOWC_IN", source)
+        cmd_env(e2e, "FLOWC_OUT", emitted)
+        let _emit: i32 = pl_run(e2e, WORK + "/" + key + "_emit.log", "&", 0)
+        let mut compiled: bool = false
+        if nonempty(emitted) {
+            let cc: ptr<ProcCmd> = cmd(sl_of2(pl_cc(), "-O1"))
+            proc_arg(cc, "-o")
+            proc_arg(cc, executable)
+            proc_arg(cc, emitted)
+            proc_arg(cc, "-lm")
+            compiled = pl_run(cc, "", WORK + "/" + key + "_cc.log", 0) == 0
+        }
+        if compiled {
+            let code: i32 = pl_run(pl_cmd1(executable), WORK + "/" + key + "_run.log", "", 0)
+            if code == 0 and s_contains(read_text(WORK + "/" + key + "_run.log"), "multiplier-ok") {
+                outln("e2e: " + source + " coefficient numerical checks passed")
+            } else {
+                fail = fail + 1
+                errln("FAIL e2e: " + source + " exit " + s_itoa(code))
+            }
+        } else {
+            fail = fail + 1
+            errln("FAIL e2e: " + source + " did not build")
+            errs(pl_head(read_text(WORK + "/" + key + "_emit.log") +
+                         read_text(WORK + "/" + key + "_cc.log"), 20))
+        }
+        mi = mi + 1
+    }
+
     if fail != 0 {
         outln("parity_field_dsl: FAIL (" + s_itoa(fail) + ")")
         cli_exit(1)
