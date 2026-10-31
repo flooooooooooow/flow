@@ -1,0 +1,18 @@
+# Test that casting a variable to an unsigned type does not mutate the
+# signedness of the underlying variable for subsequent comparisons.
+# Expected exit code: 0
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let a: i64 = -1
+    let b: u64 = a as u64
+    if a < 0 {
+        puts("ok")
+        return 0
+    }
+    puts("fail")
+    return 1
+}
