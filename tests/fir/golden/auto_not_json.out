@@ -1,5 +1,5 @@
-FIR-G: funcs=2 blocks=5 ops=24 values=18 operands=16 types=2
-call ops: 3
+FIR-G: funcs=2 blocks=5 ops=26 values=20 operands=17 types=2
+call ops: 4
 reachable: fibonacci, main
 dead: (none)
 call graph:
@@ -7,5 +7,5 @@ call graph:
   main -> fibonacci  (op 1)
 effects / pure:
   fibonacci: effects=0x0000 pure=True
-  main: effects=0x0000 pure=True
+  main: effects=0x0008 pure=False
 device: requested=auto chosen=cpu

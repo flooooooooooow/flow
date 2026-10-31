@@ -515,12 +515,13 @@ jobs:
           rm -rf build/fibonacci build/hello_world
           ./flow run examples/basics/hello_world.flow
           ./flow compile examples/basics/fibonacci.flow
-          # fibonacci.flow main returns fib(10) == 55 as process exit status
+          # fibonacci.flow main prints fib(10) == 55
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
   # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
   # three consecutive generations of flowc must agree byte for byte.
@@ -557,10 +558,11 @@ jobs:
         run: |
           ./flow compile examples/basics/fibonacci.flow
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
       - name: Same again with python and python3 removed from PATH
         run: |
@@ -574,10 +576,11 @@ jobs:
           ./compiler/scripts/bootstrap_from_c.sh
           ./flow compile examples/basics/fibonacci.flow
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
       # The default `flow run` / `flow compile` path from a clean compiler/build
       # and build/: flowc comes from ensure_flowc (bootstrap C with cc), and the
