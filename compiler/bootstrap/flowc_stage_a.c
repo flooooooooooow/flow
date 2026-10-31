@@ -6701,6 +6701,9 @@ int32_t flowc_attr_mode_active(const char* mode) {
   if (streq(mode, "compile") == 1) {
   return 1;
 }
+  if (streq(mode, "c") == 1) {
+  return 1;
+}
   const char* backend = "c";
   const char* emit = getenv("FLOWC_EMIT");
   if ((uint8_t*)(emit) != NULL && streq(emit, "mlir") == 1) {

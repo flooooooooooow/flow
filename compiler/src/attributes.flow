@@ -626,12 +626,15 @@ export function flowc_attr_span_is(src: ptr<u8>, s: i32, e: i32, lit: string) ->
 # ── Build-mode guards ────────────────────────────────────────────
 
 # 1 when `mode` is active for this build. Port of `_active_modes` in the
-# Python transpiler for its C and MLIR backends: `compile` is always on,
+# Python transpiler for its C and MLIR backends: `compile` and `c` are always on,
 # the backend name (`c`, or `mlir` under FLOWC_EMIT=mlir or
 # FLOWC_BACKEND=mlir) is on, and FLOWC_MODE adds one more (the Python
 # `--mode` flag: compile, jit, hot, interp, mlir or c).
 export function flowc_attr_mode_active(mode: string) -> i32 {
     if streq(mode, "compile") == 1 {
+        return 1
+    }
+    if streq(mode, "c") == 1 {
         return 1
     }
     let mut backend: string = "c"
