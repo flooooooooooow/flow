@@ -14,5 +14,26 @@ function V_field_step(
 }
 
 function main() -> i32 {
-    return V_field_n
+    let mut state: array<f64, 8> = [0.0]
+    let mut next: array<f64, 8> = [0.0]
+    state[0] = 0.5
+    state[7] = 1.5
+    for step in 0 to 64 {
+        V_field_step(state, next, 0.4)
+        if step == 0 and (next[1] < 0.059999999999 or next[1] > 0.060000000001 or
+                          next[6] < 0.179999999999 or next[6] > 0.180000000001) {
+            return 1
+        }
+        field_copy_1d(next, state, 8)
+    }
+    if state[0] != 0.5 or state[7] != 1.5 or
+       state[1] < 0.52689969563 or state[1] > 0.52689969565 or
+       state[2] < 0.57646700129 or state[2] > 0.57646700131 or
+       state[4] < 0.80936158043 or state[4] > 0.80936158045 or
+       state[5] < 1.00369003452 or state[5] > 1.00369003454 or
+       state[6] < 1.24010408073 or state[6] > 1.24010408075 {
+        return 2
+    }
+    println("field-post-multiplier-ok")
+    return 0
 }
