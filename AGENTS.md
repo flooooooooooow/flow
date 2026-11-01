@@ -160,8 +160,10 @@ If multiple agents are editing `compiler/src/` simultaneously:
    # Look for "flowc: PASS" at the end
    ```
 3. **Commit bootstrap C in a separate commit** from source edits, with a
-   message like `fix: regenerate bootstrap C after <change>`. This avoids
-   merge conflicts on the large generated file.
+   message like `fix: regenerate bootstrap C after <change>`, and make it
+   the last commit on the branch, after merging `main`. On a conflict in it,
+   take `main`'s copy and run `--regen` again; never hand-merge it. See
+   "Branches, pull requests and merge conflicts" below.
 4. **If the old bootstrap cannot compile your sources**, do not regenerate
    the bootstrap C. Fix the source first. flowc_host.flow prints the error.
 
@@ -224,6 +226,168 @@ test_generic_channels, test_concurrent_link and test_import_stdlib_bare
 failed with undefined `flow_thread_*` and `__atomic_*_n` symbols although
 the compiler handles them. tests/scripts/bootstrap_suite_doc.flow runs the
 command above on those three files.
+
+## Branches, pull requests and merge conflicts
+
+Many agents and people open pull requests against `main` at the same time,
+and `main` lands through a merge queue (the `merge_group` trigger in
+`.github/workflows/ci.yml`). Almost every conflict comes from a handful of
+shared or generated files. These rules keep conflicts rare, and cheap when
+they happen.
+
+### Before you start
+
+- Check open pull requests and live sessions for the same issue and for the
+  same narrow file edit (see "Claim and deduplication" in
+  `docs/project/agentic-loop.md`). If one exists, review or extend it rather
+  than open a parallel one. Parallel pull requests for one rename conflict
+  with each other, and all but one get closed.
+- Branch from a current `main`, and open the pull request against `main`. A
+  pull request whose base is another feature branch runs only a few checks
+  and cannot enter the merge queue.
+- Fetch full history. Sandboxes often clone with `--depth 1`, and in a
+  shallow clone `main` and your branch look like unrelated histories:
+
+  ```bash
+  git fetch --unshallow origin || true   # no-op on a full clone
+  git fetch origin main
+  ```
+
+### Keep the diff small
+
+- One issue, one purpose, the smallest diff that fixes it. No drive-by
+  reformatting, no renaming of shared constants or functions, no re-sorting
+  of lists or tables you did not otherwise need to touch.
+- If the change must touch a hotspot below, keep that part as small as you
+  can and get it merged quickly, or split it into its own pull request so the
+  rest of the work does not wait on it.
+
+### Conflict hotspots
+
+| File | Why it conflicts | What to do |
+|---|---|---|
+| `compiler/bootstrap/flowc_stage_a.c`, `compiler/bootstrap/flowc_stage_a` | Generated from all of `compiler/src/` as one translation unit, plus the binary built from it | Never hand-merge. Take `main`'s copy, finish the merge, then regenerate with `./compiler/scripts/bootstrap_from_c.sh --regen` as the last commit. Commit it only when your branch changes `compiler/src/`. |
+| `docs/demos/overview.md` | Generated from `docs/demos/catalog.json` by `./flow tool demo_overview` | Edit the catalog, never the page. After merging `main`, run `./flow tool demo_overview` and commit its output. A stale page is the most common CI failure (`demo_overview_is_derived_from_catalog` in `tests/scripts/demo_gallery_docs.flow`, run by `./flow test-scripts`). |
+| `docs/nav.json` | Its demo sections are generated from the catalog; the rest is edited by hand in many pull requests | After a catalog change run `./flow tool demo_nav`. Add hand entries in place, without re-sorting. Check with `./flow tool wiki_nav`. |
+| `docs/library/stdlib-api.md` | Generated from `lib/stdlib` | Regenerate with `./flow tool gen_stdlib_docs`; CI runs `--check`. |
+| `compiler/fixtures/mlir/corpus.txt`, the fixture goldens beside it (`*.mlir`, `*.gpu.mlir`, `*.w32.mlir`, `*.out`) and other golden files | One shared manifest of digests; most MLIR changes move some of its lines | Change only the entries for programs your change affects. See "Goldens" below. |
+| `compiler/src/mlirgen.flow`, `compiler/src/mlir_bundle.flow`, `compiler/src/resolve.flow` | Central compiler files that most MLIR and front-end fixes edit | Keep the edit inside the function you are fixing. Do not move, reorder or reformat the code around it. Land it quickly. |
+
+### Generated files: regenerate, never hand-merge
+
+1. Do not commit a regenerated artifact unless your change requires it.
+2. When it does, regenerate after merging `main` and make it the last
+   commit on the branch, so it is built from `main` plus your change.
+3. On a conflict in a generated file, take `main`'s version and regenerate.
+   Never edit conflict markers in generated output. While the merge is in
+   progress:
+
+   ```bash
+   # bootstrap C and binary
+   git checkout origin/main -- compiler/bootstrap/flowc_stage_a.c compiler/bootstrap/flowc_stage_a
+   # resolve the source files, then rebuild from the merged compiler/src:
+   ./compiler/scripts/bootstrap_from_c.sh --regen
+   ./compiler/scripts/bootstrap_from_c.sh --verify
+   git add compiler/bootstrap/flowc_stage_a.c compiler/bootstrap/flowc_stage_a
+
+   # demo overview and nav
+   git checkout origin/main -- docs/demos/overview.md
+   ./flow tool demo_overview
+   ./flow tool demo_nav
+   git add docs/demos/overview.md docs/nav.json
+
+   git commit   # completes the merge commit
+   ```
+
+   If the branch does not change `compiler/src/`, `main`'s bootstrap C is
+   already right: take it and do not regenerate.
+
+### Goldens
+
+`compiler/scripts/parity_mlir.flow` has one recording mode, `--record`. It
+rewrites every fixture golden and the whole of `corpus.txt`, and it ignores
+any further arguments: `--record --only <pattern>` is not a filter and still
+records everything. A full record takes longer than most agent sandboxes
+allow (CI gives the whole gate 20 minutes).
+
+1. Run the gate: `./flow tool compiler/scripts/parity_mlir.flow`. Each
+   affected corpus program fails with `FAIL corpus <path>: MLIR changed since
+   the golden was recorded`.
+2. Check that the list is what your change should affect. Many unrelated
+   failures mean the change is wider than intended, or the branch is behind
+   `main`. Merge `main` first.
+3. Record on a machine with the time to do it, then keep only the entries
+   your change explains and drop the rest:
+
+   ```bash
+   ./flow tool compiler/scripts/parity_mlir.flow --record
+   git add -p compiler/fixtures/mlir     # stage only the affected entries
+   git checkout -- compiler/fixtures/mlir   # drop every other rewrite
+   ./flow tool compiler/scripts/parity_mlir.flow
+   ```
+
+4. Name the fix behind each changed golden in the pull request body.
+
+After merging `main`, re-run the gate rather than trusting either side's
+`corpus.txt`: a conflict there usually means both sides moved the same
+program's digest.
+
+### Keep your branch current
+
+- Merge `main` into the branch often, and always before asking for review
+  and after the merge queue rejects it:
+
+  ```bash
+  git fetch origin main
+  git merge origin/main   # a real merge commit, with main as a parent
+  ```
+
+- Never use `--allow-unrelated-histories`. That error means the clone is
+  shallow: fetch with `--unshallow` and merge again. Never force-push a pull
+  request branch, never rewrite commits that are already pushed, never commit
+  or push with `--no-verify`.
+- A conflict is resolved only by a commit on the pull request's own branch
+  that has `main` as a parent. A separate pull request stacked on the branch
+  does not resolve it when its commit lacks `main` as a parent, and
+  squash-merging such a pull request into the branch leaves the conflict in
+  place.
+- If you cannot push to the pull request's branch, say so in the pull
+  request or session and stop. Do not open an empty, partial or stacked pull
+  request in its place.
+
+### When you change behaviour that a check asserts
+
+Update every check that asserts the old behaviour in the same pull request.
+Search before you push, for example `rg -n 'fibonacci' .github/workflows scripts tests`.
+`examples/basics/fibonacci.flow` exits with status 55 and that is asserted in
+`scripts/check_run_without_python.flow`, in several steps of
+`.github/workflows/ci.yml` and in the Tier 1 job of
+`.github/workflows/platform-qualification.yml`. Re-record the goldens that
+capture the example's output in the same pull request.
+
+### Before you push
+
+- Run `git status` and `git diff --stat origin/main...HEAD`. Commit only the
+  files your change needs. No runtime output: `persist/run_counter.bin` is
+  tracked and gets rewritten when examples run, and scratch files such as
+  `diff.txt`, logs and anything under `build/` stay out.
+- Run the gates for what you touched:
+
+  | Touched | Run |
+  |---|---|
+  | `compiler/src/` | The selftest, `--regen` and `--verify`, `self_host_full.flow` and `roundtrip.flow` from "Regeneration steps" above |
+  | MLIR emitter | `./flow tool compiler/scripts/parity_mlir.flow`, `./flow tool tests/mlir_commands/run.flow` |
+  | C emitter, language | `./flow tool tests/cgen/run.flow`, `./flow test-lang` |
+  | Tools, scripts, CLI | `./flow test-scripts`, `./flow tool script_refs`, `./flow tool tests/cli/run.flow` |
+  | Docs, demos, nav | `./flow tool doc_links`, `./flow tool doc_examples`, `./flow tool wiki_nav`, `./flow tool demo_overview --check --check-previews`, `./flow tool demo_nav --check` |
+  | Tier 1 platforms | `./flow test --tier2 --strict`, `./compiler/scripts/bootstrap_from_c.sh` |
+
+- Everything must be green before the merge queue takes the pull request,
+  including the goldens and MLIR job, the self-host roundtrip and Tier 1 on
+  ubuntu and macOS.
+- In the pull request body write `Closes #N` only when the change fully
+  fixes issue N, and `Part of #N` otherwise. Record the evidence that
+  `docs/project/agentic-loop.md` asks for, including any generated state.
 
 ## AI Safety and Enforceable Authority
 
