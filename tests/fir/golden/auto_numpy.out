@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=2 blocks=5 ops=24 values=18 operands=16 types=2",
+  "summary": "FIR-G: funcs=2 blocks=5 ops=26 values=20 operands=17 types=2",
   "call_edges": [
     {
       "caller": "fibonacci",
@@ -14,18 +14,18 @@
   ],
   "effects": {
     "fibonacci": 0,
-    "main": 0
+    "main": 8
   },
   "pure": {
     "fibonacci": true,
-    "main": true
+    "main": false
   },
   "reachable": [
     "fibonacci",
     "main"
   ],
   "dead": [],
-  "num_call_ops": 3,
+  "num_call_ops": 4,
   "device_requested": "auto",
   "device_chosen": "cpu"
 }

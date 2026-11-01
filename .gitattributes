@@ -12,3 +12,14 @@ examples/verify/** linguist-documentation
 
 **/build/** linguist-generated
 **/*.dSYM/** linguist-generated
+
+# Checked-in outputs of repository generators. linguist-generated only
+# collapses them in pull request diffs and drops them from language stats;
+# merging is unchanged. Do not hand-merge them: take main's copy and
+# regenerate (AGENTS.md, "Branches, pull requests and merge conflicts").
+# No merge=ours or merge=union here: either would silently keep a stale or
+# duplicated generated file.
+compiler/bootstrap/flowc_stage_a.c linguist-generated
+compiler/bootstrap/flowc_stage_a linguist-generated
+docs/demos/overview.md linguist-generated
+docs/library/stdlib-api.md linguist-generated
