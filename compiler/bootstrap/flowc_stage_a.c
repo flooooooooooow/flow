@@ -65082,7 +65082,7 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   mlg_s(m, "] : ");
   mlg_gpu_put_type(m, at);
   mlg_nl(m);
-  { __typeof__(t[0]) __flowc_st95409 = mlg_gpu_elem(m, at); t[0] = __flowc_st95409; }
+  { __typeof__(t[0]) __flowc_st95427 = mlg_gpu_elem(m, at); t[0] = __flowc_st95427; }
   return s3;
 }
   if (k == AST_BINOP) {
@@ -65292,11 +65292,11 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(its[i]) __flowc_st96346 = mlg_gpu_new(m); its[i] = __flowc_st96346; }
+  { __typeof__(its[i]) __flowc_st96364 = mlg_gpu_new(m); its[i] = __flowc_st96364; }
 }
   i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st96367 = mlg_gpu_new(m); res[i] = __flowc_st96367; }
+  { __typeof__(res[i]) __flowc_st96385 = mlg_gpu_new(m); res[i] = __flowc_st96385; }
 }
   mlg_line(m);
   if (nc > 0) {
