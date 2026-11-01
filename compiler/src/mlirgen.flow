@@ -3010,8 +3010,15 @@ function mlg_len_mt(m: ptr<Mlg>, e: i32) -> i32
 function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_sugar_rewrite(m, e)
     let kind: i32 = mlg_kind(m, e)
-    # Python get_expression_type has no VectorLiteral case: i32.
-    if kind == AST_VECTOR_LIT { return MT_I32 }
+    if kind == AST_VECTOR_LIT {
+        # vector<N x T>, T the first element's type (mlg_emit_vector_lit).
+        let vn: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
+        let vel: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
+        if vn > 0 and (mlg_is_int_mt(vel) == 1 or mlg_is_float_mt(vel) == 1) {
+            return mlg_vector_of(m, vel, vn)
+        }
+        return MT_I32
+    }
     if kind == AST_INT { return mlg_int_lit_mt(m, e) }
     if kind == AST_FLOAT { return MT_F64 }
     if kind == AST_BOOL { return MT_I1 }
@@ -3060,6 +3067,10 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
                 return MT_I64
             }
             return MT_PTR
+        }
+        if mlg_is_vector_mt(rt) == 1 and mlg_kind(m, m[0].arena.nodes[e].a) == AST_VECTOR_LIT and mlg_kind(m, m[0].arena.nodes[e].b) != AST_VECTOR_LIT {
+            # A vector literal takes the other operand's type (mlg_emit_binop).
+            return rt
         }
         return mlg_resolve_operand(lt, rt)
     }
@@ -8303,6 +8314,15 @@ function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
         ot = lt
         if mlg_is_vector_mt(lt) == 0 {
             ot = rt
+        }
+        # A vector literal takes the other operand's vector type.
+        if lt != rt and mlg_is_vector_mt(lt) == 1 and mlg_is_vector_mt(rt) == 1 {
+            if mlg_kind(m, r) == AST_VECTOR_LIT {
+                rv = mlg_cast(m, rv, rt, lt)
+            } elif mlg_kind(m, l) == AST_VECTOR_LIT {
+                lv = mlg_cast(m, lv, lt, rt)
+                ot = rt
+            }
         }
     } else {
         if lt != ot {
