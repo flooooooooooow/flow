@@ -64640,11 +64640,15 @@ void mlg_collect(Mlg* m, int32_t root) {
   return;
 }
   while (ef != AST_NONE) {
-  if (mlg_kind(m, ef) != AST_FN) {
-  mlg_refuse(m, ef, "extern type");
+  int32_t ek = mlg_kind(m, ef);
+  if (ek == AST_FN) {
+  mlg_add_fn(m, ef, 1);
+} else {
+  if (ek != AST_EXTERN_TYPE) {
+  mlg_refuse(m, ef, "extern const");
   return;
 }
-  mlg_add_fn(m, ef, 1);
+}
   ef = (((m[0]).arena).nodes[ef]).next;
 }
 } else {
@@ -64675,6 +64679,9 @@ void mlg_collect(Mlg* m, int32_t root) {
   if (k == AST_EXPR_STMT && (((m[0]).arena).nodes[d]).a == AST_NONE) {
   int32_t _skip = 0;
 } else {
+  if (k == AST_EXTERN_TYPE) {
+  int32_t _opaque = 0;
+} else {
   if (k == AST_C_INCLUDE || k == AST_C_IMPORT) {
   int32_t _hdr = 0;
 } else {
@@ -64686,6 +64693,7 @@ void mlg_collect(Mlg* m, int32_t root) {
 }
 } else {
   mlg_refuse(m, d, mlg_decl_label(k));
+}
 }
 }
 }
@@ -65074,7 +65082,7 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   mlg_s(m, "] : ");
   mlg_gpu_put_type(m, at);
   mlg_nl(m);
-  { __typeof__(t[0]) __flowc_st95409 = mlg_gpu_elem(m, at); t[0] = __flowc_st95409; }
+  { __typeof__(t[0]) __flowc_st95427 = mlg_gpu_elem(m, at); t[0] = __flowc_st95427; }
   return s3;
 }
   if (k == AST_BINOP) {
@@ -65284,11 +65292,11 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(its[i]) __flowc_st96346 = mlg_gpu_new(m); its[i] = __flowc_st96346; }
+  { __typeof__(its[i]) __flowc_st96364 = mlg_gpu_new(m); its[i] = __flowc_st96364; }
 }
   i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st96367 = mlg_gpu_new(m); res[i] = __flowc_st96367; }
+  { __typeof__(res[i]) __flowc_st96385 = mlg_gpu_new(m); res[i] = __flowc_st96385; }
 }
   mlg_line(m);
   if (nc > 0) {
