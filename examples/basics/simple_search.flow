@@ -31,5 +31,6 @@ function linear_search(item: i32) -> i32 {
 function main() -> i32 {
     let number: i32 = 23
     let location: i32 = linear_search(number)
-    return location
+    println(location)
+    return 0
 }

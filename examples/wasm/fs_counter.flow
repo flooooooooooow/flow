@@ -22,8 +22,8 @@ extern {
     function free(p: ptr<void>) -> void
 }
 
-const STATE_DIR: string = "persist"
-const STATE_PATH: string = "persist/run_counter.bin"
+const STATE_DIR: string = "/tmp/persist"
+const STATE_PATH: string = "/tmp/persist/run_counter.bin"
 
 function read_counter(slot: ptr<i32>) -> i32 {
     let f: ptr<void> = fopen(STATE_PATH, "rb")
