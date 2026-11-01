@@ -763,7 +763,11 @@ function write_lock(pm: ptr<Pm>, lock: i32) {
     let sb: ptr<SBuf> = sb_new()
     jd_dump_json(pm[0].d, lock, sb, 0)
     sb_putc(sb, 10)
-    let _w: bool = write_text(lock_file(pm), sb_str(sb))
+    let text: string = sb_str(sb)
+    let existing: string = read_text(lock_file(pm))
+    if str_eq(text, existing) == false {
+        let _w: bool = write_text(lock_file(pm), text)
+    }
 }
 
 # lock.setdefault("packages", {})
