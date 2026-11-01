@@ -65,5 +65,6 @@ function main() -> i32 {
     let a: BigInt = bigint_from_i64(1000000007)
     let r: u32 = bigint_mod_u32(a, 1000)
     bigint_free(a)
-    return r as i32
+    println(r as i32)
+    return 0
 }
