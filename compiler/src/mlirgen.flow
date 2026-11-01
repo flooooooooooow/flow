@@ -6109,8 +6109,19 @@ function mlg_struct_addr0(m: ptr<Mlg>, e: i32, sk: ptr<i32>) -> i32 {
         if f == AST_NONE {
             return V_NONE
         }
-        let k5: i32 = mlg_ft_struct(m, m[0].arena.nodes[f].a)
+        let fty: i32 = m[0].arena.nodes[f].a
+        let k5: i32 = mlg_ft_struct(m, fty)
         if k5 < 0 {
+            # A ptr<S> field (`o.cfg.n` with cfg: ptr<Inner>): the struct
+            # is where the field's pointer points, as C's o->cfg->n.
+            if mlg_ft_is_pointer(m, fty) == 1 {
+                let pk: i32 = mlg_ft_struct(m, m[0].arena.nodes[fty].a)
+                if pk >= 0 {
+                    let pg: i32 = mlg_struct_gep(m, pp, psk, idx)
+                    sk[0] = pk
+                    return mlg_load(m, pg, MT_PTR)
+                }
+            }
             return V_NONE
         }
         let g: i32 = mlg_struct_gep(m, pp, psk, idx)
