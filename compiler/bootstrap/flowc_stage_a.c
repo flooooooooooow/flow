@@ -36876,7 +36876,7 @@ int32_t flowc_parse_if_chain(Parser* p, int32_t start) {
   flowc_parser_fail(p);
   return AST_NONE;
 }
-  { __typeof__((((p[0]).arena).nodes[eb2]).a) __flowc_st9501 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, nested); (((p[0]).arena).nodes[eb2]).a = __flowc_st9501; }
+  { __typeof__((((p[0]).arena).nodes[eb2]).a) __flowc_st9529 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, nested); (((p[0]).arena).nodes[eb2]).a = __flowc_st9529; }
   elif_else = eb2;
 } else {
   if (flowc_parser_check_kw(p[0], KW_ELSE) == 1) {
@@ -37054,7 +37054,7 @@ int32_t flowc_parse_stmt_inner(Parser* p) {
   flowc_parser_fail(p);
   return AST_NONE;
 }
-  { __typeof__((((p[0]).arena).nodes[eb]).a) __flowc_st10383 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, elif_id); (((p[0]).arena).nodes[eb]).a = __flowc_st10383; }
+  { __typeof__((((p[0]).arena).nodes[eb]).a) __flowc_st10411 = flowc_ast_chain_push((&(p[0]).arena), AST_NONE, elif_id); (((p[0]).arena).nodes[eb]).a = __flowc_st10411; }
   else_b = eb;
 } else {
   if (flowc_parser_check_kw(p[0], KW_ELSE) == 1) {
@@ -37274,7 +37274,7 @@ int32_t flowc_parse_stmt_inner(Parser* p) {
 }
   (((p[0]).arena).nodes[sub]).name_start = (tok).start;
   (((p[0]).arena).nodes[sub]).name_end = (tok).end;
-  { __typeof__((((p[0]).arena).nodes[sub]).ival) __flowc_st11490 = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end); (((p[0]).arena).nodes[sub]).ival = __flowc_st11490; }
+  { __typeof__((((p[0]).arena).nodes[sub]).ival) __flowc_st11518 = flowc_parse_int_span(((p[0]).lex).input, (tok).start, (tok).end); (((p[0]).arena).nodes[sub]).ival = __flowc_st11518; }
   flowc_parser_advance(p);
 } else {
   if (flowc_parser_check(p[0], TOK_IDENT) == 1) {
@@ -76759,11 +76759,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st28395 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st28395; }
-  { __typeof__((w[0]).plan_has) __flowc_st28407 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st28407; }
-  { __typeof__((w[0]).plan_seen) __flowc_st28419 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st28419; }
-  { __typeof__((w[0]).plan_lo) __flowc_st28431 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st28431; }
-  { __typeof__((w[0]).plan_hi) __flowc_st28443 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st28443; }
+  { __typeof__((w[0]).plan_order) __flowc_st28481 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st28481; }
+  { __typeof__((w[0]).plan_has) __flowc_st28493 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st28493; }
+  { __typeof__((w[0]).plan_seen) __flowc_st28505 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st28505; }
+  { __typeof__((w[0]).plan_lo) __flowc_st28517 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st28517; }
+  { __typeof__((w[0]).plan_hi) __flowc_st28529 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st28529; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
