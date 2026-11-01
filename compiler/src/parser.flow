@@ -2238,6 +2238,7 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
     }
     if flowc_parser_check_kw(p[0], KW_RETURN) == 1 {
         let start: i32 = p[0].cur.start
+        let ret_line: i32 = p[0].cur.line
         flowc_parser_advance(p)
         # Bare `return` (void): no expr when next token cannot start one.
         let mut val: i32 = AST_NONE
@@ -2265,6 +2266,11 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         }
         # `to` names a value outside a `for` range: `return to - from` (#1068).
         if flowc_token_is_kw(p[0].cur, KW_TO) == 1 {
+            is_expr = 1
+        }
+        # `return if c { a } else { b }` returns the if-expression. On a
+        # later line, `if` starts a statement after a bare return.
+        if flowc_token_is_kw(p[0].cur, KW_IF) == 1 and p[0].cur.line == ret_line {
             is_expr = 1
         }
         if is_expr == 1 {
