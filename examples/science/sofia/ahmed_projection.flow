@@ -1,0 +1,42 @@
+# 3D pressure projection is a building block for Ahmed-body CFD, not
+# AhmedML geometry simulation or wall-modelled LES.
+# Run: ./flow run examples/science/sofia/ahmed_projection.flow
+import "stdlib/science/sofia_incompressible.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function main() -> i32 {
+    let u: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let v: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let w: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let un: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let vn: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let wn: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let p: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let scratch: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let rhs: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    for z in 0 to 8 {
+        for y in 0 to 8 {
+            for x in 0 to 8 {
+                let i: i32 = sofia_inc_index(x, y, z, 8, 8)
+                u[i] = 0.1
+                if x == 3 { u[i] = 0.9 }
+                v[i] = 0.02
+                w[i] = 0.01
+            }
+        }
+    }
+    let before: f64 = sofia_inc_divergence_rms(u, v, w, 8, 8, 8, 1.0)
+    sofia_inc_project_periodic(u, v, w, un, vn, wn,
+        p, scratch, rhs, 8, 8, 8, 1.0, 0.1, 160)
+    let after: f64 = sofia_inc_divergence_rms(un, vn, wn, 8, 8, 8, 1.0)
+    println("Flow / incompressible 3D projection")
+    print("divergence before = ")
+    printf("%.12f\n", before)
+    print("divergence after  = ")
+    printf("%.12f\n", after)
+    if after != after or after > before * 0.05 { return 1 }
+    return 0
+}

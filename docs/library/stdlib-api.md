@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**135** modules scanned.
+**138** modules scanned.
 
 ## Modules
 
@@ -1406,6 +1406,15 @@ PDE helpers (pattern-adoption #163). Stdlib MVP for field evolution without `fie
     right_bc: f64
 ) -> void` | One explicit Euler heat step with Dirichlet ends: next[i] = u[i] + r * (u[i-1] - 2 u[i] + u[i+1])   for interior next[0] = left_bc, next[n-1] = right_bc where r = alpha * dt / dx^2 (stable for r <= 0.5 on a unit grid). |
 | `field_copy_1d` | `(src: ptr<f64>, dst: ptr<f64>, n: i32) -> void` | Copy n samples from src into dst. |
+| `heat_euler_step_csr` | `(
+    u: ptr<f64>,
+    next: ptr<f64>,
+    n: i32,
+    r: f64,
+    row_ptrs: ptr<i32>,
+    col_indices: ptr<i32>,
+    weights: ptr<f64>
+) -> void` | Graph field evolution on an irregular neighbor network (CSR format). Computes: next[i] = u[i] + r * sum_{j in N(i)} w_ij * (u[j] - u[i]) If weights is null, w_ij = 1.0 is assumed. Boundaries: This operator is purely defined over the adjacency provided. |
 
 ### `dynamics/portrait.flow`
 
@@ -3201,6 +3210,78 @@ Real-Time Operating System (RTOS) and scheduler primitives.  Provides determinis
 | `ring_buffer_count` | `(rb: ptr<RtosRingBuffer>) -> u32` | - |
 | `ring_buffer_push` | `(rb: ptr<RtosRingBuffer>, item: i32) -> bool` | - |
 | `ring_buffer_pop` | `(rb: ptr<RtosRingBuffer>, out_val: ptr<i32>) -> bool` | - |
+
+### `science/sofia_incompressible.flow`
+
+Flow-native incompressible velocity projection on a uniform periodic 3D grid. This is a pressure-Poisson component, not a complete wall-modelled LES solver. Cell-centred arrays, compatible backward divergence / forward gradient;
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sofia_inc_index` | `(x: i32, y: i32, z: i32, nx: i32, ny: i32) -> i32` | - |
+| `sofia_inc_divergence_rms` | `(
+    ux: ptr<f64>, uy: ptr<f64>, uz: ptr<f64>,
+    nx: i32, ny: i32, nz: i32, dx: f64
+) -> f64` | Backward-difference divergence, periodic boundaries. |
+| `sofia_inc_project_periodic` | `(
+    ux: ptr<f64>, uy: ptr<f64>, uz: ptr<f64>,
+    ux_next: ptr<f64>, uy_next: ptr<f64>, uz_next: ptr<f64>,
+    p: ptr<f64>, scratch: ptr<f64>, rhs: ptr<f64>,
+    nx: i32, ny: i32, nz: i32, dx: f64, dt: f64, iterations: i32
+) -> void` | Projects input velocity onto a numerically divergence-free subspace. Inputs and outputs must not alias. p and scratch and rhs are scratch arrays, each at least nx*ny*nz long. nx,ny,nz>=3, dx>0, dt>0. Jacobi iterations control remaining divergence, not a residual tolerance. |
+
+### `science/sofia_lattice_boltzmann.flow`
+
+Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box. One fused pull-stream/collide step, layout f[cell*19 + direction]. Lattice spacing and timestep are 1; c_s^2 = 1/3.
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sofia_lbm_cx` | `(q: i32) -> i32` | Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box. One fused pull-stream/collide step, layout f[cell*19 + direction]. Lattice spacing and timestep are 1; c_s^2 = 1/3. No walls, terrain, forcing, Smagorinsky LES or GPU parallelism yet. |
+| `sofia_lbm_cy` | `(q: i32) -> i32` | - |
+| `sofia_lbm_cz` | `(q: i32) -> i32` | - |
+| `sofia_lbm_weight` | `(q: i32) -> f64` | - |
+| `sofia_lbm_equilibrium` | `(
+    q: i32, rho: f64, ux: f64, uy: f64, uz: f64
+) -> f64` | - |
+| `sofia_lbm_index` | `(x: i32, y: i32, z: i32, nx: i32, ny: i32) -> i32` | - |
+| `sofia_lbm_initialise` | `(
+    f: ptr<f64>, nx: i32, ny: i32, nz: i32,
+    rho: f64, ux: f64, uy: f64, uz: f64
+) -> void` | Initializes every distribution to a uniform equilibrium. |
+| `sofia_lbm_d3q19_step` | `(
+    src: ptr<f64>, dst: ptr<f64>,
+    nx: i32, ny: i32, nz: i32, omega: f64
+) -> void` | Pull-streaming, then collision at destination. src and dst must not alias. nx,ny,nz >= 2. 0 < omega < 2. Distributions must represent rho > 0. |
+| `sofia_lbm_mass` | `(f: ptr<f64>, cells: i32) -> f64` | - |
+
+### `science/sofia_shallow_water.flow`
+
+Native Flow 2D shallow-water finite-volume kernel. Cell-centred conserved state (depth, x-momentum, y-momentum). Periodic boundaries; uniform cell size; hydrostatic bed, friction and
+
+**Structs:** `SofiaSWState`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sofia_sw_abs` | `(x: f64) -> f64` | - |
+| `sofia_sw_max` | `(a: f64, b: f64) -> f64` | - |
+| `sofia_sw_flux_x` | `(s: SofiaSWState, g: f64) -> SofiaSWState` | - |
+| `sofia_sw_flux_y` | `(s: SofiaSWState, g: f64) -> SofiaSWState` | - |
+| `sofia_sw_rusanov_x` | `(a: SofiaSWState, b: SofiaSWState, g: f64) -> SofiaSWState` | - |
+| `sofia_sw_rusanov_y` | `(a: SofiaSWState, b: SofiaSWState, g: f64) -> SofiaSWState` | - |
+| `sofia_sw_cell` | `(
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>, i: i32
+) -> SofiaSWState` | - |
+| `sofia_sw_step_periodic` | `(
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>,
+    h_next: ptr<f64>, mx_next: ptr<f64>, my_next: ptr<f64>,
+    nx: i32, ny: i32, dx: f64, dy: f64, dt: f64, g: f64
+) -> void` | No allocations. Input and output buffers must be distinct. nx,ny >= 2; dx,dy,dt,g > 0; h[i] > 0 at every input cell. |
+| `sofia_sw_mass` | `(h: ptr<f64>, n: i32, dx: f64, dy: f64) -> f64` | - |
 
 ### `sdl2.flow`
 
