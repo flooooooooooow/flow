@@ -3231,6 +3231,12 @@ Flow-native incompressible velocity projection on a uniform periodic 3D grid. Th
     nx: i32, ny: i32, nz: i32, dx: f64, dt: f64, iterations: i32
 ) -> void` | Projects input velocity onto a numerically divergence-free subspace. Inputs and outputs must not alias. p and scratch and rhs are scratch arrays, each at least nx*ny*nz long. nx,ny,nz>=3, dx>0, dt>0. Jacobi iterations control remaining divergence, not a residual tolerance. |
 
+| `sofia_inc_momentum_step_periodic` | `(
+    ux: ptr<f64>, uy: ptr<f64>, uz: ptr<f64>,
+    ux_next: ptr<f64>, uy_next: ptr<f64>, uz_next: ptr<f64>,
+    nx: i32, ny: i32, nz: i32, dx: f64, dt: f64, nu: f64
+) -> void` | Forward Euler / central difference momentum step (advection and diffusion). Inputs and outputs must not alias. nu is kinematic viscosity. This implements explicit conservative upwind/central momentum advection and central difference diffusion. No immersed boundary handling; just a periodic cartesian grid. |
+
 ### `science/sofia_lattice_boltzmann.flow`
 
 Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box. One fused pull-stream/collide step, layout f[cell*19 + direction]. Lattice spacing and timestep are 1; c_s^2 = 1/3.
