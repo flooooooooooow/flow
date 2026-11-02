@@ -107,7 +107,10 @@ and directories. Do not create a second implementation tree because an existing
 location is inconvenient.
 
 Generated files must be regenerated from their source. Generated artifacts
-should not be hand-edited.
+should not be hand-edited, and a conflict in one is resolved by taking
+`main`'s copy and regenerating, never by merging its text. The conflict
+hotspots, the regeneration commands and the branch rules are in
+"Branches, pull requests and merge conflicts" in `AGENTS.md`.
 
 For `compiler/src/`, follow the bootstrap rules in `AGENTS.md` and keep the
 generated bootstrap C at a fixed point.

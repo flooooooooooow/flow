@@ -7,7 +7,7 @@
 #
 #   - a program with no imports, from the repository root and from another
 #     working directory;
-#   - a program whose exit status is its result (fibonacci, 55), through both
+#   - a program that prints its result (fibonacci, 55) and exits 0, through both
 #     `flow run` and `flow compile`;
 #   - programs that import stdlib modules;
 #   - a project with its own flow.toml and an empty [dependencies] table;
@@ -199,10 +199,14 @@ function main() -> i32 {
     expect_exit(0, "run hello_world.flow from another directory", flow2("run", ROOT + "/examples/basics/hello_world.flow"))
     in_dir(ROOT)
 
-    # Exit status carries the result.
-    expect_exit(55, "run examples/basics/fibonacci.flow", sl_of3("./flow", "run", "examples/basics/fibonacci.flow"))
+    # Prints the result and exits 0.
+    expect_exit(0, "run examples/basics/fibonacci.flow", sl_of3("./flow", "run", "examples/basics/fibonacci.flow"))
+    let fib_out: string = last_out()
+    check_line(s_contains(fib_out, "55\n"), "run examples/basics/fibonacci.flow printed 55", "run examples/basics/fibonacci.flow did not print 55:\n" + fib_out)
     expect_exit(0, "compile examples/basics/fibonacci.flow", sl_of3("./flow", "compile", "examples/basics/fibonacci.flow"))
-    expect_exit(55, "execute build/fibonacci", sl_of1("./build/fibonacci"))
+    expect_exit(0, "execute build/fibonacci", sl_of1("./build/fibonacci"))
+    let fib_exe_out: string = last_out()
+    check_line(s_contains(fib_exe_out, "55\n"), "execute build/fibonacci printed 55", "execute build/fibonacci did not print 55:\n" + fib_exe_out)
 
     # Programs that import stdlib modules.
     expect_exit(0, "run examples/basics/result_pipeline.flow (import stdlib/result)", sl_of3("./flow", "run", "examples/basics/result_pipeline.flow"))
