@@ -158,6 +158,20 @@ function filter(text: string) -> string {
     if sl_len(out_t) == 0 {
         return ""
     }
+    # A successful test-mlir run emits one completion line per fixture.
+    # Parallel workers may finish in any order. Canonicalize only an
+    # all-success list; preserve order and diagnostics on failure.
+    let mut all_success: bool = true
+    let mut line_no: i32 = 0
+    while line_no < sl_len(out_t) {
+        if not s_starts(sl_get(out_t, line_no), "✅ ✓ ") {
+            all_success = false
+        }
+        line_no = line_no + 1
+    }
+    if all_success and sl_len(out_t) > 1 {
+        sl_sort(out_t, false)
+    }
     return sl_join(out_t, "\n") + "\n"
 }
 
