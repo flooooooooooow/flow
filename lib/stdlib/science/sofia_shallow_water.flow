@@ -28,7 +28,6 @@ export function sofia_sw_max(a: f64, b: f64) -> f64 {
 }
 
 export function sofia_sw_flux_x(s: SofiaSWState, g: f64) -> SofiaSWState {
-    if s.h <= 1e-12 { return SofiaSWState { h: 0.0, mx: 0.0, my: 0.0 } }
     let u: f64 = s.mx / s.h
     let v: f64 = s.my / s.h
     return SofiaSWState {
@@ -39,7 +38,6 @@ export function sofia_sw_flux_x(s: SofiaSWState, g: f64) -> SofiaSWState {
 }
 
 export function sofia_sw_flux_y(s: SofiaSWState, g: f64) -> SofiaSWState {
-    if s.h <= 1e-12 { return SofiaSWState { h: 0.0, mx: 0.0, my: 0.0 } }
     let u: f64 = s.mx / s.h
     let v: f64 = s.my / s.h
     return SofiaSWState {
@@ -52,10 +50,8 @@ export function sofia_sw_flux_y(s: SofiaSWState, g: f64) -> SofiaSWState {
 export function sofia_sw_rusanov_x(a: SofiaSWState, b: SofiaSWState, g: f64) -> SofiaSWState {
     let fa: SofiaSWState = sofia_sw_flux_x(a, g)
     let fb: SofiaSWState = sofia_sw_flux_x(b, g)
-    let mut aa: f64 = 0.0
-    let mut ab: f64 = 0.0
-    if a.h > 1e-12 { aa = sofia_sw_abs(a.mx / a.h) + sqrt(g * a.h) }
-    if b.h > 1e-12 { ab = sofia_sw_abs(b.mx / b.h) + sqrt(g * b.h) }
+    let aa: f64 = sofia_sw_abs(a.mx / a.h) + sqrt(g * a.h)
+    let ab: f64 = sofia_sw_abs(b.mx / b.h) + sqrt(g * b.h)
     let speed: f64 = sofia_sw_max(aa, ab)
     return SofiaSWState {
         h: 0.5 * (fa.h + fb.h) - 0.5 * speed * (b.h - a.h),
@@ -67,10 +63,8 @@ export function sofia_sw_rusanov_x(a: SofiaSWState, b: SofiaSWState, g: f64) -> 
 export function sofia_sw_rusanov_y(a: SofiaSWState, b: SofiaSWState, g: f64) -> SofiaSWState {
     let fa: SofiaSWState = sofia_sw_flux_y(a, g)
     let fb: SofiaSWState = sofia_sw_flux_y(b, g)
-    let mut aa: f64 = 0.0
-    let mut ab: f64 = 0.0
-    if a.h > 1e-12 { aa = sofia_sw_abs(a.my / a.h) + sqrt(g * a.h) }
-    if b.h > 1e-12 { ab = sofia_sw_abs(b.my / b.h) + sqrt(g * b.h) }
+    let aa: f64 = sofia_sw_abs(a.my / a.h) + sqrt(g * a.h)
+    let ab: f64 = sofia_sw_abs(b.my / b.h) + sqrt(g * b.h)
     let speed: f64 = sofia_sw_max(aa, ab)
     return SofiaSWState {
         h: 0.5 * (fa.h + fb.h) - 0.5 * speed * (b.h - a.h),
@@ -243,8 +237,8 @@ export function sofia_sw_step_with_bed(
             let fy_n: SofiaSWState = sofia_sw_rusanov_y(state_n_L, state_n_R, g)
 
             # Bed source terms
-            let sx_bed: f64 = sofia_sw_bed_source(c.h, h_w_star_R, g) - sofia_sw_bed_source(c.h, h_e_star_L, g)
-            let sy_bed: f64 = sofia_sw_bed_source(c.h, h_s_star_R, g) - sofia_sw_bed_source(c.h, h_n_star_L, g)
+            let sx_bed: f64 = sofia_sw_bed_source(c.h, h_e_star_L, g) - sofia_sw_bed_source(c.h, h_w_star_R, g)
+            let sy_bed: f64 = sofia_sw_bed_source(c.h, h_n_star_L, g) - sofia_sw_bed_source(c.h, h_s_star_R, g)
 
             # Update h, mx, my without friction
             let h_new: f64 = c.h - rx * (fx_e.h - fx_w.h) - ry * (fy_n.h - fy_s.h)
