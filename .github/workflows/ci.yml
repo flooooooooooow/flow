@@ -404,6 +404,15 @@ jobs:
       - name: Run every complete program in the documentation
         if: always()
         run: ./flow tool doc_examples --run --check-ledger
+      # Native tools tests run only for compiler/tools changes. Demo pages
+      # can change on docs-only PRs, so enforce the generated-file contract
+      # here as well rather than letting manual edits slip through.
+      - name: Generated demo catalog and navigation stay in sync
+        if: needs.changes.outputs.docs == 'true'
+        run: |
+          ./flow tool demo_overview --check --check-previews
+          ./flow tool demo_nav --check
+          ./flow tool shader_gallery --check
 
   flow-tier2:
     name: FLOW tier-2

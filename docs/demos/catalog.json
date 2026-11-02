@@ -150,5 +150,20 @@
       "featured": false,
       "description": "The same games and graphics programs compiled for the browser so the gallery becomes something you can play and manipulate."
     }
+  ],
+  "external_projects": [
+    {
+      "id": "lsystem-ecosystem",
+      "title": "L-System Ecosystem",
+      "page": "https://godofecht.github.io/lsystem-ecosystem/",
+      "preview": "lsystem_ecosystem/aerial.png",
+      "section": "Systems through time",
+      "count": "first person",
+      "runtime": "gfx · native + WASM",
+      "alt": "A hillside of L-system trees, herbs and grasses above a river",
+      "aria_label": "Open L-System Ecosystem in the browser",
+      "cta": "Play in the browser →",
+      "description": "Plants grown from L-systems, the insects that pollinate them, and the creatures that eat their fruit, whose bodies are grown from L-systems too. Each lives, breeds and dies, and passes its genes on with small changes."
+    }
   ]
 }
