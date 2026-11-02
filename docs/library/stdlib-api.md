@@ -3239,10 +3239,11 @@ Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box. One fused pull-stream/
 
 | Name | Signature | Docs |
 |------|-----------|------|
-| `sofia_lbm_cx` | `(q: i32) -> i32` | Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box. One fused pull-stream/collide step, layout f[cell*19 + direction]. Lattice spacing and timestep are 1; c_s^2 = 1/3. No walls, terrain, forcing, Smagorinsky LES or GPU parallelism yet. |
+| `sofia_lbm_cx` | `(q: i32) -> i32` | - |
 | `sofia_lbm_cy` | `(q: i32) -> i32` | - |
 | `sofia_lbm_cz` | `(q: i32) -> i32` | - |
 | `sofia_lbm_weight` | `(q: i32) -> f64` | - |
+| `sofia_lbm_opposite` | `(q: i32) -> i32` | - |
 | `sofia_lbm_equilibrium` | `(
     q: i32, rho: f64, ux: f64, uy: f64, uz: f64
 ) -> f64` | - |
@@ -3255,6 +3256,11 @@ Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box. One fused pull-stream/
     src: ptr<f64>, dst: ptr<f64>,
     nx: i32, ny: i32, nz: i32, omega: f64
 ) -> void` | Pull-streaming, then collision at destination. src and dst must not alias. nx,ny,nz >= 2. 0 < omega < 2. Distributions must represent rho > 0. |
+| `sofia_lbm_d3q19_les_step` | `(
+    src: ptr<f64>, dst: ptr<f64>, masks: ptr<i32>,
+    nx: i32, ny: i32, nz: i32, omega0: f64, c_smag: f64,
+    fx: f64, fy: f64, fz: f64
+) -> void` | Smagorinsky LES + forcing + bounce-back walls. masks: 1 for solid (bounce-back), 0 for fluid. omega0: bare relaxation frequency. c_smag: Smagorinsky constant (e.g. 0.16). fx, fy, fz: macroscopic force per unit mass in lattice units. |
 | `sofia_lbm_mass` | `(f: ptr<f64>, cells: i32) -> f64` | - |
 
 ### `science/sofia_shallow_water.flow`
