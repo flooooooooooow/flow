@@ -123,6 +123,24 @@ Should compile to C switch statements where possible."
 - [ ] Update documentation if behavior changes
 - [ ] Not break working examples
 
+### Pull Requests Must:
+
+The rules and the commands behind this list are in "Branches, pull requests
+and merge conflicts" in [AGENTS.md](AGENTS.md).
+
+- [ ] Target `main`, and fix one issue with the smallest diff that does it
+- [ ] Not duplicate an open pull request for the same issue or file edit
+- [ ] Be current with `main` through a real merge commit (no force-push,
+  no `--allow-unrelated-histories`, no `--no-verify`)
+- [ ] Regenerate generated files (bootstrap C, `docs/demos/overview.md`,
+  `docs/nav.json` demo sections, `docs/library/stdlib-api.md`) with their
+  tools after merging `main`, never by hand-merging, and only when the
+  change needs them
+- [ ] Change only the goldens the change explains
+- [ ] Update every check that asserts behaviour the change alters
+- [ ] Contain no runtime output or scratch files
+- [ ] Say `Closes #N` only when it fully fixes the issue, else `Part of #N`
+
 ### Documentation Must:
 
 - [ ] Be accurate to current implementation
