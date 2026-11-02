@@ -8,5 +8,6 @@ function fibonacci(n: i32) -> i32 {
 
 function main() -> i32 {
     let result: i32 = fibonacci(10)
-    return result
+    println(result)
+    return 0
 }

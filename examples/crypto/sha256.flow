@@ -96,7 +96,7 @@ function get_k(i: i32) -> u32 {
 # ============================================================================
 
 function rotr(x: u32, n: i32) -> u32 {
-    return (x >> n) | (x << (32 - n))
+    return (x >> n) | (x << ((32 - n) & 31))
 }
 
 function ch(x: u32, y: u32, z: u32) -> u32 {
@@ -216,8 +216,8 @@ function sha256_single_block(msg: ptr<u8>, len: i32, hash: ptr<u32>) {
     # Convert to big-endian u32
     for i in 0 to 16 {
         let j: i32 = i * 4
-        block[i] = (block_bytes[j] << 24) | (block_bytes[j+1] << 16) | 
-                   (block_bytes[j+2] << 8) | block_bytes[j+3]
+        block[i] = ((block_bytes[j] as u32) << 24) | ((block_bytes[j+1] as u32) << 16) |
+                   ((block_bytes[j+2] as u32) << 8) | (block_bytes[j+3] as u32)
     }
     
     # Compress

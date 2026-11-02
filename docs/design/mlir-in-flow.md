@@ -75,6 +75,7 @@ the fix that caused it.
   released; arguments are evaluated left to right; an array returned by
   value is copied to the heap, and assigning to a sized array copies;
   `array<T>(n)` zeroes its elements.
+* Divergences fixed: Casts changing unsignedness no longer mutate shared variables (e.g., bounds check bypass causing C 0 vs MLIR 133 or C 0 vs MLIR 24).
 * Intrinsics the C backend provides: `sizeof<T>()`, `alignof<T>()`,
   `type_family_id<T>()`, `type_schema_id<T>()`, `type_transport_safe<T>()`,
   `type_schema_revision<T>()`, `type_member_count<T>()`, `type_member_table<T>()`,

@@ -19,5 +19,6 @@ function team_lead_salary(team: Team) -> i32 {
 function main() -> i32 {
     let lead: Employee = Employee { id: 1, salary: 80000 }
     let team: Team = Team { lead: lead, member_count: 5 }
-    return team_lead_salary(team)  # Should be 80000
+    println(team_lead_salary(team))
+    return 0  # Should be 80000
 }

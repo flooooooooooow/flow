@@ -2,6 +2,6 @@ Stack depth analysis: examples/basics/factorial.flow
 ============================================================
 Function                                  Max depth Chain
 ------------------------------------------------------------
-main                                            8 bytes  main
+main                                           72 bytes  main → println
 factorial                                       0 bytes  factorial
 
