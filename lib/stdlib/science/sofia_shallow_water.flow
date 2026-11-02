@@ -1,0 +1,122 @@
+# Native Flow 2D shallow-water finite-volume kernel.
+# Cell-centred conserved state (depth, x-momentum, y-momentum).
+# Periodic boundaries; uniform cell size; hydrostatic bed, friction and
+# wetting/drying are intentionally not part of this reference kernel.
+# Use a CFL-safe dt and strictly positive initial depths.
+#
+# Equations: d_t U + d_x F(U) + d_y G(U) = 0.
+# Flux: local Lax-Friedrichs / Rusanov with characteristic speed |u|+sqrt(g*h).
+
+extern {
+    function sqrt(x: f64) -> f64
+}
+
+export struct SofiaSWState {
+    h: f64,
+    mx: f64,
+    my: f64
+}
+
+export function sofia_sw_abs(x: f64) -> f64 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+export function sofia_sw_max(a: f64, b: f64) -> f64 {
+    if a > b { return a }
+    return b
+}
+
+export function sofia_sw_flux_x(s: SofiaSWState, g: f64) -> SofiaSWState {
+    let u: f64 = s.mx / s.h
+    let v: f64 = s.my / s.h
+    return SofiaSWState {
+        h: s.mx,
+        mx: s.mx * u + 0.5 * g * s.h * s.h,
+        my: s.mx * v
+    }
+}
+
+export function sofia_sw_flux_y(s: SofiaSWState, g: f64) -> SofiaSWState {
+    let u: f64 = s.mx / s.h
+    let v: f64 = s.my / s.h
+    return SofiaSWState {
+        h: s.my,
+        mx: s.my * u,
+        my: s.my * v + 0.5 * g * s.h * s.h
+    }
+}
+
+export function sofia_sw_rusanov_x(a: SofiaSWState, b: SofiaSWState, g: f64) -> SofiaSWState {
+    let fa: SofiaSWState = sofia_sw_flux_x(a, g)
+    let fb: SofiaSWState = sofia_sw_flux_x(b, g)
+    let aa: f64 = sofia_sw_abs(a.mx / a.h) + sqrt(g * a.h)
+    let ab: f64 = sofia_sw_abs(b.mx / b.h) + sqrt(g * b.h)
+    let speed: f64 = sofia_sw_max(aa, ab)
+    return SofiaSWState {
+        h: 0.5 * (fa.h + fb.h) - 0.5 * speed * (b.h - a.h),
+        mx: 0.5 * (fa.mx + fb.mx) - 0.5 * speed * (b.mx - a.mx),
+        my: 0.5 * (fa.my + fb.my) - 0.5 * speed * (b.my - a.my)
+    }
+}
+
+export function sofia_sw_rusanov_y(a: SofiaSWState, b: SofiaSWState, g: f64) -> SofiaSWState {
+    let fa: SofiaSWState = sofia_sw_flux_y(a, g)
+    let fb: SofiaSWState = sofia_sw_flux_y(b, g)
+    let aa: f64 = sofia_sw_abs(a.my / a.h) + sqrt(g * a.h)
+    let ab: f64 = sofia_sw_abs(b.my / b.h) + sqrt(g * b.h)
+    let speed: f64 = sofia_sw_max(aa, ab)
+    return SofiaSWState {
+        h: 0.5 * (fa.h + fb.h) - 0.5 * speed * (b.h - a.h),
+        mx: 0.5 * (fa.mx + fb.mx) - 0.5 * speed * (b.mx - a.mx),
+        my: 0.5 * (fa.my + fb.my) - 0.5 * speed * (b.my - a.my)
+    }
+}
+
+export function sofia_sw_cell(
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>, i: i32
+) -> SofiaSWState {
+    return SofiaSWState { h: h[i], mx: mx[i], my: my[i] }
+}
+
+# No allocations. Input and output buffers must be distinct.
+# nx,ny >= 2; dx,dy,dt,g > 0; h[i] > 0 at every input cell.
+export function sofia_sw_step_periodic(
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>,
+    h_next: ptr<f64>, mx_next: ptr<f64>, my_next: ptr<f64>,
+    nx: i32, ny: i32, dx: f64, dy: f64, dt: f64, g: f64
+) -> void {
+    let rx: f64 = dt / dx
+    let ry: f64 = dt / dy
+    for y in 0 to ny {
+        let mut ym: i32 = y - 1
+        let mut yp: i32 = y + 1
+        if ym < 0 { ym = ny - 1 }
+        if yp >= ny { yp = 0 }
+        for x in 0 to nx {
+            let mut xm: i32 = x - 1
+            let mut xp: i32 = x + 1
+            if xm < 0 { xm = nx - 1 }
+            if xp >= nx { xp = 0 }
+            let i: i32 = y * nx + x
+            let c: SofiaSWState = sofia_sw_cell(h, mx, my, i)
+            let west: SofiaSWState = sofia_sw_cell(h, mx, my, y * nx + xm)
+            let east: SofiaSWState = sofia_sw_cell(h, mx, my, y * nx + xp)
+            let south: SofiaSWState = sofia_sw_cell(h, mx, my, ym * nx + x)
+            let north: SofiaSWState = sofia_sw_cell(h, mx, my, yp * nx + x)
+            let fx_l: SofiaSWState = sofia_sw_rusanov_x(west, c, g)
+            let fx_r: SofiaSWState = sofia_sw_rusanov_x(c, east, g)
+            let fy_b: SofiaSWState = sofia_sw_rusanov_y(south, c, g)
+            let fy_t: SofiaSWState = sofia_sw_rusanov_y(c, north, g)
+            h_next[i] = c.h - rx * (fx_r.h - fx_l.h) - ry * (fy_t.h - fy_b.h)
+            mx_next[i] = c.mx - rx * (fx_r.mx - fx_l.mx) - ry * (fy_t.mx - fy_b.mx)
+            my_next[i] = c.my - rx * (fx_r.my - fx_l.my) - ry * (fy_t.my - fy_b.my)
+        }
+    }
+}
+
+export function sofia_sw_mass(h: ptr<f64>, n: i32, dx: f64, dy: f64) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n { sum = sum + h[i] }
+    return sum * dx * dy
+}
