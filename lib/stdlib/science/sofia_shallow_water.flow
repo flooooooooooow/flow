@@ -79,6 +79,189 @@ export function sofia_sw_cell(
     return SofiaSWState { h: h[i], mx: mx[i], my: my[i] }
 }
 
+# Hydrostatic reconstruction step for face between cell i and j
+# Given bed elevations z_i, z_j and depths h_i, h_j, returns reconstructed
+# depths (h_i_star, h_j_star) at the interface.
+export function sofia_sw_hydrostatic_reconstruct(
+    h_i: f64, z_i: f64, h_j: f64, z_j: f64
+) -> SofiaSWState {
+    # We use a dummy struct to return two values: h = h_i_star, mx = h_j_star
+    let z_star: f64 = sofia_sw_max(z_i, z_j)
+    let h_i_star: f64 = sofia_sw_max(0.0, h_i + z_i - z_star)
+    let h_j_star: f64 = sofia_sw_max(0.0, h_j + z_j - z_star)
+    return SofiaSWState { h: h_i_star, mx: h_j_star, my: 0.0 }
+}
+
+# Reconstruct state for cell i at interface with j (x-direction)
+export function sofia_sw_reconstruct_state_x(
+    s: SofiaSWState, h_star: f64
+) -> SofiaSWState {
+    if s.h <= 1e-12 {
+        return SofiaSWState { h: 0.0, mx: 0.0, my: 0.0 }
+    }
+    let u: f64 = s.mx / s.h
+    let v: f64 = s.my / s.h
+    return SofiaSWState { h: h_star, mx: h_star * u, my: h_star * v }
+}
+
+# Reconstruct state for cell i at interface with j (y-direction)
+export function sofia_sw_reconstruct_state_y(
+    s: SofiaSWState, h_star: f64
+) -> SofiaSWState {
+    if s.h <= 1e-12 {
+        return SofiaSWState { h: 0.0, mx: 0.0, my: 0.0 }
+    }
+    let u: f64 = s.mx / s.h
+    let v: f64 = s.my / s.h
+    return SofiaSWState { h: h_star, mx: h_star * u, my: h_star * v }
+}
+
+# Calculate the well-balanced bed slope source term (for momentum)
+export function sofia_sw_bed_source(h: f64, h_star: f64, g: f64) -> f64 {
+    return 0.5 * g * (h * h - h_star * h_star)
+}
+
+# Calculate semi-implicit Manning friction factor (divide momentum by this)
+export function sofia_sw_manning_factor(
+    h: f64, mx: f64, my: f64, manning_n: f64, dt: f64, g: f64
+) -> f64 {
+    if h <= 1e-12 { return 1.0 }
+    if manning_n <= 0.0 { return 1.0 }
+    let u: f64 = mx / h
+    let v: f64 = my / h
+    let speed: f64 = sqrt(u * u + v * v)
+    if speed <= 1e-12 { return 1.0 }
+    # Friction term: S_f = n^2 * u * |u| / h^(4/3)
+    # Using semi-implicit formulation: U_new = U_star / (1 + dt * g * n^2 * |u| / h^(4/3))
+    let mut h_13: f64 = 1.0
+    if h > 0.0 {
+        # 3 Newton steps for cbrt(h) starting from sqrt(h)
+        h_13 = sqrt(sqrt(h))
+        for i in 0 to 5 {
+            h_13 = (2.0 * h_13 + h / (h_13 * h_13)) / 3.0
+        }
+    }
+    let h_43_exact: f64 = h * h_13
+    return 1.0 + dt * g * manning_n * manning_n * speed / h_43_exact
+}
+
+# Non-periodic step with variable bed elevation and Manning friction.
+# Outflow/inflow boundaries are zero-gradient (Neumann) for now, or wall.
+# We will use wall boundaries (zero normal flux) at the edges.
+export function sofia_sw_step_with_bed(
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>, z: ptr<f64>,
+    h_next: ptr<f64>, mx_next: ptr<f64>, my_next: ptr<f64>,
+    nx: i32, ny: i32, dx: f64, dy: f64, dt: f64, g: f64, manning_n: f64
+) -> void {
+    let rx: f64 = dt / dx
+    let ry: f64 = dt / dy
+    for y in 0 to ny {
+        let mut ym: i32 = y - 1
+        let mut yp: i32 = y + 1
+        let mut wall_s: bool = false
+        let mut wall_n: bool = false
+        if ym < 0 { ym = 0; wall_s = true }
+        if yp >= ny { yp = ny - 1; wall_n = true }
+        for x in 0 to nx {
+            let mut xm: i32 = x - 1
+            let mut xp: i32 = x + 1
+            let mut wall_w: bool = false
+            let mut wall_e: bool = false
+            if xm < 0 { xm = 0; wall_w = true }
+            if xp >= nx { xp = nx - 1; wall_e = true }
+
+            let i: i32 = y * nx + x
+            let c: SofiaSWState = sofia_sw_cell(h, mx, my, i)
+            let z_c: f64 = z[i]
+
+            let west: SofiaSWState = sofia_sw_cell(h, mx, my, y * nx + xm)
+            let z_w: f64 = z[y * nx + xm]
+
+            let east: SofiaSWState = sofia_sw_cell(h, mx, my, y * nx + xp)
+            let z_e: f64 = z[y * nx + xp]
+
+            let south: SofiaSWState = sofia_sw_cell(h, mx, my, ym * nx + x)
+            let z_s: f64 = z[ym * nx + x]
+
+            let north: SofiaSWState = sofia_sw_cell(h, mx, my, yp * nx + x)
+            let z_n: f64 = z[yp * nx + x]
+
+            # Hydrostatic reconstruction on interfaces
+            let recon_w: SofiaSWState = sofia_sw_hydrostatic_reconstruct(west.h, z_w, c.h, z_c)
+            let h_w_star_L: f64 = recon_w.h
+            let h_w_star_R: f64 = recon_w.mx
+
+            let recon_e: SofiaSWState = sofia_sw_hydrostatic_reconstruct(c.h, z_c, east.h, z_e)
+            let h_e_star_L: f64 = recon_e.h
+            let h_e_star_R: f64 = recon_e.mx
+
+            let recon_s: SofiaSWState = sofia_sw_hydrostatic_reconstruct(south.h, z_s, c.h, z_c)
+            let h_s_star_L: f64 = recon_s.h
+            let h_s_star_R: f64 = recon_s.mx
+
+            let recon_n: SofiaSWState = sofia_sw_hydrostatic_reconstruct(c.h, z_c, north.h, z_n)
+            let h_n_star_L: f64 = recon_n.h
+            let h_n_star_R: f64 = recon_n.mx
+
+            # Reconstruct states
+            # West interface
+            let mut state_w_L: SofiaSWState = sofia_sw_reconstruct_state_x(west, h_w_star_L)
+            let mut state_w_R: SofiaSWState = sofia_sw_reconstruct_state_x(c, h_w_star_R)
+            if wall_w {
+                state_w_L = SofiaSWState { h: state_w_R.h, mx: -state_w_R.mx, my: state_w_R.my }
+            }
+            let fx_w: SofiaSWState = sofia_sw_rusanov_x(state_w_L, state_w_R, g)
+
+            # East interface
+            let mut state_e_L: SofiaSWState = sofia_sw_reconstruct_state_x(c, h_e_star_L)
+            let mut state_e_R: SofiaSWState = sofia_sw_reconstruct_state_x(east, h_e_star_R)
+            if wall_e {
+                state_e_R = SofiaSWState { h: state_e_L.h, mx: -state_e_L.mx, my: state_e_L.my }
+            }
+            let fx_e: SofiaSWState = sofia_sw_rusanov_x(state_e_L, state_e_R, g)
+
+            # South interface
+            let mut state_s_L: SofiaSWState = sofia_sw_reconstruct_state_y(south, h_s_star_L)
+            let mut state_s_R: SofiaSWState = sofia_sw_reconstruct_state_y(c, h_s_star_R)
+            if wall_s {
+                state_s_L = SofiaSWState { h: state_s_R.h, mx: state_s_R.mx, my: -state_s_R.my }
+            }
+            let fy_s: SofiaSWState = sofia_sw_rusanov_y(state_s_L, state_s_R, g)
+
+            # North interface
+            let mut state_n_L: SofiaSWState = sofia_sw_reconstruct_state_y(c, h_n_star_L)
+            let mut state_n_R: SofiaSWState = sofia_sw_reconstruct_state_y(north, h_n_star_R)
+            if wall_n {
+                state_n_R = SofiaSWState { h: state_n_L.h, mx: state_n_L.mx, my: -state_n_L.my }
+            }
+            let fy_n: SofiaSWState = sofia_sw_rusanov_y(state_n_L, state_n_R, g)
+
+            # Bed source terms
+            let sx_bed: f64 = sofia_sw_bed_source(c.h, h_e_star_L, g) - sofia_sw_bed_source(c.h, h_w_star_R, g)
+            let sy_bed: f64 = sofia_sw_bed_source(c.h, h_n_star_L, g) - sofia_sw_bed_source(c.h, h_s_star_R, g)
+
+            # Update h, mx, my without friction
+            let h_new: f64 = c.h - rx * (fx_e.h - fx_w.h) - ry * (fy_n.h - fy_s.h)
+            let mx_tmp: f64 = c.mx - rx * (fx_e.mx - fx_w.mx) - ry * (fy_n.mx - fy_s.mx) + (sx_bed * dt / dx)
+            let my_tmp: f64 = c.my - rx * (fx_e.my - fx_w.my) - ry * (fy_n.my - fy_s.my) + (sy_bed * dt / dy)
+
+            # Non-negative depth
+            let h_pos: f64 = sofia_sw_max(0.0, h_new)
+            h_next[i] = h_pos
+
+            # Friction (semi-implicit)
+            if h_pos > 1e-12 {
+                let f_man: f64 = sofia_sw_manning_factor(h_pos, mx_tmp, my_tmp, manning_n, dt, g)
+                mx_next[i] = mx_tmp / f_man
+                my_next[i] = my_tmp / f_man
+            } else {
+                mx_next[i] = 0.0
+                my_next[i] = 0.0
+            }
+        }
+    }
+}
+
 # No allocations. Input and output buffers must be distinct.
 # nx,ny >= 2; dx,dy,dt,g > 0; h[i] > 0 at every input cell.
 export function sofia_sw_step_periodic(
