@@ -1,0 +1,111 @@
+# UNDERWORLD: self-constructing labyrinth with a unique recursive solution.
+# Pass 1: recursive randomized DFS builds a spanning tree over 741 rooms.
+# Pass 2: a separate recursive DFS rediscovers the route through the tree.
+# Pass 3: the native renderer outputs its ASCII dungeon and invariants.
+extern {
+    function calloc(n: i64, s: i64) -> ptr<i32>
+    function free(p: ptr<i32>) -> void
+    function printf(fmt: string, ...) -> i32
+    function putchar(c: i32) -> i32
+}
+
+const WIDTH: i32 = 79
+const HEIGHT: i32 = 39
+
+function cell(x: i32, y: i32) -> i32 {
+    return y*WIDTH + x
+}
+
+function rand4(rng: ptr<i32>) -> i32 {
+    rng[0] = (((rng[0] as i64)*48271 + 23) % 2147483629) as i32
+    return rng[0] % 4
+}
+
+function next_x(x: i32, d: i32, stride: i32) -> i32 {
+    if d == 0 { return x+stride }
+    if d == 2 { return x-stride }
+    return x
+}
+
+function next_y(y: i32, d: i32, stride: i32) -> i32 {
+    if d == 1 { return y+stride }
+    if d == 3 { return y-stride }
+    return y
+}
+
+function generate(maze: ptr<i32>, x: i32, y: i32, rng: ptr<i32>, depth: i32) -> i32 {
+    maze[cell(x,y)] = 1
+    let mut total: i32 = 1
+    let start: i32 = rand4(rng)
+    for k in 0..4 {
+        let d: i32 = (start + k)%4
+        let nx: i32 = next_x(x,d,2)
+        let ny: i32 = next_y(y,d,2)
+        if nx > 0 and nx < WIDTH-1 and ny > 0 and ny < HEIGHT-1 {
+            if maze[cell(nx,ny)] == 0 {
+                let mx: i32 = next_x(x,d,1)
+                let my: i32 = next_y(y,d,1)
+                maze[cell(mx,my)] = 1
+                total = total + generate(maze,nx,ny,rng,depth+1)
+            }
+        }
+    }
+    return total
+}
+
+function solve(maze: ptr<i32>, seen: ptr<i32>, path: ptr<i32>, x: i32, y: i32, depth: i32) -> bool {
+    if x < 1 or y < 1 or x >= WIDTH-1 or y >= HEIGHT-1 { return false }
+    let i: i32 = cell(x,y)
+    if maze[i] == 0 or seen[i] != 0 { return false }
+    seen[i] = 1
+    if x == WIDTH-2 and y == HEIGHT-2 {
+        path[i] = 1
+        return true
+    }
+    for d in 0..4 {
+        let nx: i32 = next_x(x,d,1)
+        let ny: i32 = next_y(y,d,1)
+        if solve(maze,seen,path,nx,ny,depth+1) {
+            path[i] = 1
+            return true
+        }
+    }
+    return false
+}
+
+function main() -> i32 {
+    let maze: ptr<i32> = calloc((WIDTH*HEIGHT) as i64,4)
+    let path: ptr<i32> = calloc((WIDTH*HEIGHT) as i64,4)
+    let seen: ptr<i32> = calloc((WIDTH*HEIGHT) as i64,4)
+    let rng: ptr<i32> = calloc(1,4)
+    if maze == null or path == null or seen == null or rng == null { return 9 }
+    rng[0] = 417
+    let rooms: i32 = generate(maze,1,1,rng,0)
+    let found: bool = solve(maze,seen,path,1,1,0)
+    let mut steps: i32 = 0
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            if path[cell(x,y)] != 0 { steps = steps + 1 }
+        }
+    }
+    printf("UNDERWORLD / The recursive labyrinth\n")
+    printf("%d rooms | %d cells on the unique entrance-to-exit path\n\n",rooms,steps)
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let i: i32 = cell(x,y)
+            if x==1 and y==1 { putchar(83) }
+            elif x==WIDTH-2 and y==HEIGHT-2 { putchar(69) }
+            elif path[i] != 0 { putchar(46) }
+            elif maze[i] != 0 { putchar(32) }
+            else { putchar(35) }
+        }
+        putchar(10)
+    }
+    printf("\nS = entrance | E = exit | . = recursively discovered path\n")
+    free(maze)
+    free(path)
+    free(seen)
+    free(rng)
+    if not found or rooms != 741 or steps <= 60 { return 1 }
+    return 0
+}
