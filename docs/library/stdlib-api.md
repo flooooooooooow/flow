@@ -3276,6 +3276,24 @@ Native Flow 2D shallow-water finite-volume kernel. Cell-centred conserved state 
 | `sofia_sw_cell` | `(
     h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>, i: i32
 ) -> SofiaSWState` | - |
+| `sofia_sw_hydrostatic_reconstruct` | `(
+    h_i: f64, z_i: f64, h_j: f64, z_j: f64
+) -> SofiaSWState` | Hydrostatic reconstruction step for face between cell i and j Given bed elevations z_i, z_j and depths h_i, h_j, returns reconstructed depths (h_i_star, h_j_star) at the interface. |
+| `sofia_sw_reconstruct_state_x` | `(
+    s: SofiaSWState, h_star: f64
+) -> SofiaSWState` | Reconstruct state for cell i at interface with j (x-direction) |
+| `sofia_sw_reconstruct_state_y` | `(
+    s: SofiaSWState, h_star: f64
+) -> SofiaSWState` | Reconstruct state for cell i at interface with j (y-direction) |
+| `sofia_sw_bed_source` | `(h: f64, h_star: f64, g: f64) -> f64` | Calculate the well-balanced bed slope source term (for momentum) |
+| `sofia_sw_manning_factor` | `(
+    h: f64, mx: f64, my: f64, manning_n: f64, dt: f64, g: f64
+) -> f64` | Calculate semi-implicit Manning friction factor (divide momentum by this) |
+| `sofia_sw_step_with_bed` | `(
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>, z: ptr<f64>,
+    h_next: ptr<f64>, mx_next: ptr<f64>, my_next: ptr<f64>,
+    nx: i32, ny: i32, dx: f64, dy: f64, dt: f64, g: f64, manning_n: f64
+) -> void` | Non-periodic step with variable bed elevation and Manning friction. Outflow/inflow boundaries are zero-gradient (Neumann) for now, or wall. We will use wall boundaries (zero normal flux) at the edges. |
 | `sofia_sw_step_periodic` | `(
     h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>,
     h_next: ptr<f64>, mx_next: ptr<f64>, my_next: ptr<f64>,
