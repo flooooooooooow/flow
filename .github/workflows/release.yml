@@ -93,10 +93,11 @@ jobs:
         run: |
           ./flow compile examples/basics/fibonacci.flow
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
       - name: Build distributable flowc archive
         env:

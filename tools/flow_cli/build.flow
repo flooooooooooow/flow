@@ -159,7 +159,25 @@ export function run_program(args: ptr<ProcStrs>) -> i32 {
     }
     info("Running " + basename + "...")
     outln("----------------------------------------")
+
+    let is_permissive: bool = s_contains(read_text(program), "effects-mode: permissive")
+    let mut had_env: bool = false
+    let mut saved_env: string = ""
+    if is_permissive {
+        had_env = env_isset("FLOW_PERMISSIVE_EFFECTS")
+        saved_env = env("FLOW_PERMISSIVE_EFFECTS")
+        env_set("FLOW_PERMISSIVE_EFFECTS", "1")
+    }
+
     let status: i32 = run_program_binary(sl_of1(executable))
+
+    if is_permissive {
+        if had_env {
+            env_set("FLOW_PERMISSIVE_EFFECTS", saved_env)
+        } else {
+            env_unset("FLOW_PERMISSIVE_EFFECTS")
+        }
+    }
     check(status)
     outln("----------------------------------------")
     success("Program finished")

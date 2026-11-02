@@ -41,5 +41,6 @@ function main() -> i32 {
         }
     }
 
-    return idx
+    println(idx)
+    return 0
 }
