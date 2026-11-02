@@ -28,8 +28,8 @@ const FIELD_Y: i32 = 58
 const FB_W: i32 = 512
 const FB_H: i32 = 256
 const MAX_FRAMES: i32 = 6000
-const HACKS_LAW_LO: f64 = 0.45
-const HACKS_LAW_HI: f64 = 0.70
+const HACK_LO: f64 = 0.45
+const HACK_HI: f64 = 0.70
 const R2_MIN: f64 = 0.75
 const KEY_P: i32 = 35
 const STEPS_PER_FRAME: i32 = 1
@@ -157,9 +157,9 @@ function main() -> i32 {
     print("     Hack exponent h               : ")
     printf("%10.4f", m_hack)
     print("     gate [")
-    printf("%.2f", HACKS_LAW_LO)
+    printf("%.2f", HACK_LO)
     print(", ")
-    printf("%.2f", HACKS_LAW_HI)
+    printf("%.2f", HACK_HI)
     println("]")
     print("     Hack R^2                      : ")
     printf("%10.4f", m_r2)
@@ -174,7 +174,7 @@ function main() -> i32 {
     println("")
     println("")
 
-    if m_hack < HACKS_LAW_LO or m_hack > HACKS_LAW_HI {
+    if m_hack < HACK_LO or m_hack > HACK_HI {
         println("    FAIL: Hack exponent outside the documented band")
         return 2
     }

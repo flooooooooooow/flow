@@ -35,6 +35,5 @@ function bubble_sort_demo() -> i32 {
 
 function main() -> i32 {
     let result: i32 = bubble_sort_demo()
-    println(result)
-    return 0
+    return result
 }

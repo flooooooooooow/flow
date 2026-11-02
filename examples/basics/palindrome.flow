@@ -22,6 +22,5 @@ function main() -> i32 {
     let number: i32 = 121
     let result: i32 = is_palindrome_number(number)
     # Would print: "121 is a palindrome"
-    println(result)
-    return 0
+    return result
 }
