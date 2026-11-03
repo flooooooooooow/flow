@@ -1,0 +1,31 @@
+# MLIR parity fixture: indexing a string reads a u8 (#1147). A byte above
+# 127 stays positive when widened.
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function strlen(s: string) -> i64
+}
+
+function byte_sum(s: string) -> i32 {
+    let n: i32 = strlen(s) as i32
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        total = total + s[i] as i32
+        i = i + 1
+    }
+    return total
+}
+
+function main() -> i32 {
+    let s: string = "abc"
+    printf("%d %d %d\n", s[0] as i32, s[1] as i32, s[2] as i32)
+    printf("sum %d\n", byte_sum(s))
+    let e: string = "é"
+    let hi: i32 = e[0] as i32
+    printf("high byte %d %d\n", hi, e[1] as i32)
+    if s[1] == 98 {
+        printf("b at 1\n")
+    }
+    return 0
+}
