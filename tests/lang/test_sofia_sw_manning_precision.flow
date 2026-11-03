@@ -1,0 +1,21 @@
+# Shallow-water Manning friction precision regression, including wet/dry fronts.
+# The reference values were independently calculated from h^(4/3),
+# not the old five-step Newton approximation.
+import "stdlib/science/sofia_shallow_water.flow"
+
+function main() -> i32 {
+    let h1: f64 = 1e-10
+    let factor1: f64 = sofia_sw_manning_factor(h1, h1, 0.0, 0.03, 0.1, 9.81)
+    let expected1: f64 = 19021503879.291492
+    if sofia_sw_abs(factor1 - expected1) / expected1 > 1e-10 { return 1 }
+
+    let h2: f64 = 1e-8
+    let factor2: f64 = sofia_sw_manning_factor(h2, h2, 0.0, 0.03, 0.1, 9.81)
+    let expected2: f64 = 40980588.81196722
+    if sofia_sw_abs(factor2 - expected2) / expected2 > 1e-10 { return 2 }
+
+    if sofia_sw_manning_factor(1.0, 1.0, 0.0, 0.0, 0.1, 9.81) != 1.0 { return 3 }
+    if sofia_sw_manning_factor(1.0, 0.0, 0.0, 0.03, 0.1, 9.81) != 1.0 { return 4 }
+    if sofia_sw_manning_factor(0.0, 1.0, 0.0, 0.03, 0.1, 9.81) != 1.0 { return 5 }
+    return 0
+}
