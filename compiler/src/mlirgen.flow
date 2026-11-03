@@ -2805,6 +2805,10 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         if mlg_ft_is_pointer(m, arr) == 1 {
             return m[0].arena.nodes[arr].a
         }
+        if mlg_ft_is_string(m, arr) == 1 {
+            # A string's bytes are u8, as the checker types s[i] (#1147).
+            return mlg_named_ft(m, 2, "u8")
+        }
         if arr >= 0 and mlg_kind(m, arr) == AST_TYPE and m[0].arena.nodes[arr].a != AST_NONE and m[0].arena.nodes[arr].ival > 0 {
             return m[0].arena.nodes[arr].a
         }
