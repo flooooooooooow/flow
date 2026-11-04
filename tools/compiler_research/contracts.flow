@@ -86,7 +86,12 @@ export function opt_effects(nodes: ptr<OptNode>, n: i32, index: i32, budget: i32
         return OPT_UNKNOWN_EFFECT
     }
     let node: OptNode = nodes[index]
-    if node.kind == OPT_VAR or node.kind == OPT_CONST or node.kind == OPT_EFFECT {
+    if node.kind == OPT_EFFECT {
+        # An explicit effect operation remains a barrier even when its
+        # annotation is absent or incorrectly zeroed.
+        return node.local_effects | OPT_UNKNOWN_EFFECT
+    }
+    if node.kind == OPT_VAR or node.kind == OPT_CONST {
         return node.local_effects
     }
     if node.kind != OPT_ADD and node.kind != OPT_MUL {
