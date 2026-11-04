@@ -3979,6 +3979,26 @@ function flowc_cgen_expr_type_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         }
         return AST_NONE
     }
+    # A cast has its target type, and a call of a non-generic function this
+    # module defines has its return type, so `(p as ptr<B>).inner.n` and
+    # `make_b().inner.n` read through the pointer at each step.
+    if kind == AST_CAST {
+        let ct: i32 = arena.nodes[id].b
+        if ct != AST_NONE and arena.nodes[ct].kind == AST_TYPE {
+            return ct
+        }
+        return AST_NONE
+    }
+    if kind == AST_CALL {
+        let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if fn != AST_NONE and arena.nodes[fn].ival == 0 {
+            let rt: i32 = arena.nodes[fn].b
+            if rt != AST_NONE and arena.nodes[rt].kind == AST_TYPE {
+                return rt
+            }
+        }
+        return AST_NONE
+    }
     return AST_NONE
 }
 
