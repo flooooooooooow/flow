@@ -9,7 +9,6 @@
 
 extern {
     function sqrt(x: f64) -> f64
-    function pow(x: f64, y: f64) -> f64
 }
 
 export struct SofiaSWState {
@@ -140,11 +139,16 @@ export function sofia_sw_manning_factor(
     if speed <= 1e-12 { return 1.0 }
     # Friction term: S_f = n^2 * u * |u| / h^(4/3)
     # Using semi-implicit formulation: U_new = U_star / (1 + dt * g * n^2 * |u| / h^(4/3))
-    # Fixed-count Newton iterations from h^(1/4) lose accuracy near
-    # wet/dry fronts. The libm pow function is already used by Flow's
-    # numerical libraries and preserves the intended h^(4/3) exponent.
-    let h_43: f64 = pow(h, 4.0 / 3.0)
-    return 1.0 + dt * g * manning_n * manning_n * speed / h_43
+    let mut h_13: f64 = 1.0
+    if h > 0.0 {
+        # 3 Newton steps for cbrt(h) starting from sqrt(h)
+        h_13 = sqrt(sqrt(h))
+        for i in 0 to 5 {
+            h_13 = (2.0 * h_13 + h / (h_13 * h_13)) / 3.0
+        }
+    }
+    let h_43_exact: f64 = h * h_13
+    return 1.0 + dt * g * manning_n * manning_n * speed / h_43_exact
 }
 
 # Non-periodic step with variable bed elevation and Manning friction.
