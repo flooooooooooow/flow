@@ -260,6 +260,7 @@
     "stdlib:simd": "language/c-simd-loops.md",
     "stdlib:sink": "library/stdlib-api.md",
     "stdlib:slice": "design/mlir-in-flow.md",
+    "stdlib:sofia_domain": "library/stdlib-api.md",
     "stdlib:sofia_incompressible": "library/stdlib-api.md",
     "stdlib:sofia_lattice_boltzmann": "library/stdlib-api.md",
     "stdlib:sofia_shallow_water": "library/stdlib-api.md",

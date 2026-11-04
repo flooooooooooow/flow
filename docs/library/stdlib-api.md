@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**138** modules scanned.
+**139** modules scanned.
 
 ## Modules
 
@@ -3210,6 +3210,39 @@ Real-Time Operating System (RTOS) and scheduler primitives.  Provides determinis
 | `ring_buffer_count` | `(rb: ptr<RtosRingBuffer>) -> u32` | - |
 | `ring_buffer_push` | `(rb: ptr<RtosRingBuffer>, item: i32) -> bool` | - |
 | `ring_buffer_pop` | `(rb: ptr<RtosRingBuffer>, out_val: ptr<i32>) -> bool` | - |
+
+### `science/sofia_domain.flow`
+
+Flow-native PDE/simulation framework Domain API.
+
+**Structs:** `SofiaDomain`, `SofiaGrid1D`, `SofiaGrid2D`, `SofiaGrid3D`, `SofiaParticleDomain`, `SofiaField`, `SofiaGridField`
+
+**Constants:**
+
+- `DIM_1D: i32`
+- `DIM_2D: i32`
+- `DIM_3D: i32`
+- `MEM_HOST: i32`
+- `MEM_DEVICE: i32`
+- `STAG_CENTER: i32`
+- `STAG_FACE_X: i32`
+- `STAG_FACE_Y: i32`
+- `STAG_FACE_Z: i32`
+- `STAG_VERTEX: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sofia_grid_offset_x` | `(stag: i32) -> f64` | Coordinate transformations |
+| `sofia_grid_offset_y` | `(stag: i32) -> f64` | - |
+| `sofia_grid_offset_z` | `(stag: i32) -> f64` | - |
+| `sofia_coord_1d` | `(grid: SofiaGrid1D, ix: i32, stag: i32) -> f64` | - |
+| `sofia_coord_2d_x` | `(grid: SofiaGrid2D, ix: i32, stag: i32) -> f64` | - |
+| `sofia_coord_2d_y` | `(grid: SofiaGrid2D, iy: i32, stag: i32) -> f64` | - |
+| `sofia_coord_3d_x` | `(grid: SofiaGrid3D, ix: i32, stag: i32) -> f64` | - |
+| `sofia_coord_3d_y` | `(grid: SofiaGrid3D, iy: i32, stag: i32) -> f64` | - |
+| `sofia_coord_3d_z` | `(grid: SofiaGrid3D, iz: i32, stag: i32) -> f64` | - |
 
 ### `science/sofia_incompressible.flow`
 
