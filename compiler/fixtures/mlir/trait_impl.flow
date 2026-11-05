@@ -1,0 +1,49 @@
+# MLIR parity fixture: each method of `impl Trait for Type` is the
+# top-level function Type_Trait_method, as on the C path, and a bare
+# `self` has the implementing type.
+
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+trait Shape {
+    function area(self) -> i32
+    function scaled(self, k: i32) -> i32
+}
+
+struct Square {
+    side: i32
+}
+
+struct Rect {
+    w: i32,
+    h: i32
+}
+
+impl Shape for Square {
+    function area(self) -> i32 {
+        return self.side * self.side
+    }
+
+    function scaled(self, k: i32) -> i32 {
+        return Square_Shape_area(self) * k
+    }
+}
+
+impl Shape for Rect {
+    function area(self) -> i32 {
+        return self.w * self.h
+    }
+
+    function scaled(self, k: i32) -> i32 {
+        return self.w * self.h * k
+    }
+}
+
+function main() -> i32 {
+    let s: Square = Square { side: 3 }
+    let r: Rect = Rect { w: 2, h: 5 }
+    printf("square %d %d\n", Square_Shape_area(s), Square_Shape_scaled(s, 2))
+    printf("rect %d %d\n", Rect_Shape_area(r), Rect_Shape_scaled(r, 3))
+    return 0
+}

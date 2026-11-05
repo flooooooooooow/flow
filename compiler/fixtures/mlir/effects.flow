@@ -1,12 +1,15 @@
 # MLIR parity fixture: algebraic effects as Python lowers them (dispatch
 # functions over a current-handler vtable, capability methods, vtables
 # filled by @_flow_effects_init, handle blocks that install and restore),
-# an unhandled operation falling back to its zero default, effect calls
-# resolved to the handling capability, C varargs externs as llvm.func, and
-# overloads Python emits side by side.
+# an unhandled operation that aborts as the C backend's
+# _flow_unhandled_effect does (zero default only under
+# FLOW_PERMISSIVE_EFFECTS=1), effect calls resolved to the handling
+# capability, C varargs externs as llvm.func, and overloads Python emits
+# side by side.
 
 extern {
     function printf(fmt: string, ...) -> i32
+    function fflush(f: ptr<void>) -> i32
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
     function malloc(n: i64) -> ptr<u8>
 }
@@ -43,17 +46,19 @@ function work(n: i32) -> f64 {
 }
 
 function main() -> i32 {
-    printf("unhandled %f\n", work(1))
     handle Log with Console {
         printf("handled %f\n", work(2))
         Log.info(7)
     }
-    handle Clock, Log with Fixed {
-        printf("clock %d\n", Clock.now())
-        printf("partial %f\n", work(3))
-    }
     let buf: ptr<u8> = malloc(64)
     let n: i32 = snprintf(buf, 64, "%d-%d", 4, 5)
     printf("%s %d\n", buf, n)
+    handle Clock, Log with Fixed {
+        printf("clock %d\n", Clock.now())
+        fflush(null)
+        # Fixed has no Log.info: under strict effects (the default) this
+        # aborts with exit 134, as the C backend does.
+        printf("partial %f\n", work(3))
+    }
     return 0
 }
