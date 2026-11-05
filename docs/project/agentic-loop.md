@@ -34,6 +34,61 @@ Use these in this order when they disagree:
 Static prose must never claim a current test count, open-issue count, active
 agent count, or current list of failures.
 
+## External Orchestrator integration (optional)
+
+The [Orchestrator control plane](https://github.com/godofecht/Orchestrator)
+can observe Flow's GitHub issues, pull requests, and exact-head check runs,
+detect possible duplicate work, and submit *policy-eligible* changes to
+GitHub's existing merge queue. Orchestrator is maintained in a separate
+(private at initial integration) repository. Its implementation is **not**
+a required part of building, testing, or contributing to Flow.
+
+**Authority remains here.** GitHub issues/PRs, branch rules, CODEOWNERS,
+the protected merge queue, and the test suites listed in `AGENTS.md` remain
+the source of truth. An Orchestrator status such as "ready" means only that
+an external policy evaluator considers its narrow delegated action eligible.
+It is not a compiler correctness certificate, a human design approval, a
+security review, a release qualification, or permission to bypass any Flow
+merge gate. Never accept an agent-written CI summary in place of actual
+GitHub checks for the exact proposed integration SHA.
+
+### Current operational scope
+
+The first integration is **pull-based**: Orchestrator periodically queries
+Flow's GitHub API and runs read-only reconciliation, and its own CI validates
+that it can actually read the live Flow repository. Write operations need a
+separately configured, restricted `ORCHESTRATOR_GH_TOKEN` in Orchestrator,
+not a secret committed to this repository. The initial policy permits
+auto-merge submission only for small, non-governance Markdown changes under
+`docs/`, after explicit, trusted and current CI checks pass. No generated
+compiler artifacts, language semantics, CI/security policies, release
+operations, or public APIs are delegated under that policy.
+
+An unconfigured token, missing scheduled run, failed API request, stale SHA,
+unknown mergeability, conflicting PR, or uncertain test result must never be
+interpreted as successful automation. GitHub reconciliation may fall behind
+webhooks or scheduled triggers; agents must always consult GitHub directly
+immediately before starting a task and immediately before integration.
+
+### Mapping to the repository lifecycle
+
+| Flow phase | Orchestrator role | Final authority |
+|---|---|---|
+| Intake / triage | Observe open issues and PRs; identify possible overlap | GitHub issues, PRs, roadmap |
+| Claim / plan | Report unclaimed issues and collisions; durable leases and provider dispatch **not yet implemented** | This contract and explicit agent claims |
+| Implement | No independent coding-agent launch in the initial integration | Isolated implementation agent, reviewable branch |
+| Verify | Inspect exact-head check runs, but never replace target CI | GitHub Actions, baseline and targeted proof |
+| Review | Reject ambiguous or policy-sensitive changes from unattended merge | Flow CODEOWNERS, semantic review |
+| Merge | Submit a narrowly authorized exact head for GitHub auto-merge | Protected merge queue and merge-group CI |
+| Learn | Store audit reports and detected duplicate work; Locus-based feedback **planned** | Durable evidence, regression tests, issue history |
+
+The [Orchestrator integration roadmap](https://github.com/godofecht/Orchestrator/issues)
+covers leases, provider adapters, integration repair, and evidence-aware
+Locus scheduling. These remain milestones, not claims of delivered autonomy.
+Deliberately competing implementations in a research experiment must remain
+distinguishable from accidental duplicate PRs; incidental generated-file
+conflicts should be repaired without erasing meaningful alternatives.
+
 ## Intake and triage
 
 Before starting implementation, inspect the issue, recent commits, open pull
