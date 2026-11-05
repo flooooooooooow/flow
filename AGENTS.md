@@ -38,6 +38,40 @@ and must not be required for contributors to work locally. Before acting,
 check live GitHub state; an Orchestrator audit report is advisory and never
 overrides CODEOWNERS, verification or merge-group checks.
 
+### File-level preflight for agents coordinated through Orchestrator
+
+An agent explicitly using the separately maintained Orchestrator as its
+coordinator should state the exact `compiler/src/`, library, test or other
+**source paths it intends to edit** before creating another implementation.
+From an Orchestrator checkout, run its live read-only preflight, for example:
+
+```bash
+python3 -m orchestrator.preflight --repo flooooooooooow/flow \
+  --issue 562 --path compiler/src/sem_check.flow
+```
+
+Exit status 2 means the requested scope overlaps existing implementation
+work or derived-output ownership; inspect the referenced PRs and **do not**
+start another equivalent branch. Repeat before final integration, after main
+moves, and after other PRs change scope. An explicitly competing research
+experiment may use `--mode experiment` in an isolated branch, without gaining
+permission to merge its incompatible candidate.
+
+This external command is **not a Flow repository build dependency** and must
+not result in new Python files inside Flow. Public contributors without
+access to Orchestrator follow the same live-PR scope checks manually. Its
+preflight is advisory rather than an atomic file lock: an unregistered agent
+can still edit a file.
+
+When old branches conflict, Orchestrator's `merge_probe` distinguishes
+actual Git merge conflicts from mere shared file paths. Its `integration`
+tool can prepare a detached local merge of **generated-only conflicts**,
+taking current main's derived output before regeneration. It never commits
+or pushes, and returns `safe_to_push=false` until the canonical bootstrap,
+fixed-point/parity gates, and target merge queue are independently verified.
+Conflicts in real source or manually edited shared manifests require review,
+not automated overwrite.
+
 ## Flow first
 
 New code in this repository is written in Flow. This covers features,
