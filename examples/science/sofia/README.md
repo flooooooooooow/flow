@@ -20,6 +20,7 @@ Sources and targets:
 | Conservative 2D shallow-water equations | `lib/stdlib/science/sofia_shallow_water.flow` | `tests/lang/test_sofia_shallow_water.flow` |
 | Fused D3Q19 periodic pull-stream / BGK collision | `lib/stdlib/science/sofia_lattice_boltzmann.flow` | `tests/lang/test_sofia_lattice_boltzmann.flow` |
 | 3D periodic pressure-Poisson projection (Jacobi) | `lib/stdlib/science/sofia_incompressible.flow` | `tests/lang/test_sofia_incompressible.flow` |
+| 3D periodic momentum advection/diffusion | `lib/stdlib/science/sofia_incompressible.flow` | `tests/lang/test_sofia_navier_stokes.flow` |
 
 These are standalone numerical kernels with no Python, SymPy, NumPy, Warp,
 Blender or external solver dependencies. All fields use contiguous caller-owned
@@ -32,6 +33,7 @@ divergence reduction. Run with:
 ./flow run tests/lang/test_sofia_shallow_water.flow
 ./flow run tests/lang/test_sofia_lattice_boltzmann.flow
 ./flow run tests/lang/test_sofia_incompressible.flow
+./flow run tests/lang/test_sofia_navier_stokes.flow
 ```
 
 Until the Flow CI checks pass, compilation and runtime correctness remain
@@ -77,11 +79,9 @@ The published case uses 56 M cells, 4 mm near-body resolution, wall-modelled
 LES, a 61° AhmedML rear slant, and reported mean drag coefficient 0.231
 versus reference 0.238. Our Flow module is a periodic-grid **pressure
 projection primitive**, not a full Navier–Stokes or LES solver.
-There are no solid walls, convective/diffusive momentum step, viscosity
-model, boundary-layer resolution, mesh adaptation, or drag integration.
+There are no solid walls, wall-modelled LES, boundary-layer resolution, mesh adaptation, or drag integration. The convective and diffusive momentum steps are now implemented.
 
-To reproduce: implement conservative advection, viscous stresses,
-wall-modelled LES, cut cells or immersed boundaries, scalable Poisson
+To reproduce: implement wall-modelled LES, cut cells or immersed boundaries, scalable Poisson
 multigrid, near-body mesh grading, traction/pressure drag integration,
 and convergence studies with the AhmedML geometry and reference conditions.
 
