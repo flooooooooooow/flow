@@ -343,16 +343,21 @@ export function flowc_expand_all_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32
     return flowc_mono_lit_expand_in_place(src, m2, cap)
 }
 
-# The expansions the MLIR path runs: every DSL, but neither impl blocks
-# (Python's MLIR generator emits nothing for them) nor the generic struct
-# literal inference, which Python's MLIR path never had (a bare
-# `Box { .. }` stays bare there).
+# The expansions the MLIR path runs: every DSL and impl blocks, but not
+# the generic struct literal inference, which Python's MLIR path never had
+# (a bare `Box { .. }` stays bare there).
 export function flowc_expand_for_mlir_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
     let m: i32 = flowc_expand_stages_in_place(src, n, cap, 15)
     if m < 0 {
         return m
     }
-    return flowc_append_range_helpers(src, m, cap)
+    # impl methods become the top-level Type_Trait_method functions, as
+    # on the C path (flowc_expand_all_in_place).
+    let m2: i32 = flowc_impl_expand_in_place(src, m, cap)
+    if m2 < 0 {
+        return m2
+    }
+    return flowc_append_range_helpers(src, m2, cap)
 }
 
 # The range-sum helpers of src/flow/range_sums.py (HELPER_SOURCE, then
