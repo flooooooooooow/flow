@@ -852,9 +852,10 @@ function main() -> i32 {
             errln("FAIL corpus " + f + ": no longer accepted: " + gl_first_line(fl + ".mlir.log"))
         } else {
             norm_to(fl + ".mlir", fl + ".norm")
-            if not s_eq(digest_of(fl + ".norm"), want) {
+            let got: string = digest_of(fl + ".norm")
+            if not s_eq(got, want) {
                 corpus_fail = corpus_fail + 1
-                errln("FAIL corpus " + f + ": MLIR changed since the golden was recorded")
+                errln("FAIL corpus " + f + ": MLIR changed since the golden was recorded (expected " + want + ", got " + got + ")")
             }
         }
         ci = ci + 1
