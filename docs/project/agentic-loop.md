@@ -74,17 +74,20 @@ immediately before starting a task and immediately before integration.
 
 | Flow phase | Orchestrator role | Final authority |
 |---|---|---|
-| Intake / triage | Observe open issues and PRs; identify possible overlap | GitHub issues, PRs, roadmap |
-| Claim / plan | Report unclaimed issues and collisions; durable leases and provider dispatch **not yet implemented** | This contract and explicit agent claims |
-| Implement | No independent coding-agent launch in the initial integration | Isolated implementation agent, reviewable branch |
-| Verify | Inspect exact-head check runs, but never replace target CI | GitHub Actions, baseline and targeted proof |
+| Intake / triage | Observe open issues/PRs; scan live file-level overlap, derived artifacts and duplicate closing issues | GitHub issues, PRs, roadmap |
+| Claim / plan | Produce a dependency-aware plan; append-only issue leases exist but **claim writes are disabled** by current policy | This contract and explicit agent claims |
+| Implement | Any selected agent may follow the Orchestrator file preflight; provider launch is optional and not part of scheduled reconciliation | Isolated implementation agent, reviewable branch |
+| Verify | Inspect exact-head checks and run a read-only `git merge-tree` probe for precise conflict paths; a local worktree helper may stage generated-only resolutions without executing code | GitHub Actions, bootstrap fixed-point, baseline and targeted proof |
 | Review | Reject ambiguous or policy-sensitive changes from unattended merge | Flow CODEOWNERS, semantic review |
 | Merge | Submit a narrowly authorized exact head for GitHub auto-merge | Protected merge queue and merge-group CI |
 | Learn | Store audit reports and detected duplicate work; Locus-based feedback **planned** | Durable evidence, regression tests, issue history |
 
 The [Orchestrator integration roadmap](https://github.com/godofecht/Orchestrator/issues)
-covers leases, provider adapters, integration repair, and evidence-aware
-Locus scheduling. These remain milestones, not claims of delivered autonomy.
+covers enforced cross-agent path claims, full compiler regeneration/integration
+repair, and evidence-aware Locus scheduling. File-overlap preflight, a disabled
+lease-history model and exact Git merge-tree diagnostics now exist; **cross-agent
+file locking, independently verified automatic regeneration and production
+compiler merge repair remain unfinished**.
 Deliberately competing implementations in a research experiment must remain
 distinguishable from accidental duplicate PRs; incidental generated-file
 conflicts should be repaired without erasing meaningful alternatives.
