@@ -22613,9 +22613,11 @@ int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* 
   if (caps[4] >= 0) {
   rec[(b + FX_MUL_S)] = caps[4];
   rec[(b + FX_MUL_E)] = caps[5];
-} else if (caps[2] >= 0) {
+} else {
+  if (caps[2] >= 0) {
   rec[(b + FX_MUL_S)] = caps[2];
   rec[(b + FX_MUL_E)] = caps[3];
+}
 }
 }
 }
