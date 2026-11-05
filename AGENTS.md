@@ -27,6 +27,17 @@ gates run, any generated state and the risk.
 When a failure mode repeats, fix the loop with a test, CI rule, template or
 repository invariant.
 
+## Optional external coordination
+
+The external [Orchestrator](https://github.com/godofecht/Orchestrator)
+may observe this repository and submit narrowly authorized documentation
+changes to the existing merge queue. Its exact authority, limitations and
+phase mapping are in [the agentic-loop contract](docs/project/agentic-loop.md).
+It does **not** own Flow's CI, review, release, or language design decisions,
+and must not be required for contributors to work locally. Before acting,
+check live GitHub state; an Orchestrator audit report is advisory and never
+overrides CODEOWNERS, verification or merge-group checks.
+
 ## Flow first
 
 New code in this repository is written in Flow. This covers features,
