@@ -4,9 +4,11 @@
 #         reads, so `field T : f64[N] on Line`, `T evolves as laplacian(T)`
 #         and `boundary T { left = A  right = B }` compile without Python.
 #
-# Output is byte-identical to `expand_field_dsl` in src/flow/field_dsl.py,
-# including its quirks, and compiler/scripts/parity_field_dsl.flow holds the
-# two to that. Quirks kept on purpose:
+# Output preserves the historical Python expander's lexical behavior except
+# that Laplacian multipliers are now correctly applied to the Euler ratio.
+# compiler/scripts/parity_field_dsl.flow checks current native goldens;
+# the optional old-Python byte comparison is historical, not a correctness
+# oracle for coefficient lowering. Other quirks kept on purpose:
 #
 #   * The result is the kept lines joined by "\n", so a trailing newline is
 #     dropped (Python `"\n".join(source.splitlines())`).
@@ -32,7 +34,7 @@ extern {
 
 const FX_MAX_FIELDS: i32 = 64
 # Per-field record in an i32 table, FX_REC slots per field.
-const FX_REC: i32 = 9
+const FX_REC: i32 = 11
 const FX_NAME_S: i32 = 0
 const FX_NAME_E: i32 = 1
 const FX_N_S: i32 = 2
@@ -42,6 +44,8 @@ const FX_L_E: i32 = 5
 const FX_R_S: i32 = 6
 const FX_R_E: i32 = 7
 const FX_EVOLVED: i32 = 8
+const FX_MUL_S: i32 = 9
+const FX_MUL_E: i32 = 10
 
 # Growable-free output buffer: writes past `cap` set `err` and are dropped.
 export struct FxBuf {
@@ -718,7 +722,13 @@ function fx_emit_helpers(w: ptr<FxBuf>, p: ptr<u8>, rec: ptr<i32>, nf: i32) {
         fx_put_span(w, p, ns, ne)
         fx_puts(w, "_field_step(\n    u: ptr<f64>,\n    next: ptr<f64>,\n    r: f64\n) -> void {\n    heat_euler_step_1d(u, next, ")
         fx_emit_int_span(w, p, rec[b + FX_N_S], rec[b + FX_N_E])
-        fx_puts(w, ", r, ")
+        fx_puts(w, ", r")
+        if rec[b + FX_MUL_S] >= 0 {
+            fx_puts(w, " * (")
+            fx_put_span(w, p, rec[b + FX_MUL_S], rec[b + FX_MUL_E])
+            fx_puts(w, ")")
+        }
+        fx_puts(w, ", ")
         if rec[b + FX_L_S] < 0 {
             fx_puts(w, "0.0")
         } else {
@@ -822,6 +832,8 @@ function fx_parse(
                             rec[b + FX_R_S] = 0 - 1
                             rec[b + FX_R_E] = 0 - 1
                             rec[b + FX_EVOLVED] = 0
+                            rec[b + FX_MUL_S] = 0 - 1
+                            rec[b + FX_MUL_E] = 0 - 1
                             nf = nf + 1
                         }
                     }
@@ -959,9 +971,15 @@ function fx_parse(
                         fx_err_name(err, p, "field '", en_s, en_e, "' evolves: use at most one multiplier")
                         rc = 0 - 1
                     } else {
-                        # The multiplier only feeds r_literal, which never
-                        # reaches the generated helper.
-                        rec[ev * FX_REC + FX_EVOLVED] = 1
+                        let b: i32 = ev * FX_REC
+                        rec[b + FX_EVOLVED] = 1
+                        if caps[4] >= 0 {
+                            rec[b + FX_MUL_S] = caps[4]
+                            rec[b + FX_MUL_E] = caps[5]
+                        } elif caps[2] >= 0 {
+                            rec[b + FX_MUL_S] = caps[2]
+                            rec[b + FX_MUL_E] = caps[3]
+                        }
                     }
                 }
                 i = i + 1
