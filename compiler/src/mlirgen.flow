@@ -2805,6 +2805,10 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         if mlg_ft_is_pointer(m, arr) == 1 {
             return m[0].arena.nodes[arr].a
         }
+        if mlg_ft_is_string(m, arr) == 1 {
+            # A string's bytes are u8, as the checker types s[i] (#1147).
+            return mlg_named_ft(m, 2, "u8")
+        }
         if arr >= 0 and mlg_kind(m, arr) == AST_TYPE and m[0].arena.nodes[arr].a != AST_NONE and m[0].arena.nodes[arr].ival > 0 {
             return m[0].arena.nodes[arr].a
         }
@@ -6109,8 +6113,19 @@ function mlg_struct_addr0(m: ptr<Mlg>, e: i32, sk: ptr<i32>) -> i32 {
         if f == AST_NONE {
             return V_NONE
         }
-        let k5: i32 = mlg_ft_struct(m, m[0].arena.nodes[f].a)
+        let fty: i32 = m[0].arena.nodes[f].a
+        let k5: i32 = mlg_ft_struct(m, fty)
         if k5 < 0 {
+            # A ptr<S> field (`o.cfg.n` with cfg: ptr<Inner>): the struct
+            # is where the field's pointer points, as C's o->cfg->n.
+            if mlg_ft_is_pointer(m, fty) == 1 {
+                let pk: i32 = mlg_ft_struct(m, m[0].arena.nodes[fty].a)
+                if pk >= 0 {
+                    let pg: i32 = mlg_struct_gep(m, pp, psk, idx)
+                    sk[0] = pk
+                    return mlg_load(m, pg, MT_PTR)
+                }
+            }
             return V_NONE
         }
         let g: i32 = mlg_struct_gep(m, pp, psk, idx)
@@ -8777,10 +8792,25 @@ function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
         from_eff = from
     }
     if from_eff == dst {
-        if tu == 0 {
-            mlg_set_vuns(m, v, 0)
-        } else {
-            mlg_set_vuns(m, v, 1)
+        let vuns_v: i32 = mlg_vuns(m, v)
+        let tu_val: i32 = if tu == 0 { 0 } else { 1 }
+        let vuns_val: i32 = if vuns_v == 0 { 0 } else { 1 }
+        if tu_val == vuns_val {
+            return v
+        }
+        if mlg_is_int_mt(dst) == 1 {
+            let cu: i32 = mlg_new_val(m, dst)
+            mlg_line(m)
+            mlg_v(m, cu)
+            mlg_s(m, " = arith.ori ")
+            mlg_v(m, v)
+            mlg_s(m, ", ")
+            mlg_v(m, v)
+            mlg_s(m, " : ")
+            mlg_put_type(m, dst)
+            mlg_nl(m)
+            mlg_set_vuns(m, cu, tu)
+            return cu
         }
         return v
     }

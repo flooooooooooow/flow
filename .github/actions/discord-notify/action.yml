@@ -176,6 +176,62 @@ runs:
         if thread:
             payload["thread_name"] = thread
 
+        # Discord limits individual embed fields and all embed text combined
+        # (6000 UTF-16 code units). Dependabot PR bodies can exceed both.
+        # Preserve the metadata fields and shorten the long description first.
+        def units(value):
+            return sum(2 if ord(ch) > 0xFFFF else 1 for ch in value)
+
+        def clipped(value, limit):
+            if units(value) <= limit:
+                return value
+            remaining = limit - 1  # Reserve one code unit for the ellipsis.
+            out = []
+            for ch in value:
+                width = 2 if ord(ch) > 0xFFFF else 1
+                if width > remaining:
+                    break
+                out.append(ch)
+                remaining -= width
+            return "".join(out).rstrip() + "…"
+
+        fields = embed.get("fields", [])
+        for field in fields:
+            field["name"] = field["name"] or "—"
+            field["value"] = field["value"] or "—"
+
+        entries = [(embed, "title", 256), (embed, "description", 4096),
+                   (embed.get("author", {}), "name", 256),
+                   (embed.get("footer", {}), "text", 2048)]
+        for field in fields:
+            entries.extend([(field, "name", 256), (field, "value", 1024)])
+        for obj, key, limit in entries:
+            if key in obj:
+                obj[key] = clipped(obj[key], limit)
+
+        total = sum(units(obj[key]) for obj, key, _ in entries if key in obj)
+        reductions = ([(embed, "description")] +
+                      [(field, "value") for field in fields] +
+                      [(field, "name") for field in fields] +
+                      [(embed.get("footer", {}), "text"),
+                       (embed.get("author", {}), "name"), (embed, "title")])
+        for obj, key in reductions:
+            if total <= 6000:
+                break
+            if key in obj:
+                old = obj[key]
+                obj[key] = clipped(old, max(1, units(old) - (total - 6000)))
+                total -= units(old) - units(obj[key])
+        if total > 6000:
+            sys.exit("discord-notify: embed exceeds Discord's 6000-character limit")
+
+        if "content" in payload:
+            payload["content"] = clipped(payload["content"], 2000)
+        if "thread_name" in payload:
+            payload["thread_name"] = clipped(payload["thread_name"], 100)
+        if "username" in payload:
+            payload["username"] = clipped(payload["username"], 80)
+
         body = json.dumps(payload).encode()
         req = urllib.request.Request(
             webhook, data=body,

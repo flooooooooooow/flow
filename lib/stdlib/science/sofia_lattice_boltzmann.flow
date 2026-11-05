@@ -1,0 +1,297 @@
+# Native Flow D3Q19 BGK lattice Boltzmann, periodic 3D box.
+# One fused pull-stream/collide step, layout f[cell*19 + direction].
+# Lattice spacing and timestep are 1; c_s^2 = 1/3.
+# Smagorinsky LES, bounce-back boundaries, and Guo forcing included.
+# For physical viscosity in lattice units: nu = (1/omega - 0.5) / 3.
+
+extern {
+    function sqrt(x: f64) -> f64
+}
+
+export function sofia_lbm_cx(q: i32) -> i32 {
+    if q == 1 or q == 7 or q == 9 or q == 11 or q == 13 { return 1 }
+    if q == 2 or q == 8 or q == 10 or q == 12 or q == 14 { return -1 }
+    return 0
+}
+
+export function sofia_lbm_cy(q: i32) -> i32 {
+    if q == 3 or q == 7 or q == 10 or q == 15 or q == 17 { return 1 }
+    if q == 4 or q == 8 or q == 9 or q == 16 or q == 18 { return -1 }
+    return 0
+}
+
+export function sofia_lbm_cz(q: i32) -> i32 {
+    if q == 5 or q == 11 or q == 14 or q == 15 or q == 18 { return 1 }
+    if q == 6 or q == 12 or q == 13 or q == 16 or q == 17 { return -1 }
+    return 0
+}
+
+export function sofia_lbm_weight(q: i32) -> f64 {
+    if q == 0 { return 1.0 / 3.0 }
+    if q < 7 { return 1.0 / 18.0 }
+    return 1.0 / 36.0
+}
+
+export function sofia_lbm_opposite(q: i32) -> i32 {
+    if q == 0 { return 0 }
+    if q == 1 { return 2 }
+    if q == 2 { return 1 }
+    if q == 3 { return 4 }
+    if q == 4 { return 3 }
+    if q == 5 { return 6 }
+    if q == 6 { return 5 }
+    if q == 7 { return 8 }
+    if q == 8 { return 7 }
+    if q == 9 { return 10 }
+    if q == 10 { return 9 }
+    if q == 11 { return 12 }
+    if q == 12 { return 11 }
+    if q == 13 { return 14 }
+    if q == 14 { return 13 }
+    if q == 15 { return 16 }
+    if q == 16 { return 15 }
+    if q == 17 { return 18 }
+    if q == 18 { return 17 }
+    return 0
+}
+
+export function sofia_lbm_equilibrium(
+    q: i32, rho: f64, ux: f64, uy: f64, uz: f64
+) -> f64 {
+    let cu: f64 = (sofia_lbm_cx(q) as f64) * ux
+                + (sofia_lbm_cy(q) as f64) * uy
+                + (sofia_lbm_cz(q) as f64) * uz
+    let u2: f64 = ux * ux + uy * uy + uz * uz
+    return sofia_lbm_weight(q) * rho
+           * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2)
+}
+
+export function sofia_lbm_index(x: i32, y: i32, z: i32, nx: i32, ny: i32) -> i32 {
+    return (z * ny + y) * nx + x
+}
+
+# Initializes every distribution to a uniform equilibrium.
+export function sofia_lbm_initialise(
+    f: ptr<f64>, nx: i32, ny: i32, nz: i32,
+    rho: f64, ux: f64, uy: f64, uz: f64
+) -> void {
+    let n: i32 = nx * ny * nz
+    for i in 0 to n {
+        for q in 0 to 19 {
+            f[i * 19 + q] = sofia_lbm_equilibrium(q, rho, ux, uy, uz)
+        }
+    }
+}
+
+# Pull-streaming, then collision at destination. src and dst must not alias.
+# nx,ny,nz >= 2. 0 < omega < 2. Distributions must represent rho > 0.
+export function sofia_lbm_d3q19_step(
+    src: ptr<f64>, dst: ptr<f64>,
+    nx: i32, ny: i32, nz: i32, omega: f64
+) -> void {
+    for z in 0 to nz {
+        for y in 0 to ny {
+            for x in 0 to nx {
+                let cell: i32 = sofia_lbm_index(x, y, z, nx, ny)
+                let mut rho: f64 = 0.0
+                let mut jx: f64 = 0.0
+                let mut jy: f64 = 0.0
+                let mut jz: f64 = 0.0
+                for q in 0 to 19 {
+                    let mut sx: i32 = x - sofia_lbm_cx(q)
+                    let mut sy: i32 = y - sofia_lbm_cy(q)
+                    let mut sz: i32 = z - sofia_lbm_cz(q)
+                    if sx < 0 { sx = sx + nx }
+                    if sx >= nx { sx = sx - nx }
+                    if sy < 0 { sy = sy + ny }
+                    if sy >= ny { sy = sy - ny }
+                    if sz < 0 { sz = sz + nz }
+                    if sz >= nz { sz = sz - nz }
+                    let source: i32 = sofia_lbm_index(sx, sy, sz, nx, ny)
+                    let fq: f64 = src[source * 19 + q]
+                    rho = rho + fq
+                    jx = jx + fq * (sofia_lbm_cx(q) as f64)
+                    jy = jy + fq * (sofia_lbm_cy(q) as f64)
+                    jz = jz + fq * (sofia_lbm_cz(q) as f64)
+                }
+                let ux: f64 = jx / rho
+                let uy: f64 = jy / rho
+                let uz: f64 = jz / rho
+                for q in 0 to 19 {
+                    let mut sx: i32 = x - sofia_lbm_cx(q)
+                    let mut sy: i32 = y - sofia_lbm_cy(q)
+                    let mut sz: i32 = z - sofia_lbm_cz(q)
+                    if sx < 0 { sx = sx + nx }
+                    if sx >= nx { sx = sx - nx }
+                    if sy < 0 { sy = sy + ny }
+                    if sy >= ny { sy = sy - ny }
+                    if sz < 0 { sz = sz + nz }
+                    if sz >= nz { sz = sz - nz }
+                    let source: i32 = sofia_lbm_index(sx, sy, sz, nx, ny)
+                    let streamed: f64 = src[source * 19 + q]
+                    dst[cell * 19 + q] = streamed + omega
+                        * (sofia_lbm_equilibrium(q, rho, ux, uy, uz) - streamed)
+                }
+            }
+        }
+    }
+}
+
+# Smagorinsky LES + forcing + bounce-back walls.
+# masks: 1 for solid (bounce-back), 0 for fluid.
+# omega0: bare relaxation frequency. c_smag: Smagorinsky constant (e.g. 0.16).
+# fx, fy, fz: macroscopic force per unit mass in lattice units.
+export function sofia_lbm_d3q19_les_step(
+    src: ptr<f64>, dst: ptr<f64>, masks: ptr<i32>,
+    nx: i32, ny: i32, nz: i32, omega0: f64, c_smag: f64,
+    fx: f64, fy: f64, fz: f64
+) -> void {
+    for z in 0 to nz {
+        for y in 0 to ny {
+            for x in 0 to nx {
+                let cell: i32 = sofia_lbm_index(x, y, z, nx, ny)
+                let mut is_solid: bool = false
+                if masks[cell] == 1 {
+                    is_solid = true
+                }
+
+                # If solid, we only bounce back streamed populations.
+                if is_solid {
+                    for q in 0 to 19 {
+                        let mut sx: i32 = x - sofia_lbm_cx(q)
+                        let mut sy: i32 = y - sofia_lbm_cy(q)
+                        let mut sz: i32 = z - sofia_lbm_cz(q)
+                        if sx < 0 { sx = sx + nx }
+                        if sx >= nx { sx = sx - nx }
+                        if sy < 0 { sy = sy + ny }
+                        if sy >= ny { sy = sy - ny }
+                        if sz < 0 { sz = sz + nz }
+                        if sz >= nz { sz = sz - nz }
+                        let source: i32 = sofia_lbm_index(sx, sy, sz, nx, ny)
+                        let streamed: f64 = src[source * 19 + q]
+                        let opp: i32 = sofia_lbm_opposite(q)
+                        dst[cell * 19 + opp] = streamed
+                    }
+                    continue
+                }
+
+                let mut rho: f64 = 0.0
+                let mut jx: f64 = 0.0
+                let mut jy: f64 = 0.0
+                let mut jz: f64 = 0.0
+                # Compute macroscopic moments
+                for q in 0 to 19 {
+                    let mut sx: i32 = x - sofia_lbm_cx(q)
+                    let mut sy: i32 = y - sofia_lbm_cy(q)
+                    let mut sz: i32 = z - sofia_lbm_cz(q)
+                    if sx < 0 { sx = sx + nx }
+                    if sx >= nx { sx = sx - nx }
+                    if sy < 0 { sy = sy + ny }
+                    if sy >= ny { sy = sy - ny }
+                    if sz < 0 { sz = sz + nz }
+                    if sz >= nz { sz = sz - nz }
+                    let source: i32 = sofia_lbm_index(sx, sy, sz, nx, ny)
+                    let fq: f64 = src[source * 19 + q]
+                    rho = rho + fq
+                    jx = jx + fq * (sofia_lbm_cx(q) as f64)
+                    jy = jy + fq * (sofia_lbm_cy(q) as f64)
+                    jz = jz + fq * (sofia_lbm_cz(q) as f64)
+                }
+
+                # Add half forcing to momentum for velocity
+                let ux: f64 = (jx + 0.5 * fx * rho) / rho
+                let uy: f64 = (jy + 0.5 * fy * rho) / rho
+                let uz: f64 = (jz + 0.5 * fz * rho) / rho
+
+                # Compute Pi for Smagorinsky relaxation
+                let mut pxx: f64 = 0.0
+                let mut pxy: f64 = 0.0
+                let mut pxz: f64 = 0.0
+                let mut pyy: f64 = 0.0
+                let mut pyz: f64 = 0.0
+                let mut pzz: f64 = 0.0
+
+                for q in 0 to 19 {
+                    let mut sx: i32 = x - sofia_lbm_cx(q)
+                    let mut sy: i32 = y - sofia_lbm_cy(q)
+                    let mut sz: i32 = z - sofia_lbm_cz(q)
+                    if sx < 0 { sx = sx + nx }
+                    if sx >= nx { sx = sx - nx }
+                    if sy < 0 { sy = sy + ny }
+                    if sy >= ny { sy = sy - ny }
+                    if sz < 0 { sz = sz + nz }
+                    if sz >= nz { sz = sz - nz }
+                    let source: i32 = sofia_lbm_index(sx, sy, sz, nx, ny)
+                    let streamed: f64 = src[source * 19 + q]
+                    let eq: f64 = sofia_lbm_equilibrium(q, rho, ux, uy, uz)
+                    let neq: f64 = streamed - eq
+
+                    let cxq: f64 = sofia_lbm_cx(q) as f64
+                    let cyq: f64 = sofia_lbm_cy(q) as f64
+                    let czq: f64 = sofia_lbm_cz(q) as f64
+
+                    pxx = pxx + cxq * cxq * neq
+                    pxy = pxy + cxq * cyq * neq
+                    pxz = pxz + cxq * czq * neq
+                    pyy = pyy + cyq * cyq * neq
+                    pyz = pyz + cyq * czq * neq
+                    pzz = pzz + czq * czq * neq
+                }
+
+                let pi_sq: f64 = pxx * pxx + pyy * pyy + pzz * pzz
+                               + 2.0 * (pxy * pxy + pxz * pxz + pyz * pyz)
+
+                let tau0: f64 = 1.0 / omega0
+                let cs2: f64 = 1.0 / 3.0
+                # delta = (sqrt(tau0^2 + 18 * c_smag^2 * sqrt(2 * pi_sq) / rho) - tau0) / 2
+                # For simplicity in Flow, we compute tau_total and then omega = 1/tau_total.
+                let pi_norm: f64 = sqrt(2.0 * pi_sq)
+                let c_smag_sq: f64 = c_smag * c_smag
+                let tau_total: f64 = 0.5 * (tau0 + sqrt(tau0 * tau0 + 18.0 * c_smag_sq * pi_norm / rho))
+                let omega: f64 = 1.0 / tau_total
+
+                # Collide and apply forcing
+                for q in 0 to 19 {
+                    let mut sx: i32 = x - sofia_lbm_cx(q)
+                    let mut sy: i32 = y - sofia_lbm_cy(q)
+                    let mut sz: i32 = z - sofia_lbm_cz(q)
+                    if sx < 0 { sx = sx + nx }
+                    if sx >= nx { sx = sx - nx }
+                    if sy < 0 { sy = sy + ny }
+                    if sy >= ny { sy = sy - ny }
+                    if sz < 0 { sz = sz + nz }
+                    if sz >= nz { sz = sz - nz }
+                    let source: i32 = sofia_lbm_index(sx, sy, sz, nx, ny)
+                    let streamed: f64 = src[source * 19 + q]
+                    let eq: f64 = sofia_lbm_equilibrium(q, rho, ux, uy, uz)
+
+                    let wq: f64 = sofia_lbm_weight(q)
+                    let cqx: f64 = sofia_lbm_cx(q) as f64
+                    let cqy: f64 = sofia_lbm_cy(q) as f64
+                    let cqz: f64 = sofia_lbm_cz(q) as f64
+
+                    let c_minus_u_x: f64 = cqx - ux
+                    let c_minus_u_y: f64 = cqy - uy
+                    let c_minus_u_z: f64 = cqz - uz
+                    let cu: f64 = cqx * ux + cqy * uy + cqz * uz
+                    let f_dot_c_minus_u: f64 = fx * c_minus_u_x + fy * c_minus_u_y + fz * c_minus_u_z
+                    let f_dot_c: f64 = fx * cqx + fy * cqy + fz * cqz
+
+                    # Guo's forcing term: (1 - omega/2) * wq * [3 * (c-u)/cs2 + 9 * (c.u)c/cs4] . F
+                    # which simplifies with cs2=1/3 to: (1 - omega/2) * wq * (3 * (c-u).F + 9 * (c.u) * (c.F))
+                    let force_term: f64 = (1.0 - 0.5 * omega) * wq * (3.0 * f_dot_c_minus_u + 9.0 * cu * f_dot_c) * rho
+
+                    dst[cell * 19 + q] = streamed + omega * (eq - streamed) + force_term
+                }
+            }
+        }
+    }
+}
+
+export function sofia_lbm_mass(f: ptr<f64>, cells: i32) -> f64 {
+    let mut total: f64 = 0.0
+    for i in 0 to cells * 19 {
+        total = total + f[i]
+    }
+    return total
+}

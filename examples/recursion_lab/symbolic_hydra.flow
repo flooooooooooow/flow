@@ -1,0 +1,135 @@
+# SYMBOLIC HYDRA: recursive expression DAG, derivative synthesis and autodiff.
+# A symbolic compiler in Flow. It builds a shared graph for 17 compositions of
+# f(x)=x^2-0.65, differentiates that graph with memoization and algebraic
+# identity folding, recursively interprets the resulting derivative, and
+# independently validates it against a forward-mode automatic differentiator.
+extern {
+    function printf(fmt: string, ...) -> i32
+    function calloc(n: i64, s: i64) -> ptr<i64>
+    function free(p: ptr<i64>) -> void
+    function fabs(x: f64) -> f64
+}
+
+struct Node {
+    kind: i32,
+    left: i32,
+    right: i32,
+    value: f64
+}
+
+struct Graph {
+    nodes: ptr<Node>,
+    cache: ptr<i32>,
+    used: i32,
+    folds: i32,
+    reuse: i32
+}
+
+struct Dual { value: f64, tangent: f64 }
+
+function add_node(g: ptr<Graph>, kind: i32, left: i32, right: i32, value: f64) -> i32 {
+    let id: i32 = g.used
+    if id >= 65530 { return 0 }
+    g.used = g.used + 1
+    g.nodes[id] = Node { kind: kind, left: left, right: right, value: value }
+    return id
+}
+
+function constant(g: ptr<Graph>, x: f64) -> i32 {
+    return add_node(g,0,0,0,x)
+}
+
+function plus(g: ptr<Graph>, a: i32, b: i32) -> i32 {
+    if g.nodes[a].kind==0 and g.nodes[a].value==0.0 { g.folds=g.folds+1; return b }
+    if g.nodes[b].kind==0 and g.nodes[b].value==0.0 { g.folds=g.folds+1; return a }
+    if g.nodes[a].kind==0 and g.nodes[b].kind==0 {
+        g.folds=g.folds+1
+        return constant(g,g.nodes[a].value+g.nodes[b].value)
+    }
+    return add_node(g,2,a,b,0.0)
+}
+
+function times(g: ptr<Graph>, a: i32, b: i32) -> i32 {
+    if g.nodes[a].kind==0 {
+        if g.nodes[a].value==0.0 { g.folds=g.folds+1; return a }
+        if g.nodes[a].value==1.0 { g.folds=g.folds+1; return b }
+    }
+    if g.nodes[b].kind==0 {
+        if g.nodes[b].value==0.0 { g.folds=g.folds+1; return b }
+        if g.nodes[b].value==1.0 { g.folds=g.folds+1; return a }
+    }
+    if g.nodes[a].kind==0 and g.nodes[b].kind==0 {
+        g.folds=g.folds+1
+        return constant(g,g.nodes[a].value*g.nodes[b].value)
+    }
+    return add_node(g,3,a,b,0.0)
+}
+
+function derivative(g: ptr<Graph>, node: i32) -> i32 {
+    if g.cache[node]!=0 { g.reuse=g.reuse+1; return g.cache[node] }
+    let n: Node = g.nodes[node]
+    let mut result: i32 = 0
+    if n.kind==0 { result=constant(g,0.0) }
+    if n.kind==1 { result=constant(g,1.0) }
+    if n.kind==2 {
+        let a: i32 = derivative(g,n.left)
+        let b: i32 = derivative(g,n.right)
+        result=plus(g,a,b)
+    }
+    if n.kind==3 {
+        let a: i32 = derivative(g,n.left)
+        let b: i32 = derivative(g,n.right)
+        result=plus(g,times(g,a,n.right),times(g,n.left,b))
+    }
+    g.cache[node]=result
+    return result
+}
+
+function evaluate(g: ptr<Graph>, node: i32, x: f64) -> f64 {
+    let n: Node = g.nodes[node]
+    if n.kind==0 { return n.value }
+    if n.kind==1 { return x }
+    if n.kind==2 { return evaluate(g,n.left,x)+evaluate(g,n.right,x) }
+    if n.kind==3 { return evaluate(g,n.left,x)*evaluate(g,n.right,x) }
+    return 0.0
+}
+
+function forward(x: Dual, n: i32) -> Dual {
+    if n==0 { return x }
+    let nx: Dual = Dual { value: x.value*x.value-0.65, tangent: 2.0*x.value*x.tangent }
+    return forward(nx,n-1)
+}
+
+function main() -> i32 {
+    let nodes: ptr<Node> = calloc(65536,sizeof<Node>() as i64) as ptr<Node>
+    let cache: ptr<i32> = calloc(65536,4) as ptr<i32>
+    if nodes==null or cache==null { return 2 }
+    let mut graph: Graph = Graph { nodes: nodes, cache: cache, used: 1, folds: 0, reuse: 0 }
+    let x: i32 = add_node(&graph,1,0,0,0.0)
+    let c: i32 = constant(&graph,-0.65)
+    let mut expression: i32 = x
+    for i in 0..17 {
+        expression=plus(&graph,times(&graph,expression,expression),c)
+    }
+    let d: i32 = derivative(&graph,expression)
+    printf("SYMBOLIC HYDRA / recursive compiler inside Flow\n")
+    printf("Expression = iterate(x*x - 0.65, 17)\n")
+    printf("AST DAG nodes: %d | folded identities: %d | shared derivatives: %d\n",graph.used-1,graph.folds,graph.reuse)
+    printf("\n      x          value         d/dx symbolic       d/dx forward\n")
+    let mut failures: i32 = 0
+    for k in 0..9 {
+        let vx: f64 = -0.8 + k as f64*0.2
+        let value: f64 = evaluate(&graph,expression,vx)
+        let derivative_val: f64 = evaluate(&graph,d,vx)
+        let independent: Dual = forward(Dual { value: vx, tangent: 1.0 },17)
+        let mismatch: f64 = fabs(derivative_val-independent.tangent)
+        printf("   %8.3f   %13.7f   %16.7f   %16.7f\n",vx,value,derivative_val,independent.tangent)
+        if mismatch > 0.00001 + fabs(independent.tangent)*0.000001 { failures=failures+1 }
+        if fabs(value-independent.value)>0.00000001 { failures=failures+1 }
+    }
+    printf("\nDerivative validation mismatches: %d\n",failures)
+    free(nodes as ptr<i64>)
+    free(cache as ptr<i64>)
+    if failures != 0 or graph.reuse < 10 { return 1 }
+    return 0
+}
