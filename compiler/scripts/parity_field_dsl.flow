@@ -1,7 +1,7 @@
 # Parity gate for the Field DSL expander (compiler/src/field_dsl.flow).
 #
-# The Flow port replaced src/flow/field_dsl.py. Its output was recorded from
-# that Python reference as goldens beside each fixture in
+# The Flow port replaced src/flow/field_dsl.py. Its original output was
+# recorded from that Python reference as goldens beside each fixture in
 # compiler/fixtures/field_dsl/: `<name>.expected` for the expanded source, or
 # `<name>.error` for the SyntaxError text. This gate holds flowc to them.
 #
@@ -18,6 +18,8 @@
 #       rewrite the goldens from the Python expander at <rev>.
 #
 # The last Python revision is 3dbbac87 (origin/main before the port).
+# The historical Python expander silently ignored Laplacian coefficients;
+# --python comparison intentionally differs on multiplier fixtures.
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
@@ -235,6 +237,38 @@ function main() -> i32 {
         fail = fail + 1
         errln("FAIL e2e: heat_diffusion did not build on flowc")
         errs(pl_head(read_text(WORK + "/heat_emit.log") + read_text(WORK + "/heat_cc.log"), 20))
+    }
+
+    # Independent runtime gate for both coefficient positions: the checked
+    # impulse/affine values differ substantially if the multiplier is dropped.
+    let m: ptr<ProcCmd> = pl_cmd1(bin())
+    cmd_env(m, "FLOWC_BUNDLE", "1")
+    cmd_env(m, "FLOWC_DIR", FIX)
+    cmd_env(m, "FLOWC_IN", FIX + "/ok_post_mul.flow")
+    cmd_env(m, "FLOWC_OUT", WORK + "/multiplier.c")
+    let _m: i32 = pl_run(m, WORK + "/multiplier_emit.log", "&", 0)
+    let mut multiplier_built: bool = false
+    if nonempty(WORK + "/multiplier.c") {
+        let cc: ptr<ProcCmd> = cmd(sl_of2(pl_cc(), "-O1"))
+        proc_arg(cc, "-o")
+        proc_arg(cc, WORK + "/multiplier")
+        proc_arg(cc, WORK + "/multiplier.c")
+        proc_arg(cc, "-lm")
+        multiplier_built = pl_run(cc, "", WORK + "/multiplier_cc.log", 0) == 0
+    }
+    if multiplier_built {
+        let code: i32 = pl_run(pl_cmd1(WORK + "/multiplier"), WORK + "/multiplier_run.log", "", 0)
+        if code == 0 and s_contains(read_text(WORK + "/multiplier_run.log"), "field-multiplier-ok") {
+            outln("e2e: field multipliers pre/post exit 0 on flowc")
+        } else {
+            fail = fail + 1
+            errln("FAIL e2e: field multipliers exit " + s_itoa(code))
+            errs(pl_tail(read_text(WORK + "/multiplier_run.log"), 5))
+        }
+    } else {
+        fail = fail + 1
+        errln("FAIL e2e: field multipliers did not build on flowc")
+        errs(pl_head(read_text(WORK + "/multiplier_emit.log") + read_text(WORK + "/multiplier_cc.log"), 20))
     }
 
     if fail != 0 {

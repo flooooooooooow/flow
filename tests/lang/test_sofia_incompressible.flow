@@ -1,0 +1,45 @@
+# Three-dimensional projection regression: divergence must fall, and
+# periodic pressure gradients must conserve the total x momentum.
+import "stdlib/science/sofia_incompressible.flow"
+
+function inc_abs(x: f64) -> f64 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+function main() -> i32 {
+    let ux: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let uy: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let uz: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let un: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let vn: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let wn: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let p: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let scratch: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let rhs: array<f64, 512> = [0.0, 0.0, 0.0, 0.0]
+    let mut sum0: f64 = 0.0
+    for z in 0 to 8 {
+        for y in 0 to 8 {
+            for x in 0 to 8 {
+                let i: i32 = sofia_inc_index(x, y, z, 8, 8)
+                if x == 2 { ux[i] = 1.0 }
+                uy[i] = 0.05
+                uz[i] = 0.02
+                sum0 = sum0 + ux[i]
+            }
+        }
+    }
+    let before: f64 = sofia_inc_divergence_rms(ux, uy, uz, 8, 8, 8, 1.0)
+    if before <= 0.0 { return 1 }
+    sofia_inc_project_periodic(ux, uy, uz, un, vn, wn,
+        p, scratch, rhs, 8, 8, 8, 1.0, 0.1, 160)
+    let after: f64 = sofia_inc_divergence_rms(un, vn, wn, 8, 8, 8, 1.0)
+    if after != after { return 2 }
+    if after > before * 0.05 { return 3 }
+    let mut sum1: f64 = 0.0
+    for i in 0 to 512 {
+        sum1 = sum1 + un[i]
+    }
+    if inc_abs(sum1 - sum0) > 1e-8 { return 4 }
+    return 0
+}

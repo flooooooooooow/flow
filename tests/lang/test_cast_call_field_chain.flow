@@ -1,0 +1,35 @@
+# A field chain whose base is a cast or a call returning a pointer:
+# (p as ptr<Outer>).inner.n and make_outer().inner.n. The middle step had
+# no type, so cgen wrote `.n` where `->n` was needed.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct ChainLeaf {
+    n: i32,
+    name: string
+}
+
+struct ChainBox {
+    inner: ptr<ChainLeaf>
+}
+
+function make_box() -> ptr<ChainBox> {
+    let l: ptr<ChainLeaf> = malloc(sizeof<ChainLeaf>()) as ptr<ChainLeaf>
+    l.n = 41
+    l.name = "leaf"
+    let b: ptr<ChainBox> = malloc(sizeof<ChainBox>()) as ptr<ChainBox>
+    b.inner = l
+    return b
+}
+
+function main() -> i32 {
+    let p: ptr<void> = make_box() as ptr<void>
+    if (p as ptr<ChainBox>).inner.n != 41 { return 1 }
+    (p as ptr<ChainBox>).inner.n = 42
+    if make_box().inner.n != 41 { return 2 }
+    if (p as ptr<ChainBox>).inner.n != 42 { return 3 }
+    if not ((p as ptr<ChainBox>).inner.name == "le" + "af") { return 4 }
+    return 0
+}

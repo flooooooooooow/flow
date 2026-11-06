@@ -11,6 +11,17 @@ Format:
 
 ## Open Questions
 
+### 2026-11-02: Sofia solver IR: DSL extension vs library builder API?
+
+**Context:** The Sofia-class engine (Issue #1650) requires a serializable high-level solver IR (Inputs, Outputs, Assignment, For, CodeBlock, staged RK1-RK4, time-dependent boundary updates and source terms). Should this IR be implemented as an extension to the `@physics` or `field` DSL in the language parser, or strictly as a library builder API via structs and functions in the standard library?
+
+**Options:**
+1. DSL extension: Add specialized syntax in the parser (like `evolves as`) to lower into the solver IR directly.
+2. Library builder API: Use standard Flow structs, arrays, and functions (e.g., `Builder::add_assignment(...)`) to construct the IR without changing the language.
+3. Hybrid: Build the core IR structure in the standard library first, then add lightweight syntactic sugar later if needed.
+
+**Answer:** (Pending)
+
 ### 2026-10-08: Float literals in f32 arithmetic: f32 or f64?
 
 **Context:** #729 lists "unnecessary f32<->f64 promotion" as a codegen tax.

@@ -1,0 +1,40 @@
+# Synthetic periodic flood-wave regression for Flow's native shallow-water kernel.
+# Checks finite-volume mass and momentum conservation and positive depth.
+import "stdlib/science/sofia_shallow_water.flow"
+
+function main() -> i32 {
+    let h: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let mx: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let my: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let hn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let mxn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let myn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    for i in 0 to 64 {
+        h[i] = 1.0
+        mx[i] = 0.02
+        my[i] = 0.01
+    }
+    h[28] = 1.1
+    let mass0: f64 = sofia_sw_mass(h, 64, 1.0, 1.0)
+    for step in 0 to 20 {
+        sofia_sw_step_periodic(h, mx, my, hn, mxn, myn,
+                               8, 8, 1.0, 1.0, 0.02, 1.0)
+        for i in 0 to 64 {
+            h[i] = hn[i]
+            mx[i] = mxn[i]
+            my[i] = myn[i]
+            if h[i] <= 0.0 or h[i] != h[i] { return 1 }
+        }
+    }
+    let mass1: f64 = sofia_sw_mass(h, 64, 1.0, 1.0)
+    if sofia_sw_abs(mass1 - mass0) > 1e-8 { return 2 }
+    let mut sx: f64 = 0.0
+    let mut sy: f64 = 0.0
+    for i in 0 to 64 {
+        sx = sx + mx[i]
+        sy = sy + my[i]
+    }
+    if sofia_sw_abs(sx - 1.28) > 1e-8 { return 3 }
+    if sofia_sw_abs(sy - 0.64) > 1e-8 { return 4 }
+    return 0
+}

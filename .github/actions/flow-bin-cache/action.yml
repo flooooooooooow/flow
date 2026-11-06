@@ -38,7 +38,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
     - id: restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ steps.key.outputs.paths }}
         key: ${{ steps.key.outputs.key }}

@@ -1,0 +1,45 @@
+import "stdlib/science/sofia_domain.flow"
+
+function inc_abs(x: f64) -> f64 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+function main() -> i32 {
+    # 1D test
+    let grid1: SofiaGrid1D = SofiaGrid1D { nx: 10, lx: 10.0, dx: 1.0, origin_x: 0.0 }
+    let c1: f64 = sofia_coord_1d(grid1, 0, STAG_CENTER)
+    if inc_abs(c1 - 0.5) > 1e-8 { return 1 }
+    let c2: f64 = sofia_coord_1d(grid1, 0, STAG_FACE_X)
+    if inc_abs(c2 - 0.0) > 1e-8 { return 2 }
+
+    # 2D test
+    let grid2: SofiaGrid2D = SofiaGrid2D {
+        nx: 10, ny: 10,
+        lx: 10.0, ly: 10.0,
+        dx: 1.0, dy: 1.0,
+        origin_x: 0.0, origin_y: 0.0
+    }
+    let c3: f64 = sofia_coord_2d_y(grid2, 1, STAG_CENTER)
+    if inc_abs(c3 - 1.5) > 1e-8 { return 3 }
+    let c4: f64 = sofia_coord_2d_y(grid2, 1, STAG_FACE_Y)
+    if inc_abs(c4 - 1.0) > 1e-8 { return 4 }
+
+    # 3D test
+    let grid3: SofiaGrid3D = SofiaGrid3D {
+        nx: 10, ny: 10, nz: 10,
+        lx: 10.0, ly: 10.0, lz: 10.0,
+        dx: 1.0, dy: 1.0, dz: 1.0,
+        origin_x: 0.0, origin_y: 0.0, origin_z: 0.0
+    }
+    let c5: f64 = sofia_coord_3d_z(grid3, 2, STAG_CENTER)
+    if inc_abs(c5 - 2.5) > 1e-8 { return 5 }
+    let c6: f64 = sofia_coord_3d_z(grid3, 2, STAG_VERTEX)
+    if inc_abs(c6 - 2.0) > 1e-8 { return 6 }
+
+    # Dimensionality check
+    let dom: SofiaDomain = SofiaDomain { dim: DIM_3D }
+    if dom.dim != DIM_3D { return 7 }
+
+    return 0
+}

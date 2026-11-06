@@ -404,10 +404,19 @@ jobs:
       - name: Run every complete program in the documentation
         if: always()
         run: ./flow tool doc_examples --run --check-ledger
+      # Native tools tests run only for compiler/tools changes. Demo pages
+      # can change on docs-only PRs, so enforce the generated-file contract
+      # here as well rather than letting manual edits slip through.
+      - name: Generated demo catalog and navigation stay in sync
+        if: needs.changes.outputs.docs == 'true'
+        run: |
+          ./flow tool demo_overview --check --check-previews
+          ./flow tool demo_nav --check
+          ./flow tool shader_gallery --check
 
   flow-tier2:
     name: FLOW tier-2
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: changes
     if: |
       needs.changes.outputs.src == 'true' ||
@@ -515,12 +524,13 @@ jobs:
           rm -rf build/fibonacci build/hello_world
           ./flow run examples/basics/hello_world.flow
           ./flow compile examples/basics/fibonacci.flow
-          # fibonacci.flow main returns fib(10) == 55 as process exit status
+          # fibonacci.flow main prints fib(10) == 55
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
   # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
   # three consecutive generations of flowc must agree byte for byte.
@@ -557,10 +567,11 @@ jobs:
         run: |
           ./flow compile examples/basics/fibonacci.flow
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
       - name: Same again with python and python3 removed from PATH
         run: |
@@ -574,10 +585,11 @@ jobs:
           ./compiler/scripts/bootstrap_from_c.sh
           ./flow compile examples/basics/fibonacci.flow
           set +e
-          ./build/fibonacci
+          out=$(./build/fibonacci)
           ec=$?
           set -e
-          test "$ec" -eq 55
+          test "$ec" -eq 0
+          test "$out" = "55"
 
       # The default `flow run` / `flow compile` path from a clean compiler/build
       # and build/: flowc comes from ensure_flowc (bootstrap C with cc), and the
@@ -604,7 +616,7 @@ jobs:
   # to everything these goldens read.
   flowc-goldens:
     name: flowc goldens and MLIR (no Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     needs: changes
     if: needs.changes.outputs.goldens == 'true'
@@ -686,7 +698,7 @@ jobs:
   # files; they drive ./flow, the Flow tools and the docs as subprocesses.
   native-tools:
     name: Native tools (no Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: changes
     if: |
       needs.changes.outputs.tools == 'true' ||

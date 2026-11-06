@@ -12,5 +12,5 @@ function Q_field_step(
     next: ptr<f64>,
     r: f64
 ) -> void {
-    heat_euler_step_1d(u, next, 3, r, 0.0, 0.0)
+    heat_euler_step_1d(u, next, 3, r * (2), 0.0, 0.0)
 }
