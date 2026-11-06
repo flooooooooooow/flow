@@ -9,7 +9,7 @@ function T_field_step(
     next: ptr<f64>,
     r: f64
 ) -> void {
-    heat_euler_step_1d(u, next, 8, r, 0.0, 0.0)
+    heat_euler_step_1d(u, next, 8, r * (e2), 0.0, 0.0)
 }
 
 function main() -> i32 { return 0 }
