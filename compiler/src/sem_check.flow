@@ -5115,6 +5115,16 @@ function sem_is_const_scalar(c: ptr<Sem>, e: i32) -> bool {
     if sem_is_unary_op(c, e, TOK_MINUS) {
         return sem_is_literal(c, sem_na(c, e))
     }
+    if sem_nk(c, e) == AST_STRUCT_LIT {
+        let mut f: i32 = sem_na(c, e)
+        while f != AST_NONE {
+            if sem_is_const_scalar(c, sem_na(c, f)) == false {
+                return false
+            }
+            f = sem_nnext(c, f)
+        }
+        return true
+    }
     return false
 }
 
@@ -5182,7 +5192,7 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
     }
     if is_fixed {
         let en: string = sem_pt_name(c.t, tys.pt_elem[pt])
-        if sem_is_static_primitive(en) == false or sem_s_eq(en, "string") {
+        if sem_is_static_primitive(en) == false and sem_s_eq(en, "string") == false and sem_ty_kind(c.t, sem_parse_type(c, tys.pt_elem[pt])) != TK_STRUCT {
             sem_err(c, "Module static '" + name + "' has unsupported array element type '" + en + "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)")
             return
         }
@@ -5203,13 +5213,13 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
             }
             x = sem_nnext(c, x)
         }
-    } elif sem_is_static_primitive(tn) {
+    } elif sem_is_static_primitive(tn) or sem_s_eq(tn, "string") or sem_ty_kind(c.t, sem_parse_type(c, pt)) == TK_STRUCT {
         if sem_is_const_scalar(c, value) == false {
             sem_err(c, "Module static '" + name + "' initializer must be a compile-time constant literal")
             return
         }
     } else {
-        sem_err(c, "Module static '" + name + "' has unsupported type '" + tn + "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, or ptr<T>")
+        sem_err(c, "Module static '" + name + "' has unsupported type '" + tn + "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, a struct, or ptr<T>")
         return
     }
     let et: i32 = sem_check_expression(c, value)
