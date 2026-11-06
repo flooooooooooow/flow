@@ -56,7 +56,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        pr: [1568, 1616, 1620, 1638, 1674]
+        pr: [1560, 1568, 1616, 1620, 1638, 1674]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +70,7 @@ jobs:
           git config user.name "Flow PR integration"
           git config user.email "flow-pr-integration@users.noreply.github.com"
           case "$PR_NUMBER" in
+            1560) target="fix/mlir-extern-type" ;;
             1568) target="fix/mlir-complex" ;;
             1616) target="issue-562-module-statics-8220065690770900155" ;;
             1620) target="issue-562-module-statics-8220065690770900155-11774196869383385865" ;;
@@ -85,7 +86,8 @@ jobs:
           merge_code=$?
           set -e
           if [ "$merge_code" -ne 0 ]; then
-            while IFS= read -r file; do
+            mapfile -t conflicted_files < <(git diff --name-only --diff-filter=U)
+            for file in "${conflicted_files[@]}"; do
               case "$file" in
                 compiler/bootstrap/flowc_stage_a|compiler/bootstrap/flowc_stage_a.c|compiler/fixtures/mlir/corpus.txt|tests/mlir_commands/expected/test_mlir.out|runtime/flow_fctx_arm64.S|runtime/flow_fctx_x86_64.S)
                   git checkout --theirs -- "$file"
@@ -96,7 +98,7 @@ jobs:
                   exit 1
                   ;;
               esac
-            done < <(git diff --name-only --diff-filter=U)
+            done
           fi
           if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
             echo "Unresolved merge" >&2
