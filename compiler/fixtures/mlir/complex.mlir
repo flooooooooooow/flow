@@ -535,22 +535,22 @@ llvm.store %v108, %v110 : !llvm.struct<(f32, f32)>, !llvm.ptr
 %v213 = llvm.load %v101 : !llvm.ptr -> !llvm.struct<(f32, f32)>
 %v214 = llvm.extractvalue %v213[0] : !llvm.struct<(f32, f32)>
 %v215 = llvm.extractvalue %v213[1] : !llvm.struct<(f32, f32)>
-%v216 = arith.mulf %v214, %v212 : f32
-%v217 = arith.mulf %v215, %v212 : f32
+%v216 = arith.mulf %v215, %v212 : f32
+%v217 = arith.mulf %v214, %v212 : f32
 %v218 = llvm.mlir.undef : !llvm.struct<(f32, f32)>
-%v219 = llvm.insertvalue %v216, %v218[0] : !llvm.struct<(f32, f32)>
-%v220 = llvm.insertvalue %v217, %v219[1] : !llvm.struct<(f32, f32)>
+%v219 = llvm.insertvalue %v217, %v218[0] : !llvm.struct<(f32, f32)>
+%v220 = llvm.insertvalue %v216, %v219[1] : !llvm.struct<(f32, f32)>
 %v221 = llvm.mlir.constant(1 : i64) : i64
 %v222 = llvm.alloca %v221 x !llvm.struct<(f32, f32)> : (i64) -> !llvm.ptr
 llvm.store %v220, %v222 : !llvm.struct<(f32, f32)>, !llvm.ptr
 %v223 = llvm.load %v101 : !llvm.ptr -> !llvm.struct<(f32, f32)>
 %v224 = llvm.extractvalue %v223[0] : !llvm.struct<(f32, f32)>
 %v225 = llvm.extractvalue %v223[1] : !llvm.struct<(f32, f32)>
-%v226 = arith.divf %v224, %v212 : f32
-%v227 = arith.divf %v225, %v212 : f32
+%v226 = arith.divf %v225, %v212 : f32
+%v227 = arith.divf %v224, %v212 : f32
 %v228 = llvm.mlir.undef : !llvm.struct<(f32, f32)>
-%v229 = llvm.insertvalue %v226, %v228[0] : !llvm.struct<(f32, f32)>
-%v230 = llvm.insertvalue %v227, %v229[1] : !llvm.struct<(f32, f32)>
+%v229 = llvm.insertvalue %v227, %v228[0] : !llvm.struct<(f32, f32)>
+%v230 = llvm.insertvalue %v226, %v229[1] : !llvm.struct<(f32, f32)>
 %v231 = llvm.mlir.constant(1 : i64) : i64
 %v232 = llvm.alloca %v231 x !llvm.struct<(f32, f32)> : (i64) -> !llvm.ptr
 llvm.store %v230, %v232 : !llvm.struct<(f32, f32)>, !llvm.ptr
