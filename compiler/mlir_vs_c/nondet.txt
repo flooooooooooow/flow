@@ -1,0 +1,6 @@
+# Tests whose output depends on scheduling, network delays, or system timing.
+examples/concurrency/channels.flow # Thread scheduling and channel recv timing is non-deterministic.
+examples/concurrency/pipeline.flow # Thread scheduling causes unpredictable interleave.
+examples/concurrency/threaded_async.flow # Real pthread concurrency.
+examples/net/http_hello.flow # Networking timing is non-deterministic.
+examples/net/tcp_echo.flow # Networking timing is non-deterministic.
