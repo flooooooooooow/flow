@@ -1,0 +1,34 @@
+# MLIR parity fixture: opaque C types declared with `extern type`, at the
+# top level and inside an extern block, reached only through ptr<T>.
+
+extern type FILE
+
+extern {
+    type DIR
+    function fopen(path: string, mode: string) -> ptr<FILE>
+    function fclose(f: ptr<FILE>) -> i32
+    function opendir(path: string) -> ptr<DIR>
+    function closedir(d: ptr<DIR>) -> i32
+    function printf(fmt: string, ...) -> i32
+}
+
+function is_open(f: ptr<FILE>) -> i32 {
+    if f == null as ptr<FILE> {
+        return 0
+    }
+    return 1
+}
+
+function main() -> i32 {
+    let missing: ptr<FILE> = fopen("/nonexistent/flow-extern-type", "r")
+    printf("missing open %d\n", is_open(missing))
+    let none: ptr<DIR> = opendir("/nonexistent/flow-extern-type")
+    if none == null as ptr<DIR> {
+        printf("no dir\n")
+    }
+    let d: ptr<DIR> = opendir("/")
+    if d != null as ptr<DIR> {
+        printf("root dir %d\n", closedir(d))
+    }
+    return 0
+}
