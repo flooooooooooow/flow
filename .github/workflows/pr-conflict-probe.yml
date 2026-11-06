@@ -48,23 +48,38 @@ jobs:
           path: conflict-probe/
           if-no-files-found: warn
 
-  repair-extern-type:
+  repair-remaining:
     if: github.repository == 'flooooooooooow/flow'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        pr: [1568, 1616, 1620, 1638, 1674]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Resolve PR 1560 against current main and prove bootstrap
+      - name: Reconcile merge and verify the compiler before pushing
         shell: bash
+        env:
+          PR_NUMBER: ${{ matrix.pr }}
         run: |
           set -euo pipefail
           git config user.name "Flow PR integration"
           git config user.email "flow-pr-integration@users.noreply.github.com"
+          case "$PR_NUMBER" in
+            1568) target="fix/mlir-complex" ;;
+            1616) target="issue-562-module-statics-8220065690770900155" ;;
+            1620) target="issue-562-module-statics-8220065690770900155-11774196869383385865" ;;
+            1638) target="reapply-mlir-parity-1577-10551875307817394677" ;;
+            1674) target="jules-1562-vector-lit-309291271695338674" ;;
+            *) echo "Unknown PR" >&2; exit 1 ;;
+          esac
           git fetch origin main
-          git fetch origin "refs/pull/1560/head:refs/remotes/pr-1560"
-          git switch -C repair-1560 refs/remotes/pr-1560
+          git fetch origin "refs/pull/${PR_NUMBER}/head:refs/remotes/pr-${PR_NUMBER}"
+          git switch -C "repair-${PR_NUMBER}" "refs/remotes/pr-${PR_NUMBER}"
           set +e
           git merge --no-commit --no-ff origin/main
           merge_code=$?
@@ -72,7 +87,7 @@ jobs:
           if [ "$merge_code" -ne 0 ]; then
             while IFS= read -r file; do
               case "$file" in
-                compiler/bootstrap/flowc_stage_a|compiler/bootstrap/flowc_stage_a.c|compiler/fixtures/mlir/corpus.txt)
+                compiler/bootstrap/flowc_stage_a|compiler/bootstrap/flowc_stage_a.c|compiler/fixtures/mlir/corpus.txt|tests/mlir_commands/expected/test_mlir.out|runtime/flow_fctx_arm64.S|runtime/flow_fctx_x86_64.S)
                   git checkout --theirs -- "$file"
                   git add -- "$file"
                   ;;
@@ -88,7 +103,7 @@ jobs:
             exit 1
           fi
           git add -u
-          git commit -m "merge: bring PR 1560 onto main, use main derived outputs"
+          git commit -m "merge: bring PR #${PR_NUMBER} onto current main"
           env -u FLOWC_IN -u FLOWC_OUT "$(./flow tool compiler/scripts/flowc_host.flow)"
           ./compiler/scripts/bootstrap_from_c.sh --regen
           ./compiler/scripts/bootstrap_from_c.sh --verify
@@ -96,7 +111,7 @@ jobs:
           ./flow tool compiler/scripts/roundtrip.flow
           git add -- compiler/bootstrap/flowc_stage_a.c compiler/bootstrap/flowc_stage_a
           if ! git diff --cached --quiet; then
-            git commit -m "build: regenerate fixed-point bootstrap after PR 1560 merge"
+            git commit -m "build: regenerate bootstrap after PR #${PR_NUMBER} merge"
           fi
           git status --short
-          git push origin HEAD:refs/heads/fix/mlir-extern-type
+          git push origin "HEAD:refs/heads/${target}"
