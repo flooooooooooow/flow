@@ -1,0 +1,49 @@
+name: PR conflict probe (temporary)
+on:
+  push:
+    branches:
+      - automation/resolve-flow-pr-conflicts-20261106
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Inspect actual merge conflicts against main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Flow conflict audit"
+          git config user.email "flow-conflict-audit@users.noreply.github.com"
+          mkdir -p conflict-probe
+          git fetch origin main
+          for pr in 1560 1568 1616 1620 1638 1674; do
+            git fetch --no-tags origin "refs/pull/${pr}/head:refs/remotes/pr-${pr}"
+            git switch -C "probe-${pr}" origin/main
+            set +e
+            git merge --no-commit --no-ff "refs/remotes/pr-${pr}" >"conflict-probe/pr-${pr}-merge.log" 2>&1
+            outcome=$?
+            set -e
+            printf '%s\n' "PR #${pr} merge exit: ${outcome}" | tee "conflict-probe/pr-${pr}-status.txt"
+            git diff --name-only --diff-filter=U | tee "conflict-probe/pr-${pr}-conflicts.txt"
+            git status --short >"conflict-probe/pr-${pr}-files.txt"
+            if [ "${outcome}" -ne 0 ]; then
+              git merge --abort
+            else
+              git reset --hard origin/main
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flow-pr-conflict-probe
+          path: conflict-probe/
+          if-no-files-found: warn
