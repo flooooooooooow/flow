@@ -20,7 +20,6 @@
 # the text to recorded goldens as a regression check.
 
 import .fileio { flowc_write_file }
-import .cgen { flowc_cgen_is_libc_clash }
 import .proof_lower { flowc_proof_erase }
 import .type_id {
     flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
@@ -4767,12 +4766,6 @@ function mlg_libc_mode(m: ptr<Mlg>, k: i32) -> i32 {
     }
     let params: i32 = m[0].arena.nodes[f].a
     if params != AST_NONE and mlg_ft_struct(m, m[0].arena.nodes[params].a) >= 0 {
-        return 2
-    }
-    if m[0].arena.nodes[f].c != AST_NONE and flowc_cgen_is_libc_clash(m[0].src, mlg_ns(m, f), mlg_ne(m, f)) == 1 {
-        # The C backend renames a Flow definition of these names
-        # (`abs(x: f32)` in stdlib/math.flow) for the whole unit, so every
-        # call reaches the Flow function.
         return 2
     }
     if mlg_chain_len(m, params) != np {
@@ -20478,15 +20471,11 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                         return
                     }
                     while ef != AST_NONE {
-                        let ek: i32 = mlg_kind(m, ef)
-                        if ek == AST_FN {
-                            mlg_add_fn(m, ef, 1)
-                        } elif ek != AST_EXTERN_TYPE {
-                            # An opaque `type X` needs no declaration: a
-                            # ptr<X> is !llvm.ptr whatever X is.
-                            mlg_refuse(m, ef, "extern const")
+                        if mlg_kind(m, ef) != AST_FN {
+                            mlg_refuse(m, ef, "extern type")
                             return
                         }
+                        mlg_add_fn(m, ef, 1)
                         ef = m[0].arena.nodes[ef].next
                     }
                 } else {
@@ -20516,10 +20505,6 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                                         # trait / impl / test blocks: Python's MLIR
                                         # generator emits nothing for them.
                                         let _skip: i32 = 0
-                                    } elif k == AST_EXTERN_TYPE {
-                                        # An opaque C type is only reached
-                                        # through ptr<X>, which is !llvm.ptr.
-                                        let _opaque: i32 = 0
                                     } elif k == AST_C_INCLUDE or k == AST_C_IMPORT {
                                         # A C header only matters to the C
                                         # backend; the functions the program
