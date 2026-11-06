@@ -1,0 +1,37 @@
+# ACKERMANN FURNACE: stack-depth, nested recursive calls, non-primitive recursion.
+# Exact call counters make it impossible to replace the search with a formula.
+extern { function printf(fmt: string, ...) -> i32 }
+
+struct Counter {
+    calls: i64,
+    current_depth: i32,
+    peak_depth: i32
+}
+
+function ack(m: i32, n: i32, stats: ptr<Counter>) -> i32 {
+    stats.calls = stats.calls + 1
+    stats.current_depth = stats.current_depth + 1
+    if stats.current_depth > stats.peak_depth { stats.peak_depth = stats.current_depth }
+    let mut result: i32 = 0
+    if m == 0 {
+        result = n+1
+    } elif n == 0 {
+        result = ack(m-1,1,stats)
+    } else {
+        let inner: i32 = ack(m,n-1,stats)
+        result = ack(m-1,inner,stats)
+    }
+    stats.current_depth = stats.current_depth - 1
+    return result
+}
+
+function main() -> i32 {
+    let mut counter: Counter = Counter { calls: 0, current_depth: 0, peak_depth: 0 }
+    let r: i32 = ack(3,12,&counter)
+    printf("ACKERMANN FURNACE / nested recursion with no memoization\n")
+    printf("A(3,12) = %d\n",r)
+    printf("Recursive function calls = %ld\n",counter.calls)
+    printf("Maximum simultaneous recursive frames = %d\n",counter.peak_depth)
+    if r!=32765 or counter.peak_depth<32000 or counter.current_depth!=0 { return 1 }
+    return 0
+}

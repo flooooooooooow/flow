@@ -2,7 +2,7 @@ Stack depth analysis: examples/basics/loops.flow
 ============================================================
 Function                                  Max depth Chain
 ------------------------------------------------------------
-main                                           16 bytes  main → sum_range
+main                                           72 bytes  main → println
 sum_range                                       8 bytes  sum_range
 factorial                                       8 bytes  factorial
 
@@ -10,7 +10,7 @@ WCET analysis: examples/basics/loops.flow
 ============================================================
 Function                                   Max cost Chain
 ------------------------------------------------------------
-main                                         5032 inst  main → sum_range
+main                                         5042 inst  main → sum_range
 sum_range                                    5008 inst  sum_range
 factorial                                    5008 inst  factorial
 

@@ -15,5 +15,6 @@ function main() -> i32 {
     let b: i32 = 98
     let result: i32 = gcd(a, b)
     # Would print: "GCD of 56 and 98 is 14"
-    return result
+    println(result)
+    return 0
 }
