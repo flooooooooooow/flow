@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
@@ -47,3 +47,56 @@ jobs:
           name: flow-pr-conflict-probe
           path: conflict-probe/
           if-no-files-found: warn
+
+  repair-extern-type:
+    if: github.repository == 'flooooooooooow/flow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve PR 1560 against current main and prove bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Flow PR integration"
+          git config user.email "flow-pr-integration@users.noreply.github.com"
+          git fetch origin main
+          git fetch origin "refs/pull/1560/head:refs/remotes/pr-1560"
+          git switch -C repair-1560 refs/remotes/pr-1560
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_code=$?
+          set -e
+          if [ "$merge_code" -ne 0 ]; then
+            while IFS= read -r file; do
+              case "$file" in
+                compiler/bootstrap/flowc_stage_a|compiler/bootstrap/flowc_stage_a.c|compiler/fixtures/mlir/corpus.txt)
+                  git checkout --theirs -- "$file"
+                  git add -- "$file"
+                  ;;
+                *)
+                  echo "Unexpected real-source conflict: $file" >&2
+                  exit 1
+                  ;;
+              esac
+            done < <(git diff --name-only --diff-filter=U)
+          fi
+          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+            echo "Unresolved merge" >&2
+            exit 1
+          fi
+          git add -u
+          git commit -m "merge: bring PR 1560 onto main, use main derived outputs"
+          env -u FLOWC_IN -u FLOWC_OUT "$(./flow tool compiler/scripts/flowc_host.flow)"
+          ./compiler/scripts/bootstrap_from_c.sh --regen
+          ./compiler/scripts/bootstrap_from_c.sh --verify
+          ./flow tool compiler/scripts/self_host_full.flow
+          ./flow tool compiler/scripts/roundtrip.flow
+          git add -- compiler/bootstrap/flowc_stage_a.c compiler/bootstrap/flowc_stage_a
+          if ! git diff --cached --quiet; then
+            git commit -m "build: regenerate fixed-point bootstrap after PR 1560 merge"
+          fi
+          git status --short
+          git push origin HEAD:refs/heads/fix/mlir-extern-type
