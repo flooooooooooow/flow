@@ -774,7 +774,9 @@ export function run_mlir_tests() -> i32 {
         sl_push(f, "*.flow")
         let c: ptr<ProcCmd> = cmd(f)
         cmd_quiet_err(c)
-        sl_extend(test_files, s_lines(capture(c)))
+        let lines: ptr<ProcStrs> = s_lines(capture(c))
+        sl_sort(lines, false)
+        sl_extend(test_files, lines)
     }
     let core: ptr<ProcStrs> = sl_of3("tests/core/hello_world.flow", "tests/core/fibonacci.flow", "tests/core/loops.flow")
     let mut i: i32 = 0

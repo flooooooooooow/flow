@@ -1116,6 +1116,10 @@
         {
           "label": "Schur Lattice Allpass",
           "path": "research/schur_lattice_allpass/README.md"
+        },
+        {
+          "label": "Compiler Optimization Research",
+          "path": "research/compiler-optimization-2026.md"
         }
       ]
     },

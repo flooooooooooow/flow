@@ -11,5 +11,6 @@ function main() -> i32 {
     let n: i32 = 5
     let result: i32 = factorial(n)
     # Would print: "Factorial of 5 is 120"
-    return result
+    println(result)
+    return 0
 }

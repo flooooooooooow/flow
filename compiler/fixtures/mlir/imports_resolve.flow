@@ -1,0 +1,17 @@
+# MLIR parity fixture: imports resolved as the C bundle resolves them. A
+# string import rooted at the repository (the search directory, as the
+# tools under tools/ import tools/flow_cli/sys.flow), and std.bytebuf, whose
+# module reaches compiler/src/bytebuf.flow through `..`.
+
+import "compiler/fixtures/mlir/mlir_dep.flow"
+import std.bytebuf { ByteBuf, bb_new, bb_puts, bb_len, bb_free }
+
+function main() -> i32 {
+    println(dep_scale(4))
+    let b: ptr<ByteBuf> = bb_new(16)
+    bb_puts(b, "resolved")
+    println(bb_len(b))
+    bb_free(b)
+    println(dep_total())
+    return 0
+}

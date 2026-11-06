@@ -50,3 +50,8 @@ SYM(flow_fctx_bootstrap):
 #if defined(__APPLE__)
 .subsections_via_symbols
 #endif
+
+#if defined(__linux__)
+/* ELF object must explicitly declare that no executable stack is required. */
+.section .note.GNU-stack,"",@progbits
+#endif

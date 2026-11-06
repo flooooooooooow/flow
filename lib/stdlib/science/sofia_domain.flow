@@ -1,0 +1,125 @@
+# Flow-native PDE/simulation framework Domain API.
+
+# Enumeration for topological dimensionality of the domain.
+
+export const DIM_1D: i32 = 1
+export const DIM_2D: i32 = 2
+export const DIM_3D: i32 = 3
+
+
+# Enumeration for explicit memory domains to track where a field resides.
+
+export const MEM_HOST: i32 = 1
+export const MEM_DEVICE: i32 = 2
+
+
+# Enumeration for grid staggering.
+
+export const STAG_CENTER: i32 = 1
+export const STAG_FACE_X: i32 = 2
+export const STAG_FACE_Y: i32 = 3
+export const STAG_FACE_Z: i32 = 4
+export const STAG_VERTEX: i32 = 5
+
+
+# Base domain trait/interface representation (marker struct in Flow).
+export struct SofiaDomain {
+    dim: i32
+}
+
+export struct SofiaGrid1D {
+    nx: i32,
+    lx: f64,
+    dx: f64,
+    origin_x: f64
+}
+
+export struct SofiaGrid2D {
+    nx: i32,
+    ny: i32,
+    lx: f64,
+    ly: f64,
+    dx: f64,
+    dy: f64,
+    origin_x: f64,
+    origin_y: f64
+}
+
+export struct SofiaGrid3D {
+    nx: i32,
+    ny: i32,
+    nz: i32,
+    lx: f64,
+    ly: f64,
+    lz: f64,
+    dx: f64,
+    dy: f64,
+    dz: f64,
+    origin_x: f64,
+    origin_y: f64,
+    origin_z: f64
+}
+
+export struct SofiaParticleDomain {
+    dim: i32,
+    max_particles: i32
+}
+
+export struct SofiaField {
+    mem: i32,
+    # Pointer to contiguous caller-owned data buffer
+    data: ptr<f64>,
+    len: i32
+}
+
+export struct SofiaGridField {
+    field: SofiaField,
+    staggering: i32
+}
+
+# Coordinate transformations
+
+export function sofia_grid_offset_x(stag: i32) -> f64 {
+    if stag == STAG_FACE_X or stag == STAG_VERTEX {
+        return 0.0
+    }
+    return 0.5
+}
+
+export function sofia_grid_offset_y(stag: i32) -> f64 {
+    if stag == STAG_FACE_Y or stag == STAG_VERTEX {
+        return 0.0
+    }
+    return 0.5
+}
+
+export function sofia_grid_offset_z(stag: i32) -> f64 {
+    if stag == STAG_FACE_Z or stag == STAG_VERTEX {
+        return 0.0
+    }
+    return 0.5
+}
+
+export function sofia_coord_1d(grid: SofiaGrid1D, ix: i32, stag: i32) -> f64 {
+    return grid.origin_x + ((ix as f64) + sofia_grid_offset_x(stag)) * grid.dx
+}
+
+export function sofia_coord_2d_x(grid: SofiaGrid2D, ix: i32, stag: i32) -> f64 {
+    return grid.origin_x + ((ix as f64) + sofia_grid_offset_x(stag)) * grid.dx
+}
+
+export function sofia_coord_2d_y(grid: SofiaGrid2D, iy: i32, stag: i32) -> f64 {
+    return grid.origin_y + ((iy as f64) + sofia_grid_offset_y(stag)) * grid.dy
+}
+
+export function sofia_coord_3d_x(grid: SofiaGrid3D, ix: i32, stag: i32) -> f64 {
+    return grid.origin_x + ((ix as f64) + sofia_grid_offset_x(stag)) * grid.dx
+}
+
+export function sofia_coord_3d_y(grid: SofiaGrid3D, iy: i32, stag: i32) -> f64 {
+    return grid.origin_y + ((iy as f64) + sofia_grid_offset_y(stag)) * grid.dy
+}
+
+export function sofia_coord_3d_z(grid: SofiaGrid3D, iz: i32, stag: i32) -> f64 {
+    return grid.origin_z + ((iz as f64) + sofia_grid_offset_z(stag)) * grid.dz
+}

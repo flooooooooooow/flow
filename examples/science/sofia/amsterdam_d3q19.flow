@@ -1,0 +1,48 @@
+# Synthetic periodic D3Q19 density pulse, Amsterdam showcase kernel precursor.
+# No building dataset or GPU execution yet, but supports LES, obstacles, and forcing.
+# Run: ./flow run examples/science/sofia/amsterdam_d3q19.flow
+import "stdlib/science/sofia_lattice_boltzmann.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function main() -> i32 {
+    let f: array<f64, 3648> = [0.0, 0.0, 0.0, 0.0]
+    let next: array<f64, 3648> = [0.0, 0.0, 0.0, 0.0]
+    let masks: array<i32, 192> = [0, 0, 0, 0]
+
+    for i in 0 to 192 {
+        masks[i] = 0
+    }
+    # Add a dummy obstacle to test bounce-back
+    let obs_cell: i32 = sofia_lbm_index(5, 4, 2, 8, 6)
+    masks[obs_cell] = 1
+
+    sofia_lbm_initialise(f, 8, 6, 4, 1.0, 0.01, 0.0, 0.0)
+    let source: i32 = sofia_lbm_index(4, 3, 2, 8, 6)
+    for q in 0 to 19 {
+        f[source * 19 + q] = sofia_lbm_equilibrium(q, 1.03, 0.01, 0.0, 0.0)
+    }
+    let mass0: f64 = sofia_lbm_mass(f, 192)
+    for step in 0 to 20 {
+        # Using Smagorinsky LES step with c_smag=0.16 and a tiny forcing to verify those paths
+        sofia_lbm_d3q19_les_step(f, next, masks, 8, 6, 4, 1.1, 0.16, 0.0001, 0.0, 0.0)
+        for i in 0 to 3648 {
+            if next[i] != next[i] { return 1 }
+            f[i] = next[i]
+        }
+    }
+    let mass1: f64 = sofia_lbm_mass(f, 192)
+    let mut drift: f64 = mass1 - mass0
+    if drift < 0.0 { drift = 0.0 - drift }
+    println("Flow / D3Q19 BGK periodic density pulse")
+    print("initial mass = ")
+    printf("%.12f\n", mass0)
+    print("final mass   = ")
+    printf("%.12f\n", mass1)
+    print("mass drift   = ")
+    printf("%.12f\n", drift)
+    if drift > 1e-8 { return 2 }
+    return 0
+}

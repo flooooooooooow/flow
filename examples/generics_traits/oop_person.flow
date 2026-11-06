@@ -15,5 +15,6 @@ function person_greet(p: Person) -> i32 {
 function main() -> i32 {
     let alice: Person = Person { name: 1, age: 30 }
     let greeting: i32 = person_greet(alice)
-    return greeting  # Should be 30
+    println(greeting)
+    return 0  # Should be 30
 }

@@ -1,0 +1,97 @@
+# Recursive procedural biome: a deterministic generative-art SVG renderer.
+# A forest of self-similar trees, wind deformation, stochastic branching,
+# depth-dependent leaf palettes, and a 100% native Flow recursive traversal.
+extern {
+    function printf(fmt: string, ...) -> i32
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+}
+
+# Weather is a continuous-time Flow model, integrated before the recursive renderer.
+flow Weather {
+    state breeze: f64 = 0.0
+    input pressure: f64
+    breeze evolves as pressure - breeze*0.45
+    always { breeze < 3.0 breeze > -3.0 }
+}
+
+function next_seed(n: i64) -> i64 {
+    return (n * 48271 + 1299709) % 2147483647
+}
+
+function uniform(n: i64) -> f64 {
+    return (next_seed(n) % 10000) as f64 / 10000.0
+}
+
+function leaf(x: f64, y: f64, r: f64, seed: i64) {
+    let color: i32 = (next_seed(seed) % 5) as i32
+    if color == 0 { printf("<ellipse cx='%0.2f' cy='%0.2f' rx='%0.2f' ry='%0.2f' fill='#b3f0b2' opacity='.87'/>\n", x, y, r, r * 1.4) }
+    if color == 1 { printf("<ellipse cx='%0.2f' cy='%0.2f' rx='%0.2f' ry='%0.2f' fill='#69d9b5' opacity='.84'/>\n", x, y, r * 0.8, r * 1.1) }
+    if color == 2 { printf("<ellipse cx='%0.2f' cy='%0.2f' rx='%0.2f' ry='%0.2f' fill='#f0d7a1' opacity='.79'/>\n", x, y, r * 0.7, r) }
+    if color == 3 { printf("<ellipse cx='%0.2f' cy='%0.2f' rx='%0.2f' ry='%0.2f' fill='#a4afea' opacity='.80'/>\n", x, y, r * 0.9, r * 1.2) }
+    if color == 4 { printf("<ellipse cx='%0.2f' cy='%0.2f' rx='%0.2f' ry='%0.2f' fill='#f0a9bc' opacity='.78'/>\n", x, y, r * 0.65, r) }
+}
+
+function branch(x: f64, y: f64, angle: f64, length: f64, depth: i32, seed: i64, wind: f64) -> i32 {
+    let bend: f64 = sin(y * 0.010 + seed as f64 * 0.000013 + wind) * 0.045
+    let heading: f64 = angle + bend
+    let nx: f64 = x + sin(heading) * length
+    let ny: f64 = y - cos(heading) * length
+    let thickness: f64 = 0.45 + depth as f64 * 0.47
+    if depth >= 6 {
+        printf("<path d='M %0.2f %0.2f Q %0.2f %0.2f %0.2f %0.2f' stroke='#556976' stroke-width='%0.2f' fill='none' stroke-linecap='round'/>\n", x, y, (x+nx)*0.5+wind*2.0, (y+ny)*0.5, nx, ny, thickness)
+    } else {
+        printf("<line x1='%0.2f' y1='%0.2f' x2='%0.2f' y2='%0.2f' stroke='#577d7e' stroke-width='%0.2f' opacity='.85'/>\n", x,y,nx,ny,thickness)
+    }
+    if depth == 0 {
+        leaf(nx, ny, 3.1 + uniform(seed)*3.5, seed)
+        return 1
+    }
+    let lseed: i64 = next_seed(seed + 19)
+    let rseed: i64 = next_seed(seed + 59)
+    let left: f64 = 0.22 + uniform(lseed) * 0.50
+    let right: f64 = 0.22 + uniform(rseed) * 0.50
+    let shortening: f64 = 0.65 + uniform(seed+11)*0.10
+    let a: i32 = branch(nx,ny,heading-left,length*shortening,depth-1,lseed,wind)
+    let b: i32 = branch(nx,ny,heading+right,length*shortening,depth-1,rseed,wind)
+    return 1+a+b
+}
+
+function main() -> i32 {
+    printf("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 740' width='1200' height='740'>\n")
+    printf("<defs><linearGradient id='sky' x2='0' y2='1'><stop stop-color='#070f29'/><stop offset='0.60' stop-color='#1a3151'/><stop offset='1' stop-color='#3d5d60'/></linearGradient><radialGradient id='moon'><stop stop-color='#fff8d9'/><stop offset='1' stop-color='#cbe8f0'/></radialGradient></defs>\n")
+    printf("<rect width='1200' height='740' fill='url(#sky)'/>\n")
+    printf("<circle cx='894' cy='142' r='75' fill='url(#moon)' opacity='.86'/>\n")
+    printf("<circle cx='894' cy='142' r='112' fill='#bbdfef' opacity='.055'/>\n")
+    let mut star: i64 = 1234567
+    for i in 0..220 {
+        star = next_seed(star)
+        let sx: i32 = (star % 1200) as i32
+        star = next_seed(star)
+        let sy: i32 = (star % 490) as i32
+        star = next_seed(star)
+        let rr: f64 = 0.5 + (star % 100) as f64 / 100.0
+        printf("<circle cx='%d' cy='%d' r='%0.2f' fill='#f1f7ff' opacity='.52'/>\n", sx, sy, rr)
+    }
+    printf("<path d='M0 630 Q240 565 440 620 T900 586 T1200 625 V740 H0 Z' fill='#122b3a'/>\n")
+    let mut weather: Weather = Weather_new()
+    weather.pressure = 0.72
+    for tick in 0..1000 { Weather_step(&weather,0.01) }
+    if Weather_check(&weather) != 0 { return 3 }
+    let mut branches: i32 = 0
+    for t in 0..9 {
+        let seed: i64 = 117 + (t as i64)*43291
+        let x: f64 = 44.0 + t as f64 * 139.0
+        let y: f64 = 620.0 + (t % 3) as f64 * 25.0
+        let size: f64 = 75.0 + (t % 4) as f64 * 17.0
+        let twist: f64 = (uniform(seed) - 0.5)*0.28
+        branches = branches + branch(x,y,twist,size,9,seed,weather.breeze + t as f64 * 0.11)
+    }
+    printf("<path d='M0 689 Q340 660 580 685 T1200 662 V740 H0 Z' fill='#0c2530' opacity='.88'/>\n")
+    printf("<text x='46' y='75' fill='#e4ebef' font-size='40' font-family='sans-serif' letter-spacing='5'>RECURSIVE BIOME</text>\n")
+    printf("<text x='49' y='108' fill='#a8d2d8' font-size='15' font-family='monospace'>GENESIS / NINE DETERMINISTIC BRANCHING SYSTEMS</text>\n")
+    printf("<!-- %d recursive branches generated by Flow -->\n", branches)
+    printf("</svg>\n")
+    if branches != 9207 { return 2 }
+    return 0
+}

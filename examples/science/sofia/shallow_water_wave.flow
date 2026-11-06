@@ -1,0 +1,51 @@
+# Synthetic flood-wave slice for the Waal-model numerical foundation.
+# Unlike the reference, this is a flat-bed periodic 16x8 test without GIS data.
+# Run: ./flow run examples/science/sofia/shallow_water_wave.flow
+import "stdlib/science/sofia_shallow_water.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function main() -> i32 {
+    let h: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let mx: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let my: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let hn: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let mxn: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+    let myn: array<f64, 128> = [0.0, 0.0, 0.0, 0.0]
+
+    for y in 0 to 8 {
+        for x in 0 to 16 {
+            let i: i32 = y * 16 + x
+            h[i] = 1.0
+            if x >= 6 and x < 10 and y >= 3 and y < 5 {
+                h[i] = 1.15
+            }
+            mx[i] = 0.05 * h[i]
+            my[i] = 0.0
+        }
+    }
+    let before: f64 = sofia_sw_mass(h, 128, 1.0, 1.0)
+    for step in 0 to 40 {
+        sofia_sw_step_periodic(h, mx, my, hn, mxn, myn,
+            16, 8, 1.0, 1.0, 0.025, 1.0)
+        for i in 0 to 128 {
+            if hn[i] <= 0.0 or hn[i] != hn[i] { return 1 }
+            h[i] = hn[i]
+            mx[i] = mxn[i]
+            my[i] = myn[i]
+        }
+    }
+    let after: f64 = sofia_sw_mass(h, 128, 1.0, 1.0)
+    let drift: f64 = sofia_sw_abs(after - before)
+    println("Flow / shallow-water periodic wave")
+    print("initial mass = ")
+    printf("%.12f\n", before)
+    print("final mass   = ")
+    printf("%.12f\n", after)
+    print("mass error   = ")
+    printf("%.12f\n", drift)
+    if drift > 1e-8 { return 2 }
+    return 0
+}

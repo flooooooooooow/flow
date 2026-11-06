@@ -1,0 +1,29 @@
+# D3Q19 BGK conservation test for a density pulse in a periodic box.
+import "stdlib/science/sofia_lattice_boltzmann.flow"
+
+function lbm_abs(x: f64) -> f64 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+function main() -> i32 {
+    let f: array<f64, 2280> = [0.0, 0.0, 0.0, 0.0]
+    let next: array<f64, 2280> = [0.0, 0.0, 0.0, 0.0]
+    sofia_lbm_initialise(f, 6, 5, 4, 1.0, 0.0, 0.0, 0.0)
+    let cell: i32 = sofia_lbm_index(3, 2, 2, 6, 5)
+    for q in 0 to 19 {
+        f[cell * 19 + q] = sofia_lbm_equilibrium(q, 1.02, 0.0, 0.0, 0.0)
+    }
+    let mass0: f64 = sofia_lbm_mass(f, 120)
+    for t in 0 to 8 {
+        sofia_lbm_d3q19_step(f, next, 6, 5, 4, 1.2)
+        for i in 0 to 2280 {
+            if next[i] != next[i] { return 1 }
+            f[i] = next[i]
+        }
+    }
+    let mass1: f64 = sofia_lbm_mass(f, 120)
+    if lbm_abs(mass1 - mass0) > 1e-8 { return 2 }
+    if lbm_abs(mass1 - 120.02) > 1e-8 { return 3 }
+    return 0
+}
