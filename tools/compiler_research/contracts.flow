@@ -1,0 +1,221 @@
+# @module tools.compiler_research.contracts
+# @means  Experimental, deterministic, local rewrite validation and extraction.
+#
+# This is NOT a production e-graph, proof assistant or whole-program validator.
+# It checks a small collection of exact i32 rewrite schemas against a trusted
+# expression DAG, then ranks only legal candidates by a caller-supplied cost.
+# The cost is an estimate, never evidence of semantic equivalence.
+# Part of https://github.com/flooooooooooow/flow/issues/1668
+
+export const OPT_VAR: i32 = 1
+export const OPT_CONST: i32 = 2
+export const OPT_ADD: i32 = 3
+export const OPT_MUL: i32 = 4
+export const OPT_EFFECT: i32 = 5
+
+export const OPT_I32: i32 = 1
+export const OPT_F64: i32 = 2
+
+export const OPT_KEEP: i32 = 0
+export const OPT_ADD_ZERO: i32 = 1
+export const OPT_MUL_ONE: i32 = 2
+export const OPT_COMMUTE_ADD: i32 = 3
+
+export const OPT_OK: i32 = 0
+export const OPT_BAD_INDEX: i32 = 1
+export const OPT_UNSUPPORTED: i32 = 2
+export const OPT_NUMERIC_MODEL: i32 = 3
+export const OPT_EFFECT_BARRIER: i32 = 4
+export const OPT_BAD_SHAPE: i32 = 5
+
+# An operator's own effect bits are separate from recursive child effects.
+# Bit 32768 is the existing FIR-G unknown-effect sentinel.
+export const OPT_UNKNOWN_EFFECT: i32 = 32768
+
+export struct OptNode {
+    kind: i32,
+    number_type: i32,
+    left: i32,
+    right: i32,
+    value: i64,
+    local_effects: i32
+}
+
+export struct OptProposal {
+    id: i32,
+    source: i32,
+    replacement: i32,
+    rule: i32,
+    estimated_cost: i64,
+    retained_properties: i32,
+    estimated_peak_bytes: i64
+}
+
+export struct OptSelection {
+    selected_id: i32,
+    selected_root: i32,
+    selected_rule: i32,
+    estimated_cost: i64,
+    accepted: i32,
+    rejected: i32
+}
+
+export function opt_node(kind: i32, number_type: i32, left: i32, right: i32, value: i64, effects: i32) -> OptNode {
+    return OptNode {
+        kind: kind, number_type: number_type, left: left, right: right,
+        value: value, local_effects: effects
+    }
+}
+
+export function opt_proposal(id: i32, source: i32, replacement: i32, rule: i32, cost: i64, properties: i32, bytes: i64) -> OptProposal {
+    return OptProposal {
+        id: id, source: source, replacement: replacement, rule: rule,
+        estimated_cost: cost, retained_properties: properties,
+        estimated_peak_bytes: bytes
+    }
+}
+
+function opt_index_ok(index: i32, n: i32) -> bool {
+    return index >= 0 and index < n
+}
+
+# Unknown opcodes, invalid references and cycles are treated as unknown
+# effects; they can never become a proof of purity.
+export function opt_effects(nodes: ptr<OptNode>, n: i32, index: i32, budget: i32) -> i32 {
+    if not opt_index_ok(index, n) or budget <= 0 {
+        return OPT_UNKNOWN_EFFECT
+    }
+    let node: OptNode = nodes[index]
+    if node.kind == OPT_EFFECT {
+        # An explicit effect operation remains a barrier even when its
+        # annotation is absent or incorrectly zeroed.
+        return node.local_effects | OPT_UNKNOWN_EFFECT
+    }
+    if node.kind == OPT_VAR or node.kind == OPT_CONST {
+        return node.local_effects
+    }
+    if node.kind != OPT_ADD and node.kind != OPT_MUL {
+        return OPT_UNKNOWN_EFFECT
+    }
+    let a: i32 = opt_effects(nodes, n, node.left, budget - 1)
+    let b: i32 = opt_effects(nodes, n, node.right, budget - 1)
+    return node.local_effects | a | b
+}
+
+# Local schemas are checked by construction, not by comparing sample outputs.
+# No signed arithmetic is executed by the validator.
+# Only identities with exact i32 semantics and side-effect-free operands are
+# implemented. Float identities and reassociation are deliberately rejected.
+export function opt_check_rule(nodes: ptr<OptNode>, n: i32, p: OptProposal) -> i32 {
+    if not opt_index_ok(p.source, n) or not opt_index_ok(p.replacement, n) {
+        return OPT_BAD_INDEX
+    }
+    if p.rule == OPT_KEEP {
+        if p.source == p.replacement { return OPT_OK }
+        return OPT_BAD_SHAPE
+    }
+    if p.rule != OPT_ADD_ZERO and p.rule != OPT_MUL_ONE and p.rule != OPT_COMMUTE_ADD {
+        return OPT_UNSUPPORTED
+    }
+
+    let source: OptNode = nodes[p.source]
+    let dest: OptNode = nodes[p.replacement]
+    if source.number_type != OPT_I32 or dest.number_type != OPT_I32 {
+        return OPT_NUMERIC_MODEL
+    }
+    if source.kind != OPT_ADD and source.kind != OPT_MUL {
+        return OPT_BAD_SHAPE
+    }
+    if not opt_index_ok(source.left, n) or not opt_index_ok(source.right, n) {
+        return OPT_BAD_INDEX
+    }
+    if nodes[source.left].number_type != OPT_I32 or nodes[source.right].number_type != OPT_I32 {
+        return OPT_NUMERIC_MODEL
+    }
+    if opt_effects(nodes, n, p.source, n + 1) != 0 {
+        return OPT_EFFECT_BARRIER
+    }
+
+    if p.rule == OPT_ADD_ZERO or p.rule == OPT_MUL_ONE {
+        let expected_kind: i32 = OPT_ADD
+        let mut expected_neutral: i64 = 0
+        if p.rule == OPT_MUL_ONE { expected_neutral = 1 }
+        if p.rule == OPT_ADD_ZERO and source.kind != expected_kind { return OPT_BAD_SHAPE }
+        if p.rule == OPT_MUL_ONE and source.kind != OPT_MUL { return OPT_BAD_SHAPE }
+        let left: OptNode = nodes[source.left]
+        let right: OptNode = nodes[source.right]
+        if p.replacement == source.left and right.kind == OPT_CONST and right.value == expected_neutral {
+            return OPT_OK
+        }
+        if p.replacement == source.right and left.kind == OPT_CONST and left.value == expected_neutral {
+            return OPT_OK
+        }
+        return OPT_BAD_SHAPE
+    }
+
+    # Commutativity is legal here only for pure i32 addition, and only when
+    # the replacement node is literally the reversed binary expression.
+    # This does not authorize reassociation or a floating-point swap.
+    if source.kind == OPT_ADD and dest.kind == OPT_ADD and dest.left == source.right and dest.right == source.left {
+        if dest.local_effects != 0 { return OPT_EFFECT_BARRIER }
+        return OPT_OK
+    }
+    return OPT_BAD_SHAPE
+}
+
+# The original root remains the fallback. Required preservation and memory
+# budgets are independent of rewrite legality. Scores never override a
+# rejected rewrite; ties use stable candidate id then replacement id.
+export function opt_extract(
+    nodes: ptr<OptNode>,
+    node_count: i32,
+    source_root: i32,
+    proposals: ptr<OptProposal>,
+    proposal_count: i32,
+    baseline_cost: i64,
+    required_properties: i32,
+    peak_budget_bytes: i64
+) -> OptSelection {
+    let mut result: OptSelection = OptSelection {
+        selected_id: -1, selected_root: source_root, selected_rule: OPT_KEEP,
+        estimated_cost: baseline_cost, accepted: 0, rejected: 0
+    }
+    if not opt_index_ok(source_root, node_count) or proposal_count < 0 {
+        result.selected_root = -1
+        return result
+    }
+    let mut i: i32 = 0
+    while i < proposal_count {
+        let p: OptProposal = proposals[i]
+        let mut legal: bool = p.source == source_root and p.estimated_cost >= 0 and p.estimated_peak_bytes >= 0
+        if (p.retained_properties & required_properties) != required_properties {
+            legal = false
+        }
+        if peak_budget_bytes >= 0 and p.estimated_peak_bytes > peak_budget_bytes {
+            legal = false
+        }
+        if legal and opt_check_rule(nodes, node_count, p) != OPT_OK {
+            legal = false
+        }
+        if not legal {
+            result.rejected = result.rejected + 1
+            i = i + 1
+            continue
+        }
+        result.accepted = result.accepted + 1
+        if p.estimated_cost < result.estimated_cost or (
+            p.estimated_cost == result.estimated_cost and (
+                result.selected_id < 0 or p.id < result.selected_id or (
+                    p.id == result.selected_id and p.replacement < result.selected_root
+                )
+            )
+        ) {
+            result.selected_id = p.id
+            result.selected_root = p.replacement
+            result.selected_rule = p.rule
+            result.estimated_cost = p.estimated_cost
+        }
+        i = i + 1
+    }
+    return result
+}

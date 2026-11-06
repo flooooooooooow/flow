@@ -36,6 +36,13 @@
 #       too), run output where mlir-opt is installed, and the digest of every
 #       tracked corpus program flowc accepts. Review the diff before committing it.
 #
+#   ./flow tool compiler/scripts/parity_mlir.flow --record-case <tracked-path.flow>
+#       Record one tracked program in corpus.d/<tracked-path.flow>.sha256
+#       without rewriting the shared corpus.txt. The parity gate uses the
+#       scoped digest in preference to an old entry, or as a new corpus entry.
+#       Intended for independent backend fixes; --record still refreshes
+#       the legacy corpus and full fixture goldens.
+#
 # GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
 # and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
 # only. With --python, every accepted program that has an @gpu kernel is
@@ -281,6 +288,83 @@ function write_corpus(header2: string, rows: string) {
     let _w: bool = write_text(FIX + "/corpus.txt", "# Corpus programs the Flow MLIR emitter " + header2 + rows)
 }
 
+# The corpus line `want path`, as `read -r want f` splits it.
+function corpus_line_parts(line: string) -> ptr<ProcStrs> {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = s_len(line)
+    let mut i: i32 = 0
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let ws: i32 = i
+    while i < n and p[i] != 32 and p[i] != 9 {
+        i = i + 1
+    }
+    let want: string = s_slice(line, ws, i)
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let mut e: i32 = n
+    while e > i and (p[e - 1] == 32 or p[e - 1] == 9) {
+        e = e - 1
+    }
+    return sl_of2(want, s_slice(line, i, e))
+}
+
+# A source-path-scoped override avoids touching the central corpus.txt.
+# The mirrored directory structure prevents name collisions.
+function corpus_override_path(f: string) -> string {
+    return FIX + "/corpus.d/" + f + ".sha256"
+}
+
+# A SHA-256 checksum must be exactly 64 lowercase hex digits; otherwise a
+# malformed or hand-edited golden must fail closed, never silently match.
+function corpus_digest_valid(digest: string) -> bool {
+    if s_len(digest) != 64 {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < 64 {
+        let b: i32 = s_byte(digest, i)
+        if not ((b >= 48 and b <= 57) or (b >= 97 and b <= 102)) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function mode_record_case(f: string) -> i32 {
+    if not s_ends(f, ".flow") or not is_file(f) {
+        errln("record-case: expected an existing, repository-relative .flow file")
+        return 2
+    }
+
+    # Only the tracked corpus input set is eligible: no scripts, temporary
+    # files, or out-of-tree paths masquerading as persistent goldens.
+    let tracked: ptr<ProcStrs> = corpus_files()
+    if not sl_has(tracked, f) {
+        errln("record-case: file is not an eligible tracked corpus program: " + f)
+        return 2
+    }
+
+    let output: string = WORK + "/flowc/" + key_of(f) + ".mlir"
+    if flowc_emit(f, output, "") != 0 {
+        errln("record-case: flowc refused " + f)
+        return 1
+    }
+    let normalized: string = WORK + "/flowc/" + key_of(f) + ".norm"
+    norm_to(output, normalized)
+    let dest: string = corpus_override_path(f)
+    mkdir_p_or_exit(path_dirname(dest))
+    if not write_text(dest, digest_of(normalized) + "\n") {
+        errln("record-case: could not write " + dest)
+        return 1
+    }
+    outln("record-case: wrote " + dest)
+    return 0
+}
+
 function mode_write_golden(fixtures: ptr<ProcStrs>, rev: string) -> i32 {
     python_setup(rev)
     let mut i: i32 = 0
@@ -405,29 +489,6 @@ function fixture_mode(f: string, base: string, fl: string, mode: string, golden_
     }
     errln("FAIL " + f + ": " + label + "-mode MLIR differs from " + base + golden_ext)
     return false
-}
-
-# The corpus line `want path`, as `read -r want f` splits it.
-function corpus_line_parts(line: string) -> ptr<ProcStrs> {
-    let p: ptr<u8> = line as ptr<u8>
-    let n: i32 = s_len(line)
-    let mut i: i32 = 0
-    while i < n and (p[i] == 32 or p[i] == 9) {
-        i = i + 1
-    }
-    let ws: i32 = i
-    while i < n and p[i] != 32 and p[i] != 9 {
-        i = i + 1
-    }
-    let want: string = s_slice(line, ws, i)
-    while i < n and (p[i] == 32 or p[i] == 9) {
-        i = i + 1
-    }
-    let mut e: i32 = n
-    while e > i and (p[e - 1] == 32 or p[e - 1] == 9) {
-        e = e - 1
-    }
-    return sl_of2(want, s_slice(line, i, e))
 }
 
 # 4. Live comparison with the Python generator at <rev>; the failures.
@@ -557,8 +618,8 @@ function main() -> i32 {
     let args: ptr<ProcStrs> = proc_args()
     let mode: string = sl_get(args, 0)
     let rev: string = sl_get(args, 1)
-    if not (s_empty(mode) or s_eq(mode, "--python") or s_eq(mode, "--write-golden") or s_eq(mode, "--record")) {
-        errln("usage: " + USAGE_NAME + " [--python <rev> | --write-golden <rev> | --record]")
+    if not (s_empty(mode) or s_eq(mode, "--python") or s_eq(mode, "--write-golden") or s_eq(mode, "--record") or s_eq(mode, "--record-case")) {
+        errln("usage: " + USAGE_NAME + " [--python <rev> | --write-golden <rev> | --record | --record-case <path.flow>]")
         return 2
     }
     if not s_empty(mode) and not s_eq(mode, "--record") and s_empty(rev) {
@@ -611,6 +672,9 @@ function main() -> i32 {
     }
     if s_eq(mode, "--record") {
         return mode_record(fixtures)
+    }
+    if s_eq(mode, "--record-case") {
+        return mode_record_case(rev)
     }
 
     let mut fail: i32 = 0
@@ -698,9 +762,15 @@ function main() -> i32 {
     let mut corpus_fail: i32 = 0
     let lines: ptr<ProcStrs> = gl_file_lines(FIX + "/corpus.txt")
     let total_lines: i32 = sl_len(lines)
+    # Independent tracked per-program digests supplement/override the
+    # historical list. Reserve capacity for new programs from the shards.
+    let shards: ptr<ProcStrs> = sl_new()
+    gl_find_files(FIX + "/corpus.d", ".sha256", shards)
+    gl_sort(shards)
+    let eligible: ptr<ProcStrs> = corpus_files()
     let files: ptr<ProcStrs> = sl_new()
     let wants: ptr<ProcStrs> = sl_new()
-    let cmds: ptr<ptr<ProcCmd>> = malloc(((total_lines + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
+    let cmds: ptr<ptr<ProcCmd>> = malloc(((total_lines + sl_len(shards) + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
     let logs: ptr<ProcStrs> = sl_new()
 
     let mut k: i32 = 0
@@ -711,10 +781,20 @@ function main() -> i32 {
             continue
         }
         let parts: ptr<ProcStrs> = corpus_line_parts(line)
-        let want: string = sl_get(parts, 0)
+        let mut want: string = sl_get(parts, 0)
         let f: string = sl_get(parts, 1)
         if s_empty(want) or s_eq(want, "#") {
             continue
+        }
+        let override_path: string = corpus_override_path(f)
+        if is_file(override_path) {
+            let override_lines: ptr<ProcStrs> = gl_file_lines(override_path)
+            if sl_len(override_lines) != 1 or not corpus_digest_valid(sl_get(override_lines, 0)) {
+                corpus_fail = corpus_fail + 1
+                errln("FAIL corpus " + f + ": malformed override " + override_path)
+                continue
+            }
+            want = sl_get(override_lines, 0)
         }
         let fl: string = WORK + "/flowc/" + key_of(f)
         rm_f(fl + ".mlir")
@@ -727,6 +807,36 @@ function main() -> i32 {
         sl_push(logs, fl + ".mlir.log")
         sl_push(files, f)
         sl_push(wants, want)
+        corpus_n = corpus_n + 1
+    }
+
+    # A scoped golden for a program absent from corpus.txt is a new corpus
+    # entry. Existing programs are already queued with their override hash.
+    let mut si: i32 = 0
+    while si < sl_len(shards) {
+        let shard: string = sl_get(shards, si)
+        si = si + 1
+        let f: string = s_slice(shard, s_len(FIX + "/corpus.d/"), s_len(shard) - s_len(".sha256"))
+        if sl_has(files, f) {
+            continue
+        }
+        let digest_lines: ptr<ProcStrs> = gl_file_lines(shard)
+        if sl_len(digest_lines) != 1 or not corpus_digest_valid(sl_get(digest_lines, 0)) or not sl_has(eligible, f) or not is_file(f) {
+            corpus_fail = corpus_fail + 1
+            errln("FAIL corpus: invalid scoped entry " + shard)
+            continue
+        }
+        let fl: string = WORK + "/flowc/" + key_of(f)
+        rm_f(fl + ".mlir")
+        let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc_bin()))
+        proc_env(c, "FLOWC_LENIENT", "1")
+        proc_env(c, "FLOWC_EMIT", "mlir")
+        proc_env(c, "FLOWC_IN", f)
+        proc_env(c, "FLOWC_OUT", fl + ".mlir")
+        cmds[corpus_n] = c
+        sl_push(logs, fl + ".mlir.log")
+        sl_push(files, f)
+        sl_push(wants, sl_get(digest_lines, 0))
         corpus_n = corpus_n + 1
     }
 

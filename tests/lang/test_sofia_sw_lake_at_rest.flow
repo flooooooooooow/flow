@@ -1,0 +1,60 @@
+# Lake-at-rest well-balanced test for Flow's native shallow-water kernel.
+import "stdlib/science/sofia_shallow_water.flow"
+
+function main() -> i32 {
+    let nx: i32 = 8
+    let ny: i32 = 8
+    let num_cells: i32 = 64
+
+    let h: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let mx: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let my: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let z: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+
+    let hn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let mxn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let myn: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+
+    let water_level: f64 = 2.0
+
+    # Create a bumpy bed
+    for y in 0 to ny {
+        for x in 0 to nx {
+            let i: i32 = y * nx + x
+            let mut bed_elev: f64 = 0.5
+            if x >= 3 and x <= 5 { bed_elev = 1.2 }
+            if y >= 3 and y <= 5 { bed_elev = 1.5 }
+
+            z[i] = bed_elev
+            h[i] = water_level - bed_elev
+            mx[i] = 0.0
+            my[i] = 0.0
+        }
+    }
+
+    let mass0: f64 = sofia_sw_mass(h, 64, 1.0, 1.0)
+
+    # Run a few steps
+    for step in 0 to 20 {
+        sofia_sw_step_with_bed(h, mx, my, z, hn, mxn, myn,
+                               nx, ny, 1.0, 1.0, 0.02, 9.81, 0.0)
+        for i in 0 to 64 {
+            h[i] = hn[i]
+            mx[i] = mxn[i]
+            my[i] = myn[i]
+            if h[i] <= 0.0 or h[i] != h[i] { return 1 }
+        }
+    }
+
+    let mass1: f64 = sofia_sw_mass(h, 64, 1.0, 1.0)
+    if sofia_sw_abs(mass1 - mass0) > 1e-8 { return 2 }
+
+    # Check that velocities are effectively zero (lake at rest)
+    for i in 0 to 64 {
+        if sofia_sw_abs(h[i] + z[i] - water_level) > 1e-8 { return 3 }
+        if sofia_sw_abs(mx[i]) > 1e-8 { return 4 }
+        if sofia_sw_abs(my[i]) > 1e-8 { return 5 }
+    }
+
+    return 0
+}
