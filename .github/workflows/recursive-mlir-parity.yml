@@ -1,0 +1,122 @@
+# ACTIONS-INTENDED: public repository; executes unprivileged Flow recursion benchmarks.
+name: Recursive Flow MLIR native parity
+
+on:
+  push:
+    branches:
+      - ci/recursive-mlir-native-parity-20261021
+    paths:
+      - '.github/workflows/recursive-mlir-parity.yml'
+      - 'examples/recursion_lab/**'
+  pull_request:
+    paths:
+      - '.github/workflows/recursive-mlir-parity.yml'
+      - 'examples/recursion_lab/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    name: C vs LLVM/MLIR 22 native recursion parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+
+      - name: Build, execute, compare and benchmark all six Flow programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FLOW_HOST=flowc
+          ulimit -s 65536
+          root="$PWD"
+          result="$root/recursion-parity"
+          mkdir -p "$result"
+          printf 'program\tbackend\trepeat\twall_s\tuser_s\tsystem_s\tpeak_rss_kb\texit_code\tstdout_sha256\tstdout_bytes\n' > "$result/summary.tsv"
+          failures=0
+          for name in recursive_biome newton_multiverse underworld_labyrinth recursive_oracle symbolic_hydra ackermann_furnace; do
+            src="examples/recursion_lab/$name.flow"
+            croot="$result/$name/c"
+            mroot="$result/$name/mlir"
+            mkdir -p "$croot" "$mroot"
+            echo "::group::Compiling $name through both real backends"
+            if FLOW_BUILD_ROOT="$croot" ./flow compile "$src" >"$croot/build.log" 2>&1; then
+              echo "C backend built $name"
+            else
+              echo "::error::C build failed for $name"
+              tail -n 30 "$croot/build.log" || true
+              failures=$((failures+1))
+            fi
+            if FLOW_BUILD_ROOT="$mroot" ./flow compile --backend=mlir "$src" >"$mroot/build.log" 2>&1; then
+              echo "MLIR backend built $name"
+            else
+              echo "::error::MLIR compile/lower/link failed for $name"
+              tail -n 40 "$mroot/build.log" || true
+              failures=$((failures+1))
+            fi
+            echo "::endgroup::"
+            for backend in c mlir; do
+              dir="$result/$name/$backend"
+              exe="$dir/$name"
+              if ! test -x "$exe"; then
+                echo "Missing executable: $exe" >> "$result/failures.txt"
+                continue
+              fi
+              for rep in 1 2 3; do
+                if /usr/bin/time -f '%e %U %S %M' -o "$dir/metric-$rep.txt" timeout 120 "$exe" > "$dir/out-$rep.bin" 2>"$dir/stderr-$rep.txt"; then
+                  rc=0
+                else
+                  rc=$?
+                  echo "::error::$name $backend repeat $rep exited $rc"
+                  echo "$name $backend repeat $rep exited $rc" >> "$result/failures.txt"
+                  failures=$((failures+1))
+                fi
+                read -r wall user sys rss < "$dir/metric-$rep.txt"
+                sha="$(sha256sum "$dir/out-$rep.bin" | cut -d' ' -f1)"
+                bytes="$(stat -c '%s' "$dir/out-$rep.bin")"
+                printf '%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n' "$name" "$backend" "$rep" "$wall" "$user" "$sys" "$rss" "$rc" "$sha" "$bytes" >> "$result/summary.tsv"
+              done
+              if ! cmp -s "$dir/out-1.bin" "$dir/out-2.bin" || ! cmp -s "$dir/out-1.bin" "$dir/out-3.bin"; then
+                echo "::error::$name $backend output is nondeterministic"
+                echo "$name $backend output is nondeterministic" >> "$result/failures.txt"
+                failures=$((failures+1))
+              fi
+            done
+            if test -e "$croot/out-1.bin" && test -e "$mroot/out-1.bin"; then
+              if cmp -s "$croot/out-1.bin" "$mroot/out-1.bin"; then
+                echo "PARITY PASS: $name stdout is byte-identical"
+              else
+                echo "::error::PARITY FAIL $name: C vs MLIR stdout differs"
+                echo "$name output mismatch" >> "$result/failures.txt"
+                failures=$((failures+1))
+              fi
+            else
+              echo "::error::PARITY FAIL $name: one backend did not run"
+              failures=$((failures+1))
+            fi
+          done
+          cat "$result/summary.tsv"
+          if test -f "$result/failures.txt"; then
+            cat "$result/failures.txt"
+          fi
+          if test "$failures" -gt 0; then
+            echo "::error::$failures parity/build/run failures across recursion benchmark"
+            exit 1
+          fi
+
+      - name: Upload complete benchmark evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recursive-mlir-native-parity
+          path: recursion-parity/
+          if-no-files-found: warn
+          retention-days: 14

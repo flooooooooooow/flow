@@ -1210,6 +1210,17 @@ export function flowc_link_c(c_file: string, exe_file: string, program: string) 
     sl_extend(a, GPU_LDFLAGS)
     sl_extend(a, CONC_LDFLAGS)
     sl_extend(a, COLLECTED_LDFLAGS)
+
+    let is_linux: bool = s_contains(uname_s(), "Linux")
+    let src_text: string = read_text(program)
+    if s_contains(src_text, "stdlib/blas.flow") {
+        if is_linux {
+            sl_push(a, "-lopenblas")
+        } else {
+            sl_push2(a, "-framework", "Accelerate")
+        }
+    }
+
     sl_push(a, "-lm")
     if run_argv(a) != 0 {
         error("C compilation/linking failed (flowc host)")

@@ -284,12 +284,12 @@
     "publish:ovsx": "ovsx publish --no-dependencies"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
-    "@types/vscode": "^1.138.0",
+    "@types/node": "^26.6.6",
+    "@types/vscode": "^1.144.0",
     "@vscode/vsce": "^3.0.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.2"
+    "vscode-languageclient": "^11.0.0"
   }
 }
