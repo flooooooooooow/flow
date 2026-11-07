@@ -14,6 +14,10 @@ Welcome to the Flow programming language documentation!
 | **[Language Spec](LANGUAGE_SPEC.md)** | Complete language reference |
 | **[Grammar](grammar.ebnf)** | Formal EBNF grammar |
 
+## Modern Flow
+
+- [Idiomatic Flow](idiomatic-flow.md) - Prefer expressive, verified language constructs and modernize examples
+
 ## Language Reference
 
 - [Overview](language/overview.md) - Language philosophy and features

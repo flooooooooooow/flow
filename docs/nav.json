@@ -337,6 +337,10 @@
           "path": "tutorials/flow-in-one-hour.md"
         },
         {
+          "label": "Idiomatic Flow modernization",
+          "path": "idiomatic-flow.md"
+        },
+        {
           "label": "Interactive App",
           "path": "tutorials/index.html",
           "external": true
