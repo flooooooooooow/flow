@@ -1,0 +1,59 @@
+# MLIR parity fixture: c64 and c128, C's float complex and double complex.
+# Constructors, + - * / between complex values and with a real operand,
+# unary minus, == and !=, creal / cimag / cabs / conj / cexp, conversion
+# between the two widths, complex struct fields, arrays and pointers, and
+# print, which writes `(re + im j)`.
+
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+struct Phasor {
+    z: c128,
+    tag: i32
+}
+
+function rotate(p: Phasor, by: c128) -> Phasor {
+    return Phasor { z: p.z * by, tag: p.tag + 1 }
+}
+
+function sum(zs: ptr<c64>, n: i32) -> c64 {
+    let mut acc: c64 = c64(0.0, 0.0)
+    for i in 0 to n {
+        acc = acc + zs[i]
+    }
+    return acc
+}
+
+function main() -> i32 {
+    let a: c64 = c64(3.0, 4.0)
+    let b: c64 = c64(1.0, 2.0)
+    println(a + b)
+    println(a - b)
+    println(a * b)
+    println(a / b)
+    println(-a)
+    let k: f32 = 2.0
+    let ak: c64 = a * k
+    let ad: c64 = a / k
+    let ka: c64 = c64(k) * a
+    println(ak, ad, ka)
+    printf("parts %f %f abs %f\n", creal(a), cimag(a), cabs(a))
+    println(conj(b))
+    if a == c64(3.0, 4.0) and a != b {
+        printf("compare ok\n")
+    }
+    let w: c128 = c128(creal(a), cimag(a))
+    let e: c128 = cexp(c128(0.0, 0.0))
+    println(w * e)
+    let wide: c128 = a
+    println(wide)
+    let p: Phasor = rotate(Phasor { z: c128(1.0, 0.0), tag: 0 }, c128(0.0, 1.0))
+    printf("phasor %f %f tag %d\n", creal(p.z), cimag(p.z), p.tag)
+    let xs: [c64; 3] = [c64(1.0, 1.0), c64(2.0, -1.0), c64(0.5, 0.25)]
+    println(sum(xs, 3))
+    let mut ys: [c64; 2] = [a, b]
+    ys[1] = b * c64(0.0, 1.0)
+    println(ys[0], ys[1])
+    return 0
+}
