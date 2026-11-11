@@ -51,34 +51,36 @@ function cute_layout2_transpose(a: CuteLayout2) -> CuteLayout2 {
     }
 }
 
-# Coalesce only when row-major flattening is exactly affine and fits i32.
+# CuTe linearizes with mode 0 fastest. Merge only when that traversal is
+# affine and fits i32; otherwise leave the layout untouched.
 # Noncontiguous layouts are returned unchanged; no false simplification.
 function cute_layout2_coalesce(a: CuteLayout2) -> CuteLayout2 {
     if not cute_layout2_valid(a) { return a }
     let size: i64 = (a.rows as i64) * (a.cols as i64)
     if size > 2147483647 { return a }
-    if (a.row_stride as i64) != (a.cols as i64) * (a.col_stride as i64) {
+    if (a.col_stride as i64) != (a.rows as i64) * (a.row_stride as i64) {
         return a
     }
     return CuteLayout2 {
         rows: size as i32,
         cols: 1,
-        row_stride: a.col_stride,
+        row_stride: a.row_stride,
         col_stride: 0,
         origin: a.origin
     }
 }
 
 # Exact evaluation of A o B, where B's physical offset selects a flattened
-# logical coordinate of A. Composition is generally not an affine layout,
+# mode-0-fast logical coordinate of A. Composition is not generally affine
+# in this restricted rank-2 representation,
 # so this reference evaluates it instead of inventing affine strides.
 function cute_layout2_compose_index(a: CuteLayout2, b: CuteLayout2, row: i32, col: i32) -> i64 {
     if not cute_layout2_valid(a) { return -1 }
     let logical: i64 = cute_layout2_index(b, row, col)
     let count: i64 = (a.rows as i64) * (a.cols as i64)
     if logical < 0 or logical >= count { return -1 }
-    let ar: i32 = (logical / (a.cols as i64)) as i32
-    let ac: i32 = (logical % (a.cols as i64)) as i32
+    let ar: i32 = (logical % (a.rows as i64)) as i32
+    let ac: i32 = (logical / (a.rows as i64)) as i32
     return cute_layout2_index(a, ar, ac)
 }
 
@@ -131,16 +133,16 @@ function main() -> i32 {
     if transposed.rows != 8 or transposed.cols != 4 { return 4 }
     if cute_layout2_index(transposed, 3, 2) != 19 { return 5 }
 
-    let packed: CuteLayout2 = cute_layout2_coalesce(a)
-    if packed.rows != 32 or packed.cols != 1 { return 6 }
-    if cute_layout2_index(packed, 19, 0) != 19 { return 7 }
+    let unchanged: CuteLayout2 = cute_layout2_coalesce(a)
+    if unchanged.rows != 4 or unchanged.cols != 8 { return 6 }
 
     let column_major: CuteLayout2 = CuteLayout2 {
         rows: 4, cols: 8, row_stride: 1, col_stride: 4, origin: 0
     }
-    if cute_layout2_index(column_major, 2, 3) != 14 { return 8 }
-    let unchanged: CuteLayout2 = cute_layout2_coalesce(column_major)
-    if unchanged.rows != 4 or unchanged.cols != 8 { return 9 }
+    if cute_layout2_index(column_major, 2, 3) != 14 { return 7 }
+    let packed: CuteLayout2 = cute_layout2_coalesce(column_major)
+    if packed.rows != 32 or packed.cols != 1 { return 8 }
+    if cute_layout2_index(packed, 14, 0) != 14 { return 9 }
 
     let sparse: CuteLayout2 = CuteLayout2 {
         rows: 4, cols: 8, row_stride: 16, col_stride: 2, origin: 5
@@ -148,8 +150,20 @@ function main() -> i32 {
     let selector: CuteLayout2 = CuteLayout2 {
         rows: 2, cols: 2, row_stride: 8, col_stride: 2, origin: 0
     }
-    if cute_layout2_compose_index(sparse, selector, 1, 1) != 25 { return 10 }
+    if cute_layout2_compose_index(sparse, selector, 1, 1) != 41 { return 10 }
     if cute_layout2_compose_index(sparse, selector, 2, 0) != -1 { return 11 }
+
+    # Official CuTe layout-algebra composition example:
+    # A=(6,2):(8,2), B=(4,3):(3,1), mode 0 varies fastest.
+    let reference_a: CuteLayout2 = CuteLayout2 {
+        rows: 6, cols: 2, row_stride: 8, col_stride: 2, origin: 0
+    }
+    let reference_b: CuteLayout2 = CuteLayout2 {
+        rows: 4, cols: 3, row_stride: 3, col_stride: 1, origin: 0
+    }
+    if cute_layout2_compose_index(reference_a, reference_b, 1, 0) != 24 { return 19 }
+    if cute_layout2_compose_index(reference_a, reference_b, 2, 0) != 2 { return 20 }
+    if cute_layout2_compose_index(reference_a, reference_b, 3, 1) != 34 { return 21 }
 
     let broadcast: CuteLayout2 = CuteLayout2 {
         rows: 3, cols: 4, row_stride: 0, col_stride: 1, origin: 0
