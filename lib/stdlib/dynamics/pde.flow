@@ -79,3 +79,43 @@ export function heat_euler_step_csr(
         next[i] = ui + r * lap
     }
 }
+
+# In-place, order-preserving diffusion over CSR adjacency.
+# field and scratch must be distinct buffers. The active field indices are
+# first_node .. first_node + n - 1, and col_indices stores field indices
+# in that same index space (not necessarily zero-based).
+# row_ptrs has n+1 entries and the CSR rows are ordered by active field index.
+# First collect ALL unweighted neighbor gradients in row/edge order, multiplying
+# each gradient by rate; only then update field[i] += dt * scratch[i].
+# The separate multiplications and the two passes preserve an ordered reference
+# solver's floating-point evaluation order. Do not combine dt and rate.
+# Empty rows retain their values. Duplicate/directed edges are used as supplied.
+# The caller supplies valid CSR offsets and indices; no allocation is performed.
+export function heat_euler_step_csr_ordered_inplace(
+    field: ptr<f64>,
+    scratch: ptr<f64>,
+    n: i32,
+    rate: f64,
+    dt: f64,
+    row_ptrs: ptr<i32>,
+    col_indices: ptr<i32>,
+    first_node: i32
+) -> void {
+    for row in 0 to n {
+        let current: i32 = first_node + row
+        let current_value: f64 = field[current]
+        let mut gradient: f64 = 0.0
+        let mut edge: i32 = row_ptrs[row]
+        let edge_end: i32 = row_ptrs[row + 1]
+        while edge < edge_end {
+            let other: i32 = col_indices[edge]
+            gradient = gradient + (field[other] - current_value)
+            edge = edge + 1
+        }
+        scratch[current] = gradient * rate
+    }
+    for row in 0 to n {
+        let current: i32 = first_node + row
+        field[current] = field[current] + dt * scratch[current]
+    }
+}
