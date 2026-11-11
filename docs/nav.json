@@ -1029,6 +1029,10 @@
           "path": "design/denotational-mlir.md"
         },
         {
+          "label": "GPU layout algebra (CuTe research)",
+          "path": "design/gpu-cute-layout.md"
+        },
+        {
           "label": "Representation Aware",
           "path": "design/representation-aware.md"
         },
