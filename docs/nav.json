@@ -985,6 +985,10 @@
           "path": "project/agentic-loop.md"
         },
         {
+          "label": "Agent Trust Boundaries",
+          "path": "project/agent-trust-boundaries.md"
+        },
+        {
           "label": "AI Safety Architecture",
           "path": "security/ai-safety-architecture.md"
         },
