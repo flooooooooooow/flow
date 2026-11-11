@@ -1,0 +1,35 @@
+name: Regenerate PR 1616 bootstrap (temporary)
+on:
+  push:
+    branches:
+      - issue-562-module-statics-8220065690770900155
+    paths:
+      - .github/workflows/regen-module-statics-1616.yml
+permissions:
+  contents: write
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Regenerate canonical self-hosted C bootstrap
+        run: ./compiler/scripts/bootstrap_from_c.sh --regen
+      - name: Verify reproducible bootstrap
+        run: ./compiler/scripts/bootstrap_from_c.sh --verify
+      - name: Commit generated bootstrap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add compiler/bootstrap/flowc_stage_a.c
+          if git diff --cached --quiet; then
+            echo "Bootstrap already matches"
+            exit 0
+          fi
+          git commit -m "build: regenerate canonical bootstrap for module statics (#1616)"
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" push https://github.com/flooooooooooow/flow.git HEAD:refs/heads/issue-562-module-statics-8220065690770900155
