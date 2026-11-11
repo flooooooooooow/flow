@@ -1,5 +1,5 @@
-# expect: Module static 'names' has unsupported array element type 'string': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)
-let mut names: array<string, 2> = ["a", "b"]
+# expect: Module static 'names' has unsupported array element type 'span_const_u8': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)
+let mut names: array<&[u8], 2> = ["a" as &[u8], "b" as &[u8]]
 
 function main() -> i32 {
     return 0

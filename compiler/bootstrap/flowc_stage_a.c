@@ -63928,6 +63928,42 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   return rc;
 }
 
+/* C11 constant module static aggregate initializer. */
+void flowc_cgen_emit_static_initializer(CgenBuf* w, AstArena arena, uint8_t* src, int32_t init) {
+  if (init == AST_NONE) { flowc_cgen_puts(w, "{0}"); return; }
+  int32_t kind = arena.nodes[init].kind;
+  if (kind == AST_STRUCT_LIT) {
+    flowc_cgen_puts(w, "{ ");
+    int32_t field = arena.nodes[init].a;
+    int32_t first = 1;
+    while (field != AST_NONE) {
+      if (!first) { flowc_cgen_puts(w, ", "); }
+      first = 0;
+      flowc_cgen_putc(w, 46);
+      flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end);
+      flowc_cgen_puts(w, " = ");
+      flowc_cgen_emit_static_initializer(w, arena, src, arena.nodes[field].a);
+      field = arena.nodes[field].next;
+    }
+    flowc_cgen_puts(w, " }");
+    return;
+  }
+  if (kind == AST_ARRAY_LIT && arena.nodes[init].b == AST_NONE) {
+    flowc_cgen_puts(w, "{ ");
+    int32_t el = arena.nodes[init].a;
+    int32_t first = 1;
+    while (el != AST_NONE) {
+      if (!first) { flowc_cgen_puts(w, ", "); }
+      first = 0;
+      flowc_cgen_emit_static_initializer(w, arena, src, el);
+      el = arena.nodes[el].next;
+    }
+    flowc_cgen_puts(w, " }");
+    return;
+  }
+  flowc_cgen_emit_expr(w, arena, src, init);
+}
+
 int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len) {
   CgenBuf w = flowc_cgen_buf_init(out, out_cap);
   (w).sigs = sigs;
@@ -64571,7 +64607,7 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
 } else {
   if (init != AST_NONE) {
   flowc_cgen_puts((&w), " = ");
-  flowc_cgen_emit_expr((&w), arena, src, init);
+  flowc_cgen_emit_static_initializer((&w), arena, src, init);
 }
 }
   flowc_cgen_puts((&w), ";\n");
@@ -82276,7 +82312,7 @@ void mlg_add_static(Mlg* m, int32_t d) {
 }
 } else {
   int32_t t = mlg_ft_to_mt(m, ty, d);
-  if (t == MT_NONE || t == MT_VOID || mlg_is_memref_mt(t) == 1) {
+  if (t == MT_NONE || t == MT_VOID || (mlg_is_memref_mt(t) == 1 && mlg_is_struct_mt(t) == 0 && t != MT_PTR)) {
   mlg_refuse(m, d, "static of this type");
   return;
 }
@@ -82597,6 +82633,33 @@ int32_t mlg_static_expr(Mlg* m, int32_t e, int32_t t) {
 }
   return mlg_static_struct_lit(m, e, t);
 }
+  if (k == AST_ARRAY_LIT && mlg_is_llarr_mt(t) == 1) {
+    if (m->arena.nodes[e].b != AST_NONE) { mlg_refuse(m, e, "repeat array literal for a static"); return V_NONE; }
+    int32_t et = m->la_elem[t - MT_LLARR];
+    int32_t n = m->la_n[t - MT_LLARR];
+    int32_t acc = mlg_llvm_zero(m, t);
+    int32_t el = m->arena.nodes[e].a;
+    int32_t i = 0;
+    while (i < n && m->err == 0) {
+      int32_t val = mlg_llvm_zero(m, et);
+      if (el != AST_NONE) { val = mlg_static_expr(m, el, et); el = m->arena.nodes[el].next; }
+      int32_t nx = mlg_new_val(m, t);
+      mlg_line(m);
+      mlg_v(m, nx);
+      mlg_s(m, " = llvm.insertvalue ");
+      mlg_v(m, val);
+      mlg_s(m, ", ");
+      mlg_v(m, acc);
+      mlg_s(m, "[");
+      mlg_i(m, i);
+      mlg_s(m, "] : ");
+      mlg_put_type(m, t);
+      mlg_nl(m);
+      acc = nx;
+      i = i + 1;
+    }
+    return acc;
+  }
   if (k == AST_STRING) {
   int32_t sk = mlg_intern_src(m, e, 0);
   return mlg_emit_addressof_str(m, sk);
@@ -93492,6 +93555,25 @@ bool sem_is_const_scalar(Sem* c, int32_t e) {
   if (sem_is_unary_op(c, e, TOK_MINUS)) {
   return sem_is_literal(c, sem_na(c, e));
 }
+  int32_t k = sem_nk(c, e);
+  if (k == AST_STRUCT_LIT) {
+    if (c->ar.nodes[e].c != AST_NONE) { return 0; }
+    int32_t f = sem_na(c, e);
+    while (f != AST_NONE) {
+      if (sem_is_const_scalar(c, sem_na(c, f)) == 0) { return 0; }
+      f = sem_nnext(c, f);
+    }
+    return 1;
+  }
+  if (k == AST_ARRAY_LIT) {
+    if (sem_nb(c, e) != AST_NONE) { return 0; }
+    int32_t item = sem_na(c, e);
+    while (item != AST_NONE) {
+      if (sem_is_const_scalar(c, item) == 0) { return 0; }
+      item = sem_nnext(c, item);
+    }
+    return 1;
+  }
   return 0;
 }
 
@@ -93554,7 +93636,7 @@ void sem_check_static(Sem* c, int32_t d) {
 }
   if (is_fixed) {
   const char* en = sem_pt_name(c->t, tys->pt_elem[pt]);
-  if (sem_is_static_primitive(en) == 0 || sem_s_eq(en, "string")) {
+  if (sem_is_static_primitive(en) == 0 && sem_ty_kind(c->t, sem_parse_type(c, tys->pt_elem[pt])) != TK_STRUCT) {
   sem_err(c, __flowc_str_concatn(5, "Module static '", name, "' has unsupported array element type '", en, "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)"));
   return;
 }
@@ -93576,13 +93658,13 @@ void sem_check_static(Sem* c, int32_t d) {
   x = sem_nnext(c, x);
 }
 } else {
-  if (sem_is_static_primitive(tn)) {
+  if (sem_is_static_primitive(tn) || sem_ty_kind(c->t, sem_parse_type(c, pt)) == TK_STRUCT) {
   if (sem_is_const_scalar(c, value) == 0) {
   sem_err(c, __flowc_str_concatn(3, "Module static '", name, "' initializer must be a compile-time constant literal"));
   return;
 }
 } else {
-  sem_err(c, __flowc_str_concatn(5, "Module static '", name, "' has unsupported type '", tn, "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, or ptr<T>"));
+  sem_err(c, __flowc_str_concatn(5, "Module static '", name, "' has unsupported type '", tn, "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives or structs, a struct, or ptr<T>"));
   return;
 }
 }

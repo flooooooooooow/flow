@@ -16636,7 +16636,7 @@ function mlg_add_static(m: ptr<Mlg>, d: i32) {
         }
     } else {
         let t: i32 = mlg_ft_to_mt(m, ty, d)
-        if t == MT_NONE or t == MT_VOID or mlg_is_memref_mt(t) == 1 {
+        if t == MT_NONE or t == MT_VOID or (mlg_is_memref_mt(t) == 1 and mlg_is_struct_mt(t) == 0 and t != MT_PTR) {
             mlg_refuse(m, d, "static of this type")
             return
         }
@@ -16869,6 +16869,39 @@ function mlg_static_expr(m: ptr<Mlg>, e: i32, t: i32) -> i32 {
             return V_NONE
         }
         return mlg_static_struct_lit(m, e, t)
+    }
+    if k == AST_ARRAY_LIT and mlg_is_llarr_mt(t) == 1 {
+        if m[0].arena.nodes[e].b != AST_NONE {
+            mlg_refuse(m, e, "repeat array literal for a static")
+            return V_NONE
+        }
+        let et: i32 = m[0].la_elem[t - MT_LLARR]
+        let n: i32 = m[0].la_n[t - MT_LLARR]
+        let mut acc: i32 = mlg_llvm_zero(m, t)
+        let mut el: i32 = m[0].arena.nodes[e].a
+        let mut i: i32 = 0
+        while i < n and m[0].err == 0 {
+            let mut val: i32 = mlg_llvm_zero(m, et)
+            if el != AST_NONE {
+                val = mlg_static_expr(m, el, et)
+                el = m[0].arena.nodes[el].next
+            }
+            let nx: i32 = mlg_new_val(m, t)
+            mlg_line(m)
+            mlg_v(m, nx)
+            mlg_s(m, " = llvm.insertvalue ")
+            mlg_v(m, val)
+            mlg_s(m, ", ")
+            mlg_v(m, acc)
+            mlg_s(m, "[")
+            mlg_i(m, i)
+            mlg_s(m, "] : ")
+            mlg_put_type(m, t)
+            mlg_nl(m)
+            acc = nx
+            i = i + 1
+        }
+        return acc
     }
     if k == AST_STRING {
         let sk: i32 = mlg_intern_src(m, e, 0)
