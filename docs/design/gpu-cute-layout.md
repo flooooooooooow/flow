@@ -51,7 +51,7 @@ must be CUDA-specific lowerings, not fake shared features on all devices.
 
 `examples/gpu/cute_layout_reference.flow` implements ordinary Flow
 functions for **rank-2 affine layout evaluation**, transpose, conservative
-row-major coalescing, generic *evaluated* composition, grid/tile partitioning,
+CuTe-order coalescing, generic *evaluated* composition, grid/tile partitioning,
 and partial-tile validity. No device or Python dependency.
 
 A layout `L` with positive logical shape `(M, N)`, nonnegative strides
@@ -65,7 +65,10 @@ L(i, j) = o + i * sM + j * sN
 Transposition swaps shape/stride axes without moving data. Zero strides
 represent broadcast. For an arbitrary selector `B`, evaluated composition
 is `(A o B)(i) = A(B(i))`, where `B(i)` is interpreted as a flattened
-logical coordinate in `A`, **not** an assumed affine output layout.
+logical coordinate in `A` with **mode 0 varying fastest** (as in CuTe),
+**not** an assumed affine output layout. This is different from default
+row-major flattening. The tests include NVIDIA's documented
+`(6,2):(8,2) o (4,3):(3,1)` composition examples.
 
 Given tile `(TM,TN)`, grid `(ceil(M/TM), ceil(N/TN))` and local
 coordinates `(u,v)`, the mapping is:
@@ -78,8 +81,9 @@ Out-of-range coordinates return -1, including masked edges; physical
 offsets are computed in i64 after validating nonnegative i32 shapes and
 strides. The P0 proof intentionally does **not** implement CuTe's full
 hierarchical tuple algebra, swizzle or layout-closure rules. In particular
-the P0 coalescer accepts only a contiguous row-major flattening that fits
-i32; it must not be mistaken for CuTe's general `coalesce`.
+the P0 coalescer accepts only two modes with `stride[1] ==
+shape[0] * stride[0]` and a product that fits i32; it must not be
+mistaken for CuTe's general `coalesce`.
 
 Run the reference with:
 
