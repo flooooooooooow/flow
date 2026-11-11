@@ -1424,7 +1424,7 @@ PDE helpers (pattern-adoption #163). Stdlib MVP for field evolution without `fie
     row_ptrs: ptr<i32>,
     col_indices: ptr<i32>,
     first_node: i32
-) -> void` | In-place, order-preserving diffusion over CSR adjacency. field and scratch must be distinct buffers. Active field indices are first_node through first_node+n-1; neighbor indices use that same index space. Reads every gradient in CSR order, multiplies by rate, then updates all field values with dt in a second pass. Empty rows retain their values. |
+) -> void` | In-place, order-preserving diffusion over CSR adjacency. field and scratch must be distinct buffers. The active field indices are first_node .. first_node + n - 1, and col_indices stores field indices in that same index space (not necessarily zero-based). |
 
 ### `dynamics/portrait.flow`
 
