@@ -87574,8 +87574,12 @@ void mlg_put_mem_profile(Mlg* m) {
   int32_t k_promo = mlg_intern_lit(m, "\"promotion_bytes: %llu\\n\"");
   int32_t k_ovf = mlg_intern_lit(m, "\"live_map_overflow: %llu\\n\"");
   int32_t k_concat = mlg_intern_lit(m, "\"site_concat: %llu\\n\"");
+  if (mlg_lc_declared(m, "getenv") == 0) {
   mlg_s(m, "  func.func private @getenv(!llvm.ptr) -> !llvm.ptr\n");
+}
+  if (mlg_lc_declared(m, "atexit") == 0) {
   mlg_s(m, "  func.func private @atexit(!llvm.ptr) -> i32\n");
+}
   if ((m[0]).needs_printf == 0) {
   mlg_s(m, "  llvm.func @printf(!llvm.ptr, ...) -> i32\n");
 }
