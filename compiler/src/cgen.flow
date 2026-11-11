@@ -15479,6 +15479,45 @@ export function flowc_cgen_emit_sigs(
     return rc
 }
 
+# Emit C11 file-scope constants without runtime compound literals.
+function flowc_cgen_emit_static_initializer(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, init: i32) {
+    if init == AST_NONE {
+        flowc_cgen_puts(w, "{0}")
+        return
+    }
+    let kind: i32 = arena.nodes[init].kind
+    if kind == AST_STRUCT_LIT {
+        flowc_cgen_puts(w, "{ ")
+        let mut field: i32 = arena.nodes[init].a
+        let mut first: i32 = 1
+        while field != AST_NONE {
+            if first == 0 { flowc_cgen_puts(w, ", ") }
+            first = 0
+            flowc_cgen_putc(w, 46)
+            flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_static_initializer(w, arena, src, arena.nodes[field].a)
+            field = arena.nodes[field].next
+        }
+        flowc_cgen_puts(w, " }")
+        return
+    }
+    if kind == AST_ARRAY_LIT and arena.nodes[init].b == AST_NONE {
+        flowc_cgen_puts(w, "{ ")
+        let mut el: i32 = arena.nodes[init].a
+        let mut first: i32 = 1
+        while el != AST_NONE {
+            if first == 0 { flowc_cgen_puts(w, ", ") }
+            first = 0
+            flowc_cgen_emit_static_initializer(w, arena, src, el)
+            el = arena.nodes[el].next
+        }
+        flowc_cgen_puts(w, " }")
+        return
+    }
+    flowc_cgen_emit_expr(w, arena, src, init)
+}
+
 function flowc_cgen_emit_module(
     arena: AstArena,
     root: i32,
@@ -16252,7 +16291,7 @@ while item != AST_NONE {
             } else {
                 if init != AST_NONE {
                     flowc_cgen_puts(&w, " = ")
-                    flowc_cgen_emit_expr(&w, arena, src, init)
+                    flowc_cgen_emit_static_initializer(&w, arena, src, init)
                 }
             }
             flowc_cgen_puts(&w, ";\n")

@@ -1,0 +1,26 @@
+struct MyStruct {
+    a: i32
+    b: string
+}
+struct Outer {
+    inner: MyStruct
+    values: array<i32, 2>
+}
+let mut my_static: string = "hello"
+let mut my_struct_static: MyStruct = MyStruct { a: 10, b: "world" }
+let mut nested: Outer = Outer { inner: MyStruct { a: 17, b: "nested" }, values: [21, 34] }
+let mut strings: array<string, 2> = ["first", "second"]
+let mut records: array<MyStruct, 2> = [MyStruct { a: 8, b: "eight" }, MyStruct { a: 13, b: "thirteen" }]
+
+export function main() -> i32 {
+    if my_static != "hello" { return 1 }
+    if my_struct_static.a != 10 { return 2 }
+    if my_struct_static.b != "world" { return 3 }
+    if nested.inner.a != 17 { return 4 }
+    if nested.inner.b != "nested" { return 5 }
+    if nested.values[0] != 21 or nested.values[1] != 34 { return 6 }
+    if strings[0] != "first" or strings[1] != "second" { return 7 }
+    if records[0].a != 8 or records[1].a != 13 { return 8 }
+    if records[1].b != "thirteen" { return 9 }
+    return 0
+}
