@@ -1,0 +1,188 @@
+# CuTe-inspired layout algebra reference experiment for Flow.
+#
+# This is a CPU-only, backend-independent semantic proof. It does not claim
+# CUDA, Tensor Core, hierarchical layout parity, or performance improvements.
+# Run: ./flow run examples/gpu/cute_layout_reference.flow
+#
+# The 2-D shape/stride map is deliberately small; the design for extending
+# it into arbitrary nested layout algebra is in docs/design/gpu-cute-layout.md.
+
+struct CuteLayout2 {
+    rows: i32,
+    cols: i32,
+    row_stride: i32,
+    col_stride: i32,
+    origin: i32
+}
+
+struct CuteTile2 {
+    parent: CuteLayout2,
+    tile_rows: i32,
+    tile_cols: i32,
+    grid_rows: i32,
+    grid_cols: i32
+}
+
+function cute_layout2_valid(a: CuteLayout2) -> bool {
+    return a.rows > 0 and a.cols > 0 and
+        a.row_stride >= 0 and a.col_stride >= 0 and a.origin >= 0
+}
+
+# CuTe's fundamental idea: logical coordinates map to physical offsets.
+# Invalid coordinates return -1, not a potentially unsafe buffer offset.
+function cute_layout2_index(a: CuteLayout2, row: i32, col: i32) -> i64 {
+    if not cute_layout2_valid(a) { return -1 }
+    if row < 0 or col < 0 or row >= a.rows or col >= a.cols {
+        return -1
+    }
+    return (a.origin as i64) +
+        (row as i64) * (a.row_stride as i64) +
+        (col as i64) * (a.col_stride as i64)
+}
+
+# Tensor transpose is a view transformation; no element is copied.
+function cute_layout2_transpose(a: CuteLayout2) -> CuteLayout2 {
+    return CuteLayout2 {
+        rows: a.cols,
+        cols: a.rows,
+        row_stride: a.col_stride,
+        col_stride: a.row_stride,
+        origin: a.origin
+    }
+}
+
+# CuTe linearizes with mode 0 fastest. Merge only when that traversal is
+# affine and fits i32; otherwise leave the layout untouched.
+# Noncontiguous layouts are returned unchanged; no false simplification.
+function cute_layout2_coalesce(a: CuteLayout2) -> CuteLayout2 {
+    if not cute_layout2_valid(a) { return a }
+    let size: i64 = (a.rows as i64) * (a.cols as i64)
+    if size > 2147483647 { return a }
+    if (a.col_stride as i64) != (a.rows as i64) * (a.row_stride as i64) {
+        return a
+    }
+    return CuteLayout2 {
+        rows: size as i32,
+        cols: 1,
+        row_stride: a.row_stride,
+        col_stride: 0,
+        origin: a.origin
+    }
+}
+
+# Exact evaluation of A o B, where B's physical offset selects a flattened
+# mode-0-fast logical coordinate of A. Composition is not generally affine
+# in this restricted rank-2 representation,
+# so this reference evaluates it instead of inventing affine strides.
+function cute_layout2_compose_index(a: CuteLayout2, b: CuteLayout2, row: i32, col: i32) -> i64 {
+    if not cute_layout2_valid(a) { return -1 }
+    let logical: i64 = cute_layout2_index(b, row, col)
+    let count: i64 = (a.rows as i64) * (a.cols as i64)
+    if logical < 0 or logical >= count { return -1 }
+    let ar: i32 = (logical % (a.rows as i64)) as i32
+    let ac: i32 = (logical / (a.rows as i64)) as i32
+    return cute_layout2_index(a, ar, ac)
+}
+
+# Split a 2-D layout into grid coordinates and within-tile coordinates.
+# Ceil division preserves edge tiles with explicit invalid-element masks.
+function cute_layout2_tile(a: CuteLayout2, tile_rows: i32, tile_cols: i32) -> CuteTile2 {
+    if not cute_layout2_valid(a) or tile_rows <= 0 or tile_cols <= 0 {
+        return CuteTile2 {
+            parent: a,
+            tile_rows: 0,
+            tile_cols: 0,
+            grid_rows: 0,
+            grid_cols: 0
+        }
+    }
+    return CuteTile2 {
+        parent: a,
+        tile_rows: tile_rows,
+        tile_cols: tile_cols,
+        grid_rows: 1 + (a.rows - 1) / tile_rows,
+        grid_cols: 1 + (a.cols - 1) / tile_cols
+    }
+}
+
+function cute_tile2_index(t: CuteTile2, grid_row: i32, grid_col: i32, local_row: i32, local_col: i32) -> i64 {
+    if t.tile_rows <= 0 or t.tile_cols <= 0 { return -1 }
+    if grid_row < 0 or grid_col < 0 or grid_row >= t.grid_rows or grid_col >= t.grid_cols {
+        return -1
+    }
+    if local_row < 0 or local_col < 0 or local_row >= t.tile_rows or local_col >= t.tile_cols {
+        return -1
+    }
+    let row: i64 = (grid_row as i64) * (t.tile_rows as i64) + (local_row as i64)
+    let col: i64 = (grid_col as i64) * (t.tile_cols as i64) + (local_col as i64)
+    if row >= (t.parent.rows as i64) or col >= (t.parent.cols as i64) {
+        return -1
+    }
+    return cute_layout2_index(t.parent, row as i32, col as i32)
+}
+
+function main() -> i32 {
+    let a: CuteLayout2 = CuteLayout2 {
+        rows: 4, cols: 8, row_stride: 8, col_stride: 1, origin: 0
+    }
+    if cute_layout2_index(a, 2, 3) != 19 { return 1 }
+    if cute_layout2_index(a, -1, 0) != -1 { return 2 }
+    if cute_layout2_index(a, 4, 0) != -1 { return 3 }
+
+    let transposed: CuteLayout2 = cute_layout2_transpose(a)
+    if transposed.rows != 8 or transposed.cols != 4 { return 4 }
+    if cute_layout2_index(transposed, 3, 2) != 19 { return 5 }
+
+    let unchanged: CuteLayout2 = cute_layout2_coalesce(a)
+    if unchanged.rows != 4 or unchanged.cols != 8 { return 6 }
+
+    let column_major: CuteLayout2 = CuteLayout2 {
+        rows: 4, cols: 8, row_stride: 1, col_stride: 4, origin: 0
+    }
+    if cute_layout2_index(column_major, 2, 3) != 14 { return 7 }
+    let packed: CuteLayout2 = cute_layout2_coalesce(column_major)
+    if packed.rows != 32 or packed.cols != 1 { return 8 }
+    if cute_layout2_index(packed, 14, 0) != 14 { return 9 }
+
+    let sparse: CuteLayout2 = CuteLayout2 {
+        rows: 4, cols: 8, row_stride: 16, col_stride: 2, origin: 5
+    }
+    let selector: CuteLayout2 = CuteLayout2 {
+        rows: 2, cols: 2, row_stride: 8, col_stride: 2, origin: 0
+    }
+    if cute_layout2_compose_index(sparse, selector, 1, 1) != 41 { return 10 }
+    if cute_layout2_compose_index(sparse, selector, 2, 0) != -1 { return 11 }
+
+    # Official CuTe layout-algebra composition example:
+    # A=(6,2):(8,2), B=(4,3):(3,1), mode 0 varies fastest.
+    let reference_a: CuteLayout2 = CuteLayout2 {
+        rows: 6, cols: 2, row_stride: 8, col_stride: 2, origin: 0
+    }
+    let reference_b: CuteLayout2 = CuteLayout2 {
+        rows: 4, cols: 3, row_stride: 3, col_stride: 1, origin: 0
+    }
+    if cute_layout2_compose_index(reference_a, reference_b, 1, 0) != 24 { return 19 }
+    if cute_layout2_compose_index(reference_a, reference_b, 2, 0) != 2 { return 20 }
+    if cute_layout2_compose_index(reference_a, reference_b, 3, 1) != 34 { return 21 }
+
+    let broadcast: CuteLayout2 = CuteLayout2 {
+        rows: 3, cols: 4, row_stride: 0, col_stride: 1, origin: 0
+    }
+    if cute_layout2_index(broadcast, 2, 3) != 3 { return 12 }
+
+    let edges: CuteLayout2 = CuteLayout2 {
+        rows: 5, cols: 7, row_stride: 7, col_stride: 1, origin: 0
+    }
+    let tiled: CuteTile2 = cute_layout2_tile(edges, 2, 3)
+    if tiled.grid_rows != 3 or tiled.grid_cols != 3 { return 13 }
+    if cute_tile2_index(tiled, 1, 1, 1, 2) != 26 { return 14 }
+    if cute_tile2_index(tiled, 2, 2, 0, 0) != 34 { return 15 }
+    if cute_tile2_index(tiled, 2, 2, 1, 0) != -1 { return 16 }
+    if cute_tile2_index(tiled, 0, 0, 0, 3) != -1 { return 17 }
+
+    let invalid: CuteTile2 = cute_layout2_tile(edges, 0, 4)
+    if cute_tile2_index(invalid, 0, 0, 0, 0) != -1 { return 18 }
+
+    println("cute_layout_reference: PASS")
+    return 0
+}

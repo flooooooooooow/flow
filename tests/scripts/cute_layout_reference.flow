@@ -1,0 +1,29 @@
+# CPU-only semantic regression for the CuTe-style Flow layout reference.
+# The Flow script gate discovers every tests/scripts/*.flow automatically.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+function check_cute_layout_reference() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS { return need }
+    if t_run_argv(sl_of3(t_root() + "/flow", "run", "examples/gpu/cute_layout_reference.flow")) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "cute_layout_reference: PASS") {
+        t_cat(t_out())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("cute_layout_reference")
+    t_start()
+    t_end("affine_composition_and_ragged_tiles", check_cute_layout_reference())
+    t_done()
+    return 0
+}
