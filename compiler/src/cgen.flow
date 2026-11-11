@@ -1742,6 +1742,43 @@ function flowc_cgen_emit_sl_member(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
 }
 
+# A named array assigned to a span field borrows its storage instead of
+# copying array bytes into the span record (#1691).
+function flowc_cgen_sl_span_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lit: i32, field: i32) -> i32 {
+    let st: i32 = flowc_cgen_find_struct(arena, src, arena.nodes[lit].name_start, arena.nodes[lit].name_end)
+    if st == AST_NONE {
+        return AST_NONE
+    }
+    let aty: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[field].a)
+    if aty == AST_NONE or flowc_cgen_ty_is_array(arena, src, aty) == 0 or arena.nodes[aty].ival <= 0 {
+        return AST_NONE
+    }
+    let mut f: i32 = arena.nodes[st].a
+    while f != AST_NONE {
+        if flowc_cgen_span_eq(src, arena.nodes[f].name_start, arena.nodes[f].name_end, arena.nodes[field].name_start, arena.nodes[field].name_end) == 1 {
+            let ty: i32 = arena.nodes[f].a
+            if flowc_cgen_type_is_span(arena, src, ty) == 1 {
+                return ty
+            }
+            return AST_NONE
+        }
+        f = arena.nodes[f].next
+    }
+    return AST_NONE
+}
+
+function flowc_cgen_emit_sl_span(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, field: i32, span_ty: i32) {
+    let value: i32 = arena.nodes[field].a
+    let aty: i32 = flowc_cgen_expr_type_node(w, arena, src, value)
+    flowc_cgen_puts(w, "((")
+    flowc_cgen_emit_type(w, arena, src, span_ty)
+    flowc_cgen_puts(w, "){ ")
+    flowc_cgen_emit_expr(w, arena, src, value)
+    flowc_cgen_puts(w, ", ")
+    flowc_cgen_put_i32(w, arena.nodes[aty].ival)
+    flowc_cgen_puts(w, " })")
+}
+
 # Destination of a record-update field write. dest_kind 0 is the expression-
 # position temporary `__flowc_sl<dest_id>`; dest_kind 1 is the identifier
 # src[dest_ns..dest_ne] (a let, assignment target, or last-use local);
@@ -1765,12 +1802,17 @@ function flowc_cgen_emit_rupdate_member(w: ptr<CgenBuf>, arena: AstArena, src: p
     flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
 }
 
-function flowc_cgen_emit_rupdate_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, uf: i32, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32, as_stmt: i32) {
+function flowc_cgen_emit_rupdate_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lit: i32, uf: i32, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32, as_stmt: i32) {
     let uv: i32 = arena.nodes[uf].a
     if as_stmt == 1 {
         flowc_cgen_puts(w, "  ")
     }
-    if flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
+    let span_ty: i32 = flowc_cgen_sl_span_type(w, arena, src, lit, uf)
+    if span_ty != AST_NONE {
+        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_sl_span(w, arena, src, uf, span_ty)
+    } elif flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
         # As for a struct literal: a pointer field takes the decayed
         # array, an array field its elements.
         flowc_cgen_puts(w, "flow_mem_note_copy(sizeof(")
@@ -1812,14 +1854,14 @@ function flowc_cgen_emit_rupdate_writes(w: ptr<CgenBuf>, arena: AstArena, src: p
     if n >= 0 {
         let mut i: i32 = 0
         while i < n {
-            flowc_cgen_emit_rupdate_one(w, arena, src, order[i], dest_kind, dest_id, dest_ns, dest_ne, as_stmt)
+            flowc_cgen_emit_rupdate_one(w, arena, src, lit, order[i], dest_kind, dest_id, dest_ns, dest_ne, as_stmt)
             i = i + 1
         }
         return
     }
     let mut uf: i32 = arena.nodes[lit].a
     while uf != AST_NONE {
-        flowc_cgen_emit_rupdate_one(w, arena, src, uf, dest_kind, dest_id, dest_ns, dest_ne, as_stmt)
+        flowc_cgen_emit_rupdate_one(w, arena, src, lit, uf, dest_kind, dest_id, dest_ns, dest_ne, as_stmt)
         uf = arena.nodes[uf].next
     }
 }
@@ -9583,7 +9625,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let mut copies: i32 = 0
         let mut fscan: i32 = arena.nodes[id].a
         while fscan != AST_NONE {
-            copies = copies + flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[fscan].a)
+            if flowc_cgen_sl_span_type(w, arena, src, id, fscan) == AST_NONE {
+                copies = copies + flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[fscan].a)
+            }
             fscan = arena.nodes[fscan].next
         }
         if copies > 0 {
@@ -9597,7 +9641,8 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let mut field: i32 = arena.nodes[id].a
         let mut first: i32 = 1
         while field != AST_NONE {
-            if flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[field].a) == 0 {
+            let span_ty: i32 = flowc_cgen_sl_span_type(w, arena, src, id, field)
+            if span_ty != AST_NONE or flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[field].a) == 0 {
                 if first == 0 {
                     flowc_cgen_puts(w, ", ")
                 }
@@ -9605,7 +9650,11 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 flowc_cgen_putc(w, 46)
                 flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
                 flowc_cgen_puts(w, " = ")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[field].a)
+                if span_ty != AST_NONE {
+                    flowc_cgen_emit_sl_span(w, arena, src, field, span_ty)
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[field].a)
+                }
             }
             field = arena.nodes[field].next
         }
@@ -9616,7 +9665,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, "; ")
             field = arena.nodes[id].a
             while field != AST_NONE {
-                if flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[field].a) == 1 {
+                if flowc_cgen_sl_span_type(w, arena, src, id, field) == AST_NONE and flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[field].a) == 1 {
                     # The field may be declared in another module, so C
                     # decides: a pointer field (typeof(f) == typeof(&f[0]))
                     # takes the decayed array, an array field its elements.
