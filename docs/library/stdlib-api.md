@@ -1415,6 +1415,16 @@ PDE helpers (pattern-adoption #163). Stdlib MVP for field evolution without `fie
     col_indices: ptr<i32>,
     weights: ptr<f64>
 ) -> void` | Graph field evolution on an irregular neighbor network (CSR format). Computes: next[i] = u[i] + r * sum_{j in N(i)} w_ij * (u[j] - u[i]) If weights is null, w_ij = 1.0 is assumed. Boundaries: This operator is purely defined over the adjacency provided. |
+| `heat_euler_step_csr_ordered_inplace` | `(
+    field: ptr<f64>,
+    scratch: ptr<f64>,
+    n: i32,
+    rate: f64,
+    dt: f64,
+    row_ptrs: ptr<i32>,
+    col_indices: ptr<i32>,
+    first_node: i32
+) -> void` | In-place, order-preserving diffusion over CSR adjacency. field and scratch must be distinct buffers. Active field indices are first_node through first_node+n-1; neighbor indices use that same index space. Reads every gradient in CSR order, multiplies by rate, then updates all field values with dt in a second pass. Empty rows retain their values. |
 
 ### `dynamics/portrait.flow`
 
