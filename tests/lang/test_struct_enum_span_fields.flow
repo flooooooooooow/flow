@@ -1,0 +1,43 @@
+# Flow-native language test: a struct may hold an enum field and a span of
+# another struct, and a span held in a field can be sliced.
+#
+# Three flowc C-backend gaps kept this from compiling:
+#   1. Enum typedefs came after the struct typedefs, so `mode: Mode` named a
+#      type C had not seen ("unknown type name 'Mode'").
+#   2. A span over a program struct (`span<mut Item>`) was typedef'd after the
+#      structs, so a field of that type was undeclared. Structs are now
+#      forward-declared and every span over a declared type precedes them.
+#   3. `h.values[1..3]` treated the field as a raw int32 pointer; a slice of a
+#      non-variable base now takes its element type from the expression type
+#      and reads the span's .data.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+enum Mode { Fast, Slow }
+
+struct Item {
+    weight: f64,
+    count: i32
+}
+
+struct Holder {
+    mode: Mode,
+    items: span<mut Item>,
+    values: span<mut f64>
+}
+
+function sum_slice(xs: span<f64>) -> f64 {
+    let mut s: f64 = 0.0
+    for i in 0 to xs.len as i32 { s = s + xs[i] }
+    return s
+}
+
+function main() -> i32 {
+    let mut items: array<Item, 2> = [Item { weight: 1.5, count: 2 }, Item { weight: 2.5, count: 4 }]
+    let mut vals: array<f64, 4> = [1.0, 2.0, 3.0, 4.0]
+    let h: Holder = Holder { mode: Mode { tag: Mode_Slow }, items: items[0..2], values: vals[0..4] }
+    let second: Item = h.items[1]
+    if second.count != 4 { return 1 }
+    if sum_slice(h.values[1..3]) != 5.0 { return 2 }
+    if h.mode.tag != Mode_Slow { return 3 }
+    return 0
+}

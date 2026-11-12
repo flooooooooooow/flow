@@ -8638,9 +8638,22 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             # T comes from the sliced variable's own declared element type.
             # It used to be int32_t unconditionally, so slicing a ptr<f64>
             # named a flowc_span_int32_t that no typedef ever declared.
+            # A base that is not a variable (a struct field `c.values`, a call) takes its
+            # element type and its span-ness from its expression type, as indexing does.
+            let slice_base: i32 = arena.nodes[id].a
             let mut elem: i32 = AST_NONE
-            if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-                elem = flowc_cgen_var_elem_type(w, arena, src, arena.nodes[id].a)
+            let mut base_span: i32 = 0
+            if arena.nodes[slice_base].kind == AST_IDENT {
+                elem = flowc_cgen_var_elem_type(w, arena, src, slice_base)
+                base_span = flowc_cgen_is_span_var(w, arena, src, slice_base)
+            } else {
+                let bt: i32 = flowc_cgen_expr_type_node(w, arena, src, slice_base)
+                if bt != AST_NONE and arena.nodes[bt].kind == AST_TYPE and arena.nodes[bt].a != AST_NONE {
+                    elem = arena.nodes[bt].a
+                }
+                if bt != AST_NONE and flowc_cgen_type_is_span(arena, src, bt) == 1 {
+                    base_span = 1
+                }
             }
             flowc_cgen_puts(w, "((flowc_span_")
             if elem != AST_NONE {
@@ -8655,16 +8668,13 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 flowc_cgen_puts(w, "int32_t")
             }
             flowc_cgen_puts(w, "*)")
-            # If base is a span variable, use .data as the pointer base.
-            if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-                if flowc_cgen_is_span_var(w, arena, src, arena.nodes[id].a) == 1 {
-                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                    flowc_cgen_puts(w, ".data")
-                } else {
-                    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                }
+            # A span base contributes its .data pointer.
+            if base_span == 1 {
+                flowc_cgen_putc(w, 40)
+                flowc_cgen_emit_expr(w, arena, src, slice_base)
+                flowc_cgen_puts(w, ").data")
             } else {
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_emit_expr(w, arena, src, slice_base)
             }
             flowc_cgen_puts(w, " + ")
             if arena.nodes[id].b != AST_NONE {
@@ -8683,18 +8693,11 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 }
             } else {
                 # xs[a..] → length = sizeof(xs)/sizeof(xs[0]) - a
-                # For span variables, use .len instead of sizeof.
-                if arena.nodes[arena.nodes[id].a].kind == AST_IDENT {
-                    if flowc_cgen_is_span_var(w, arena, src, arena.nodes[id].a) == 1 {
-                        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                        flowc_cgen_puts(w, ".len - ")
-                    } else {
-                        flowc_cgen_puts(w, "(int32_t)(sizeof(")
-                        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                        flowc_cgen_puts(w, ")/sizeof((")
-                        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
-                        flowc_cgen_puts(w, ")[0])) - ")
-                    }
+                # For a span base, use .len instead of sizeof.
+                if base_span == 1 {
+                    flowc_cgen_putc(w, 40)
+                    flowc_cgen_emit_expr(w, arena, src, slice_base)
+                    flowc_cgen_puts(w, ").len - ")
                 } else {
                     flowc_cgen_puts(w, "(int32_t)(sizeof(")
                     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
@@ -15591,9 +15594,11 @@ function flowc_cgen_emit_static_initializer(w: ptr<CgenBuf>, arena: AstArena, sr
     flowc_cgen_emit_expr(w, arena, src, init)
 }
 
-# A span<T> element type that needs no declaration from the program: a
-# primitive, or c64/c128 from the runtime header.
-function flowc_cgen_span_elem_is_builtin(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+# A span<T> element type whose C name exists before the struct bodies: a primitive,
+# c64/c128 from the runtime header, an enum (emitted before the structs), or a
+# non-generic struct (forward-declared before the structs). Spans over generic
+# instantiations wait for monomorphization.
+function flowc_cgen_span_elem_is_early(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
     if arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].a != AST_NONE {
         return 0
     }
@@ -15607,13 +15612,27 @@ function flowc_cgen_span_elem_is_builtin(arena: AstArena, src: ptr<u8>, ty: i32)
     if cp[0] != 0 {
         return 1
     }
+    let ix: ptr<AstIndex> = flowc_ast_ix(arena, src)
+    if ix != null and ne > ns {
+        let mut st: i32 = flowc_ast_ix_find(ix, arena, AST_STRUCT, ns, ne)
+        while st != AST_NONE {
+            if arena.nodes[st].b == AST_NONE {
+                return 1
+            }
+            st = flowc_ast_ix_find_next(ix, arena, st)
+        }
+        if flowc_ast_ix_find(ix, arena, AST_ENUM, ns, ne) != AST_NONE {
+            return 1
+        }
+    }
     return 0
 }
 
 # Span typedefs for every span<T> (and &[T]) type in the program, each behind
 # a guard macro because the same element type recurs across modules.
-# builtin_only = 1 emits only spans over builtin element types.
-function flowc_cgen_emit_span_typedefs(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, builtin_only: i32) {
+# early_only = 1 emits only spans whose element type is declared by then
+# (flowc_cgen_span_elem_is_early).
+function flowc_cgen_emit_span_typedefs(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, early_only: i32) {
     let mut ti: i32 = 0
     while ti < arena.len {
         if arena.nodes[ti].kind == AST_TYPE {
@@ -15630,7 +15649,7 @@ function flowc_cgen_emit_span_typedefs(w: ptr<CgenBuf>, arena: AstArena, src: pt
             }
             if is_span_ty == 1 {
                 let inner: i32 = arena.nodes[ti].a
-                if inner != AST_NONE and (builtin_only == 0 or flowc_cgen_span_elem_is_builtin(arena, src, inner) == 1) {
+                if inner != AST_NONE and (early_only == 0 or flowc_cgen_span_elem_is_early(arena, src, inner) == 1) {
                     # Emit with guard macro: #ifndef FLOWC_SPAN_int32_t
                     flowc_cgen_puts(w, "#ifndef FLOWC_SPAN_")
                     flowc_cgen_emit_type(w, arena, src, inner)
@@ -16126,8 +16145,60 @@ while item != AST_NONE {
     # hold them).
     flowc_cgen_emit_fat_typedefs(&w, arena, src, 0)
 
-    # Pass 0.97: span typedefs over builtin element types. A struct field may
-    # be a span<f64>, so these must precede the structs in Pass 1.
+    # Pass 0.96: forward typedefs for every non-generic struct. Structs are emitted
+    # as `typedef struct Name {...} Name;`, so `typedef struct Name Name;` first is
+    # legal C11, and it lets a span<Name> field name the type before its body.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let fst: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
+        if fst != AST_NONE and arena.nodes[fst].b == AST_NONE {
+            flowc_cgen_puts(&w, "typedef struct ")
+            flowc_cgen_put_span(&w, src, arena.nodes[fst].name_start, arena.nodes[fst].name_end)
+            flowc_cgen_putc(&w, 32)
+            flowc_cgen_put_span(&w, src, arena.nodes[fst].name_start, arena.nodes[fst].name_end)
+            flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 0.965: enum typedefs. They depend on no other type, and a struct field may
+    # hold an enum, so they precede the structs.
+    # Emits: typedef enum { Name_V0, Name_V1, ... } Name_Tag;
+    #        typedef struct { Name_Tag tag; } Name;
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let en: i32 = flowc_cgen_unwrap(arena, item, AST_ENUM)
+        if en != AST_NONE {
+            flowc_cgen_puts(&w, "typedef enum {")
+            let mut var: i32 = arena.nodes[en].a
+            let mut first: i32 = 1
+            while var != AST_NONE {
+                if first == 0 {
+                    flowc_cgen_puts(&w, ", ")
+                } else {
+                    flowc_cgen_putc(&w, 32)
+                }
+                first = 0
+                flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+                flowc_cgen_putc(&w, 95)
+                flowc_cgen_put_span(&w, src, arena.nodes[var].name_start, arena.nodes[var].name_end)
+                var = arena.nodes[var].next
+            }
+            flowc_cgen_puts(&w, " } ")
+            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            flowc_cgen_puts(&w, "_Tag;\n")
+            flowc_cgen_puts(&w, "typedef struct { ")
+            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            flowc_cgen_puts(&w, "_Tag tag; } ")
+            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 0.97: span typedefs over every element type declared by now. A struct
+    # field may be a span<f64>, a span<Name> or a span of an enum, so these must
+    # precede the structs in Pass 1.
     flowc_cgen_emit_span_typedefs(&w, arena, src, 1)
 
     # Pass 1: struct typedefs (including export struct)
@@ -16173,40 +16244,6 @@ while item != AST_NONE {
         }
     }
     free(st_done)
-
-    # Pass 1.5a: enum typedefs.
-    # Emits: typedef enum { Name_V0, Name_V1, ... } Name_Tag;
-    #        typedef struct { Name_Tag tag; } Name;
-    item = arena.nodes[root].a
-    while item != AST_NONE {
-        let en: i32 = flowc_cgen_unwrap(arena, item, AST_ENUM)
-        if en != AST_NONE {
-            flowc_cgen_puts(&w, "typedef enum {")
-            let mut var: i32 = arena.nodes[en].a
-            let mut first: i32 = 1
-            while var != AST_NONE {
-                if first == 0 {
-                    flowc_cgen_puts(&w, ", ")
-                } else {
-                    flowc_cgen_putc(&w, 32)
-                }
-                first = 0
-                flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
-                flowc_cgen_putc(&w, 95)
-                flowc_cgen_put_span(&w, src, arena.nodes[var].name_start, arena.nodes[var].name_end)
-                var = arena.nodes[var].next
-            }
-            flowc_cgen_puts(&w, " } ")
-            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
-            flowc_cgen_puts(&w, "_Tag;\n")
-            flowc_cgen_puts(&w, "typedef struct { ")
-            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
-            flowc_cgen_puts(&w, "_Tag tag; } ")
-            flowc_cgen_put_span(&w, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
-            flowc_cgen_puts(&w, ";\n")
-        }
-        item = arena.nodes[item].next
-    }
 
     # Pass 1.5: type aliases → typedef BaseType Name;
     item = arena.nodes[root].a
