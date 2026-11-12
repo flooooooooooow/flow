@@ -403,6 +403,8 @@ static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { for (int3
 static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); flow_mem_note_site(FLOW_MEM_SITE_SORT, (size_t)sz); for (int32_t i = 1; i < n; i++) { flow_mem_memcpy_site(tmp, base + i * sz, sz, FLOW_MEM_SITE_SORT); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { flow_mem_memcpy_site(base + j * sz, base + (j-1) * sz, sz, FLOW_MEM_SITE_SORT); j--; } else break; } flow_mem_memcpy_site(base + j * sz, tmp, sz, FLOW_MEM_SITE_SORT); } flow_mem_free(tmp); return 0; }
 #endif
 
+typedef struct Token Token;
+typedef struct Lexer Lexer;
 typedef struct Token {
   int32_t kind;
   int32_t kw;
@@ -1407,6 +1409,9 @@ int32_t flowc_token_is_kw(Token tok, int32_t kw) {
 }
 
 
+typedef struct AstNode AstNode;
+typedef struct AstIndex AstIndex;
+typedef struct AstArena AstArena;
 typedef struct AstNode {
   int32_t kind;
   int32_t start;
@@ -2341,6 +2346,9 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
 }
 
 
+typedef struct PlanFacts PlanFacts;
+typedef struct PlanChoice PlanChoice;
+typedef struct PlanText PlanText;
 typedef struct PlanFacts {
   int32_t search;
   int32_t n;
@@ -3178,6 +3186,7 @@ void flowc_plan_report_footer(PlanText* t, int32_t sites) {
 }
 
 
+typedef struct FmtBuf FmtBuf;
 typedef struct FmtBuf {
   uint8_t* out;
   int32_t cap;
@@ -3838,6 +3847,7 @@ int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const 
 }
 
 
+typedef struct TidLayout TidLayout;
 typedef struct TidLayout {
   int64_t size;
   int64_t align;
@@ -5348,6 +5358,7 @@ int32_t flowc_prof_selftest_format(uint8_t* buf, int32_t cap) {
 }
 
 
+typedef struct Region Region;
 typedef struct Region {
   int32_t kind;
   int32_t ident;
@@ -6129,6 +6140,7 @@ int32_t flowc_region_fn_of_node(AstArena arena, int32_t id) {
 }
 
 
+typedef struct FlowcParsedAttr FlowcParsedAttr;
 typedef struct FlowcParsedAttr {
   const char* name;
   const char* args;
@@ -6758,6 +6770,7 @@ int32_t flowc_attr_guard_step(int32_t state, const char* name, const char* args)
 }
 
 
+typedef struct FlowcClaimAddress FlowcClaimAddress;
 typedef struct FlowcClaimAddress {
   const char* carrier;
   const char* structure;
@@ -7633,6 +7646,7 @@ const char* flowc_claim_law_phrase(const char* law) {
 
 
 #define str_append __flowc_m13_str_append
+typedef struct FlowcClaimPath FlowcClaimPath;
 typedef struct FlowcClaimPath {
   const char* domain;
   const char* morphism;
@@ -9399,6 +9413,10 @@ const char* flowc_invoke_premise_mathematical(FlowcClaimAddress addr, const char
 
 #undef is_space
 #define str_append __flowc_m15_str_append
+typedef struct FlowcGeomCurve FlowcGeomCurve;
+typedef struct FlowcGeomFill FlowcGeomFill;
+typedef struct FlowcGeomLabel FlowcGeomLabel;
+typedef struct FlowcGeomDiagram FlowcGeomDiagram;
 typedef struct FlowcGeomCurve {
   double* xs;
   double* ys;
@@ -10379,6 +10397,11 @@ const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
 
 
 #undef str_append
+typedef struct GsVal GsVal;
+typedef struct GsEnv GsEnv;
+typedef struct GsFn GsFn;
+typedef struct GsNode GsNode;
+typedef struct GsCtx GsCtx;
 typedef struct GsVal {
   int32_t kind;
   double num;
@@ -13367,6 +13390,7 @@ int32_t flowc_proof_erase(AstArena arena, int32_t root) {
 }
 
 
+typedef struct NoaliasView NoaliasView;
 typedef struct NoaliasView {
   int32_t kind;
   int32_t root;
@@ -14898,6 +14922,7 @@ int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t*
 }
 
 
+typedef struct ByteBuf ByteBuf;
 typedef struct ByteBuf {
   uint8_t* p;
   int32_t len;
@@ -15117,6 +15142,7 @@ bool bb_span_eq(uint8_t* a, int32_t a_s, int32_t a_e, uint8_t* b, int32_t b_s, i
 }
 
 
+typedef struct ShCtx ShCtx;
 typedef struct ShCtx {
   uint8_t* p;
   int32_t n;
@@ -17637,6 +17663,7 @@ void sh_prelude_wgsl(ByteBuf* w) {
 }
 
 
+typedef struct FlowcOverloadTable FlowcOverloadTable;
 typedef struct FlowcOverloadTable {
   uint8_t* src;
   int32_t* ns;
@@ -17847,6 +17874,10 @@ int32_t flowc_overload_registry_collect(FlowcOverloadTable* table, AstArena aren
 }
 
 
+typedef struct SemIntVec SemIntVec;
+typedef struct SemStrVec SemStrVec;
+typedef struct SemStrMap SemStrMap;
+typedef struct SemPtrVec SemPtrVec;
 typedef struct SemIntVec {
   int32_t* data;
   int32_t len;
@@ -18341,6 +18372,7 @@ void sem_pv_setlen(SemPtrVec* v, int32_t n) {
 }
 
 
+typedef struct SemTys SemTys;
 typedef struct SemTys {
   int32_t* kind;
   const char** name;
@@ -19036,6 +19068,7 @@ int32_t sem_pt_copy(SemTys* t, int32_t id, const char* name) {
 }
 
 
+typedef struct Sem Sem;
 typedef struct Sem {
   SemTys* t;
   bool strict;
@@ -21490,6 +21523,7 @@ void sem_field_attribute_errors(Sem* c, const char* struct_name, const char* fie
 }
 
 
+typedef struct FlowcDenotation FlowcDenotation;
 typedef struct FlowcDenotation {
   uint64_t state_schema;
   uint64_t input_schema;
@@ -21683,6 +21717,7 @@ int32_t flowc_version_string(uint8_t* buf, int32_t cap) {
 }
 
 
+typedef struct FxBuf FxBuf;
 typedef struct FxBuf {
   uint8_t* buf;
   int32_t cap;
@@ -22796,6 +22831,8 @@ int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
 }
 
 
+typedef struct DyC DyC;
+typedef struct Dp Dp;
 typedef struct DyC {
   int32_t err;
   ByteBuf* msg;
@@ -27281,6 +27318,7 @@ int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
 }
 
 
+typedef struct Fb Fb;
 typedef struct Fb {
   uint8_t* src;
   int32_t n;
@@ -33916,6 +33954,7 @@ int32_t flowc_flow_blocks_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) 
 }
 
 
+typedef struct FlowcKeyRange FlowcKeyRange;
 typedef struct FlowcKeyRange {
   int32_t valid;
   int64_t lo;
@@ -34779,6 +34818,7 @@ int32_t flowc_expr_is_unsuffixed_int_literal(AstArena arena, int32_t id) {
 }
 
 
+typedef struct Parser Parser;
 typedef struct Parser {
   Lexer lex;
   Token cur;
@@ -40280,6 +40320,11 @@ void flowc_parse_resolve_enum_arms(Parser* p) {
 }
 
 
+typedef struct PdgStep PdgStep;
+typedef struct PdgThm PdgThm;
+typedef struct PdgDoc PdgDoc;
+typedef struct PdgLine PdgLine;
+typedef struct PdgMap PdgMap;
 typedef struct PdgStep {
   int32_t kind;
   const char* text;
@@ -43940,6 +43985,7 @@ int32_t flowc_proof_know_mode() {
 }
 
 
+typedef struct JsgenBuf JsgenBuf;
 typedef struct JsgenBuf {
   uint8_t* out;
   int32_t cap;
@@ -45901,6 +45947,7 @@ const char* flowc_rt_bit_name(int32_t bits) {
 }
 
 
+typedef struct SortSites SortSites;
 typedef struct SortSites {
   AstArena arena;
   uint8_t* src;
@@ -46631,6 +46678,11 @@ bool sem_header_names(const char* header, const char* dir, SemStrMap* names) {
 }
 
 
+typedef struct GvRef GvRef;
+typedef struct GvInt GvInt;
+typedef struct GvDiag GvDiag;
+typedef struct GvK GvK;
+typedef struct GvSlice GvSlice;
 typedef struct GvRef {
   int32_t m;
   int32_t n;
@@ -48020,6 +48072,7 @@ int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first
 }
 
 
+typedef struct CgenBuf CgenBuf;
 typedef struct CgenBuf {
   uint8_t* out;
   int32_t cap;
@@ -48515,8 +48568,8 @@ int32_t flowc_cgen_export_missing(uint8_t* sigs, int32_t sigs_len, uint8_t* out,
 void flowc_cgen_put_cembed(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len);
 void flowc_cgen_emit_static_initializer(CgenBuf* w, AstArena arena, uint8_t* src, int32_t init);
-int32_t flowc_cgen_span_elem_is_builtin(AstArena arena, uint8_t* src, int32_t ty);
-void flowc_cgen_emit_span_typedefs(CgenBuf* w, AstArena arena, uint8_t* src, int32_t builtin_only);
+int32_t flowc_cgen_span_elem_is_early(AstArena arena, uint8_t* src, int32_t ty);
+void flowc_cgen_emit_span_typedefs(CgenBuf* w, AstArena arena, uint8_t* src, int32_t early_only);
 int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len);
 int32_t flowc_cgen_emit_ex(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags);
 int32_t flowc_cgen_is_type_param_name(AstArena arena, uint8_t* src, int32_t ns, int32_t ne);
@@ -56979,9 +57032,20 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   if (kind == AST_INDEX) {
   if (((arena).nodes[id]).ival == 1) {
+  int32_t slice_base = ((arena).nodes[id]).a;
   int32_t elem = AST_NONE;
-  if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_IDENT) {
-  elem = flowc_cgen_var_elem_type(w, arena, src, ((arena).nodes[id]).a);
+  int32_t base_span = 0;
+  if (((arena).nodes[slice_base]).kind == AST_IDENT) {
+  elem = flowc_cgen_var_elem_type(w, arena, src, slice_base);
+  base_span = flowc_cgen_is_span_var(w, arena, src, slice_base);
+} else {
+  int32_t bt = flowc_cgen_expr_type_node(w, arena, src, slice_base);
+  if (bt != AST_NONE && ((arena).nodes[bt]).kind == AST_TYPE && ((arena).nodes[bt]).a != AST_NONE) {
+  elem = ((arena).nodes[bt]).a;
+}
+  if (bt != AST_NONE && flowc_cgen_type_is_span(arena, src, bt) == 1) {
+  base_span = 1;
+}
 }
   flowc_cgen_puts(w, "((flowc_span_");
   if (elem != AST_NONE) {
@@ -56996,15 +57060,12 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_puts(w, "int32_t");
 }
   flowc_cgen_puts(w, "*)");
-  if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_IDENT) {
-  if (flowc_cgen_is_span_var(w, arena, src, ((arena).nodes[id]).a) == 1) {
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_cgen_puts(w, ".data");
+  if (base_span == 1) {
+  flowc_cgen_putc(w, 40);
+  flowc_cgen_emit_expr(w, arena, src, slice_base);
+  flowc_cgen_puts(w, ").data");
 } else {
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-}
-} else {
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_emit_expr(w, arena, src, slice_base);
 }
   flowc_cgen_puts(w, " + ");
   if (((arena).nodes[id]).b != AST_NONE) {
@@ -57022,17 +57083,10 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_puts(w, "0");
 }
 } else {
-  if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_IDENT) {
-  if (flowc_cgen_is_span_var(w, arena, src, ((arena).nodes[id]).a) == 1) {
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_cgen_puts(w, ".len - ");
-} else {
-  flowc_cgen_puts(w, "(int32_t)(sizeof(");
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_cgen_puts(w, ")/sizeof((");
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
-  flowc_cgen_puts(w, ")[0])) - ");
-}
+  if (base_span == 1) {
+  flowc_cgen_putc(w, 40);
+  flowc_cgen_emit_expr(w, arena, src, slice_base);
+  flowc_cgen_puts(w, ").len - ");
 } else {
   flowc_cgen_puts(w, "(int32_t)(sizeof(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
@@ -64058,7 +64112,7 @@ void flowc_cgen_emit_static_initializer(CgenBuf* w, AstArena arena, uint8_t* src
   flowc_cgen_emit_expr(w, arena, src, init);
 }
 
-int32_t flowc_cgen_span_elem_is_builtin(AstArena arena, uint8_t* src, int32_t ty) {
+int32_t flowc_cgen_span_elem_is_early(AstArena arena, uint8_t* src, int32_t ty) {
   if (((arena).nodes[ty]).kind != AST_TYPE || ((arena).nodes[ty]).a != AST_NONE) {
   return 0;
 }
@@ -64072,10 +64126,23 @@ int32_t flowc_cgen_span_elem_is_builtin(AstArena arena, uint8_t* src, int32_t ty
   if (cp[0] != 0) {
   return 1;
 }
+  AstIndex* ix = (AstIndex*)(flowc_ast_ix(arena, src));
+  if (ix != NULL && ne > ns) {
+  int32_t st = flowc_ast_ix_find(ix, arena, AST_STRUCT, ns, ne);
+  while (st != AST_NONE) {
+  if (((arena).nodes[st]).b == AST_NONE) {
+  return 1;
+}
+  st = flowc_ast_ix_find_next(ix, arena, st);
+}
+  if (flowc_ast_ix_find(ix, arena, AST_ENUM, ns, ne) != AST_NONE) {
+  return 1;
+}
+}
   return 0;
 }
 
-void flowc_cgen_emit_span_typedefs(CgenBuf* w, AstArena arena, uint8_t* src, int32_t builtin_only) {
+void flowc_cgen_emit_span_typedefs(CgenBuf* w, AstArena arena, uint8_t* src, int32_t early_only) {
   int32_t ti = 0;
   for (; ti < ((arena).len); ti = ti + 1) {
   if (((arena).nodes[ti]).kind == AST_TYPE) {
@@ -64090,7 +64157,7 @@ void flowc_cgen_emit_span_typedefs(CgenBuf* w, AstArena arena, uint8_t* src, int
 }
   if (is_span_ty == 1) {
   int32_t inner = ((arena).nodes[ti]).a;
-  if (inner != AST_NONE && (builtin_only == 0 || flowc_cgen_span_elem_is_builtin(arena, src, inner) == 1)) {
+  if (inner != AST_NONE && (early_only == 0 || flowc_cgen_span_elem_is_early(arena, src, inner) == 1)) {
   flowc_cgen_puts(w, "#ifndef FLOWC_SPAN_");
   flowc_cgen_emit_type(w, arena, src, inner);
   flowc_cgen_puts(w, "\n#define FLOWC_SPAN_");
@@ -64494,6 +64561,48 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
   item = ((arena).nodes[item]).next;
 }
   flowc_cgen_emit_fat_typedefs((&w), arena, src, 0);
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t fst = flowc_cgen_unwrap(arena, item, AST_STRUCT);
+  if (fst != AST_NONE && ((arena).nodes[fst]).b == AST_NONE) {
+  flowc_cgen_puts((&w), "typedef struct ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[fst]).name_start, ((arena).nodes[fst]).name_end);
+  flowc_cgen_putc((&w), 32);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[fst]).name_start, ((arena).nodes[fst]).name_end);
+  flowc_cgen_puts((&w), ";\n");
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t en = flowc_cgen_unwrap(arena, item, AST_ENUM);
+  if (en != AST_NONE) {
+  flowc_cgen_puts((&w), "typedef enum {");
+  int32_t var = ((arena).nodes[en]).a;
+  int32_t first = 1;
+  while (var != AST_NONE) {
+  if (first == 0) {
+  flowc_cgen_puts((&w), ", ");
+} else {
+  flowc_cgen_putc((&w), 32);
+}
+  first = 0;
+  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
+  flowc_cgen_putc((&w), 95);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end);
+  var = ((arena).nodes[var]).next;
+}
+  flowc_cgen_puts((&w), " } ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
+  flowc_cgen_puts((&w), "_Tag;\n");
+  flowc_cgen_puts((&w), "typedef struct { ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
+  flowc_cgen_puts((&w), "_Tag tag; } ");
+  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
+  flowc_cgen_puts((&w), ";\n");
+}
+  item = ((arena).nodes[item]).next;
+}
   flowc_cgen_emit_span_typedefs((&w), arena, src, 1);
   uint8_t* st_done = (uint8_t*)(flow_mem_malloc(((arena).len + 1)));
   int32_t sdi = 0;
@@ -64534,36 +64643,6 @@ int32_t flowc_cgen_emit_module(AstArena arena, int32_t root, uint8_t* src, uint8
 }
 }
   flow_mem_free(st_done);
-  item = ((arena).nodes[root]).a;
-  while (item != AST_NONE) {
-  int32_t en = flowc_cgen_unwrap(arena, item, AST_ENUM);
-  if (en != AST_NONE) {
-  flowc_cgen_puts((&w), "typedef enum {");
-  int32_t var = ((arena).nodes[en]).a;
-  int32_t first = 1;
-  while (var != AST_NONE) {
-  if (first == 0) {
-  flowc_cgen_puts((&w), ", ");
-} else {
-  flowc_cgen_putc((&w), 32);
-}
-  first = 0;
-  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
-  flowc_cgen_putc((&w), 95);
-  flowc_cgen_put_span((&w), src, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end);
-  var = ((arena).nodes[var]).next;
-}
-  flowc_cgen_puts((&w), " } ");
-  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
-  flowc_cgen_puts((&w), "_Tag;\n");
-  flowc_cgen_puts((&w), "typedef struct { ");
-  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
-  flowc_cgen_puts((&w), "_Tag tag; } ");
-  flowc_cgen_put_span((&w), src, ((arena).nodes[en]).name_start, ((arena).nodes[en]).name_end);
-  flowc_cgen_puts((&w), ";\n");
-}
-  item = ((arena).nodes[item]).next;
-}
   item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
   if (((arena).nodes[item]).kind == AST_TYPE_ALIAS && ((arena).nodes[item]).a != AST_NONE) {
@@ -65380,6 +65459,9 @@ int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint
 }
 
 
+typedef struct Mlg Mlg;
+typedef struct Mono Mono;
+typedef struct Fork Fork;
 typedef struct Mlg {
   AstArena arena;
   uint8_t* src;
@@ -94727,6 +94809,7 @@ void sem_iv_set_raw(int32_t* p, int32_t i, int32_t v) {
 }
 
 
+typedef struct FlowcOverloadCallScratch FlowcOverloadCallScratch;
 typedef struct FlowcOverloadCallScratch {
   uint8_t* rows;
   int32_t* ident_types;
@@ -94834,6 +94917,9 @@ int32_t flowc_overload_resolve_call(FlowcOverloadCallScratch* scratch, FlowcOver
 }
 
 
+typedef struct TcCtx TcCtx;
+typedef struct UTy UTy;
+typedef struct UCtx UCtx;
 typedef struct TcCtx {
   uint8_t* src;
   int32_t* ns;
@@ -102448,6 +102534,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
 }
 
 
+typedef struct MlirBundle MlirBundle;
 typedef struct MlirBundle {
   uint8_t* paths;
   int32_t n;
