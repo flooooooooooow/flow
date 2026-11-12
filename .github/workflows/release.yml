@@ -18,7 +18,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   qualify:
@@ -32,17 +32,26 @@ jobs:
       - name: Resolve tag
         id: tag
         shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
+            TAG="$REQUESTED_TAG"
           else
-            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            TAG="$GITHUB_REF_NAME"
           fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag format"
+            exit 1
+          fi
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.name }}
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-python
 
@@ -147,6 +156,8 @@ jobs:
   release:
     name: Publish qualified release
     needs: qualify
+    permissions:
+      contents: write
     if: >-
       ${{ !inputs.qualify_only &&
           !contains(github.ref_name, '-rc') &&
@@ -155,12 +166,20 @@ jobs:
     steps:
       - name: Resolve tag
         id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == 'workflow_dispatch' ]]; then
+            TAG="$REQUESTED_TAG"
           else
-            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            TAG="$GITHUB_REF_NAME"
           fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag format"
+            exit 1
+          fi
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         with:
