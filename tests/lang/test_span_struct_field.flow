@@ -1,0 +1,70 @@
+# Flow-native language test: a struct may hold span fields, and they index.
+#
+# Two flowc C-backend bugs kept this from compiling:
+#   1. The flowc_span_T typedefs came after the struct typedefs, so a struct
+#      with a span<f64> field named a type C had not seen ("unknown type name
+#      'flowc_span_double'"). Spans over builtin element types now precede
+#      the structs.
+#   2. `s.values[i]` indexed the span struct itself rather than its `.data`
+#      ("subscripted value is not an array, pointer, or vector"). Only a span
+#      held in a variable was recognised.
+# diffFlow's Case and CMat structs hold span fields and index them this way.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Samples {
+    values: span<mut f64>,
+    counts: span<i32>,
+    scale: f64
+}
+
+struct CMat {
+    data: span<mut c64>,
+    n: i32
+}
+
+function weighted(s: Samples) -> f64 {
+    let mut acc: f64 = 0.0
+    for i in 0 to s.values.len {
+        acc = acc + s.values[i] * (s.counts[i] as f64)
+    }
+    return acc * s.scale
+}
+
+function double_values(s: Samples) -> void {
+    for i in 0 to s.values.len {
+        s.values[i] = s.values[i] * 2.0
+    }
+}
+
+function cmat_scale(m: CMat, factor: f32) -> void {
+    for i in 0 to m.n * m.n {
+        m.data[i] = m.data[i] * c64(factor, 0.0)
+    }
+}
+
+function main() -> i32 {
+    let mut v: array<f64, 3> = [1.0, 2.0, 3.0]
+    let mut c: array<i32, 3> = [1, 1, 2]
+    let s: Samples = Samples { values: v[0..3], counts: c[0..3], scale: 0.5 }
+    if s.values.len != 3 {
+        return 1
+    }
+    if weighted(s) != 4.5 {
+        return 2
+    }
+    double_values(s)
+    if s.values[2] != 6.0 {
+        return 3
+    }
+    if weighted(s) != 9.0 {
+        return 4
+    }
+
+    let mut buf: array<c64, 4> = [c64(1.0, 2.0), c64(3.0, 4.0), c64(5.0, 6.0), c64(7.0, 8.0)]
+    let m: CMat = CMat { data: buf[0..4], n: 2 }
+    cmat_scale(m, 2.0)
+    if creal(m.data[3]) != 14.0 or cimag(m.data[3]) != 16.0 {
+        return 5
+    }
+    return 0
+}
