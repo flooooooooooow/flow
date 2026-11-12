@@ -3873,7 +3873,7 @@ function flowc_parse_const(p: ptr<Parser>, is_export: i32) -> i32 {
     return id
 }
 
-# export function ... | export struct ... | export const ... | export a, b
+# export function ... | export struct ... | export enum ... | export const ... | export a, b
 # a = AST_FN / AST_STRUCT, or AST_IDENT chain when ival=1 (bare list)
 # export const returns AST_CONST with ival=1 (not wrapped in AST_EXPORT)
 function flowc_parse_export(p: ptr<Parser>) -> i32 {
@@ -3912,6 +3912,20 @@ function flowc_parse_export(p: ptr<Parser>) -> i32 {
     }
     if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
         return flowc_parse_const(p, 1)
+    }
+    # export enum Name { A, B }: wrapped like export struct, so importers see it.
+    if flowc_parser_check_kw(p[0], KW_ENUM) == 1 {
+        let en: i32 = flowc_parse_enum(p)
+        if en == AST_NONE {
+            return AST_NONE
+        }
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPORT, start, p[0].cur.start)
+        if id == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[id].a = en
+        return id
     }
     # export effect/capability Name { ... }
     if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 or flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {

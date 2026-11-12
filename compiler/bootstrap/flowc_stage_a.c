@@ -38584,6 +38584,19 @@ int32_t flowc_parse_export(Parser* p) {
   if (flowc_parser_check_kw(p[0], KW_CONST) == 1) {
   return flowc_parse_const(p, 1);
 }
+  if (flowc_parser_check_kw(p[0], KW_ENUM) == 1) {
+  int32_t en = flowc_parse_enum(p);
+  if (en == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_EXPORT, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).a = en;
+  return id;
+}
   if (flowc_parser_check_kw(p[0], KW_EFFECT) == 1 || flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1) {
   int32_t decl = AST_NONE;
   if (flowc_parser_check_kw(p[0], KW_EFFECT) == 1) {
@@ -96928,10 +96941,18 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
   int32_t ty = ((arena).nodes[item]).a;
   flowc_tc_bind_value(ctx, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end, ty);
 }
+  int32_t en = AST_NONE;
   if (kind == AST_ENUM) {
-  int32_t ens = ((arena).nodes[item]).name_start;
-  int32_t ene = ((arena).nodes[item]).name_end;
-  int32_t var = ((arena).nodes[item]).a;
+  en = item;
+} else {
+  if (kind == AST_EXPORT && ((arena).nodes[item]).a != AST_NONE && ((arena).nodes[((arena).nodes[item]).a]).kind == AST_ENUM) {
+  en = ((arena).nodes[item]).a;
+}
+}
+  if (en != AST_NONE) {
+  int32_t ens = ((arena).nodes[en]).name_start;
+  int32_t ene = ((arena).nodes[en]).name_end;
+  int32_t var = ((arena).nodes[en]).a;
   while (var != AST_NONE) {
   flowc_tc_seed_bind_enum_variant(ctx, (ctx[0]).src, ens, ene, ((arena).nodes[var]).name_start, ((arena).nodes[var]).name_end);
   var = ((arena).nodes[var]).next;
@@ -97092,8 +97113,8 @@ void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint
   return;
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
-  { __typeof__((ctx[0]).eff_len) __flowc_st9775 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9775; }
-  { __typeof__((ctx[0]).eff_len) __flowc_st9796 = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9796; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st9819 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9819; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st9840 = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st9840; }
   (ctx[0]).eff_seed_len = (ctx[0]).eff_len;
   int32_t item = ((dep_arena).nodes[dep_root]).a;
   while (item != AST_NONE) {
@@ -97855,7 +97876,7 @@ void ut_register_unit(UCtx* u, AstArena arena, int32_t d) {
   (u[0]).u_ne[k] = ne;
   (u[0]).u_dims[k] = dims;
   (u[0]).u_ok[k] = ok;
-  { __typeof__((u[0]).u_rad[k]) __flowc_st13416 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st13416; }
+  { __typeof__((u[0]).u_rad[k]) __flowc_st13460 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st13460; }
   (u[0]).u_len = (k + 1);
 }
 
@@ -99086,8 +99107,8 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_err(ctx);
   (ctx[0]).fatal = ((ctx[0]).fatal + 1);
 }
-  { __typeof__((ctx[0]).eff_len) __flowc_st18199 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st18199; }
-  { __typeof__((ctx[0]).eff_len) __flowc_st18223 = flowc_rt_summary_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st18223; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st18243 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st18243; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st18267 = flowc_rt_summary_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st18267; }
   flowc_tc_collect_globals(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_rows(ctx, arena, root);
@@ -99097,7 +99118,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 }
   flowc_tc_check_fns(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
-  { __typeof__((ctx[0]).err) __flowc_st18281 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st18281; }
+  { __typeof__((ctx[0]).err) __flowc_st18325 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st18325; }
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;

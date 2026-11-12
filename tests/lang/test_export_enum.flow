@@ -1,0 +1,30 @@
+# Flow-native language test: `export enum` parses, and its variants bind as
+# the qualified constants (Mode_Fast) a plain `enum` gives.
+#
+# flowc's parser had export branches for function, struct, const, effect,
+# capability and type, but none for enum, so `export enum` was a parse error
+# ("unexpected keyword 'enum'"). The retired Python host accepted it, and
+# diffFlow's expm.flow and losses.flow use it.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+export enum Mode { Fast, Slow }
+
+function speed(m: Mode) -> i32 {
+    match m.tag {
+        Mode_Fast => { return 1 }
+        Mode_Slow => { return 2 }
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let fast: Mode = Mode { tag: Mode_Fast }
+    let slow: Mode = Mode { tag: Mode_Slow }
+    if speed(fast) != 1 {
+        return 1
+    }
+    if speed(slow) != 2 {
+        return 2
+    }
+    return 0
+}
