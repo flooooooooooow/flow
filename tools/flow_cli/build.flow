@@ -15,7 +15,9 @@ import std.os { os_signal_watch, os_signal_take, SIGINT, SIGTERM }
 
 export struct Parsed {
     program: string,
-    backend: string
+    backend: string,
+    program_args: ptr<ProcStrs>     # passed to the program: everything after `--`, and any
+                                    # word after the program path
 }
 
 # flow_parse_program_backend: exits on a bad option, exports FLOW_SANITIZE,
@@ -29,10 +31,26 @@ export function parse_program_backend(args: ptr<ProcStrs>) -> Parsed {
         cli_exit(1)
     }
     let mut show: bool = false
+    let program_args: ptr<ProcStrs> = sl_new()
     let n: i32 = sl_len(args)
     let mut i: i32 = 0
     while i < n {
         let a: string = sl_get(args, i)
+        if s_eq(a, "--") {
+            # Everything after `--` belongs to the program, flags included.
+            i = i + 1
+            while i < n {
+                sl_push(program_args, sl_get(args, i))
+                i = i + 1
+            }
+            break
+        }
+        if s_len(program) > 0 and not s_starts(a, "-") {
+            # A word after the program path is the program's own argument.
+            sl_push(program_args, a)
+            i = i + 1
+            continue
+        }
         if s_starts(a, "--backend=") {
             backend = s_from(a, 10)
         } elif s_eq(a, "--backend") {
@@ -66,12 +84,7 @@ export function parse_program_backend(args: ptr<ProcStrs>) -> Parsed {
             error("Unknown option: " + a)
             cli_exit(1)
         } else {
-            if s_len(program) == 0 {
-                program = a
-            } else {
-                error("Unexpected argument: " + a)
-                cli_exit(1)
-            }
+            program = a
         }
         i = i + 1
     }
@@ -86,7 +99,7 @@ export function parse_program_backend(args: ptr<ProcStrs>) -> Parsed {
         }
     }
     env_set("FLOW_CPU_BACKEND", backend)
-    return Parsed { program: program, backend: backend }
+    return Parsed { program: program, backend: backend, program_args: program_args }
 }
 
 # ---------------------------------------------------------------------------
@@ -169,7 +182,9 @@ export function run_program(args: ptr<ProcStrs>) -> i32 {
         env_set("FLOW_PERMISSIVE_EFFECTS", "1")
     }
 
-    let status: i32 = run_program_binary(sl_of1(executable))
+    let argv: ptr<ProcStrs> = sl_of1(executable)
+    sl_extend(argv, p.program_args)
+    let status: i32 = run_program_binary(argv)
 
     if is_permissive {
         if had_env {

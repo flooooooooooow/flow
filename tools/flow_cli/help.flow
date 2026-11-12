@@ -13,7 +13,7 @@ export function show_help() {
     outln("Usage: flow [OPTIONS] <program.flow>")
     outln("")
     outln("Options:")
-    outln("  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety]")
+    outln("  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety] [-- args...]")
     outln("                    Compile and run program")
     outln("  compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]")
     outln("                    Compile program only; --show-flags prints clang flags")
