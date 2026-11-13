@@ -229,7 +229,15 @@ function cross_entropy_backward(probs: ptr<f32>, labels: ptr<i32>, batch_size: i
             grad[b * num_classes + i] = probs[b * num_classes + i]
         }
         let label: i32 = labels[b]
-        grad[b * num_classes + label] = grad[b * num_classes + label] - 1.0
+        # Compute the target gradient from non-target mass. Subtracting 1.0
+        # from a rounded FP32 probability of 1.0 destroys this gradient.
+        let mut non_target: f32 = 0.0
+        for i in 0 to num_classes {
+            if i != label {
+                non_target = non_target + grad[b * num_classes + i]
+            }
+        }
+        grad[b * num_classes + label] = 0.0 - non_target
         
         # Average over batch
         for i in 0 to num_classes {
