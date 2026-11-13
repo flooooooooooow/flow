@@ -41,6 +41,7 @@ extern { function flow_gfx_text(ctx: ptr<void>, x: i32, y: i32, text: string, si
 extern { function flow_gfx_init_hidpi(w: i32, h: i32, title: string, flags: i32) -> ptr<void> }
 extern { function flow_gfx_metrics(ctx: ptr<void>, out: ptr<i32>) -> i32 }
 extern { function flow_gfx_cursor(ctx: ptr<void>, kind: i32) -> void }
+extern { function flow_gfx_blit_rgb_region(ctx: ptr<void>, src: ptr<u8>, src_w: i32, x: i32, y: i32, w: i32, h: i32) -> void }
 extern { function flow_gfx_text_ex(ctx: ptr<void>, x: i32, baseline: i32, text: string, size: i32, rgb: i32, style: i32, measure: i32) -> i32 }
 
 export function gfx_open(w: i32, h: i32, title: string) -> Gfx {
@@ -85,6 +86,11 @@ export function gfx_text(g: Gfx, x: i32, y: i32, text: string, size: i32,
 # tens of thousands of calls a frame and will not keep up.
 export function gfx_blit_rgb(g: Gfx, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void {
     flow_gfx_blit_rgb(g.ctx, x, y, w, h, src)
+}
+
+# Copy only the rectangle (x, y, w, h) of src, a packed RGB8 canvas src_w pixels wide that covers the whole framebuffer.
+export function gfx_blit_rgb_region(g: Gfx, src: ptr<u8>, src_w: i32, x: i32, y: i32, w: i32, h: i32) -> void {
+    flow_gfx_blit_rgb_region(g.ctx, src, src_w, x, y, w, h)
 }
 
 export function gfx_present(g: Gfx) -> void {

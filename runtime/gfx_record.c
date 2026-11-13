@@ -401,6 +401,31 @@ void flow_gfx_text(void* handle, int32_t x, int32_t y, const char* text,
     }
 }
 
+/* Copy the rectangle (x, y, w, h) of src, a packed RGB8 image src_w pixels
+ * wide holding the whole framebuffer, to the same place. */
+void flow_gfx_blit_rgb_region(void *handle, const uint8_t *src, int32_t src_w,
+                              int32_t x, int32_t y, int32_t w, int32_t h) {
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
+    if (!rec || !rec->pixels || !src || src_w <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w; if (x1 > rec->width) x1 = rec->width;
+    int y1 = y + h; if (y1 > rec->height) y1 = rec->height;
+    if (x1 > src_w) x1 = src_w;
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t *srow = src + ((size_t)yy * (size_t)src_w + (size_t)x0) * 3u;
+        uint8_t *drow = rec->pixels + ((size_t)yy * (size_t)rec->width + (size_t)x0) * 4u;
+        for (int xx = x0; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
 /* HiDPI in the recorder: FLOW_GFX_RECORD_SCALE (1 or 2, default 1) plays the
  * part of the display's backing scale, so a recording can check a layout at
  * Retina density. The window is w x h points; frames are w*s x h*s pixels. */

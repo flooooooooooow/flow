@@ -15,6 +15,9 @@
 #import <Cocoa/Cocoa.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 typedef struct FlowGfxContext FlowGfxContext;
 @class FlowGfxWindowDelegate;
@@ -58,7 +61,58 @@ struct FlowGfxContext {
     CTFontRef fonts[16];  // small cache for flow_gfx_text_ex
     int32_t font_key[16];
     int32_t font_next;
+    struct FlowGfxLine* lines; // shaped-line cache for flow_gfx_text_ex
+    // Pixels changed since the last present, so present redraws only that.
+    int32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 };
+
+static void flow_gfx_mark(FlowGfxContext* ctx, int x0, int y0, int x1, int y1) {
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > ctx->width) x1 = ctx->width;
+    if (y1 > ctx->height) y1 = ctx->height;
+    if (x0 >= x1 || y0 >= y1) return;
+    if (ctx->dirty_x1 <= ctx->dirty_x0 || ctx->dirty_y1 <= ctx->dirty_y0) {
+        ctx->dirty_x0 = x0; ctx->dirty_y0 = y0; ctx->dirty_x1 = x1; ctx->dirty_y1 = y1;
+        return;
+    }
+    if (x0 < ctx->dirty_x0) ctx->dirty_x0 = x0;
+    if (y0 < ctx->dirty_y0) ctx->dirty_y0 = y0;
+    if (x1 > ctx->dirty_x1) ctx->dirty_x1 = x1;
+    if (y1 > ctx->dirty_y1) ctx->dirty_y1 = y1;
+}
+
+/* A shaped line, keyed by its text, size, style and colour. A UI redraws
+ * the same labels every frame; shaping them again is most of the cost of
+ * drawing text. Direct-mapped: a collision replaces the older entry. */
+#define FLOW_GFX_LINE_SLOTS 2048
+typedef struct FlowGfxLine {
+    char* text;
+    int32_t size;
+    int32_t style;
+    int32_t rgb;
+    CTLineRef line;
+    double width;
+} FlowGfxLine;
+
+static uint32_t flow_gfx_line_hash(const char* s, int32_t size, int32_t style, int32_t rgb) {
+    uint32_t h = 2166136261u;
+    for (const unsigned char* p = (const unsigned char*)s; *p; p++) { h ^= *p; h *= 16777619u; }
+    h ^= (uint32_t)size * 2654435761u;
+    h ^= (uint32_t)style * 40503u;
+    h ^= (uint32_t)rgb * 97u;
+    return h;
+}
+
+static void flow_gfx_lines_free(FlowGfxContext* ctx) {
+    if (!ctx->lines) return;
+    for (int i = 0; i < FLOW_GFX_LINE_SLOTS; i++) {
+        if (ctx->lines[i].line) CFRelease(ctx->lines[i].line);
+        free(ctx->lines[i].text);
+    }
+    free(ctx->lines);
+    ctx->lines = NULL;
+}
 
 static void flow_gfx_drop_text_cg(FlowGfxContext* ctx) {
     if (ctx->text_cg) { CGContextRelease(ctx->text_cg); ctx->text_cg = NULL; }
@@ -86,6 +140,7 @@ static void flow_gfx_fit_framebuffer(FlowGfxContext* ctx) {
     ctx->height = h;
     ctx->scale = scale;
     ctx->generation++;
+    flow_gfx_mark(ctx, 0, 0, w, h);
 }
 
 static void flow_gfx_pump_events(FlowGfxContext* ctx) {
@@ -450,6 +505,7 @@ void flow_gfx_shutdown(void* handle) {
             ctx->window = nil;
         }
         flow_gfx_drop_text_cg(ctx);
+        flow_gfx_lines_free(ctx);
         for (int i = 0; i < 16; i++) if (ctx->fonts[i]) CFRelease(ctx->fonts[i]);
         free(ctx->pixels);
         free(ctx);
@@ -510,6 +566,7 @@ void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
     if (!ctx || !ctx->pixels) return;
     size_t n = (size_t)ctx->width * (size_t)ctx->height;
     uint8_t* p = ctx->pixels;
+    flow_gfx_mark(ctx, 0, 0, ctx->width, ctx->height);
     for (size_t i = 0; i < n; i++) {
         p[i*4 + 0] = r;
         p[i*4 + 1] = g;
@@ -534,12 +591,64 @@ void flow_gfx_blit_rgb(void *handle, int32_t x, int32_t y, int32_t w, int32_t h,
     int x1 = x + w; if (x1 > ctx->width) x1 = ctx->width;
     int y1 = y + h; if (y1 > ctx->height) y1 = ctx->height;
     if (x0 >= x1 || y0 >= y1) return;
+    flow_gfx_mark(ctx, x0, y0, x1, y1);
 
     uint8_t *dst = ctx->pixels;
     for (int yy = y0; yy < y1; yy++) {
         const uint8_t *srow = src + ((size_t)(yy - y) * (size_t)w + (size_t)(x0 - x)) * 3u;
         uint8_t *drow = dst + ((size_t)yy * (size_t)ctx->width + (size_t)x0) * 4u;
-        for (int xx = x0; xx < x1; xx++) {
+        int xx = x0;
+#if defined(__ARM_NEON)
+        /* 16 pixels at a time: de-interleave RGB, re-interleave with alpha. */
+        uint8x16_t alpha = vdupq_n_u8(255);
+        for (; xx + 16 <= x1; xx += 16) {
+            uint8x16x3_t rgb = vld3q_u8(srow);
+            uint8x16x4_t rgba = { { rgb.val[0], rgb.val[1], rgb.val[2], alpha } };
+            vst4q_u8(drow, rgba);
+            srow += 48;
+            drow += 64;
+        }
+#endif
+        for (; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
+/* Copy the rectangle (x, y, w, h) of src, a packed RGB8 image src_w pixels
+ * wide holding the whole framebuffer, to the same place. A program that
+ * keeps a full-size canvas can send only the parts that changed. */
+void flow_gfx_blit_rgb_region(void *handle, const uint8_t *src, int32_t src_w,
+                              int32_t x, int32_t y, int32_t w, int32_t h) {
+    FlowGfxContext *ctx = (FlowGfxContext *)handle;
+    if (!ctx || !ctx->pixels || !src || src_w <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w; if (x1 > ctx->width) x1 = ctx->width;
+    int y1 = y + h; if (y1 > ctx->height) y1 = ctx->height;
+    if (x1 > src_w) x1 = src_w;
+    if (x0 >= x1 || y0 >= y1) return;
+    flow_gfx_mark(ctx, x0, y0, x1, y1);
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t *srow = src + ((size_t)yy * (size_t)src_w + (size_t)x0) * 3u;
+        uint8_t *drow = ctx->pixels + ((size_t)yy * (size_t)ctx->width + (size_t)x0) * 4u;
+        int xx = x0;
+#if defined(__ARM_NEON)
+        uint8x16_t alpha = vdupq_n_u8(255);
+        for (; xx + 16 <= x1; xx += 16) {
+            uint8x16x3_t rgb = vld3q_u8(srow);
+            uint8x16x4_t rgba = { { rgb.val[0], rgb.val[1], rgb.val[2], alpha } };
+            vst4q_u8(drow, rgba);
+            srow += 48;
+            drow += 64;
+        }
+#endif
+        for (; xx < x1; xx++) {
             drow[0] = srow[0];
             drow[1] = srow[1];
             drow[2] = srow[2];
@@ -561,6 +670,7 @@ void flow_gfx_fill_rect(void* handle, int32_t x, int32_t y, int32_t w, int32_t h
     int x1 = x + w; if (x1 > ctx->width) x1 = ctx->width;
     int y1 = y + h; if (y1 > ctx->height) y1 = ctx->height;
     if (x0 >= x1 || y0 >= y1) return;
+    flow_gfx_mark(ctx, x0, y0, x1, y1);
 
     uint8_t* p = ctx->pixels;
     for (int yy = y0; yy < y1; yy++) {
@@ -579,6 +689,7 @@ void flow_gfx_text(void *handle, int32_t x, int32_t y, const char *text,
                    int32_t size, uint8_t r, uint8_t g, uint8_t b) {
     FlowGfxContext *ctx = (FlowGfxContext *)handle;
     if (!ctx || !ctx->pixels || !text || size <= 0) return;
+    flow_gfx_mark(ctx, 0, 0, ctx->width, ctx->height);
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef cg = CGBitmapContextCreate(ctx->pixels, ctx->width, ctx->height,
                                              8, (size_t)ctx->width * 4u, cs,
@@ -643,44 +754,80 @@ int32_t flow_gfx_text_ex(void* handle, int32_t x, int32_t baseline, const char* 
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
     if (!ctx || !ctx->pixels || !text || size <= 0) return 0;
     @autoreleasepool {
-        CTFontRef font = flow_gfx_font(ctx, size, style);
-        if (!font) return 0;
-        CFStringRef value = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);
-        if (!value) return 0;
-        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        CGFloat comp[4] = { ((rgb >> 16) & 255) / 255.0, ((rgb >> 8) & 255) / 255.0,
-                            (rgb & 255) / 255.0, 1.0 };
-        CGColorRef color = CGColorCreate(cs, comp);
-        CGFloat kern = (style & 16) ? 0.06 * (CGFloat)size : 0.0;
-        CFNumberRef kn = CFNumberCreate(NULL, kCFNumberCGFloatType, &kern);
-        const void* keys[] = { kCTFontAttributeName, kCTForegroundColorAttributeName, kCTKernAttributeName };
-        const void* vals[] = { font, color, kn };
-        CFDictionaryRef attrs = CFDictionaryCreate(NULL, keys, vals, 3,
-                                                   &kCFTypeDictionaryKeyCallBacks,
-                                                   &kCFTypeDictionaryValueCallBacks);
-        CFAttributedStringRef attributed = CFAttributedStringCreate(NULL, value, attrs);
-        CTLineRef line = CTLineCreateWithAttributedString(attributed);
-        double width = CTLineGetTypographicBounds(line, NULL, NULL, NULL);
-        if (!measure) {
+        /* Measuring does not depend on colour, so it shares one entry. */
+        int32_t key_rgb = measure ? -1 : rgb;
+        if (!ctx->lines) ctx->lines = (FlowGfxLine*)calloc(FLOW_GFX_LINE_SLOTS, sizeof(FlowGfxLine));
+        FlowGfxLine* e = NULL;
+        if (ctx->lines) {
+            uint32_t h = flow_gfx_line_hash(text, size, style, key_rgb);
+            e = &ctx->lines[h % FLOW_GFX_LINE_SLOTS];
+            if (!(e->line && e->size == size && e->style == style && e->rgb == key_rgb &&
+                  strcmp(e->text, text) == 0)) {
+                if (e->line) CFRelease(e->line);
+                free(e->text);
+                e->line = NULL;
+                e->text = NULL;
+            }
+        }
+        CTLineRef line = e ? e->line : NULL;
+        double width = e ? e->width : 0.0;
+        bool owned = false;
+        if (!line) {
+            CTFontRef font = flow_gfx_font(ctx, size, style);
+            if (!font) return 0;
+            CFStringRef value = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);
+            if (!value) return 0;
+            CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+            int32_t c = rgb < 0 ? 0 : rgb;
+            CGFloat comp[4] = { ((c >> 16) & 255) / 255.0, ((c >> 8) & 255) / 255.0,
+                                (c & 255) / 255.0, 1.0 };
+            CGColorRef color = CGColorCreate(cs, comp);
+            CGFloat kern = (style & 16) ? 0.06 * (CGFloat)size : 0.0;
+            CFNumberRef kn = CFNumberCreate(NULL, kCFNumberCGFloatType, &kern);
+            const void* keys[] = { kCTFontAttributeName, kCTForegroundColorAttributeName, kCTKernAttributeName };
+            const void* vals[] = { font, color, kn };
+            CFDictionaryRef attrs = CFDictionaryCreate(NULL, keys, vals, 3,
+                                                       &kCFTypeDictionaryKeyCallBacks,
+                                                       &kCFTypeDictionaryValueCallBacks);
+            CFAttributedStringRef attributed = CFAttributedStringCreate(NULL, value, attrs);
+            line = CTLineCreateWithAttributedString(attributed);
+            width = CTLineGetTypographicBounds(line, NULL, NULL, NULL);
+            CFRelease(attributed); CFRelease(attrs); CFRelease(kn);
+            CGColorRelease(color); CGColorSpaceRelease(cs); CFRelease(value);
+            if (e) {
+                e->line = line;
+                e->text = strdup(text);
+                e->size = size;
+                e->style = style;
+                e->rgb = key_rgb;
+                e->width = width;
+            } else {
+                owned = true;
+            }
+        }
+        if (!measure && line) {
             if (!ctx->text_cg) {
+                CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
                 ctx->text_cg = CGBitmapContextCreate(ctx->pixels, ctx->width, ctx->height,
                                                      8, (size_t)ctx->width * 4u, cs,
                                                      (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+                CGColorSpaceRelease(cs);
+                if (ctx->text_cg) {
+                    CGContextSetAllowsFontSubpixelPositioning(ctx->text_cg, true);
+                    CGContextSetShouldSubpixelPositionFonts(ctx->text_cg, true);
+                    CGContextSetAllowsAntialiasing(ctx->text_cg, true);
+                    CGContextSetShouldAntialias(ctx->text_cg, true);
+                    CGContextSetTextMatrix(ctx->text_cg, CGAffineTransformIdentity);
+                }
             }
-            CGContextRef cg = ctx->text_cg;
-            if (cg) {
-                CGContextSetAllowsFontSubpixelPositioning(cg, true);
-                CGContextSetShouldSubpixelPositionFonts(cg, true);
-                CGContextSetAllowsAntialiasing(cg, true);
-                CGContextSetShouldAntialias(cg, true);
-                CGContextSetTextMatrix(cg, CGAffineTransformIdentity);
-                CGContextSetTextPosition(cg, (CGFloat)x, (CGFloat)(ctx->height - baseline));
-                CTLineDraw(line, cg);
-                CGContextFlush(cg);
+            if (ctx->text_cg) {
+                CGContextSetTextPosition(ctx->text_cg, (CGFloat)x, (CGFloat)(ctx->height - baseline));
+                CTLineDraw(line, ctx->text_cg);
+                /* Generous bounds: ascenders, descenders and overhang. */
+                flow_gfx_mark(ctx, x - size, baseline - 2 * size, x + (int)ceil(width) + size, baseline + size);
             }
         }
-        CFRelease(line); CFRelease(attributed); CFRelease(attrs); CFRelease(kn);
-        CGColorRelease(color); CGColorSpaceRelease(cs); CFRelease(value);
+        if (owned) CFRelease(line);
         return (int32_t)ceil(width);
     }
 }
@@ -716,6 +863,20 @@ void flow_gfx_present(void* handle) {
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
     if (!ctx || !ctx->view) return;
     @autoreleasepool {
+        if (ctx->hidpi) {
+            /* Only what changed since the last present. */
+            if (ctx->dirty_x1 > ctx->dirty_x0 && ctx->dirty_y1 > ctx->dirty_y0) {
+                double sc = ctx->scale;
+                double vh = [ctx->view bounds].size.height;
+                NSRect r = NSMakeRect(ctx->dirty_x0 / sc, vh - ctx->dirty_y1 / sc,
+                                      (ctx->dirty_x1 - ctx->dirty_x0) / sc,
+                                      (ctx->dirty_y1 - ctx->dirty_y0) / sc);
+                [ctx->view setNeedsDisplayInRect:NSInsetRect(r, -1, -1)];
+                [ctx->view displayIfNeeded];
+            }
+            ctx->dirty_x0 = ctx->dirty_y0 = ctx->dirty_x1 = ctx->dirty_y1 = 0;
+            return;
+        }
         [ctx->view setNeedsDisplay:YES];
         [ctx->view displayIfNeeded];
     }

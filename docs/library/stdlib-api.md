@@ -1734,6 +1734,7 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_text` | `(g: Gfx, x: i32, y: i32, text: string, size: i32,
                          r: i32, g2: i32, b: i32) -> void` | Native platform text. The macOS backend uses CoreText/SF Pro; other backends provide a link-compatible fallback. |
 | `gfx_blit_rgb` | `(g: Gfx, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void` | Blit a packed RGB8 buffer (w*h*3 bytes, row-major) at (x, y). Per-pixel fields (particle sands, software rasterizers, image filters) should build a buffer and blit it once per frame. A fill_rect per pixel is tens of thousands of calls a frame and will not keep up. |
+| `gfx_blit_rgb_region` | `(g: Gfx, src: ptr<u8>, src_w: i32, x: i32, y: i32, w: i32, h: i32) -> void` | Copy only the rectangle (x, y, w, h) of src, a packed RGB8 canvas src_w pixels wide that covers the whole framebuffer. |
 | `gfx_present` | `(g: Gfx) -> void` | - |
 | `gfx_frame_pump` | `(g: Gfx) -> bool` | Poll events; return false if the window should close or Esc is down. |
 | `gfx_run` | `(g: Gfx, max_frames: i32) -> i32` | Run up to max_frames, calling user-defined flow_gfx_frame(ctx, frame) each tick. Returns the number of frames completed. Requires linking the gfx runtime. |
