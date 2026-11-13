@@ -439,6 +439,38 @@ void flow_gfx_text(void* handle, int32_t x, int32_t y, const char* text,
     (void)r; (void)g; (void)b;
 }
 
+
+/* HiDPI calls. This backend has no backing scale, so the framebuffer is in
+ * points and the scale reads 100. Text is not rendered here; text_ex still
+ * returns a width so layouts that measure text keep working. */
+void* flow_gfx_init_hidpi(int32_t w, int32_t h, const char* title_utf8, int32_t flags) {
+    (void)flags;
+    return flow_gfx_init(w, h, title_utf8);
+}
+
+int32_t flow_gfx_metrics(void* handle, int32_t* out) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!out) return 0;
+    if (!ctx) { out[0] = out[1] = out[2] = out[3] = 0; return 0; }
+    out[0] = ctx->width;
+    out[1] = ctx->height;
+    out[2] = 100;
+    out[3] = 0;
+    return 1;
+}
+
+void flow_gfx_cursor(void* handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+int32_t flow_gfx_text_ex(void* handle, int32_t x, int32_t baseline, const char* text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)handle; (void)x; (void)baseline; (void)rgb; (void)style; (void)measure;
+    if (!text || size <= 0) return 0;
+    return (int32_t)(strlen(text) * (size_t)size * 55u / 100u);
+}
+
 #else /* FLOW_GFX_STUB or no SDL2 headers */
 
 #ifndef FLOW_GFX_STUB_MSG
@@ -558,6 +590,37 @@ int32_t flow_gfx_run(void* handle, int32_t max_frames) {
     (void)max_frames;
     flow_gfx_sdl_warn_once();
     return 0;
+}
+
+
+/* HiDPI calls. This backend has no backing scale, so the framebuffer is in
+ * points and the scale reads 100. Text is not rendered here; text_ex still
+ * returns a width so layouts that measure text keep working. */
+void* flow_gfx_init_hidpi(int32_t w, int32_t h, const char* title_utf8, int32_t flags) {
+    (void)flags;
+    return flow_gfx_init(w, h, title_utf8);
+}
+
+int32_t flow_gfx_metrics(void* handle, int32_t* out) {
+    (void)handle;
+    if (!out) return 0;
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 100;
+    out[3] = 0;
+    return 0;
+}
+
+void flow_gfx_cursor(void* handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+int32_t flow_gfx_text_ex(void* handle, int32_t x, int32_t baseline, const char* text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)handle; (void)x; (void)baseline; (void)rgb; (void)style; (void)measure;
+    if (!text || size <= 0) return 0;
+    return (int32_t)(strlen(text) * (size_t)size * 55u / 100u);
 }
 
 #endif /* FLOW_GFX_USE_SDL2 */

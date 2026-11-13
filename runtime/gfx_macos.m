@@ -47,7 +47,46 @@ struct FlowGfxContext {
     bool mouse_middle;
     int32_t mouse_wheel;  // cumulative signed total, never reset by a read
     bool mouse_inside;
+
+    // HiDPI mode (flow_gfx_init_hidpi). The framebuffer is in device pixels:
+    // width = view points * scale. Mouse and text coordinates follow it.
+    bool hidpi;
+    double scale;         // backingScaleFactor, 1.0 outside HiDPI mode
+    int32_t generation;   // bumped whenever the framebuffer is reallocated
+    int32_t cursor;       // last cursor kind set through flow_gfx_cursor
+    CGContextRef text_cg; // bitmap context over pixels, rebuilt on realloc
+    CTFontRef fonts[16];  // small cache for flow_gfx_text_ex
+    int32_t font_key[16];
+    int32_t font_next;
 };
+
+static void flow_gfx_drop_text_cg(FlowGfxContext* ctx) {
+    if (ctx->text_cg) { CGContextRelease(ctx->text_cg); ctx->text_cg = NULL; }
+}
+
+/* HiDPI: size the framebuffer to the view in device pixels. Contents are
+ * cleared to black; the program sees a new generation and repaints. */
+static void flow_gfx_fit_framebuffer(FlowGfxContext* ctx) {
+    if (!ctx || !ctx->hidpi || !ctx->view) return;
+    NSRect b = [ctx->view bounds];
+    double scale = ctx->window ? [ctx->window backingScaleFactor] : 1.0;
+    if (scale <= 0.0) scale = 1.0;
+    int w = (int)lround(b.size.width * scale);
+    int h = (int)lround(b.size.height * scale);
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (ctx->pixels && w == ctx->width && h == ctx->height && scale == ctx->scale) return;
+    uint8_t* px = (uint8_t*)calloc((size_t)w * (size_t)h * 4u, 1);
+    if (!px) return;
+    for (size_t i = 0; i < (size_t)w * (size_t)h; i++) px[i * 4 + 3] = 255;
+    flow_gfx_drop_text_cg(ctx);
+    free(ctx->pixels);
+    ctx->pixels = px;
+    ctx->width = w;
+    ctx->height = h;
+    ctx->scale = scale;
+    ctx->generation++;
+}
 
 static void flow_gfx_pump_events(FlowGfxContext* ctx) {
     @autoreleasepool {
@@ -113,6 +152,16 @@ static void flow_gfx_pump_events(FlowGfxContext* ctx) {
     FlowGfxContext* ctx = self.ctx;
     if (!ctx) return;
     NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+    if (ctx->hidpi) {
+        /* Device pixels, y down from the top of the view. */
+        double top = [self bounds].size.height - p.y;
+        int32_t x = (int32_t)floor(p.x * ctx->scale);
+        int32_t y = (int32_t)floor(top * ctx->scale);
+        ctx->mouse_x = x;
+        ctx->mouse_y = y;
+        ctx->mouse_inside = (x >= 0 && x < ctx->width && y >= 0 && y < ctx->height);
+        return;
+    }
     int32_t x = (int32_t)floor(p.x);
     int32_t y = (int32_t)floor(p.y);
     ctx->mouse_x = x;
@@ -179,10 +228,49 @@ static void flow_gfx_pump_events(FlowGfxContext* ctx) {
     FLOW_RELEASE(area);
 }
 
+- (BOOL)isOpaque { return YES; }
+
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    if (self.ctx && self.ctx->hidpi) flow_gfx_fit_framebuffer(self.ctx);
+}
+
+- (void)viewDidChangeBackingProperties {
+    [super viewDidChangeBackingProperties];
+    if (self.ctx && self.ctx->hidpi) flow_gfx_fit_framebuffer(self.ctx);
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
     [super drawRect:dirtyRect];
     FlowGfxContext* ctx = self.ctx;
     if (!ctx || !ctx->pixels) return;
+
+    if (ctx->hidpi) {
+        /* One framebuffer pixel per device pixel: draw the image at its size
+         * in points, pinned to the top-left, with no resampling. */
+        CGContextRef cg = [[NSGraphicsContext currentContext] CGContext];
+        if (!cg) return;
+        NSRect b = [self bounds];
+        CGContextSetRGBFillColor(cg, 0, 0, 0, 1);
+        CGContextFillRect(cg, NSRectToCGRect(b));
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        size_t bytes = (size_t)ctx->width * (size_t)ctx->height * 4u;
+        CGDataProviderRef dp = CGDataProviderCreateWithData(NULL, ctx->pixels, bytes, NULL);
+        CGImageRef img = CGImageCreate((size_t)ctx->width, (size_t)ctx->height, 8, 32,
+                                       (size_t)ctx->width * 4u, cs,
+                                       kCGBitmapByteOrder32Big | kCGImageAlphaNoneSkipLast,
+                                       dp, NULL, false, kCGRenderingIntentDefault);
+        if (img) {
+            double pw = ctx->width / ctx->scale;
+            double ph = ctx->height / ctx->scale;
+            CGContextSetInterpolationQuality(cg, kCGInterpolationNone);
+            CGContextDrawImage(cg, CGRectMake(0, b.size.height - ph, pw, ph), img);
+            CGImageRelease(img);
+        }
+        CGDataProviderRelease(dp);
+        CGColorSpaceRelease(cs);
+        return;
+    }
 
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef cg = [[NSGraphicsContext currentContext] CGContext];
@@ -234,7 +322,8 @@ static void flow_gfx_request_close(FlowGfxContext* ctx, bool from_delegate) {
 
 // ----------------- C API (called from generated C) -----------------
 
-void* flow_gfx_init(int32_t w, int32_t h, const char* title_utf8) {
+static void* flow_gfx_open_window(int32_t w, int32_t h, const char* title_utf8,
+                                  bool hidpi, bool resizable) {
     @autoreleasepool {
         NSApplication* app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -242,17 +331,21 @@ void* flow_gfx_init(int32_t w, int32_t h, const char* title_utf8) {
         FlowGfxContext* ctx = (FlowGfxContext*)calloc(1, sizeof(FlowGfxContext));
         ctx->width = (int)w;
         ctx->height = (int)h;
-        ctx->pixels = (uint8_t*)calloc((size_t)w * (size_t)h * 4u, 1);
+        ctx->scale = 1.0;
+        ctx->hidpi = hidpi;
+        if (!hidpi) ctx->pixels = (uint8_t*)calloc((size_t)w * (size_t)h * 4u, 1);
 
         NSString* title = title_utf8 ? [NSString stringWithUTF8String:title_utf8] : @"FLOW";
         NSRect frame = NSMakeRect(100, 100, w, h);
         NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable;
+        if (resizable) style |= NSWindowStyleMaskResizable;
         ctx->window = [[NSWindow alloc] initWithContentRect:frame
                                                   styleMask:style
                                                     backing:NSBackingStoreBuffered
                                                       defer:NO];
         [ctx->window setTitle:title];
         [ctx->window setReleasedWhenClosed:NO];
+        if (resizable) [ctx->window setContentMinSize:NSMakeSize(480, 320)];
 
         ctx->view = [[FlowGfxView alloc] initWithFrame:frame];
         ctx->view.ctx = ctx;
@@ -267,11 +360,60 @@ void* flow_gfx_init(int32_t w, int32_t h, const char* title_utf8) {
         ctx->delegate = del;
         [ctx->window setDelegate:del];
 
+        if (hidpi) {
+            [ctx->window center];
+            flow_gfx_fit_framebuffer(ctx);
+        }
         [ctx->window makeKeyAndOrderFront:nil];
         [app activateIgnoringOtherApps:YES];
+        if (hidpi) flow_gfx_fit_framebuffer(ctx);
 
         return (void*)ctx;
     }
+}
+
+void* flow_gfx_init(int32_t w, int32_t h, const char* title_utf8) {
+    return flow_gfx_open_window(w, h, title_utf8, false, false);
+}
+
+/* A window of w x h points whose framebuffer is in device pixels, so a Retina
+ * display gets one framebuffer pixel per screen pixel with no scaling.
+ * flags: 1 = resizable. Read the real size back with flow_gfx_metrics. */
+void* flow_gfx_init_hidpi(int32_t w, int32_t h, const char* title_utf8, int32_t flags) {
+    return flow_gfx_open_window(w, h, title_utf8, true, (flags & 1) != 0);
+}
+
+/*   out[0] framebuffer width in pixels
+ *   out[1] framebuffer height in pixels
+ *   out[2] pixels per point x 100 (200 on a Retina display)
+ *   out[3] generation: changes whenever the framebuffer is reallocated,
+ *          after a resize or a move to a display with another scale */
+int32_t flow_gfx_metrics(void* handle, int32_t* out) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!out) return 0;
+    if (!ctx) { out[0] = out[1] = out[2] = out[3] = 0; return 0; }
+    out[0] = ctx->width;
+    out[1] = ctx->height;
+    out[2] = (int32_t)lround(ctx->scale * 100.0);
+    out[3] = ctx->generation;
+    return 1;
+}
+
+/* 0 arrow, 1 pointing hand, 2 crosshair, 3 resize left-right,
+ * 4 resize up-down, 5 open hand, 6 closed hand, 7 I-beam. */
+void flow_gfx_cursor(void* handle, int32_t kind) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || ctx->cursor == kind) return;
+    ctx->cursor = kind;
+    NSCursor* c = [NSCursor arrowCursor];
+    if (kind == 1) c = [NSCursor pointingHandCursor];
+    if (kind == 2) c = [NSCursor crosshairCursor];
+    if (kind == 3) c = [NSCursor resizeLeftRightCursor];
+    if (kind == 4) c = [NSCursor resizeUpDownCursor];
+    if (kind == 5) c = [NSCursor openHandCursor];
+    if (kind == 6) c = [NSCursor closedHandCursor];
+    if (kind == 7) c = [NSCursor IBeamCursor];
+    [c set];
 }
 
 void flow_gfx_shutdown(void* handle) {
@@ -298,6 +440,8 @@ void flow_gfx_shutdown(void* handle) {
             FLOW_RELEASE(ctx->window);
             ctx->window = nil;
         }
+        flow_gfx_drop_text_cg(ctx);
+        for (int i = 0; i < 16; i++) if (ctx->fonts[i]) CFRelease(ctx->fonts[i]);
         free(ctx->pixels);
         free(ctx);
     }
@@ -451,6 +595,85 @@ void flow_gfx_text(void *handle, int32_t x, int32_t y, const char *text,
     if (font) CFRelease(font);
     if (value) CFRelease(value);
     CGContextRelease(cg); CGColorSpaceRelease(cs);
+}
+
+/* System font for flow_gfx_text_ex, cached by (size, style). */
+static CTFontRef flow_gfx_font(FlowGfxContext* ctx, int32_t size, int32_t style) {
+    int32_t key = size * 64 + (style & 15);
+    for (int i = 0; i < 16; i++) {
+        if (ctx->fonts[i] && ctx->font_key[i] == key) return ctx->fonts[i];
+    }
+    NSFontWeight weights[4] = { NSFontWeightRegular, NSFontWeightMedium,
+                                NSFontWeightSemibold, NSFontWeightBold };
+    NSFontWeight wt = weights[style & 3];
+    NSFont* f = nil;
+    if (style & 8) f = [NSFont monospacedSystemFontOfSize:(CGFloat)size weight:wt];
+    else if (style & 4) f = [NSFont monospacedDigitSystemFontOfSize:(CGFloat)size weight:wt];
+    else f = [NSFont systemFontOfSize:(CGFloat)size weight:wt];
+    if (!f) return NULL;
+    CTFontRef ct = (CTFontRef)CFBridgingRetain(f);
+    int slot = ctx->font_next;
+    ctx->font_next = (ctx->font_next + 1) % 16;
+    if (ctx->fonts[slot]) CFRelease(ctx->fonts[slot]);
+    ctx->fonts[slot] = ct;
+    ctx->font_key[slot] = key;
+    return ct;
+}
+
+/* Text with the system font, positioned on its baseline, in framebuffer
+ * pixels (device pixels in HiDPI mode). Returns the advance width in pixels,
+ * rounded up. With measure = 1 nothing is drawn.
+ *
+ *   style & 3   weight: 0 regular, 1 medium, 2 semibold, 3 bold
+ *   style & 4   tabular (fixed-width) digits
+ *   style & 8   monospaced (SF Mono)
+ *   style & 16  tracked: +6% letter spacing, for small capitals labels
+ *   rgb         0xRRGGBB */
+int32_t flow_gfx_text_ex(void* handle, int32_t x, int32_t baseline, const char* text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || !ctx->pixels || !text || size <= 0) return 0;
+    @autoreleasepool {
+        CTFontRef font = flow_gfx_font(ctx, size, style);
+        if (!font) return 0;
+        CFStringRef value = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);
+        if (!value) return 0;
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGFloat comp[4] = { ((rgb >> 16) & 255) / 255.0, ((rgb >> 8) & 255) / 255.0,
+                            (rgb & 255) / 255.0, 1.0 };
+        CGColorRef color = CGColorCreate(cs, comp);
+        CGFloat kern = (style & 16) ? 0.06 * (CGFloat)size : 0.0;
+        CFNumberRef kn = CFNumberCreate(NULL, kCFNumberCGFloatType, &kern);
+        const void* keys[] = { kCTFontAttributeName, kCTForegroundColorAttributeName, kCTKernAttributeName };
+        const void* vals[] = { font, color, kn };
+        CFDictionaryRef attrs = CFDictionaryCreate(NULL, keys, vals, 3,
+                                                   &kCFTypeDictionaryKeyCallBacks,
+                                                   &kCFTypeDictionaryValueCallBacks);
+        CFAttributedStringRef attributed = CFAttributedStringCreate(NULL, value, attrs);
+        CTLineRef line = CTLineCreateWithAttributedString(attributed);
+        double width = CTLineGetTypographicBounds(line, NULL, NULL, NULL);
+        if (!measure) {
+            if (!ctx->text_cg) {
+                ctx->text_cg = CGBitmapContextCreate(ctx->pixels, ctx->width, ctx->height,
+                                                     8, (size_t)ctx->width * 4u, cs,
+                                                     (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+            }
+            CGContextRef cg = ctx->text_cg;
+            if (cg) {
+                CGContextSetAllowsFontSubpixelPositioning(cg, true);
+                CGContextSetShouldSubpixelPositionFonts(cg, true);
+                CGContextSetAllowsAntialiasing(cg, true);
+                CGContextSetShouldAntialias(cg, true);
+                CGContextSetTextMatrix(cg, CGAffineTransformIdentity);
+                CGContextSetTextPosition(cg, (CGFloat)x, (CGFloat)(ctx->height - baseline));
+                CTLineDraw(line, cg);
+                CGContextFlush(cg);
+            }
+        }
+        CFRelease(line); CFRelease(attributed); CFRelease(attrs); CFRelease(kn);
+        CGColorRelease(color); CGColorSpaceRelease(cs); CFRelease(value);
+        return (int32_t)ceil(width);
+    }
 }
 
 /* Milliseconds since the first call. CACurrentMediaTime is the mach monotonic

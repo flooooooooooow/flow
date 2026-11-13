@@ -447,6 +447,39 @@ void flow_gfx_fill_rect(void *handle, int32_t x, int32_t y, int32_t w, int32_t h
     }
 }
 
+/* HiDPI calls. The canvas is sized in CSS pixels here, so the scale reads
+ * 100. There is no text rendering on this backend; text_ex returns a width
+ * estimate so layouts that measure text still run. */
+void *flow_gfx_init_hidpi(int32_t w, int32_t h, const char *title_utf8, int32_t flags) {
+    (void)flags;
+    return flow_gfx_init(w, h, title_utf8);
+}
+
+int32_t flow_gfx_metrics(void *handle, int32_t *out) {
+    FlowGfxWasm *g = (FlowGfxWasm *)handle;
+    if (!out) return 0;
+    if (!g) { out[0] = out[1] = out[2] = out[3] = 0; return 0; }
+    out[0] = g->width;
+    out[1] = g->height;
+    out[2] = 100;
+    out[3] = 0;
+    return 1;
+}
+
+void flow_gfx_cursor(void *handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+int32_t flow_gfx_text_ex(void *handle, int32_t x, int32_t baseline, const char *text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)handle; (void)x; (void)baseline; (void)rgb; (void)style; (void)measure;
+    if (!text || size <= 0) return 0;
+    int32_t n = 0;
+    while (text[n]) n++;
+    return n * size * 55 / 100;
+}
+
 void flow_gfx_present(void *handle) {
     FlowGfxWasm *g = (FlowGfxWasm *)handle;
     if (!g || !g->pixels) return;

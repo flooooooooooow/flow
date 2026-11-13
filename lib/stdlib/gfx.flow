@@ -38,6 +38,10 @@ extern { function flow_gfx_time_ms(ctx: ptr<void>) -> f64 }
 extern { function flow_gfx_wait_frame(ctx: ptr<void>, target_fps: i32) -> void }
 extern { function flow_gfx_mouse(ctx: ptr<void>, out: ptr<i32>) -> i32 }
 extern { function flow_gfx_text(ctx: ptr<void>, x: i32, y: i32, text: string, size: i32, r: u8, g: u8, b: u8) -> void }
+extern { function flow_gfx_init_hidpi(w: i32, h: i32, title: string, flags: i32) -> ptr<void> }
+extern { function flow_gfx_metrics(ctx: ptr<void>, out: ptr<i32>) -> i32 }
+extern { function flow_gfx_cursor(ctx: ptr<void>, kind: i32) -> void }
+extern { function flow_gfx_text_ex(ctx: ptr<void>, x: i32, baseline: i32, text: string, size: i32, rgb: i32, style: i32, measure: i32) -> i32 }
 
 export function gfx_open(w: i32, h: i32, title: string) -> Gfx {
     return Gfx { ctx: flow_gfx_init(w, h, title) }
@@ -193,4 +197,79 @@ export function gfx_mouse_down(g: Gfx, button: i32) -> bool {
 # Cumulative scroll total. Diff against your own previous value.
 export function gfx_mouse_wheel(g: Gfx) -> i32 {
     return gfx_mouse(g).wheel
+}
+
+# HiDPI windows.
+#
+# gfx_open makes a framebuffer of w x h pixels, which a Retina display then
+# scales up 2x and blurs. gfx_open_hidpi makes a window of w x h points with
+# a framebuffer in device pixels: on a Retina display it is 2w x 2h and every
+# framebuffer pixel is one screen pixel. Mouse positions and text positions
+# are in the same device pixels. Read the real size with gfx_metrics, and
+# repaint when its generation changes (a resize, or a move to a display with
+# another scale). Backends without a backing scale report a scale of 1.
+export const GFX_RESIZABLE: i32 = 1
+
+# A window of w x h points with a framebuffer in device pixels. flags: GFX_RESIZABLE.
+export function gfx_open_hidpi(w: i32, h: i32, title: string, flags: i32) -> Gfx {
+    return Gfx { ctx: flow_gfx_init_hidpi(w, h, title, flags) }
+}
+
+struct GfxMetrics {
+    width: i32,
+    height: i32,
+    scale: f64,
+    generation: i32
+}
+
+# Framebuffer width and height in pixels, pixels per point, and a generation that changes on reallocation.
+export function gfx_metrics(g: Gfx) -> GfxMetrics {
+    let buf: array<i32, 4> = [0, 0, 100, 0]
+    let p: ptr<i32> = buf
+    flow_gfx_metrics(g.ctx, p)
+    return GfxMetrics {
+        width: p[0],
+        height: p[1],
+        scale: (p[2] as f64) / 100.0,
+        generation: p[3]
+    }
+}
+
+# Mouse cursor shape. A no-op where the backend has no cursor.
+export const CURSOR_ARROW: i32 = 0
+export const CURSOR_HAND: i32 = 1
+export const CURSOR_CROSSHAIR: i32 = 2
+export const CURSOR_RESIZE_H: i32 = 3
+export const CURSOR_RESIZE_V: i32 = 4
+export const CURSOR_GRAB: i32 = 5
+export const CURSOR_GRABBING: i32 = 6
+export const CURSOR_TEXT: i32 = 7
+
+# Set the mouse cursor to one of the CURSOR_* shapes.
+export function gfx_cursor(g: Gfx, kind: i32) -> void {
+    flow_gfx_cursor(g.ctx, kind)
+}
+
+# Text in the system font, placed on its baseline at (x, baseline), size in
+# framebuffer pixels, colour 0xRRGGBB. Returns the advance width in pixels.
+# style: a weight from TEXT_REGULAR..TEXT_BOLD, plus TEXT_TABULAR for
+# fixed-width digits, TEXT_MONO for the monospaced face, TEXT_TRACKED for
+# letter spacing. The recorder draws its bitmap font and returns its exact
+# width; backends without text return an estimate and draw nothing.
+export const TEXT_REGULAR: i32 = 0
+export const TEXT_MEDIUM: i32 = 1
+export const TEXT_SEMIBOLD: i32 = 2
+export const TEXT_BOLD: i32 = 3
+export const TEXT_TABULAR: i32 = 4
+export const TEXT_MONO: i32 = 8
+export const TEXT_TRACKED: i32 = 16
+
+# System-font text on a baseline, size in pixels, colour 0xRRGGBB and TEXT_* style, returning its width.
+export function gfx_text_ex(g: Gfx, x: i32, baseline: i32, text: string, size: i32, rgb: i32, style: i32) -> i32 {
+    return flow_gfx_text_ex(g.ctx, x, baseline, text, size, rgb, style, 0)
+}
+
+# Width in pixels that gfx_text_ex would advance, without drawing.
+export function gfx_text_width(g: Gfx, text: string, size: i32, style: i32) -> i32 {
+    return flow_gfx_text_ex(g.ctx, 0, 0, text, size, 0, style, 1)
 }

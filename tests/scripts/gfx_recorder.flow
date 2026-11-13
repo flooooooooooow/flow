@@ -21,6 +21,32 @@ function program() -> string {
     return p
 }
 
+# gfx_open_hidpi under FLOW_GFX_RECORD_SCALE=2: a 160x120 point window
+# records 320x240 pixel frames, gfx_metrics reports them with scale 2, and
+# gfx_text_ex puts the bitmap font on its baseline and returns its width.
+# The program's exit code names the first metric that was wrong.
+function program_hidpi() -> string {
+    let mut p: string = "\n"
+    p = p + "import \"stdlib/gfx.flow\"\n"
+    p = p + "\n"
+    p = p + "export function main() -> i32 {\n"
+    p = p + "    let g = gfx_open_hidpi(160, 120, \"test\", GFX_RESIZABLE)\n"
+    p = p + "    let m = gfx_metrics(g)\n"
+    p = p + "    if m.width != 320 { return 11 }\n"
+    p = p + "    if m.height != 240 { return 12 }\n"
+    p = p + "    if m.scale != 2.0 { return 13 }\n"
+    p = p + "    gfx_clear(g, 0, 0, 0)\n"
+    p = p + "    let w = gfx_text_ex(g, 10, 24, \"H\", 18, 16777215, TEXT_SEMIBOLD)\n"
+    p = p + "    if w != 12 { return 14 }\n"
+    p = p + "    if gfx_text_width(g, \"HH\", 18, TEXT_REGULAR) != 24 { return 15 }\n"
+    p = p + "    gfx_cursor(g, CURSOR_HAND)\n"
+    p = p + "    gfx_present(g)\n"
+    p = p + "    gfx_close(g)\n"
+    p = p + "    return 0\n"
+    p = p + "}\n"
+    return p
+}
+
 # Files under `dir` named frame_*.ppm, at any depth (find order).
 function find_frames(dir: string, found: ptr<ProcStrs>) {
     let names: ptr<ProcStrs> = list_dir(dir)
@@ -165,10 +191,59 @@ function check_record_text() -> i32 {
     return T_PASS
 }
 
+function check_record_hidpi() -> i32 {
+    let need: i32 = t_need("clang")
+    if need != T_PASS {
+        return need
+    }
+    let tmp: string = t_tmp()
+    let _w: bool = write_text(tmp + "/test_gfx_hidpi.flow", program_hidpi())
+    let rec: ptr<ProcCmd> = cmd(sl_of3(t_root() + "/flow", "record", tmp + "/test_gfx_hidpi.flow"))
+    cmd_cwd(rec, tmp)
+    cmd_env(rec, "FLOW_GFX_RECORD_FRAMES", "1")
+    cmd_env(rec, "FLOW_GFX_RECORD_SKIP", "0")
+    cmd_env(rec, "FLOW_GFX_RECORD_SCALE", "2")
+    if not a_eq(s_itoa(run(rec)), "0", "hidpi program exit code") {
+        return T_FAIL
+    }
+    let frames: ptr<ProcStrs> = sl_new()
+    if is_dir(tmp + "/frames") {
+        find_frames(tmp + "/frames", frames)
+    }
+    if not a_eq(s_itoa(sl_len(frames)), "1", "number of recorded frames") {
+        return T_FAIL
+    }
+    let b: Bytes = read_bytes(sl_get(frames, 0))
+    if not a_eq(ppm_header(b), "P6 320 240 255", "PPM header at scale 2") {
+        return T_FAIL
+    }
+    # Size 18 is the 5x7 font at 2x: 14 rows above baseline 24, so the H
+    # spans rows 10..23 and columns 10..19. Row 3 of the glyph is rows 16..17.
+    let lit: string = "255,255,255"
+    let dark: string = "0,0,0"
+    if not check_pixel(b, 10, 10, lit, "top-left of 2x H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 14, 10, dark, "top-middle of 2x H (dark)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 14, 16, lit, "crossbar of 2x H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 19, 23, lit, "bottom-right of 2x H, on the baseline (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 10, 24, dark, "below the baseline (dark)") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("gfx_recorder")
     t_start()
     t_end("record_text", check_record_text())
+    t_end("record_hidpi", check_record_hidpi())
     t_done()
     return 0
 }
