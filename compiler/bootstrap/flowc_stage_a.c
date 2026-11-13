@@ -48467,6 +48467,7 @@ int32_t flowc_cgen_loop_omp_safe(CgenBuf* w, AstArena arena, uint8_t* src, int32
 int32_t flowc_cgen_reduction_seen_before(AstArena arena, uint8_t* src, int32_t body, int32_t st, int32_t op);
 void flowc_cgen_emit_omp_reduction_op(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t op, const char* opch);
 void flowc_cgen_emit_omp_reductions(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body);
+int32_t flowc_cgen_body_has_ordered_reduction(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body);
 void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t loop_id);
 int32_t flowc_cgen_expr_is_simple_bound(AstArena arena, int32_t e);
 int32_t flowc_cgen_index_is_loop_var(AstArena arena, uint8_t* src, int32_t idx, int32_t loop_id);
@@ -59359,7 +59360,27 @@ void flowc_cgen_emit_omp_reductions(CgenBuf* w, AstArena arena, uint8_t* src, in
   flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*");
 }
 
+int32_t flowc_cgen_body_has_ordered_reduction(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body) {
+  if (body == AST_NONE || ((arena).nodes[body]).kind != AST_BLOCK) {
+  return 0;
+}
+  int32_t st = ((arena).nodes[body]).a;
+  while (st != AST_NONE) {
+  if (flowc_cgen_reduction_op(arena, src, st) != 0) {
+  int32_t ty = flowc_cgen_expr_type_node(w, arena, src, ((arena).nodes[st]).a);
+  if (flowc_cgen_ty_is_int_name(arena, src, ty) == 0) {
+  return 1;
+}
+}
+  st = ((arena).nodes[st]).next;
+}
+  return 0;
+}
+
 void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t loop_id) {
+  if (flowc_cgen_body_has_ordered_reduction(w, arena, src, body) == 1) {
+  return;
+}
   if (flowc_cgen_loop_omp_safe(w, arena, src, body, loop_id, AST_NONE) == 1) {
   flowc_cgen_puts(w, "#if defined(_OPENMP)\n");
   flowc_cgen_puts(w, "#pragma omp simd");
@@ -59854,6 +59875,9 @@ int32_t flowc_cgen_body_is_simple_skip(AstArena arena, uint8_t* src, int32_t bod
 }
 
 void flowc_cgen_emit_simd_pragmas_skip(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t skip, int32_t iv) {
+  if (flowc_cgen_body_has_ordered_reduction(w, arena, src, body) == 1) {
+  return;
+}
   flowc_cgen_puts(w, "#if defined(__clang__)\n");
   flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n");
   if (flowc_cgen_loop_omp_safe(w, arena, src, body, iv, skip) == 1) {
