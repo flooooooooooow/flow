@@ -19,6 +19,7 @@ extern {
     function free(p: ptr<f32>) -> void
     function expf(x: f32) -> f32
     function logf(x: f32) -> f32
+    function log1pf(x: f32) -> f32
     function flow_rt_monotonic_ns() -> i64
     function printf(fmt: string, val: f64) -> i32
 }
@@ -255,7 +256,15 @@ function forward(x: ptr<f32>, label: i32) -> f32 {
     for k in 0 to N_CLASSES {
         probs[k] = probs[k] / denom
     }
-    return 0.0 - logf(probs[label] + 0.0000001)
+    # Compute cross-entropy from logits, not rounded probabilities.
+    # log1pf retains tiny positive loss when the correct class dominates.
+    let mut others: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        if k != label {
+            others = others + expf(logits[k] - logits[label])
+        }
+    }
+    return log1pf(others)
 }
 
 # Backward pass for the sample last passed through forward().
