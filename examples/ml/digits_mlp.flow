@@ -256,15 +256,19 @@ function forward(x: ptr<f32>, label: i32) -> f32 {
     for k in 0 to N_CLASSES {
         probs[k] = probs[k] / denom
     }
-    # Compute cross-entropy from logits, not rounded probabilities.
-    # log1pf retains tiny positive loss when the correct class dominates.
+    # Log-sum-exp loss without subtracting rounded probabilities.
+    # mx >= logits[label], so every exponential argument is nonpositive.
     let mut others: f32 = 0.0
     for k in 0 to N_CLASSES {
         if k != label {
-            others = others + expf(logits[k] - logits[label])
+            others = others + expf(logits[k] - mx)
         }
     }
-    return log1pf(others)
+    let target_exp: f32 = expf(logits[label] - mx)
+    if logits[label] == mx {
+        return log1pf(others)
+    }
+    return (mx - logits[label]) + logf(target_exp + others)
 }
 
 # Backward pass for the sample last passed through forward().
