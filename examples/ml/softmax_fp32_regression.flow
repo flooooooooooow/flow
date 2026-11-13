@@ -4,6 +4,7 @@
 
 extern {
     function expf(x: f32) -> f32
+    function log1pf(x: f32) -> f32
 }
 
 function abs32(x: f32) -> f32 {
@@ -26,9 +27,14 @@ function main() -> i32 {
     let stable_target: f32 = 0.0 - (b + c) / denom
     let naive_sum: f32 = naive_target + p1 + p2
     let stable_sum: f32 = stable_target + p1 + p2
+    let stable_loss: f32 = log1pf(b + c)
 
     if naive_target != 0.0 {
         println("FAIL: expected FP32 target rounding; inspect backend precision")
+        return 1
+    }
+    if abs32(stable_loss - 0.00000003045996) > 0.00000000001 {
+        println("FAIL: log1p loss disagrees with reference")
         return 1
     }
     if stable_target >= 0.0 {
