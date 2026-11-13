@@ -262,7 +262,13 @@ function forward(x: ptr<f32>, label: i32) -> f32 {
 # Accumulates into gw1/gb1/gw2/gb2.
 function backward(x: ptr<f32>, label: i32) -> void {
     # dlogits = probs - onehot(label), reuse probs in place
-    probs[label] = probs[label] - 1.0
+    let mut non_target: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        if k != label {
+            non_target = non_target + probs[k]
+        }
+    }
+    probs[label] = 0.0 - non_target
     for k in 0 to N_CLASSES {
         gb2[k] = gb2[k] + probs[k]
     }
