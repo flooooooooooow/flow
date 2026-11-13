@@ -327,6 +327,15 @@ static void* flow_gfx_open_window(int32_t w, int32_t h, const char* title_utf8,
     @autoreleasepool {
         NSApplication* app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+        /* Events are pumped by hand rather than through [NSApp run], which
+         * would call this. Without it the app never finishes launching:
+         * accessibility clients (System Events, window managers) see no
+         * windows. */
+        static bool launched = false;
+        if (!launched) {
+            [app finishLaunching];
+            launched = true;
+        }
 
         FlowGfxContext* ctx = (FlowGfxContext*)calloc(1, sizeof(FlowGfxContext));
         ctx->width = (int)w;
