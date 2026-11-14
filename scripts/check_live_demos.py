@@ -96,7 +96,8 @@ def static_check(wiki=None):
             scripts.feed(html)
             if name + ".js" not in scripts.sources:
                 errors.append(name + ": generated HTML does not load its JS")
-            if 'createFlowModule(' not in html or 'id="status"' not in html:
+            has_factory = "createFlowModule(" in html or "createFlowThreaded(" in html
+            if not has_factory or 'id="status"' not in html:
                 errors.append(name + ": missing runtime startup/status controls")
             if wasm_file.open("rb").read(8)[:4] != b"\x00asm":
                 errors.append(name + ": invalid WASM magic")
