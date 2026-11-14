@@ -1701,6 +1701,25 @@ Finite State Machine (FSM) primitives.  Provides deterministic state transitions
 
 gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runtime/gfx_macos.m, runtime/gfx_linux.c, runtime/gfx_windows.c
 
+**Constants:**
+
+- `GFX_RESIZABLE: i32`
+- `CURSOR_ARROW: i32`
+- `CURSOR_HAND: i32`
+- `CURSOR_CROSSHAIR: i32`
+- `CURSOR_RESIZE_H: i32`
+- `CURSOR_RESIZE_V: i32`
+- `CURSOR_GRAB: i32`
+- `CURSOR_GRABBING: i32`
+- `CURSOR_TEXT: i32`
+- `TEXT_REGULAR: i32`
+- `TEXT_MEDIUM: i32`
+- `TEXT_SEMIBOLD: i32`
+- `TEXT_BOLD: i32`
+- `TEXT_TABULAR: i32`
+- `TEXT_MONO: i32`
+- `TEXT_TRACKED: i32`
+
 **Functions:**
 
 | Name | Signature | Docs |
@@ -1715,6 +1734,7 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_text` | `(g: Gfx, x: i32, y: i32, text: string, size: i32,
                          r: i32, g2: i32, b: i32) -> void` | Native platform text. The macOS backend uses CoreText/SF Pro; other backends provide a link-compatible fallback. |
 | `gfx_blit_rgb` | `(g: Gfx, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void` | Blit a packed RGB8 buffer (w*h*3 bytes, row-major) at (x, y). Per-pixel fields (particle sands, software rasterizers, image filters) should build a buffer and blit it once per frame. A fill_rect per pixel is tens of thousands of calls a frame and will not keep up. |
+| `gfx_blit_rgb_region` | `(g: Gfx, src: ptr<u8>, src_w: i32, x: i32, y: i32, w: i32, h: i32) -> void` | Copy only the rectangle (x, y, w, h) of src, a packed RGB8 canvas src_w pixels wide that covers the whole framebuffer. |
 | `gfx_present` | `(g: Gfx) -> void` | - |
 | `gfx_frame_pump` | `(g: Gfx) -> bool` | Poll events; return false if the window should close or Esc is down. |
 | `gfx_run` | `(g: Gfx, max_frames: i32) -> i32` | Run up to max_frames, calling user-defined flow_gfx_frame(ctx, frame) each tick. Returns the number of frames completed. Requires linking the gfx runtime. |
@@ -1725,6 +1745,11 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_mouse_y` | `(g: Gfx) -> i32` | - |
 | `gfx_mouse_down` | `(g: Gfx, button: i32) -> bool` | button: 0 = left, 1 = right, 2 = middle |
 | `gfx_mouse_wheel` | `(g: Gfx) -> i32` | Cumulative scroll total. Diff against your own previous value. |
+| `gfx_open_hidpi` | `(w: i32, h: i32, title: string, flags: i32) -> Gfx` | A window of w x h points with a framebuffer in device pixels. flags: GFX_RESIZABLE. |
+| `gfx_metrics` | `(g: Gfx) -> GfxMetrics` | Framebuffer width and height in pixels, pixels per point, and a generation that changes on reallocation. |
+| `gfx_cursor` | `(g: Gfx, kind: i32) -> void` | Set the mouse cursor to one of the CURSOR_* shapes. |
+| `gfx_text_ex` | `(g: Gfx, x: i32, baseline: i32, text: string, size: i32, rgb: i32, style: i32) -> i32` | System-font text on a baseline, size in pixels, colour 0xRRGGBB and TEXT_* style, returning its width. |
+| `gfx_text_width` | `(g: Gfx, text: string, size: i32, style: i32) -> i32` | Width in pixels that gfx_text_ex would advance, without drawing. |
 
 ### `gif.flow`
 
