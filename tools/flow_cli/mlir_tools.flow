@@ -969,7 +969,7 @@ export function compile_program_mlir(program: string) -> i32 {
         cli_exit(1)
     }
     success("MLIR → LLVM: " + basename + ".ll")
-    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename, build_dir + "/" + basename + ".mlir.c") != 0 {
+    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename, build_dir + "/" + basename + ".mlir.c", program) != 0 {
         error("MLIR/LLVM compilation/linking failed")
         cli_exit(1)
     }

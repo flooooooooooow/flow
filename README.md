@@ -330,6 +330,7 @@ to build the wheel. See
 
 ```bash
 ./flow run <file>              # Compile and run with flowc
+./flow run <file> -- <args>    # Arguments after -- go to the program
 ./flow compile <file>          # Compile only → build/
 ./flow test                    # Test suite (strict by default)
 ./flow test --strict --tier2   # + transpile / clang compile checks

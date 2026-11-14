@@ -1,0 +1,71 @@
+# `flow run` hands the program its own arguments, and the MLIR backend links a program's
+# flow.toml [native] sources as the C backend does.
+#
+# Before: any word after the program path was an error ("Unexpected argument"), so a
+# program could only be configured through environment variables; and the MLIR link step
+# never called flow_pkg_native_link_args, so a [native] source linked under --backend=c
+# was an undefined symbol under --backend=mlir.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function write_echo(dir: string) -> string {
+    let path: string = dir + "/echo_args.flow"
+    let _w: bool = write_text(path, "import std.process { proc_argc, proc_argv }\n\nfunction main() -> i32 {\n    let mut i: i32 = 1\n    while i < proc_argc() {\n        println(\"arg=\" + proc_argv(i))\n        i = i + 1\n    }\n    return 0\n}\n")
+    return path
+}
+
+function check_args_after_double_dash() -> i32 {
+    let need: i32 = t_need("clang")
+    if need != T_PASS { return need }
+    let program: string = write_echo(t_tmp())
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "run", program)
+    sl_push(argv, "--")
+    sl_push(argv, "alpha")
+    sl_push(argv, "--beta=2")
+    let rc: i32 = t_run_argv(argv)
+    if not a_eq_int(rc, 0, "exit status") { return T_FAIL }
+    if not a_contains(read_text(t_out()), "arg=alpha") or not a_contains(read_text(t_out()), "arg=--beta=2") { return T_FAIL }
+    return T_PASS
+}
+
+function check_bare_words_after_program() -> i32 {
+    let need: i32 = t_need("clang")
+    if need != T_PASS { return need }
+    let program: string = write_echo(t_tmp())
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "run", program)
+    sl_push(argv, "one")
+    sl_push(argv, "two")
+    let rc: i32 = t_run_argv(argv)
+    if not a_eq_int(rc, 0, "exit status") { return T_FAIL }
+    if not a_contains(read_text(t_out()), "arg=one") or not a_contains(read_text(t_out()), "arg=two") { return T_FAIL }
+    return T_PASS
+}
+
+function check_mlir_links_native_sources() -> i32 {
+    let need: i32 = t_need("clang mlir-opt mlir-translate")
+    if need != T_PASS { return need }
+    let dir: string = t_tmp() + "/native_project"
+    let _m: bool = mkdir_p(dir)
+    let _a: bool = write_text(dir + "/flow.toml", "[package]\nname = \"native_project\"\nversion = \"0.1.0\"\nentry = \"main.flow\"\n\n[native]\nsources = [\"answer.c\"]\n")
+    let _b: bool = write_text(dir + "/answer.c", "#include <stdint.h>\nint32_t native_answer(void) { return 42; }\n")
+    let _c: bool = write_text(dir + "/main.flow", "extern {\n    function native_answer() -> i32\n}\n\nfunction main() -> i32 {\n    if native_answer() == 42 {\n        println(\"answer=42\")\n    }\n    return 0\n}\n")
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "run", "--backend=mlir")
+    sl_push(argv, dir + "/main.flow")
+    let rc: i32 = t_run_argv(argv)
+    if not a_eq_int(rc, 0, "exit status") { return T_FAIL }
+    if not a_contains(read_text(t_out()), "answer=42") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("run_program_args")
+    t_start()
+    t_end("args_after_double_dash", check_args_after_double_dash())
+    t_start()
+    t_end("bare_words_after_program", check_bare_words_after_program())
+    t_start()
+    t_end("mlir_links_native_sources", check_mlir_links_native_sources())
+    t_done()
+    return 0
+}

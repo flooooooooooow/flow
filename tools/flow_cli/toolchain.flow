@@ -1352,15 +1352,25 @@ export function py_ldflags() -> ptr<ProcStrs> {
 # Link lowered MLIR (LLVM IR) with the Flow runtime, and with the program's
 # @cEmbed C when `embed` names a file that exists (#1093: the MLIR emitter
 # writes it next to the .mlir). Status.
-export function flow_link_mlir_ll(ll: string, exe: string, embed: string) -> i32 {
+export function flow_link_mlir_ll(ll: string, exe: string, embed: string, program: string) -> i32 {
     gpu_link_flags()
     concurrency_flags()
     let rtf: ptr<ProcStrs> = runtime_flow_sources()
     collect_cflags()
     sl_extend(CONC_LDFLAGS, COLLECTED_LDFLAGS)
+    # The program's flow.toml [native] sources, libraries and frameworks, as the C
+    # backend links them (flow_pkg_native_link_args); the MLIR link used to skip them.
+    let mut native: ptr<ProcStrs> = sl_new()
+    if s_len(program) > 0 {
+        native = flow_pkg_native_link_args(program, "clang")
+        if native == null {
+            return 1
+        }
+    }
     let a: ptr<ProcStrs> = sl_of1("clang")
     sl_extend(a, COLLECTED_CFLAGS)
-    sl_push2(a, "-O2", "-fno-omit-frame-pointer")
+    # FLOW_OPT_LEVEL, as the C backend reads it; a hardcoded -O2 here overrode it.
+    sl_push2(a, "-O" + env_or("FLOW_OPT_LEVEL", "2"), "-fno-omit-frame-pointer")
     sl_push(a, "-Wno-override-module")
     sl_extend(a, py_cflags())
     sl_extend(a, CONC_CFLAGS)
@@ -1374,6 +1384,7 @@ export function flow_link_mlir_ll(ll: string, exe: string, embed: string) -> i32
     sl_extend(a, rtf)
     sl_extend(a, GPU_SOURCES)
     sl_extend(a, py_ldflags())
+    sl_extend(a, native)
     sl_extend(a, GPU_LDFLAGS)
     sl_extend(a, CONC_LDFLAGS)
     sl_push2(a, "-lm", "-o")
