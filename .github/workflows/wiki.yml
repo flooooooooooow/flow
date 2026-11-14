@@ -7,7 +7,7 @@ on:
     paths:
       - 'docs/**'
       - 'site/**'
-      - 'scripts/check_live_demos.py'
+      - 'scripts/check_live_demos.mjs'
       - 'tools/flow_cli/**'
       - 'scripts/tools/build_wiki/**'
       - 'scripts/tools/wiki_links/**'
@@ -68,7 +68,7 @@ jobs:
         run: ./flow tool wiki_links
 
       - name: Validate deployed live examples and gallery routes
-        run: python3 scripts/check_live_demos.py --wiki build/wiki
+        run: node scripts/check_live_demos.mjs --wiki build/wiki
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
