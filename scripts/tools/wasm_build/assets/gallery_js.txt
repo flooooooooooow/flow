@@ -1,27 +1,107 @@
 
 (function () {
+  'use strict';
   var modal = document.getElementById('modal');
   var frame = document.getElementById('frame');
   var label = document.getElementById('label');
   var link = document.getElementById('open');
+  var share = document.getElementById('share');
+  var search = document.getElementById('demoSearch');
+  var matches = document.getElementById('matchCount');
+  var buttons = Array.from(document.querySelectorAll('button[data-run]'));
+  var cards = buttons.map(function (button) { return button.closest('.card'); });
+  var activePage = '';
 
-  function run(page, title) {
-    label.textContent = title;
-    link.href = page;
-    frame.src = page + '?autostart=1';
-    modal.classList.add('open');
-    setTimeout(function () { frame.focus(); }, 60);
+  function pathFor(button) {
+    return button.getAttribute('data-run');
   }
-  function close() {
+
+  function nameFor(button) {
+    return pathFor(button).split('/')[0];
+  }
+
+  function hide() {
+    activePage = '';
     modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
     frame.src = 'about:blank';
   }
+
+  function show(button) {
+    var page = pathFor(button);
+    if (activePage === page) return;
+    activePage = page;
+    label.textContent = button.getAttribute('data-title') || nameFor(button);
+    link.href = page + '?autostart=1';
+    frame.src = page + '?autostart=1';
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    frame.addEventListener('load', function focusFrame() {
+      frame.removeEventListener('load', focusFrame);
+      try { frame.contentWindow.focus(); } catch (_) { frame.focus(); }
+    });
+  }
+
+  function syncRoute() {
+    var name;
+    try { name = decodeURIComponent(location.hash.slice(1)); }
+    catch (_) { name = ''; }
+    if (!name) { hide(); return; }
+    var button = buttons.find(function (candidate) { return nameFor(candidate) === name; });
+    if (button) show(button);
+    else hide();
+  }
+
+  function open(button) {
+    var hash = '#' + encodeURIComponent(nameFor(button));
+    if (location.hash !== hash) location.hash = hash;
+    syncRoute();
+  }
+
+  function close() {
+    if (location.hash) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    hide();
+  }
+
+  function filter() {
+    var query = (search.value || '').trim().toLowerCase();
+    var visible = 0;
+    cards.forEach(function (card, index) {
+      var hit = !query || (card.textContent + ' ' + nameFor(buttons[index])).toLowerCase().includes(query);
+      card.hidden = !hit;
+      if (hit) visible++;
+    });
+    matches.textContent = visible + ' of ' + buttons.length + ' examples';
+  }
+
   document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest('[data-run]');
-    if (btn) { run(btn.getAttribute('data-run'), btn.getAttribute('data-title')); }
-    if (ev.target.id === 'close' || ev.target === modal) { close(); }
+    var button = ev.target.closest('button[data-run]');
+    if (button) { open(button); return; }
+    if (ev.target.id === 'close' || ev.target === modal) close();
   });
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && modal.classList.contains('open')) { close(); }
+    if (ev.key === 'Escape' && modal.classList.contains('open')) {
+      ev.preventDefault();
+      close();
+    } else if (ev.key === '/' && !modal.classList.contains('open') &&
+               !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
+      ev.preventDefault();
+      search.focus();
+    }
   });
+  if (share) share.addEventListener('click', function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(location.href).then(function () {
+        share.textContent = 'Copied';
+      }).catch(function () {
+        share.textContent = 'Copy URL from address bar';
+      });
+    }
+  });
+  search.addEventListener('input', filter);
+  window.addEventListener('hashchange', syncRoute);
+  filter();
+  syncRoute();
 })();

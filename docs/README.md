@@ -11,6 +11,8 @@ Welcome to the Flow programming language documentation!
 | **[Introduction to Flow](book/README.md)** | Formal, example-led book |
 | **[Flow Coding Challenges](book/19-coding-challenge-series.md)** | 36 syntax-enforced problems |
 | **[Getting Started](getting-started.md)** | Installation and first program |
+| **[Demo Showcase](demos/overview.md)** | Galleries and recorded simulations |
+| **[Live WebAssembly Demos](../wasm/index.html)** | Search and run compiled Flow programs in the browser |
 | **[Language Spec](LANGUAGE_SPEC.md)** | Complete language reference |
 | **[Grammar](grammar.ebnf)** | Formal EBNF grammar |
 
