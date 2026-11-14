@@ -1,0 +1,242 @@
+# stdlib/audio/wav.flow reads WAV files as other tools write them: chunks
+# before "data" (LIST, fact, Apple's FLLR padding), odd-sized chunks with a
+# pad byte, WAVE_FORMAT_EXTENSIBLE, and 8, 16, 24 and 32-bit integer PCM as
+# well as 32-bit float. Each file is built here byte by byte, so the test
+# states the exact layout it reads.
+
+import "stdlib/audio/wav.flow"
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(f: ptr<void>) -> i32
+    function fputc(c: i32, f: ptr<void>) -> i32
+}
+
+const PATH: string = "/tmp/flow_wav_reader_test.wav"
+
+function put8(f: ptr<void>, v: i32) -> void {
+    fputc(v & 255, f)
+}
+
+function put16(f: ptr<void>, v: i32) -> void {
+    put8(f, v)
+    put8(f, (v / 256) & 255)
+}
+
+function put24(f: ptr<void>, v: i32) -> void {
+    put8(f, v)
+    put8(f, (v / 256) & 255)
+    put8(f, (v / 65536) & 255)
+}
+
+function put32(f: ptr<void>, v: i64) -> void {
+    put8(f, (v & 255) as i32)
+    put8(f, ((v / 256) & 255) as i32)
+    put8(f, ((v / 65536) & 255) as i32)
+    put8(f, ((v / 16777216) & 255) as i32)
+}
+
+function tag(f: ptr<void>, a: i32, b: i32, c: i32, d: i32) -> void {
+    put8(f, a)
+    put8(f, b)
+    put8(f, c)
+    put8(f, d)
+}
+
+# A 5-byte LIST chunk plus its pad byte, then an 8-byte FLLR chunk.
+function junk_chunks(f: ptr<void>) -> void {
+    tag(f, 76, 73, 83, 84)          # "LIST"
+    put32(f, 5)
+    put8(f, 1)
+    put8(f, 2)
+    put8(f, 3)
+    put8(f, 4)
+    put8(f, 5)
+    put8(f, 0)                      # pad to even
+    tag(f, 70, 76, 76, 82)          # "FLLR"
+    put32(f, 8)
+    put32(f, 0)
+    put32(f, 0)
+}
+
+# RIFF + WAVE + fmt. `ext` writes the 40-byte WAVE_FORMAT_EXTENSIBLE form.
+function header(f: ptr<void>, fmt: i32, channels: i32, rate: i32, bits: i32, ext: bool) -> void {
+    tag(f, 82, 73, 70, 70)          # "RIFF", size not checked by readers
+    put32(f, 0)
+    tag(f, 87, 65, 86, 69)          # "WAVE"
+    tag(f, 102, 109, 116, 32)       # "fmt "
+    let block: i32 = channels * (bits / 8)
+    if ext {
+        put32(f, 40)
+        put16(f, 65534)
+    } else {
+        put32(f, 16)
+        put16(f, fmt)
+    }
+    put16(f, channels)
+    put32(f, rate as i64)
+    put32(f, (rate * block) as i64)
+    put16(f, block)
+    put16(f, bits)
+    if ext {
+        put16(f, 22)                # cbSize
+        put16(f, bits)              # valid bits
+        put32(f, 3)                 # channel mask
+        put16(f, fmt)               # subformat GUID starts with the format tag
+        put16(f, 0)
+        put32(f, 1048576)
+        put32(f, 2852126848)
+        put32(f, 1905997824)
+    }
+}
+
+function near(a: f32, b: f32) -> bool {
+    let d: f32 = a - b
+    return d < 0.0001 and d > -0.0001
+}
+
+function main() -> i32 {
+    let buf: array<f32, 16> = []
+    let dst: ptr<f32> = buf
+
+    # 1. 16-bit PCM mono, chunks before data.
+    let mut f: ptr<void> = fopen(PATH, "wb")
+    header(f, 1, 1, 22050, 16, false)
+    junk_chunks(f)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 6)
+    put16(f, 16384)
+    put16(f, 65536 - 32768)
+    put16(f, 0)
+    fclose(f)
+    let mut info: WavInfo = wav_read_open(PATH)
+    if not info.ok or info.rate != 22050 or info.channels != 1 or info.bits != 16 or info.frames != 3 {
+        return 1
+    }
+    let mut got: i32 = wav_read_frames(dst, 16)
+    wav_read_close()
+    if got != 3 or not near(dst[0], 0.5) or not near(dst[1], -1.0) or not near(dst[2], 0.0) {
+        return 2
+    }
+
+    # 2. 24-bit PCM stereo, WAVE_FORMAT_EXTENSIBLE, read in two calls.
+    f = fopen(PATH, "wb")
+    header(f, 1, 2, 48000, 24, true)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 12)
+    put24(f, 4194304)               #  0.5
+    put24(f, 16777216 - 2097152)    # -0.25
+    put24(f, 8388607)               # just under 1
+    put24(f, 16777216 - 8388608)    # -1
+    fclose(f)
+    info = wav_read_open(PATH)
+    if not info.ok or info.channels != 2 or info.bits != 24 or info.format != 1 or info.frames != 2 {
+        return 3
+    }
+    got = wav_read_frames(dst, 1)
+    if got != 1 or not near(dst[0], 0.5) or not near(dst[1], -0.25) {
+        wav_read_close()
+        return 4
+    }
+    got = wav_read_frames(dst, 8)
+    let tail: i32 = wav_read_frames(dst + 8, 8)
+    wav_read_close()
+    if got != 1 or tail != 0 or not near(dst[0], 1.0) or not near(dst[1], -1.0) {
+        return 5
+    }
+
+    # 3. 32-bit PCM and 8-bit unsigned PCM.
+    f = fopen(PATH, "wb")
+    header(f, 1, 1, 8000, 32, false)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 8)
+    put32(f, 1073741824)            #  0.5
+    put32(f, 3221225472)            # -0.5
+    fclose(f)
+    info = wav_read_open(PATH)
+    got = wav_read_frames(dst, 16)
+    wav_read_close()
+    if not info.ok or got != 2 or not near(dst[0], 0.5) or not near(dst[1], -0.5) {
+        return 6
+    }
+    f = fopen(PATH, "wb")
+    header(f, 1, 1, 8000, 8, false)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 3)
+    put8(f, 192)                    #  0.5
+    put8(f, 128)                    #  0
+    put8(f, 0)                      # -1
+    put8(f, 0)                      # pad
+    fclose(f)
+    info = wav_read_open(PATH)
+    got = wav_read_frames(dst, 16)
+    wav_read_close()
+    if not info.ok or got != 3 or not near(dst[0], 0.5) or not near(dst[1], 0.0) or not near(dst[2], -1.0) {
+        return 7
+    }
+
+    # 4. Float32 with an FLLR chunk, as macOS afconvert writes it.
+    f = fopen(PATH, "wb")
+    header(f, 3, 1, 44100, 32, false)
+    junk_chunks(f)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 8)
+    put32(f, 1056964608)            #  0.5f
+    put32(f, 3208642560)            # -0.75f
+    fclose(f)
+    info = wav_read_open(PATH)
+    got = wav_read_frames(dst, 16)
+    wav_read_close()
+    if not info.ok or info.format != 3 or got != 2 or not near(dst[0], 0.5) or not near(dst[1], -0.75) {
+        return 8
+    }
+
+    # 5. The module's own writer still round-trips.
+    dst[0] = 0.25
+    dst[1] = -0.125
+    if not wav_write_open(PATH, 48000, 2) {
+        return 9
+    }
+    wav_write_frames(dst, 1)
+    wav_write_close()
+    dst[0] = 0.0
+    dst[1] = 0.0
+    info = wav_read_open(PATH)
+    got = wav_read_frames(dst, 16)
+    wav_read_close()
+    if not info.ok or got != 1 or not near(dst[0], 0.25) or not near(dst[1], -0.125) {
+        return 10
+    }
+
+    # 6. Rejections: a compressed format, data before fmt, and an Ogg file.
+    f = fopen(PATH, "wb")
+    header(f, 2, 1, 8000, 16, false)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 0)
+    fclose(f)
+    info = wav_read_open(PATH)
+    if info.ok or wav_read_is_open() {
+        return 11
+    }
+    f = fopen(PATH, "wb")
+    tag(f, 82, 73, 70, 70)
+    put32(f, 0)
+    tag(f, 87, 65, 86, 69)
+    tag(f, 100, 97, 116, 97)
+    put32(f, 0)
+    fclose(f)
+    info = wav_read_open(PATH)
+    if info.ok or wav_read_is_open() {
+        return 12
+    }
+    f = fopen(PATH, "wb")
+    tag(f, 79, 103, 103, 83)        # "OggS"
+    put32(f, 0)
+    put32(f, 0)
+    fclose(f)
+    info = wav_read_open(PATH)
+    if info.ok or wav_read_is_open() {
+        return 13
+    }
+    return 0
+}

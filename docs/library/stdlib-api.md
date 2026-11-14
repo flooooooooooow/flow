@@ -863,13 +863,14 @@ Offline render verification: how CI listens to audio without a sound card.  Ever
 
 ### `audio/wav.flow`
 
-WAV File I/O (32-bit IEEE float PCM)  Offline render target for the audio examples: everything that can play to a
+WAV File I/O  Offline render target for the audio examples: everything that can play to a
 
 **Structs:** `WavInfo`
 
 **Constants:**
 
 - `WAV_SEEK_SET: i32`
+- `WAV_SEEK_CUR: i32`
 - `WAV_HEADER_BYTES: i64`
 - `WAV_STAGE_FRAMES: i32`
 
@@ -885,8 +886,8 @@ WAV File I/O (32-bit IEEE float PCM)  Offline render target for the audio exampl
 | `wav_write_frame_count` | `() -> i64` | - |
 | `wav_info_bad` | `() -> WavInfo` | - |
 | `wav_info_duration` | `(info: WavInfo) -> f64` | - |
-| `wav_read_open` | `(path: string) -> WavInfo` | Open a canonical 44-byte-header WAV for streaming reads. Only the layout this module writes is accepted (float32, one "data" chunk at offset 36). |
-| `wav_read_frames` | `(dst: ptr<f32>, frames: i32) -> i32` | Read up to `frames` interleaved f32 frames into `dst`. Returns frames read (0 at end of file). |
+| `wav_read_open` | `(path: string) -> WavInfo` | Open a WAV file for streaming reads: 8, 16, 24 or 32-bit PCM or 32-bit float. `bits` and `format` in the result describe the file. |
+| `wav_read_frames` | `(dst: ptr<f32>, frames: i32) -> i32` | Read up to `frames` interleaved f32 frames into `dst`. Returns frames read (0 at end of file). Integer PCM is read as raw bytes into `dst` and widened to f32 in place, last sample first: each f32 is at least as wide as its source sample, so no unread byte is overwritten. |
 | `wav_read_close` | `() -> void` | - |
 | `wav_read_is_open` | `() -> bool` | - |
 
