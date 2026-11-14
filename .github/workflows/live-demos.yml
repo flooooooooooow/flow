@@ -1,0 +1,73 @@
+name: Live WASM demos
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'site/wasm/**'
+      - 'docs/demos/**'
+      - 'docs/nav.json'
+      - 'examples/**'
+      - 'runtime/gfx_wasm.c'
+      - 'scripts/check_live_demos.mjs'
+      - 'scripts/tools/wasm_build/**'
+      - '.github/workflows/live-demos.yml'
+      - '.github/workflows/wiki.yml'
+  push:
+    branches: [main, master]
+    paths:
+      - 'site/wasm/**'
+      - 'docs/demos/**'
+      - 'docs/nav.json'
+      - 'examples/**'
+      - 'runtime/gfx_wasm.c'
+      - 'scripts/check_live_demos.mjs'
+      - 'scripts/tools/wasm_build/**'
+      - '.github/workflows/live-demos.yml'
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-wasm-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  assets:
+    name: Manifest, assets, routes and gallery
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate all published WASM examples and navigation
+        run: node scripts/check_live_demos.mjs
+      - name: Check headless demo gallery recordings
+        run: ./flow tool record_demos --check
+      - name: Check generated gallery sidebar
+        run: ./flow tool demo_nav --check
+
+  browser:
+    name: Chromium live demos (${{ matrix.shard }}/4)
+    needs: assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium automation
+        run: |
+          npm install --no-save 'playwright@1.55.0'
+          npx playwright install --with-deps chromium
+      - name: Run real compiled WASM in isolated Chromium
+        run: |
+          node scripts/check_live_demos.mjs --browser \
+            --shard-index ${{ matrix.shard }} --shard-count 4
