@@ -9,7 +9,7 @@ on:
       - 'docs/nav.json'
       - 'examples/**'
       - 'runtime/gfx_wasm.c'
-      - 'scripts/check_live_demos.py'
+      - 'scripts/check_live_demos.mjs'
       - 'scripts/tools/wasm_build/**'
       - '.github/workflows/live-demos.yml'
       - '.github/workflows/wiki.yml'
@@ -21,7 +21,7 @@ on:
       - 'docs/nav.json'
       - 'examples/**'
       - 'runtime/gfx_wasm.c'
-      - 'scripts/check_live_demos.py'
+      - 'scripts/check_live_demos.mjs'
       - 'scripts/tools/wasm_build/**'
       - '.github/workflows/live-demos.yml'
   schedule:
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Validate all published WASM examples and navigation
-        run: python3 scripts/check_live_demos.py
+        run: node scripts/check_live_demos.mjs
       - name: Check headless demo gallery recordings
         run: ./flow tool record_demos --check
       - name: Check generated gallery sidebar
@@ -60,14 +60,14 @@ jobs:
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: '22'
       - name: Install Chromium automation
         run: |
-          python -m pip install 'playwright==1.55.0'
-          python -m playwright install --with-deps chromium
+          npm install --no-save 'playwright@1.55.0'
+          npx playwright install --with-deps chromium
       - name: Run real compiled WASM in isolated Chromium
         run: |
-          python scripts/check_live_demos.py --browser \
+          node scripts/check_live_demos.mjs --browser \
             --shard-index ${{ matrix.shard }} --shard-count 4
