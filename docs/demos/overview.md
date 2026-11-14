@@ -1,7 +1,5 @@
 # Demo Showcase
 
-[Run 161 Flow examples live in WebAssembly](../wasm/index.html) · [WebAssembly demo guide](wasm.md) · [Recording instructions](README.md)
-
 Flow's visual output is organised in three layers: a **demo** is one runnable thing; 
 a **gallery** collects related demos; this **showcase** is the curated cross-section. 
 That separation keeps the Wiki useful when the example corpus grows instead of turning 
