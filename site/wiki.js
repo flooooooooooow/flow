@@ -596,7 +596,7 @@ async function loadDoc(path) {
     renderPager(path);
 
     if (path.endsWith('.html')) {
-        window.location.href = path;
+        window.location.href = path + (anchor ? '#' + anchor : '');
         return;
     }
 
