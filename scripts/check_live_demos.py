@@ -58,9 +58,13 @@ def static_check(wiki=None):
     manifest = read_json(WASM / "manifest.json")
     entries = manifest["entries"]
     gallery = GalleryLinks()
-    gallery.feed((WASM / "index.html").read_text(encoding="utf-8"))
+    gallery_html = (WASM / "index.html").read_text(encoding="utf-8")
+    gallery.feed(gallery_html)
     runs = gallery.runs
     errors = []
+    for control in ("modal", "demoSearch", "matchCount", "share"):
+        if 'id="' + control + '"' not in gallery_html:
+            errors.append("gallery missing required control #" + control)
     names = set()
     pages = set()
     categories = {category["id"] for category in manifest["categories"]}
