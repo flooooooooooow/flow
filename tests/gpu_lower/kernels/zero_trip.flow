@@ -1,0 +1,68 @@
+# zero_trip: out[i] = x[i] + x[0] + ... + x[i - 1], so thread 0's loop runs
+# zero times and its result is the loop's initial value, x[0].
+#
+# convert-gpu-to-spirv lowers an scf.for result through a Function
+# variable that is stored only inside the loop body, so a loop that runs
+# zero times leaves it undefined; on MoltenVK thread 0 read 0.0 where the
+# CPU gives 3.5. gpu_passes.flow runs scf-for-to-while first, and this
+# program checks that it still does.
+#
+# main() is the CPU build of the same kernel: it runs it per thread id and
+# writes the launch spec, the inputs and the CPU result to
+# $FLOW_GPU_LOWER_DATA for `flow gpu-lower --run`.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+@gpu
+function zero_trip(x: ptr<f32>, out: ptr<f32>, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        let mut acc: f32 = x[i]
+        for k in 0 to i {
+            acc = acc + x[k]
+        }
+        out[i] = acc
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let x: ptr<f32> = calloc(64, 4) as ptr<f32>
+    let out: ptr<f32> = calloc(64, 4) as ptr<f32>
+    let nn: ptr<i32> = calloc(1, 4) as ptr<i32>
+    nn[0] = 64
+    for i in 0 to 64 {
+        x[i] = (i as f32) + 3.5
+    }
+    dump(dir, "in_0.bin", x as ptr<void>, 256)
+    dump(dir, "in_1.bin", out as ptr<void>, 256)
+    dump(dir, "in_2.bin", nn as ptr<void>, 4)
+    for t in 0 to 64 {
+        cpu_tid_x = t
+        zero_trip(x, out, 64)
+    }
+    dump(dir, "out_1.bin", out as ptr<void>, 256)
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _a: i32 = fputs("buffer 0 f32 64 in\nbuffer 1 f32 64 out\nbuffer 2 i32 1 scalar\ndispatch zero_trip 1 1 1 0 1 2\n", fp)
+    let _c: i32 = fclose(fp)
+    return 0
+}

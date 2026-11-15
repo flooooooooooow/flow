@@ -24,6 +24,7 @@ import "tools/flow_cli/commands.flow"
 import "tools/flow_cli/help.flow"
 import "tools/flow_cli/tool.flow"
 import "tools/flow_cli/mlir_tools.flow"
+import "tools/flow_cli/gpu_lower.flow"
 import std.process { ProcCmd, ProcStrs, proc_args, proc_argv }
 
 # The root: $FLOW_CLI_ROOT from the stub, else found by walking up from this
@@ -430,6 +431,8 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
         return mlir_optimize(args)
     } elif is(c, "mlir-spirv") {
         return mlir_spirv(args)
+    } elif is(c, "gpu-lower") {
+        return gpu_lower(args)
     } elif is(c, "help") {
         show_help()
         return 0

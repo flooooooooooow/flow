@@ -1,0 +1,772 @@
+# @module tools.flow_cli.gpu_passes
+# @means  The lowering of Flow's gpu dialect kernels to every GPU target:
+#         SPIR-V, Metal Shading Language, a .metallib, PTX, a cubin and an
+#         AMDGPU code object. `flow gpu-lower` (gpu_lower.flow) and
+#         `flow mlir-spirv` (mlir_tools.flow) call these steps.
+#
+# The input is the MLIR that `flow flow-to-mlir --gpu` writes: a host module
+# that holds `gpu.module @flow_kernels`, one `gpu.func ... kernel` per @gpu
+# function. gp_prepare takes that gpu.module out of the host module, puts
+# it in a module of its own with `gpu.container_module`, and replaces
+# `gpu.block_dim` with the workgroup size the emitter fixes for every
+# kernel (64 x 1 x 1, the spirv.entry_point_abi it writes). Every target
+# then sees the same kernel: the SPIR-V lowering folds block_dim to that
+# size anyway, and without it the AMDGPU lowering calls
+# __ockl_get_local_size from the ROCm device library.
+#
+# Pass pipelines (mlir-opt from LLVM 22):
+#
+#   SPIR-V  GP_SPIRV_PIPELINE, then the spirv.module alone through
+#           mlir-translate --no-implicit-module --serialize-spirv, then
+#           spirv-val --target-env vulkan1.0.
+#           scf-for-to-while comes first because convert-gpu-to-spirv
+#           lowers an scf.for result through a Function variable that is
+#           stored only inside the loop body: a loop that runs zero times
+#           leaves its result undefined. The scf.while lowering carries
+#           the values through the loop header and is correct.
+#   MSL     spirv-cross --msl --msl-decoration-binding --entry NAME
+#           --stage comp, once per kernel (SPIRV-Cross writes one entry
+#           point per run). The per-kernel files are joined into one,
+#           each struct and constant kept once.
+#   Metal   xcrun -sdk SDK metal -fno-fast-math -c, then xcrun metallib.
+#   PTX     --gpu-lower-to-nvvm-pipeline with cubin-format=isa; the PTX is
+#           the `assembly` string of the gpu.binary op it leaves.
+#   cubin   the same with cubin-format=bin, which runs ptxas.
+#   hsaco   gp_rocdl_pipeline, the gpu.module body through mlir-translate
+#           --mlir-to-llvmir, llc -filetype=obj and ld.lld -shared.
+#
+# Tools: $MLIR_OPT, $MLIR_TRANSLATE, $SPIRV_CROSS, $SPIRV_VAL, $XCRUN, $LLC,
+# $LD_LLD, then $LLVM_PATH (LLVM tools), PATH and `brew --prefix PKG`.
+# Each step prints why it failed on stderr. Status 0, 1 when a step fails,
+# 3 when a tool is missing.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+let GP_SPIRV_PIPELINE: string = "builtin.module(gpu.module(scf-for-to-while),spirv-attach-target{ver=v1.0 caps=Shader exts=SPV_KHR_storage_buffer_storage_class},convert-gpu-to-spirv,spirv.module(spirv-lower-abi-attrs,spirv-update-vce))"
+let GP_ROCDL_PIPELINE_HEAD: string = "builtin.module(rocdl-attach-target{chip="
+let GP_NVVM_PIPELINE_HEAD: string = "--gpu-lower-to-nvvm-pipeline=cubin-chip="
+
+# The tool lookup: an override that exists, $LLVM_PATH/NAME for the llvm
+# tools, PATH, then `brew --prefix PKG`/bin/NAME. "" after printing why.
+export function gp_tool(name: string, override: string, pkg: string) -> string {
+    if s_len(override) > 0 and exists(override) {
+        return override
+    }
+    let lp: string = env("LLVM_PATH")
+    if s_eq(pkg, "llvm") and s_len(lp) > 0 and is_exec(lp + "/" + name) {
+        return lp + "/" + name
+    }
+    let w: string = which(name)
+    if s_len(w) > 0 {
+        return w
+    }
+    if s_len(pkg) > 0 and have("brew") {
+        let c: ptr<ProcCmd> = cmd(sl_of3("brew", "--prefix", pkg))
+        cmd_quiet_err(c)
+        let prefix: string = capture(c)
+        if s_len(prefix) > 0 and is_exec(prefix + "/bin/" + name) {
+            return prefix + "/bin/" + name
+        }
+    }
+    errln(name + " not found ('" + name + "'). Install it or set the matching tool override environment variable.")
+    return ""
+}
+
+# A tool found quietly: "" when it is missing, nothing printed.
+export function gp_tool_quiet(name: string, override: string, pkg: string) -> string {
+    sink_push(SINK_NULL, SINK_NULL)
+    let t: string = gp_tool(name, override, pkg)
+    let _s: string = sink_pop()
+    return t
+}
+
+export function gp_die(msg: string) -> i32 {
+    errln(msg)
+    return 1
+}
+
+# Run argv with no stdin. 0, or the message `what failed (exit N):` and the
+# tool's stderr (its stdout when stderr is empty) printed, and the status.
+export function gp_step(argv: ptr<ProcStrs>, what: string) -> i32 {
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_no_stdin(c)
+    cmd_capture_out(c)
+    cmd_capture_err(c)
+    let r: ptr<ProcResult> = run_result(c)
+    if r.exit_code != 0 {
+        let mut why: string = s_chomp_all(r.stderr)
+        if s_len(why) == 0 {
+            why = s_chomp_all(r.stdout)
+        }
+        errln(what + " failed (exit " + s_itoa(r.exit_code) + "):\n" + why)
+        if r.exit_code > 0 {
+            return r.exit_code
+        }
+        return 1
+    }
+    return 0
+}
+
+# The same, with stdout written to `out_file`.
+export function gp_step_out(argv: ptr<ProcStrs>, what: string, out_file: string) -> i32 {
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_no_stdin(c)
+    cmd_capture_out(c)
+    cmd_capture_err(c)
+    let r: ptr<ProcResult> = run_result(c)
+    if r.exit_code != 0 {
+        errln(what + " failed (exit " + s_itoa(r.exit_code) + "):\n" + s_chomp_all(r.stderr))
+        return 1
+    }
+    let _w: bool = write_text(out_file, r.stdout)
+    return 0
+}
+
+# The pass pipelines, for reports.
+export function gp_spirv_pipeline() -> string {
+    return GP_SPIRV_PIPELINE
+}
+
+export function gp_nvvm_pipeline(chip: string, format: string) -> string {
+    return GP_NVVM_PIPELINE_HEAD + chip + " cubin-features=+ptx70 cubin-format=" + format
+}
+
+export function gp_rocdl_pipeline(chip: string) -> string {
+    return GP_ROCDL_PIPELINE_HEAD + chip + "},convert-scf-to-cf,gpu.module(convert-gpu-to-rocdl{chipset=" + chip + "}),reconcile-unrealized-casts)"
+}
+
+# ---------------------------------------------------------------------------
+# The kernel module
+# ---------------------------------------------------------------------------
+
+# The index just past the brace that closes the first `{` at or after
+# `from`, or -1.
+function gp_block_end(text: string, from: i32) -> i32 {
+    let n: i32 = s_len(text)
+    let mut i: i32 = s_find_byte(text, 123, from)
+    if i < 0 {
+        return 0 - 1
+    }
+    let mut depth: i32 = 0
+    while i < n {
+        let c: i32 = s_byte(text, i)
+        if c == 34 {
+            # A quoted attribute string: skip it, escapes included.
+            i = i + 1
+            while i < n and s_byte(text, i) != 34 {
+                if s_byte(text, i) == 92 {
+                    i = i + 1
+                }
+                i = i + 1
+            }
+        } elif c == 123 {
+            depth = depth + 1
+        } elif c == 125 {
+            depth = depth - 1
+            if depth == 0 {
+                return i + 1
+            }
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# The `op` block of `text`, from `op` to the brace that closes its region,
+# or "" when `text` has no `op`.
+export function gp_extract_block(text: string, op: string) -> string {
+    let at: i32 = s_find(text, op, 0)
+    if at < 0 {
+        return ""
+    }
+    # The region opens with the last `{` on the op's first line; braces
+    # before it belong to attributes.
+    let mut eol: i32 = s_find_byte(text, 10, at)
+    if eol < 0 {
+        eol = s_len(text)
+    }
+    let mut open: i32 = eol - 1
+    while open > at and s_byte(text, open) != 123 {
+        open = open - 1
+    }
+    let end: i32 = gp_block_end(text, open)
+    if end < 0 {
+        return ""
+    }
+    return s_slice(text, at, end)
+}
+
+# The kernel module of a `flow flow-to-mlir --gpu` file: the gpu.module in
+# a module of its own, with gpu.block_dim replaced by the fixed workgroup
+# size. "" when the text has no gpu.module @flow_kernels.
+export function gp_kernel_module(host: string) -> string {
+    let gm: string = gp_extract_block(host, "gpu.module @flow_kernels")
+    if s_len(gm) == 0 {
+        return ""
+    }
+    let mut k: string = s_replace(gm, "gpu.block_dim x", "arith.constant 64 : index")
+    k = s_replace(k, "gpu.block_dim y", "arith.constant 1 : index")
+    k = s_replace(k, "gpu.block_dim z", "arith.constant 1 : index")
+    return "module attributes {gpu.container_module} {\n" + k + "\n}\n"
+}
+
+# The kernels of a kernel module, one line each:
+#   NAME NARGS NMEM [W ...]
+# NMEM is the number of memref arguments and each W the index of an
+# argument the kernel stores to.
+export function gp_kernels(kmod: string) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    let mut at: i32 = s_find(kmod, "gpu.func @", 0)
+    while at >= 0 {
+        let name_start: i32 = at + 10
+        let paren: i32 = s_find_byte(kmod, 40, name_start)
+        let name: string = s_slice(kmod, name_start, paren)
+        let sig_end: i32 = s_find(kmod, ") kernel", paren)
+        let sig: string = s_slice(kmod, paren, sig_end)
+        let next: i32 = s_find(kmod, "gpu.func @", sig_end)
+        let mut body: string = ""
+        if next < 0 {
+            body = s_from(kmod, sig_end)
+        } else {
+            body = s_slice(kmod, sig_end, next)
+        }
+        let mut nargs: i32 = 0
+        while s_contains(sig, "%arg" + s_itoa(nargs) + ":") {
+            nargs = nargs + 1
+        }
+        let mut nmem: i32 = 0
+        let mut m: i32 = s_find(sig, "memref<", 0)
+        while m >= 0 {
+            nmem = nmem + 1
+            m = s_find(sig, "memref<", m + 7)
+        }
+        let mut line: string = name + " " + s_itoa(nargs) + " " + s_itoa(nmem)
+        let mut a: i32 = 0
+        while a < nargs {
+            if s_contains(body, ", %arg" + s_itoa(a) + "[") {
+                line = line + " " + s_itoa(a)
+            }
+            a = a + 1
+        }
+        sl_push(out, line)
+        at = next
+    }
+    return out
+}
+
+# Write the kernel module of `host_mlir` to `kmod_out`. An input without
+# gpu.module @flow_kernels (a module that uses gpu.launch, say) is copied
+# as it is; the SPIR-V pipeline outlines it.
+export function gp_prepare(host_mlir: string, kmod_out: string) -> i32 {
+    let host: string = read_text(host_mlir)
+    if s_len(host) == 0 {
+        return gp_die("MLIR input missing or empty: " + host_mlir)
+    }
+    let k: string = gp_kernel_module(host)
+    if s_len(k) == 0 {
+        let _c: bool = copy_file(host_mlir, kmod_out)
+        return 0
+    }
+    let mut kk: string = k
+    # Test hook: break the kernel on purpose so a parity check can be seen
+    # to fail. addf-subf turns the first arith.addf into arith.subf.
+    if s_eq(env("FLOW_GPU_LOWER_MUTATE"), "addf-subf") {
+        let i: i32 = s_find(kk, "arith.addf", 0)
+        if i >= 0 {
+            kk = s_slice(kk, 0, i) + "arith.subf" + s_from(kk, i + 10)
+            errln("gpu-lower: FLOW_GPU_LOWER_MUTATE=addf-subf: the first arith.addf is now arith.subf")
+        }
+    }
+    if not write_text(kmod_out, kk) {
+        return gp_die("cannot write " + kmod_out)
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# SPIR-V
+# ---------------------------------------------------------------------------
+
+# Kernel module -> SPIR-V binary, validated with spirv-val when it is
+# installed (a note on stderr when it is not).
+export function gp_spirv(kmod: string, output: string, extra: ptr<ProcStrs>, work: string) -> i32 {
+    let opt: string = gp_tool("mlir-opt", env("MLIR_OPT"), "llvm")
+    if s_len(opt) == 0 {
+        return 3
+    }
+    let translate: string = gp_tool("mlir-translate", env("MLIR_TRANSLATE"), "llvm")
+    if s_len(translate) == 0 {
+        return 3
+    }
+    let mut pipeline: string = GP_SPIRV_PIPELINE
+    if not s_contains(read_text(kmod), "gpu.container_module") {
+        pipeline = "builtin.module(gpu-kernel-outlining," + s_from(GP_SPIRV_PIPELINE, 15)
+    }
+    let o: ptr<ProcStrs> = sl_of3(opt, kmod, "--pass-pipeline=" + pipeline)
+    sl_extend(o, extra)
+    sl_push2(o, "-o", work + "/spirv.mlir")
+    if gp_step(o, "mlir-opt SPIR-V lowering") != 0 {
+        return 1
+    }
+    let sm: string = gp_extract_block(read_text(work + "/spirv.mlir"), "spirv.module @")
+    if s_len(sm) == 0 {
+        return gp_die("mlir-opt SPIR-V lowering produced no spirv.module")
+    }
+    let _w: bool = write_text(work + "/spirv_module.mlir", sm + "\n")
+    let t: ptr<ProcStrs> = sl_of3(translate, "--no-implicit-module", "--serialize-spirv")
+    sl_push(t, work + "/spirv_module.mlir")
+    sl_push2(t, "-o", work + "/out.spv")
+    if gp_step(t, "mlir-translate --serialize-spirv") != 0 {
+        return 1
+    }
+    if not nonempty(work + "/out.spv") {
+        return gp_die("mlir-translate produced empty SPIR-V output")
+    }
+    let val: string = gp_tool_quiet("spirv-val", env("SPIRV_VAL"), "spirv-tools")
+    if s_len(val) > 0 {
+        let v: ptr<ProcStrs> = sl_of3(val, "--target-env", "vulkan1.0")
+        sl_push(v, work + "/out.spv")
+        if gp_step(v, "spirv-val") != 0 {
+            return 1
+        }
+    } else {
+        errln("note: spirv-val not found; the SPIR-V was not validated (brew install spirv-tools)")
+    }
+    let _m: bool = mkdir_p(path_dirname(output))
+    let _c: bool = copy_file(work + "/out.spv", output)
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Metal Shading Language and .metallib
+# ---------------------------------------------------------------------------
+
+# The entry point names of a SPIR-V module, from spirv-cross --reflect.
+function gp_spirv_entries(cross: string, spv: string, work: string) -> ptr<ProcStrs> {
+    let names: ptr<ProcStrs> = sl_new()
+    let a: ptr<ProcStrs> = sl_of3(cross, spv, "--reflect")
+    if gp_step_out(a, "spirv-cross --reflect", work + "/reflect.json") != 0 {
+        return names
+    }
+    let j: string = read_text(work + "/reflect.json")
+    # An entry point is a "name" followed by a "mode"; the resources'
+    # names have no mode.
+    let mut at: i32 = s_find(j, "\"name\" : \"", 0)
+    while at >= 0 {
+        let start: i32 = at + 10
+        let end: i32 = s_find_byte(j, 34, start)
+        let mut tail: string = s_from(j, end + 1)
+        if s_len(tail) > 40 {
+            tail = s_slice(tail, 0, 40)
+        }
+        if s_contains(tail, "\"mode\"") {
+            sl_push(names, s_slice(j, start, end))
+        }
+        at = s_find(j, "\"name\" : \"", end)
+    }
+    return names
+}
+
+# SPIR-V -> one MSL file per entry point, in `work`/msl/NAME.metal. The
+# names, in module order; empty after printing why on failure.
+export function gp_msl_kernels(input: string, extra: ptr<ProcStrs>, work: string) -> ptr<ProcStrs> {
+    let none: ptr<ProcStrs> = sl_new()
+    let cross: string = gp_tool("spirv-cross", env("SPIRV_CROSS"), "spirv-cross")
+    if s_len(cross) == 0 {
+        return none
+    }
+    if not nonempty(input) {
+        errln("SPIR-V input missing or empty: " + input)
+        return none
+    }
+    let names: ptr<ProcStrs> = gp_spirv_entries(cross, input, work)
+    if sl_len(names) == 0 {
+        errln("spirv-cross found no entry point in " + input)
+        return none
+    }
+    let _m: bool = mkdir_p(work + "/msl")
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let a: ptr<ProcStrs> = sl_of3(cross, input, "--msl")
+        sl_push(a, "--msl-decoration-binding")
+        sl_push2(a, "--entry", sl_get(names, i))
+        sl_push2(a, "--stage", "comp")
+        sl_extend(a, extra)
+        if gp_step_out(a, "spirv-cross MSL lowering", work + "/msl/" + sl_get(names, i) + ".metal") != 0 {
+            return none
+        }
+        i = i + 1
+    }
+    return names
+}
+
+# The top-level items of an MSL file (the runs of lines between blank
+# lines).
+function gp_msl_items(text: string) -> ptr<ProcStrs> {
+    let items: ptr<ProcStrs> = sl_new()
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut cur: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_len(s_strip_all_space(l)) == 0 {
+            if s_len(cur) > 0 {
+                sl_push(items, cur)
+            }
+            cur = ""
+        } else {
+            cur = cur + l + "\n"
+        }
+        i = i + 1
+    }
+    if s_len(cur) > 0 {
+        sl_push(items, cur)
+    }
+    return items
+}
+
+# The per-kernel MSL files joined: each item (include block, struct,
+# constant, kernel) once. SPIRV-Cross names a struct after its SPIR-V id,
+# so two kernels of one module that share a struct name share the type.
+export function gp_msl_join(names: ptr<ProcStrs>, work: string) -> string {
+    let seen: ptr<ProcStrs> = sl_new()
+    let mut out: string = ""
+    let mut k: i32 = 0
+    while k < sl_len(names) {
+        let items: ptr<ProcStrs> = gp_msl_items(read_text(work + "/msl/" + sl_get(names, k) + ".metal"))
+        let mut i: i32 = 0
+        while i < sl_len(items) {
+            let it: string = sl_get(items, i)
+            if not sl_has(seen, it) {
+                sl_push(seen, it)
+                out = out + it + "\n"
+            }
+            i = i + 1
+        }
+        k = k + 1
+    }
+    return out
+}
+
+# SPIR-V -> one MSL file holding every kernel.
+export function gp_msl(input: string, output: string, extra: ptr<ProcStrs>, work: string) -> i32 {
+    if s_len(gp_tool("spirv-cross", env("SPIRV_CROSS"), "spirv-cross")) == 0 {
+        return 3
+    }
+    let names: ptr<ProcStrs> = gp_msl_kernels(input, extra, work)
+    if sl_len(names) == 0 {
+        return 1
+    }
+    let msl: string = gp_msl_join(names, work)
+    if s_len(s_strip_all_space(msl)) == 0 {
+        return gp_die("spirv-cross produced empty MSL output")
+    }
+    let _m: bool = mkdir_p(path_dirname(output))
+    if not write_text(output, msl) {
+        return gp_die("cannot write " + output)
+    }
+    return 0
+}
+
+# MSL -> .metallib with xcrun metal (fast math off) and metallib.
+export function gp_metallib(input: string, output: string, sdk: string, work: string) -> i32 {
+    let xcrun: string = gp_tool("xcrun", env("XCRUN"), "")
+    if s_len(xcrun) == 0 {
+        return 3
+    }
+    if not nonempty(input) {
+        return gp_die("MSL input missing or empty: " + input)
+    }
+    let _m: bool = mkdir_p(path_dirname(output))
+    let m: ptr<ProcStrs> = sl_of3(xcrun, "-sdk", sdk)
+    sl_push2(m, "metal", "-fno-fast-math")
+    sl_push2(m, "-c", input)
+    sl_push2(m, "-o", work + "/kernel.air")
+    if gp_step(m, "Metal compilation") != 0 {
+        return 1
+    }
+    let l: ptr<ProcStrs> = sl_of3(xcrun, "-sdk", sdk)
+    sl_push2(l, "metallib", work + "/kernel.air")
+    sl_push2(l, "-o", output)
+    if gp_step(l, "metallib") != 0 {
+        return 1
+    }
+    if not nonempty(output) {
+        return gp_die("metallib completed without producing output")
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# NVVM: PTX and cubin
+# ---------------------------------------------------------------------------
+
+function gp_hex(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return c - 48
+    }
+    if c >= 65 and c <= 70 {
+        return c - 55
+    }
+    if c >= 97 and c <= 102 {
+        return c - 87
+    }
+    return 0 - 1
+}
+
+# Decode the MLIR string attribute that starts after `key = "` in `text`
+# and write its bytes to `output`. MLIR prints a byte that is not
+# printable (and `"`) as a backslash and two hex digits, and `\` as `\\`.
+export function gp_write_attr_string(text: string, key: string, output: string) -> i32 {
+    let at: i32 = s_find(text, key + " = \"", 0)
+    if at < 0 {
+        return gp_die("no " + key + " string in the gpu.binary")
+    }
+    let start: i32 = at + s_len(key) + 4
+    let n: i32 = s_len(text)
+    let buf: ptr<u8> = malloc((n - start + 1) as i64) as ptr<u8>
+    let mut j: i32 = 0
+    let mut i: i32 = start
+    while i < n and s_byte(text, i) != 34 {
+        let c: i32 = s_byte(text, i)
+        if c == 92 and i + 1 < n and s_byte(text, i + 1) == 92 {
+            buf[j] = 92 as u8
+            i = i + 2
+        } elif c == 92 and i + 2 < n and gp_hex(s_byte(text, i + 1)) >= 0 and gp_hex(s_byte(text, i + 2)) >= 0 {
+            buf[j] = (gp_hex(s_byte(text, i + 1)) * 16 + gp_hex(s_byte(text, i + 2))) as u8
+            i = i + 3
+        } else {
+            buf[j] = c as u8
+            i = i + 1
+        }
+        j = j + 1
+    }
+    let _m: bool = mkdir_p(path_dirname(output))
+    if not write_bytes(output, buf, j as i64) {
+        return gp_die("cannot write " + output)
+    }
+    return 0
+}
+
+# Kernel module -> PTX (format "isa") or a cubin (format "bin", which
+# needs ptxas) for `chip`.
+export function gp_nvvm(kmod: string, output: string, chip: string, format: string, work: string) -> i32 {
+    let opt: string = gp_tool("mlir-opt", env("MLIR_OPT"), "llvm")
+    if s_len(opt) == 0 {
+        return 3
+    }
+    if s_eq(format, "bin") {
+        let ptxas: string = gp_tool_quiet("ptxas", env("PTXAS"), "")
+        if s_len(ptxas) == 0 {
+            errln("ptxas not found ('ptxas'). A cubin needs the CUDA toolkit's ptxas on PATH; --target ptx needs no CUDA tools.")
+            return 3
+        }
+    }
+    let o: ptr<ProcStrs> = sl_of2(opt, kmod)
+    sl_push(o, gp_nvvm_pipeline(chip, format))
+    sl_push2(o, "-o", work + "/nvvm.mlir")
+    if gp_step(o, "mlir-opt NVVM lowering") != 0 {
+        return 1
+    }
+    let text: string = read_text(work + "/nvvm.mlir")
+    if s_eq(format, "isa") {
+        return gp_write_attr_string(text, "assembly", output)
+    }
+    return gp_write_attr_string(text, "bin", output)
+}
+
+# The PTX checks that need no ptxas: the header names the target and
+# every kernel is a visible entry with the parameters of the MLIR memref
+# calling convention (five per 1-D memref, one per scalar). The kernels
+# are the lines gp_kernels writes.
+export function gp_check_ptx(ptx_file: string, chip: string, kernels: ptr<ProcStrs>) -> i32 {
+    let ptx: string = read_text(ptx_file)
+    if not s_contains(ptx, ".target " + chip) {
+        return gp_die("PTX check: no .target " + chip + " in " + ptx_file)
+    }
+    if not s_contains(ptx, ".version ") {
+        return gp_die("PTX check: no .version in " + ptx_file)
+    }
+    let mut k: i32 = 0
+    while k < sl_len(kernels) {
+        let w: ptr<ProcStrs> = s_words(sl_get(kernels, k))
+        let name: string = sl_get(w, 0)
+        let nargs: i32 = s_atoi(sl_get(w, 1), 0)
+        let mem: i32 = s_atoi(sl_get(w, 2), 0)
+        let want: i32 = mem * 5 + (nargs - mem)
+        if not s_contains(ptx, ".visible .entry " + name + "(") {
+            return gp_die("PTX check: no .visible .entry " + name)
+        }
+        let last: string = name + "_param_" + s_itoa(want - 1)
+        let over: string = name + "_param_" + s_itoa(want)
+        if not s_contains(ptx, last) or s_contains(ptx, over + ",") or s_contains(ptx, over + "\n") {
+            return gp_die("PTX check: " + name + " does not take " + s_itoa(want) + " parameters")
+        }
+        k = k + 1
+    }
+    return 0
+}
+
+# PTX without comments, trailing white space or blank lines.
+function gp_ptx_norm(ptx: string) -> string {
+    let lines: ptr<ProcStrs> = s_lines(ptx)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let mut l: string = sl_get(lines, i)
+        let c: i32 = s_find(l, "//", 0)
+        if c >= 0 {
+            l = s_slice(l, 0, c)
+        }
+        let mut e: i32 = s_len(l)
+        while e > 0 and s_is_space(s_byte(l, e - 1)) {
+            e = e - 1
+        }
+        if e > 0 {
+            out = out + s_slice(l, 0, e) + "\n"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# A second route to the PTX: the NVVM IR that the same pipeline produces
+# with cubin-format=llvm, through llc for nvptx64. The PTX must match
+# instruction for instruction (comments aside). With no llc, a note.
+export function gp_check_ptx_llc(kmod: string, ptx_file: string, chip: string, work: string) -> i32 {
+    let llc: string = gp_tool_quiet("llc", env("LLC"), "llvm")
+    if s_len(llc) == 0 {
+        errln("note: llc not found; the PTX was not cross-checked")
+        return 0
+    }
+    let opt: string = gp_tool("mlir-opt", env("MLIR_OPT"), "llvm")
+    if s_len(opt) == 0 {
+        return 3
+    }
+    let o: ptr<ProcStrs> = sl_of2(opt, kmod)
+    sl_push(o, gp_nvvm_pipeline(chip, "llvm"))
+    sl_push2(o, "-o", work + "/nvvm_llvm.mlir")
+    if gp_step(o, "mlir-opt NVVM lowering (cubin-format=llvm)") != 0 {
+        return 1
+    }
+    if gp_write_attr_string(read_text(work + "/nvvm_llvm.mlir"), "offload", work + "/kernels.bc") != 0 {
+        return 1
+    }
+    let c: ptr<ProcStrs> = sl_of3(llc, "-O2", "-mtriple=nvptx64-nvidia-cuda")
+    sl_push2(c, "-mcpu=" + chip, "-mattr=+ptx70")
+    sl_push(c, work + "/kernels.bc")
+    sl_push2(c, "-o", work + "/kernels_llc.ptx")
+    if gp_step(c, "llc (nvptx64)") != 0 {
+        return 1
+    }
+    if not s_eq(gp_ptx_norm(read_text(work + "/kernels_llc.ptx")), gp_ptx_norm(read_text(ptx_file))) {
+        return gp_die("PTX check: llc's PTX from the NVVM IR differs from " + ptx_file + " (see " + work + "/kernels_llc.ptx)")
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# ROCDL: an AMDGPU code object
+# ---------------------------------------------------------------------------
+
+# Kernel module -> .hsaco for `chip`: convert-gpu-to-rocdl, the gpu.module
+# body as an LLVM module (its data layout kept), llc, ld.lld.
+export function gp_hsaco(kmod: string, output: string, chip: string, work: string) -> i32 {
+    let opt: string = gp_tool("mlir-opt", env("MLIR_OPT"), "llvm")
+    if s_len(opt) == 0 {
+        return 3
+    }
+    let translate: string = gp_tool("mlir-translate", env("MLIR_TRANSLATE"), "llvm")
+    if s_len(translate) == 0 {
+        return 3
+    }
+    let llc: string = gp_tool("llc", env("LLC"), "llvm")
+    if s_len(llc) == 0 {
+        return 3
+    }
+    let lld: string = gp_tool("ld.lld", env("LD_LLD"), "lld")
+    if s_len(lld) == 0 {
+        return 3
+    }
+    let pipeline: string = gp_rocdl_pipeline(chip)
+    let o: ptr<ProcStrs> = sl_of3(opt, kmod, "--pass-pipeline=" + pipeline)
+    sl_push2(o, "-o", work + "/rocdl.mlir")
+    if gp_step(o, "mlir-opt ROCDL lowering") != 0 {
+        return 1
+    }
+    let gm: string = gp_extract_block(read_text(work + "/rocdl.mlir"), "gpu.module @")
+    if s_len(gm) == 0 {
+        return gp_die("mlir-opt ROCDL lowering left no gpu.module")
+    }
+    # gpu.module @NAME [targets] attributes {DL} { BODY }: keep DL, add the
+    # triple, and make BODY an LLVM dialect module.
+    let a0: i32 = s_find(gm, "attributes {", 0)
+    let mut attrs: string = "{"
+    let mut open: i32 = 0
+    if a0 >= 0 {
+        open = gp_block_end(gm, a0)
+        attrs = "{" + s_slice(gm, a0 + 12, open - 1) + ", "
+    }
+    let body_open: i32 = s_find_byte(gm, 123, open)
+    let body: string = s_slice(gm, body_open + 1, s_len(gm) - 1)
+    let llmod: string = "module attributes " + attrs + "llvm.target_triple = \"amdgcn-amd-amdhsa\"} {\n" + body + "}\n"
+    let _w: bool = write_text(work + "/rocdl_llvm.mlir", llmod)
+    let t: ptr<ProcStrs> = sl_of3(translate, "--mlir-to-llvmir", work + "/rocdl_llvm.mlir")
+    sl_push2(t, "-o", work + "/kernels.ll")
+    if gp_step(t, "mlir-translate --mlir-to-llvmir") != 0 {
+        return 1
+    }
+    # A call to anything but an llvm.* intrinsic would need the ROCm device
+    # libraries, which are not linked.
+    let ll: ptr<ProcStrs> = s_lines(read_text(work + "/kernels.ll"))
+    let mut i: i32 = 0
+    while i < sl_len(ll) {
+        let l: string = sl_get(ll, i)
+        if s_starts(l, "declare ") and not s_contains(l, "@llvm.") {
+            return gp_die("AMDGPU lowering calls a device library function, which is not linked: " + l)
+        }
+        i = i + 1
+    }
+    let c: ptr<ProcStrs> = sl_of3(llc, "-O3", "-mtriple=amdgcn-amd-amdhsa")
+    sl_push2(c, "-mcpu=" + chip, "-filetype=obj")
+    sl_push(c, work + "/kernels.ll")
+    sl_push2(c, "-o", work + "/kernels.o")
+    if gp_step(c, "llc (amdgcn)") != 0 {
+        return 1
+    }
+    let _m: bool = mkdir_p(path_dirname(output))
+    let l2: ptr<ProcStrs> = sl_of3(lld, "-shared", work + "/kernels.o")
+    sl_push2(l2, "-o", output)
+    if gp_step(l2, "ld.lld") != 0 {
+        return 1
+    }
+    return 0
+}
+
+# The hsaco checks: an ELF whose symbol table has NAME.kd (the kernel
+# descriptor) for every kernel.
+export function gp_check_hsaco(hsaco: string, kernels: ptr<ProcStrs>, work: string) -> i32 {
+    let readelf: string = gp_tool_quiet("llvm-readelf", env("LLVM_READELF"), "llvm")
+    if s_len(readelf) == 0 {
+        errln("note: llvm-readelf not found; the code object's symbols were not checked")
+        return 0
+    }
+    if gp_step_out(sl_of3(readelf, "--symbols", hsaco), "llvm-readelf", work + "/hsaco.syms") != 0 {
+        return 1
+    }
+    let syms: string = read_text(work + "/hsaco.syms")
+    let mut k: i32 = 0
+    while k < sl_len(kernels) {
+        let name: string = sl_get(s_words(sl_get(kernels, k)), 0)
+        if not s_contains(syms, " " + name + ".kd\n") {
+            return gp_die("hsaco check: no kernel descriptor " + name + ".kd")
+        }
+        k = k + 1
+    }
+    return 0
+}

@@ -61,6 +61,7 @@
     "cli:fmt": "project/CHANGELOG.md",
     "cli:gfx": "language/graphics.md",
     "cli:gpu": "library/gpu-tensor.md",
+    "cli:gpu-lower": "gpu/lowering-pipeline.md",
     "cli:help": "AI_FLOW_HANDBOOK.md",
     "cli:info": "project/package-registry.md",
     "cli:init": "project/package-registry.md",

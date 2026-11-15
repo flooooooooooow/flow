@@ -1,0 +1,166 @@
+# `flow gpu-lower` execution parity: the kernels in tests/gpu_lower/cases.txt
+# on every target this machine has.
+#
+# For each program and each runnable target (spirv through Vulkan, metal
+# through Metal, mlx through MLX) it runs
+#
+#   ./flow gpu-lower PROGRAM --target T --run --ulp N
+#
+# which compares the GPU's buffers with the CPU build of the same program.
+# ptx, cubin and hsaco cannot run here; they are generated and checked
+# (the PTX against llc's, the code object's kernel descriptors). A target
+# whose tools or hardware are missing (status 3) is SKIP, unless it is
+# named in --require, where it is FAIL.
+#
+# Then the check is shown to be able to fail: the first program runs again
+# on the first target that passed with FLOW_GPU_LOWER_MUTATE=addf-subf,
+# which turns the kernel's first arith.addf into arith.subf before
+# lowering. That run must exit 1 with a FAIL line.
+#
+# Usage: ./flow tool tests/gpu_lower/run.flow [--require T,T,...] [--only PROGRAM]
+# Status 0 when nothing failed, 1 otherwise.
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs }
+
+let mut FAILS: i32 = 0
+
+function report(status: string, target: string, prog: string, detail: string) {
+    let mut line: string = status + " " + target + " " + prog
+    if s_len(detail) > 0 {
+        line = line + ": " + detail
+    }
+    outln(line)
+    if s_eq(status, "FAIL") {
+        FAILS = FAILS + 1
+    }
+}
+
+# ./flow gpu-lower ARGS with captured output.
+function gpu_lower(root: string, args: ptr<ProcStrs>, mutate: bool) -> ptr<ProcResult> {
+    let argv: ptr<ProcStrs> = sl_of2(root + "/flow", "gpu-lower")
+    sl_extend(argv, args)
+    let c: ptr<ProcCmd> = cmd(argv)
+    if mutate {
+        cmd_env(c, "FLOW_GPU_LOWER_MUTATE", "addf-subf")
+    }
+    cmd_no_stdin(c)
+    cmd_capture_out(c)
+    cmd_capture_err(c)
+    return run_result(c)
+}
+
+# The parity lines of a run (the `  buffer ...` lines), joined with "; ".
+function buffer_lines(text: string) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_starts(l, "  buffer ") {
+            if s_len(out) > 0 {
+                out = out + "; "
+            }
+            out = out + s_from(l, 2)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function main() -> i32 {
+    let root: string = tr_enter_root()
+    let args: ptr<ProcStrs> = tr_args()
+    let mut require: ptr<ProcStrs> = sl_new()
+    let mut only: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        if s_eq(sl_get(args, i), "--require") {
+            require = s_split(sl_get(args, i + 1), 44)
+            i = i + 1
+        } elif s_eq(sl_get(args, i), "--only") {
+            only = sl_get(args, i + 1)
+            i = i + 1
+        } else {
+            errln("usage: ./flow tool tests/gpu_lower/run.flow [--require T,T,...] [--only PROGRAM]")
+            return 2
+        }
+        i = i + 1
+    }
+    let cases: ptr<ProcStrs> = s_lines(read_text("tests/gpu_lower/cases.txt"))
+    let run_targets: ptr<ProcStrs> = s_words("spirv metal mlx")
+    let gen_targets: ptr<ProcStrs> = s_words("ptx cubin hsaco")
+    let mut first_prog: string = ""
+    let mut first_target: string = ""
+    let mut c: i32 = 0
+    while c < sl_len(cases) {
+        let w: ptr<ProcStrs> = s_words(sl_get(cases, c))
+        c = c + 1
+        if sl_len(w) < 2 or s_starts(sl_get(w, 0), "#") {
+            continue
+        }
+        let prog: string = sl_get(w, 0)
+        let ulp: string = sl_get(w, 1)
+        if s_len(only) > 0 and not s_contains(prog, only) {
+            continue
+        }
+        let mut t: i32 = 0
+        while t < sl_len(run_targets) + sl_len(gen_targets) {
+            let mut target: string = ""
+            let do_run: bool = t < sl_len(run_targets)
+            if do_run {
+                target = sl_get(run_targets, t)
+            } else {
+                target = sl_get(gen_targets, t - sl_len(run_targets))
+            }
+            t = t + 1
+            let a: ptr<ProcStrs> = sl_of3(prog, "--target", target)
+            if do_run {
+                sl_push(a, "--run")
+                sl_push2(a, "--ulp", ulp)
+            }
+            let r: ptr<ProcResult> = gpu_lower(root, a, false)
+            let why: string = s_chomp_all(r.stderr)
+            if r.exit_code == 0 {
+                if do_run {
+                    report("PASS", target, prog, buffer_lines(r.stdout))
+                    if s_len(first_target) == 0 {
+                        first_target = target
+                        first_prog = prog
+                    }
+                } else {
+                    report("PASS", target, prog, "generated and checked, not run")
+                }
+            } elif r.exit_code == 3 {
+                if sl_has(require, target) {
+                    report("FAIL", target, prog, "required but missing: " + tr_last_line(why))
+                } else {
+                    report("SKIP", target, prog, tr_last_line(why))
+                }
+            } else {
+                report("FAIL", target, prog, buffer_lines(r.stdout) + " " + tr_last_line(why))
+            }
+        }
+    }
+    if s_len(first_target) > 0 {
+        let a2: ptr<ProcStrs> = sl_of3(first_prog, "--target", first_target)
+        sl_push(a2, "--run")
+        let r2: ptr<ProcResult> = gpu_lower(root, a2, true)
+        if r2.exit_code == 1 and s_contains(r2.stdout, "FAIL " + first_target) {
+            report("PASS", first_target, first_prog, "a kernel broken on purpose (addf-subf) fails parity: " + buffer_lines(r2.stdout))
+        } else {
+            report("FAIL", first_target, first_prog, "a kernel broken on purpose (addf-subf) was not caught (exit " + s_itoa(r2.exit_code) + ")")
+        }
+        # Leave the program's build directory as an unbroken run made it.
+        let _r: ptr<ProcResult> = gpu_lower(root, sl_of3(first_prog, "--target", first_target), false)
+    } else {
+        report("SKIP", "mutation", "-", "no target ran, so the broken-kernel check did not run")
+    }
+    if FAILS > 0 {
+        outln(s_itoa(FAILS) + " failed")
+        return 1
+    }
+    outln("gpu-lower parity: no failures")
+    return 0
+}

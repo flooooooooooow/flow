@@ -871,6 +871,10 @@
           "path": "gpu/persistent-compute.md"
         },
         {
+          "label": "GPU lowering pipeline",
+          "path": "gpu/lowering-pipeline.md"
+        },
+        {
           "label": "Running Flow",
           "path": "language/flow-run.md"
         },

@@ -23,5 +23,5 @@
 ✅ JIT finished with exit code: 0
 🔥 JIT compiling test_mlp2_backward.flow...
 ✅ JIT finished with exit code: 0
-⚠️    SPIR-V lowering WIP (GPU MLIR codegen ok)
+✅   SPIR-V lowering ok
 ✅ ML tests passed

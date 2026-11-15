@@ -36,6 +36,9 @@ Options:
   ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)
   gpu <program>      Generate @gpu compute kernels as Metal sources
   gpu test --suite vgpu [--backend B|--all-backends]  vgpu exact-pixel/numerical conformance
+  gpu-lower <program> --target spirv|msl|metal|mlx|ptx|cubin|hsaco|all [-o OUT] [--run]
+                    Lower @gpu kernels through the MLIR gpu dialect; --run checks
+                    them against the CPU build
   shader <program>   Run fill-shader demo (Metal; macOS)
   explain <program>  Print the compilation plan for every declarative
                     construct: implementations considered, their costs,

@@ -1,0 +1,126 @@
+# lj_forces: Lennard-Jones pair forces on 200 particles in 3D, all pairs,
+# epsilon and sigma 1. For particle i,
+#
+#   F_i = sum over j != i of 24 eps (2 r^-12 - r^-6) / r^2 * (r_i - r_j)
+#
+# One thread per particle. The j loop is split at i so no branch is
+# needed to skip the self pair. Only + - * / appear, which the @gpu
+# emitter supports; no sqrt is needed. Every local has its type written
+# and the constants are f32 locals: flowc's C backend types an unannotated
+# `let v = p[i]` of a ptr<f32> as int32_t, and makes a float literal next
+# to an f32 a C double, while the gpu dialect keeps both f32.
+#
+# main() is the CPU build of the same kernel: it runs it per thread id and
+# writes the launch spec, the inputs and the CPU result to
+# $FLOW_GPU_LOWER_DATA for `flow gpu-lower --run`.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+@gpu
+function lj_forces(px: ptr<f32>, py: ptr<f32>, pz: ptr<f32>, fx: ptr<f32>, fy: ptr<f32>, fz: ptr<f32>, eps: f32, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        let one: f32 = 1.0
+        let two: f32 = 2.0
+        let c24: f32 = 24.0
+        let xi: f32 = px[i]
+        let yi: f32 = py[i]
+        let zi: f32 = pz[i]
+        let mut ax: f32 = 0.0
+        let mut ay: f32 = 0.0
+        let mut az: f32 = 0.0
+        for j in 0 to i {
+            let dx: f32 = xi - px[j]
+            let dy: f32 = yi - py[j]
+            let dz: f32 = zi - pz[j]
+            let r2: f32 = dx * dx + dy * dy + dz * dz
+            let inv2: f32 = one / r2
+            let inv6: f32 = inv2 * inv2 * inv2
+            let f: f32 = c24 * eps * inv6 * (two * inv6 - one) * inv2
+            ax = ax + f * dx
+            ay = ay + f * dy
+            az = az + f * dz
+        }
+        for j in i + 1 to n {
+            let dx: f32 = xi - px[j]
+            let dy: f32 = yi - py[j]
+            let dz: f32 = zi - pz[j]
+            let r2: f32 = dx * dx + dy * dy + dz * dz
+            let inv2: f32 = one / r2
+            let inv6: f32 = inv2 * inv2 * inv2
+            let f: f32 = c24 * eps * inv6 * (two * inv6 - one) * inv2
+            ax = ax + f * dx
+            ay = ay + f * dy
+            az = az + f * dz
+        }
+        fx[i] = ax
+        fy[i] = ay
+        fz[i] = az
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let n: i32 = 200
+    let px: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let py: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let pz: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let fx: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let fy: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let fz: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let ee: ptr<f32> = calloc(1, 4) as ptr<f32>
+    let nn: ptr<i32> = calloc(1, 4) as ptr<i32>
+    ee[0] = 1.0
+    nn[0] = n
+    # A jittered 6 x 6 x 6 lattice at spacing 1.2 (the first 200 sites).
+    let mut s: i32 = 99
+    for i in 0 to n {
+        let gx: i32 = i % 6
+        let gy: i32 = (i / 6) % 6
+        let gz: i32 = i / 36
+        s = (s * 1103 + 12345) % 65536
+        px[i] = (gx as f32) * 1.2 + ((s as f32) / 65536.0 - 0.5) * 0.2
+        s = (s * 1103 + 12345) % 65536
+        py[i] = (gy as f32) * 1.2 + ((s as f32) / 65536.0 - 0.5) * 0.2
+        s = (s * 1103 + 12345) % 65536
+        pz[i] = (gz as f32) * 1.2 + ((s as f32) / 65536.0 - 0.5) * 0.2
+    }
+    dump(dir, "in_0.bin", px as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_1.bin", py as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_2.bin", pz as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_3.bin", fx as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_4.bin", fy as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_5.bin", fz as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_6.bin", ee as ptr<void>, 4)
+    dump(dir, "in_7.bin", nn as ptr<void>, 4)
+    for t in 0 to 256 {
+        cpu_tid_x = t
+        lj_forces(px, py, pz, fx, fy, fz, ee[0], n)
+    }
+    dump(dir, "out_3.bin", fx as ptr<void>, (n * 4) as i64)
+    dump(dir, "out_4.bin", fy as ptr<void>, (n * 4) as i64)
+    dump(dir, "out_5.bin", fz as ptr<void>, (n * 4) as i64)
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _a: i32 = fputs("buffer 0 f32 200 in\nbuffer 1 f32 200 in\nbuffer 2 f32 200 in\nbuffer 3 f32 200 out\nbuffer 4 f32 200 out\nbuffer 5 f32 200 out\nbuffer 6 f32 1 scalar\nbuffer 7 i32 1 scalar\ndispatch lj_forces 4 1 1 0 1 2 3 4 5 6 7\n", fp)
+    let _c: i32 = fclose(fp)
+    return 0
+}
