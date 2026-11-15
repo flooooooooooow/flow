@@ -34,6 +34,10 @@ the checked-in C in `compiler/bootstrap/`. See
 - **Lowering**: `flow mlir-lower`, `flow mlir-optimize` and
   `flow mlir-spirv` (tools/flow_cli/mlir_tools.flow) drive mlir-opt and
   mlir-translate
+- **GPU targets**: `flow gpu-lower` (tools/flow_cli/gpu_lower.flow) lowers
+  the gpu dialect to SPIR-V, MSL, a .metallib, MLX, PTX, a cubin and an
+  AMDGPU code object, and checks the results against the CPU build:
+  [GPU lowering pipeline](gpu/lowering-pipeline.md)
 - Design and parity record: [MLIR in Flow](design/mlir-in-flow.md)
 
 #### WebAssembly Target (`flow wasm32`, `scripts/tools/llvm_target`)

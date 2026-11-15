@@ -70,6 +70,8 @@ function saxpy(x: ptr<f32>, y: ptr<f32>, a: f32, n: i32) -> void {
 
 The shipped GPU generator targets Metal. CUDA and OpenCL backends are not claimed as shipped targets.
 
+`flow gpu-lower` takes the same `@gpu` functions through the MLIR gpu dialect to SPIR-V, Metal Shading Language, a Metal library, MLX, PTX and an AMDGPU code object, and with `--run` compares the GPU results with the CPU build. The SPIR-V, Metal and MLX kernels run on Apple GPUs; PTX and the AMDGPU code object are generated and checked but not run. See [GPU lowering pipeline](../gpu/lowering-pipeline.md).
+
 ## 15.6 GPU memory
 
 `stdlib/gpu_memory.flow` wraps Metal buffers and copies. The lifecycle is: create the runtime, allocate/wrap buffers, upload input, dispatch, synchronize where required, download results, then destroy buffers and runtime. Unified memory can reduce copies but does not remove ordering or lifetime requirements.

@@ -148,6 +148,7 @@ a single step.
 | `flow mlir-lower IN.mlir OUT.ll` | lower to LLVM IR with mlir-opt and mlir-translate; `--tools` prints their paths |
 | `flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir` | run the `--optimize` pass pipeline; `--print-pass-pipeline` prints it |
 | `flow mlir-spirv spirv\|msl\|metallib\|mlir-msl\|mlir-metallib IN OUT` | lower a GPU module to SPIR-V, Metal Shading Language or a .metallib |
+| `flow gpu-lower PROGRAM.flow --target spirv\|msl\|metal\|mlx\|ptx\|cubin\|hsaco\|all [-o OUT] [--run]` | lower `@gpu` kernels through the gpu dialect to each GPU target; `--run` compares the GPU results with the CPU build ([GPU lowering pipeline](../gpu/lowering-pipeline.md)) |
 
 The tools are found through `MLIR_OPT`, `MLIR_TRANSLATE`, `SPIRV_CROSS` and
 `XCRUN`, then `LLVM_PATH`, `PATH` and Homebrew. `FLOWC_BIN` picks the flowc.
