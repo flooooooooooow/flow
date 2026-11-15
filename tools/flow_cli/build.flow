@@ -276,11 +276,22 @@ export function debug_program(args: ptr<ProcStrs>) -> i32 {
     let had_cflags: bool = env_isset("FLOW_CFLAGS")
     env_set("FLOW_OPT_LEVEL", "0")
     env_set("FLOW_CFLAGS", saved_cflags + " -g3 -fno-omit-frame-pointer")
-    let link_rc: i32 = flowc_link_c(c_file, exe_file, program)
+    let gfx: bool = c_uses_gfx(c_file)
+    let link_err: string = build_dir + "/.gfx_link_err"
+    let mut link_rc: i32 = 0
+    if gfx {
+        # A gfx program needs the native graphics backend, as flow gfx links it.
+        link_rc = link_gfx_program(c_file, exe_file, "-O0", s_words("-g3 " + saved_cflags), link_err)
+    } else {
+        link_rc = flowc_link_c(c_file, exe_file, program)
+    }
     restore_env("FLOW_OPT_LEVEL", had_opt, saved_opt)
     restore_env("FLOW_CFLAGS", had_cflags, saved_cflags)
     if link_rc != 0 {
         error("C compilation/linking failed")
+        if gfx {
+            print_link_err(link_err)
+        }
         cli_exit(1)
     }
     success("Built debug binary: " + exe_file)
@@ -675,33 +686,32 @@ export function run_window_program(program: string) -> i32 {
     return run_argv(sl_of1(exe_file))
 }
 
-export function run_gfx_program(program: string) -> i32 {
-    require_flow_file(program)
-    let basename: string = path_stem(program, ".flow")
-    let build_dir: string = build_root()
+# True when the generated C calls the native gfx backend (lib/stdlib/gfx.flow
+# declares every flow_gfx_* extern). Reading the C covers gfx imported
+# through another module.
+export function c_uses_gfx(c_file: string) -> bool {
+    return s_contains(read_text(c_file), "flow_gfx_")
+}
+
+# Link the C of a gfx program with the native graphics backend:
+# runtime/gfx_macos.m and the Apple frameworks on macOS, gfx_linux.c or
+# gfx_windows.c with SDL2 elsewhere, plus the audio, concurrency and Flow
+# runtime sources. `opt` is the optimisation flag ("-O2" for flow gfx,
+# "-O0" for flow debug) and `extra` holds further compiler flags such as
+# "-g3". The linker's stderr goes to `link_err`. Status.
+export function link_gfx_program(c_file: string, exe_file: string, opt: string, extra: ptr<ProcStrs>, link_err: string) -> i32 {
     let audio_cflags: ptr<ProcStrs> = sl_new()
     let audio_sources: ptr<ProcStrs> = sl_of1(root() + "/runtime/audio_miniaudio.c")
-    check_deps()
-    mkdir_p_or_exit(build_dir)
     if is_file(root() + "/third_party/miniaudio.h") {
         sl_push2(audio_cflags, "-I" + root() + "/third_party", "-DFLOW_AUDIO_BACKEND_MINIAUDIO")
         set_skip_audio_stub()
     }
-    let c_file: string = build_dir + "/" + basename + ".gfx.c"
-    let exe_file: string = build_dir + "/" + basename + ".gfx"
-    info("Compiling " + program + " (native gfx)...")
-    if flowc_emit_to_c(program, c_file) != 0 {
-        error("FLOW compilation failed")
-        cli_exit(1)
-    }
-    success("FLOW → C: " + path_basename(c_file))
     concurrency_flags()
     let rtf: ptr<ProcStrs> = runtime_flow_sources()
-    let link_err: string = build_dir + "/.gfx_link_err"
-    let mut ok: bool = false
     let kernel: string = uname_s()
     if s_eq(kernel, "Darwin") {
-        let a: ptr<ProcStrs> = sl_of3("clang", "-O2", "-fno-omit-frame-pointer")
+        let a: ptr<ProcStrs> = sl_of3("clang", opt, "-fno-omit-frame-pointer")
+        sl_extend(a, extra)
         sl_extend(a, audio_cflags)
         sl_extend(a, py_cflags())
         sl_extend(a, conc_cflags())
@@ -714,47 +724,67 @@ export function run_gfx_program(program: string) -> i32 {
         sl_extend(a, conc_ldflags())
         sl_push2(a, "-o", exe_file)
         sl_push(a, "-lm")
-        ok = run_err_to_file(cmd(a), link_err) == 0
-    } else {
-        let windows: bool = s_starts(kernel, "MINGW") or s_starts(kernel, "MSYS") or s_starts(kernel, "CYGWIN")
-        let mut sdl_cflags: ptr<ProcStrs> = sl_new()
-        let mut sdl_libs: ptr<ProcStrs> = sl_of1("-lSDL2")
-        let pc_ok: bool = have("pkg-config") and quiet_ok(sl_of3("pkg-config", "--exists", "sdl2"))
-        if windows and have("sdl2-config") {
-            sdl_cflags = s_words(capture(cmd(sl_of2("sdl2-config", "--cflags"))))
-            sdl_libs = s_words(capture(cmd(sl_of2("sdl2-config", "--libs"))))
-        } elif pc_ok {
-            sdl_cflags = s_words(capture(cmd(sl_of3("pkg-config", "--cflags", "sdl2"))))
-            sdl_libs = s_words(capture(cmd(sl_of3("pkg-config", "--libs", "sdl2"))))
-        }
-        let mut backend_c: string = root() + "/runtime/gfx_linux.c"
-        if windows {
-            backend_c = root() + "/runtime/gfx_windows.c"
-        }
-        let a: ptr<ProcStrs> = sl_of3("clang", "-O2", "-fno-omit-frame-pointer")
-        sl_extend(a, py_cflags())
-        sl_push2(a, c_file, backend_c)
-        sl_push(a, root() + "/runtime/flow_rt_support.c")
-        sl_extend(a, rtf)
-        sl_extend(a, sdl_cflags)
-        sl_extend(a, sdl_libs)
-        sl_extend(a, py_ldflags())
-        sl_push2(a, "-o", exe_file)
-        sl_push(a, "-lm")
-        let c: ptr<ProcCmd> = cmd(a)
-        cmd_quiet_err(c)
-        ok = run(c) == 0
+        return run_err_to_file(cmd(a), link_err)
     }
-    if not ok {
-        error("Native gfx build failed (clang / platform graphics libs)")
-        if nonempty(link_err) {
-            let lines: ptr<ProcStrs> = s_lines(read_text(link_err))
-            let mut i: i32 = 0
-            while i < sl_len(lines) {
-                errln("    " + sl_get(lines, i))
-                i = i + 1
-            }
+    let windows: bool = s_starts(kernel, "MINGW") or s_starts(kernel, "MSYS") or s_starts(kernel, "CYGWIN")
+    let mut sdl_cflags: ptr<ProcStrs> = sl_new()
+    let mut sdl_libs: ptr<ProcStrs> = sl_of1("-lSDL2")
+    let pc_ok: bool = have("pkg-config") and quiet_ok(sl_of3("pkg-config", "--exists", "sdl2"))
+    if windows and have("sdl2-config") {
+        sdl_cflags = s_words(capture(cmd(sl_of2("sdl2-config", "--cflags"))))
+        sdl_libs = s_words(capture(cmd(sl_of2("sdl2-config", "--libs"))))
+    } elif pc_ok {
+        sdl_cflags = s_words(capture(cmd(sl_of3("pkg-config", "--cflags", "sdl2"))))
+        sdl_libs = s_words(capture(cmd(sl_of3("pkg-config", "--libs", "sdl2"))))
+    }
+    let mut backend_c: string = root() + "/runtime/gfx_linux.c"
+    if windows {
+        backend_c = root() + "/runtime/gfx_windows.c"
+    }
+    let a: ptr<ProcStrs> = sl_of3("clang", opt, "-fno-omit-frame-pointer")
+    sl_extend(a, extra)
+    sl_extend(a, py_cflags())
+    sl_push2(a, c_file, backend_c)
+    sl_push(a, root() + "/runtime/flow_rt_support.c")
+    sl_extend(a, rtf)
+    sl_extend(a, sdl_cflags)
+    sl_extend(a, sdl_libs)
+    sl_extend(a, py_ldflags())
+    sl_push2(a, "-o", exe_file)
+    sl_push(a, "-lm")
+    return run_err_to_file(cmd(a), link_err)
+}
+
+# Print the saved linker errors of a failed gfx link, indented.
+function print_link_err(link_err: string) {
+    if nonempty(link_err) {
+        let lines: ptr<ProcStrs> = s_lines(read_text(link_err))
+        let mut i: i32 = 0
+        while i < sl_len(lines) {
+            errln("    " + sl_get(lines, i))
+            i = i + 1
         }
+    }
+}
+
+export function run_gfx_program(program: string) -> i32 {
+    require_flow_file(program)
+    let basename: string = path_stem(program, ".flow")
+    let build_dir: string = build_root()
+    check_deps()
+    mkdir_p_or_exit(build_dir)
+    let c_file: string = build_dir + "/" + basename + ".gfx.c"
+    let exe_file: string = build_dir + "/" + basename + ".gfx"
+    info("Compiling " + program + " (native gfx)...")
+    if flowc_emit_to_c(program, c_file) != 0 {
+        error("FLOW compilation failed")
+        cli_exit(1)
+    }
+    success("FLOW → C: " + path_basename(c_file))
+    let link_err: string = build_dir + "/.gfx_link_err"
+    if link_gfx_program(c_file, exe_file, "-O2", sl_new(), link_err) != 0 {
+        error("Native gfx build failed (clang / platform graphics libs)")
+        print_link_err(link_err)
         cli_exit(1)
     }
     success("Built: " + exe_file)
