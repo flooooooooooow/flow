@@ -1,0 +1,67 @@
+# saxpy: out = a * x + y, one thread per element.
+#
+# The @gpu kernel is what `flow gpu-lower` lowers. main() is the CPU build
+# of the same kernel: it runs it once per thread id and writes the launch
+# spec, the inputs and the CPU result for the parity check.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+@gpu
+function saxpy(x: ptr<f32>, y: ptr<f32>, out: ptr<f32>, a: f32, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        out[i] = a * x[i] + y[i]
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let n: i32 = 1000
+    let x: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let y: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let out: ptr<f32> = calloc(n as i64, 4) as ptr<f32>
+    let a: ptr<f32> = calloc(1, 4) as ptr<f32>
+    let nn: ptr<i32> = calloc(1, 4) as ptr<i32>
+    a[0] = 1.7
+    nn[0] = n
+    let mut s: i32 = 12345
+    for i in 0 to n {
+        s = (s * 1103 + 12345) % 65536
+        x[i] = (s as f32) / 4096.0 - 8.0
+        s = (s * 1103 + 12345) % 65536
+        y[i] = (s as f32) / 8192.0 - 4.0
+    }
+    dump(dir, "in_0.bin", x as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_1.bin", y as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_2.bin", out as ptr<void>, (n * 4) as i64)
+    dump(dir, "in_3.bin", a as ptr<void>, 4)
+    dump(dir, "in_4.bin", nn as ptr<void>, 4)
+    for t in 0 to 1024 {
+        cpu_tid_x = t
+        saxpy(x, y, out, a[0], n)
+    }
+    dump(dir, "out_2.bin", out as ptr<void>, (n * 4) as i64)
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _a: i32 = fputs("buffer 0 f32 1000 in\nbuffer 1 f32 1000 in\nbuffer 2 f32 1000 out\nbuffer 3 f32 1 scalar\nbuffer 4 i32 1 scalar\ndispatch saxpy 16 1 1 0 1 2 3 4\n", fp)
+    let _c: i32 = fclose(fp)
+    return 0
+}
