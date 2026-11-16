@@ -6,6 +6,13 @@ on:
     paths:
       - 'site/wasm/**'
       - 'docs/demos/**'
+      - 'docs/playground/**'
+      - 'docs/tutorials/**'
+      - 'site/*.js'
+      - 'site/index.html'
+      - 'site/tutorials/**'
+      - 'site/vendor/**'
+      - 'scripts/tools/build_wiki/**'
       - 'docs/nav.json'
       - 'examples/**'
       - 'runtime/gfx_wasm.c'
@@ -18,6 +25,13 @@ on:
     paths:
       - 'site/wasm/**'
       - 'docs/demos/**'
+      - 'docs/playground/**'
+      - 'docs/tutorials/**'
+      - 'site/*.js'
+      - 'site/index.html'
+      - 'site/tutorials/**'
+      - 'site/vendor/**'
+      - 'scripts/tools/build_wiki/**'
       - 'docs/nav.json'
       - 'examples/**'
       - 'runtime/gfx_wasm.c'
@@ -71,3 +85,22 @@ jobs:
         run: |
           node scripts/check_live_demos.mjs --browser \
             --shard-index ${{ matrix.shard }} --shard-count 4
+
+  docs-browser:
+    name: Chromium docs, playground and tutorials
+    needs: assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the exact wiki artifact deployed to Pages
+        run: ./flow tool build_wiki
+      - name: Install Chromium automation
+        run: |
+          npm install --no-save 'playwright@1.55.0'
+          npx playwright install --with-deps chromium
+      - name: Exercise documentation routes and browser features
+        run: node scripts/check_live_demos.mjs --docs-browser --wiki build/wiki

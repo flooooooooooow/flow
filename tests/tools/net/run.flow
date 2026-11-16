@@ -610,6 +610,7 @@ function main() -> i32 {
     http_case("flow_src_dotdot", "", "--path-as-is|$U/flow-src/../x")
     http_case("flow_src_missing", "", "$U/flow-src/lexer.py")
     http_case("pyodide", "docs/playground/pyodide.html", "$U/pyodide")
+    http_case("flow_compile_js", "site/flow-compile.js", "$U/flow-compile.js")
     http_case("post_404", "", "-X|POST|-d|{}|$U/other")
     http_case("post_query", "", "-X|POST|-d|{\"source\":\"x\"}|$U/compile?x=1")
     http_case("post_empty", "", "-X|POST|-H|Content-Length: 0|$U/compile")

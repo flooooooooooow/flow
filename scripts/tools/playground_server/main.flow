@@ -716,6 +716,17 @@ function do_get(cfg: ptr<Config>, req: ptr<Request>) -> void {
         send_file(req, read_or_empty(target), "text/plain; charset=utf-8")
         return
     }
+    # The legacy /pyodide URL now hosts the browser interpreter preview.
+    # Serve its script from this origin so it also works outside GitHub Pages.
+    if ft_eq(path, "/flow-compile.js") {
+        let source: string = cfg[0].root + "/site/flow-compile.js"
+        if pr_is_file(source) == false {
+            send_json(req, 404, "{\"ok\": false, \"error\": \"flow-compile.js missing\"}")
+            return
+        }
+        send_file(req, read_or_empty(source), "application/javascript; charset=utf-8")
+        return
+    }
     if ft_eq(path, "/pyodide") {
         let page: string = cfg[0].root + "/docs/playground/pyodide.html"
         if pr_is_file(page) == false {
