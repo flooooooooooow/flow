@@ -397,7 +397,13 @@ async function docsBrowserCheck(wikiRoot, opts) {
             async function expectFocus(target, action) {
                 if (action) await page.keyboard.press(action);
                 if (!(await target.evaluate(element => document.activeElement === element))) {
-                    throw new Error('Dialog keyboard focus lost at ' + (action || 'open'));
+                    const state = await page.evaluate(() => ({
+                        active: document.activeElement?.outerHTML.slice(0, 220),
+                        controls: Array.from(document.querySelectorAll('#shareModal input, #shareModal button'))
+                            .map(element => element.outerHTML.slice(0, 90)),
+                    }));
+                    throw new Error('Dialog keyboard focus lost at ' + (action || 'open') +
+                        ': ' + JSON.stringify(state));
                 }
             }
 
