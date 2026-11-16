@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**139** modules scanned.
+**140** modules scanned.
 
 ## Modules
 
@@ -3304,6 +3304,57 @@ Flow-native incompressible velocity projection on a uniform periodic 3D grid. Th
     ux_next: ptr<f64>, uy_next: ptr<f64>, uz_next: ptr<f64>,
     nx: i32, ny: i32, nz: i32, dx: f64, dt: f64, nu: f64
 ) -> void` | Forward Euler / central difference momentum step (advection and diffusion). Inputs and outputs must not alias. nu is kinematic viscosity. This implements explicit conservative upwind/central momentum advection and central difference diffusion. No immersed boundary handling; just a periodic cartesian grid. |
+
+### `science/sofia_ir.flow`
+
+Experimental Flow-native scalar PDE expression IR and time integrators. This is a typed, allocation-free interpreter, not a compiler backend. 1D uniform cell centres, one scalar field, finite-difference derivatives.
+
+**Structs:** `SofiaIrNode`, `SofiaIrProgram`
+
+**Constants:**
+
+- `SOFIA_IR_FIELD: i32`
+- `SOFIA_IR_CONSTANT: i32`
+- `SOFIA_IR_ADD: i32`
+- `SOFIA_IR_SUB: i32`
+- `SOFIA_IR_MUL: i32`
+- `SOFIA_IR_GRAD_X: i32`
+- `SOFIA_IR_LAPLACIAN_X: i32`
+- `SOFIA_BC_PERIODIC: i32`
+- `SOFIA_BC_DIRICHLET: i32`
+- `SOFIA_RK_EULER: i32`
+- `SOFIA_RK_MIDPOINT: i32`
+- `SOFIA_RK_CLASSIC_4: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `sofia_ir_new` | `(nodes: ptr<SofiaIrNode>, capacity: i32) -> SofiaIrProgram` | Construct an empty program. Nodes are supplied by the caller. |
+| `sofia_ir_field` | `(
+    p: ptr<SofiaIrProgram>, length_dim: i32, time_dim: i32, quantity_dim: i32
+) -> i32` | Declare the single evolved field and its physical units. |
+| `sofia_ir_constant` | `(
+    p: ptr<SofiaIrProgram>, value: f64,
+    length_dim: i32, time_dim: i32, quantity_dim: i32
+) -> i32` | Declare a literal coefficient with explicit physical units. |
+| `sofia_ir_add` | `(p: ptr<SofiaIrProgram>, a: i32, b: i32) -> i32` | - |
+| `sofia_ir_sub` | `(p: ptr<SofiaIrProgram>, a: i32, b: i32) -> i32` | - |
+| `sofia_ir_mul` | `(p: ptr<SofiaIrProgram>, a: i32, b: i32) -> i32` | - |
+| `sofia_ir_gradient_x` | `(p: ptr<SofiaIrProgram>, field: i32) -> i32` | Second-order centered first derivative; only a direct field is accepted. |
+| `sofia_ir_laplacian_x` | `(p: ptr<SofiaIrProgram>, field: i32) -> i32` | Second-order three-point Laplacian; only a direct field is accepted. |
+| `sofia_ir_set_rhs` | `(p: ptr<SofiaIrProgram>, rhs: i32) -> i32` | A PDE right-hand side must have field units / time. |
+| `sofia_ir_validate` | `(p: ptr<SofiaIrProgram>) -> i32` | Validate the ordered expression DAG without executing it. |
+| `sofia_ir_rhs_1d` | `(
+    p: ptr<SofiaIrProgram>, u: ptr<f64>, out: ptr<f64>,
+    n: i32, dx: f64, bc: i32, left: f64, right: f64
+) -> i32` | Evaluate all RHS values without mutating the source field. |
+| `sofia_ir_step_1d` | `(
+    p: ptr<SofiaIrProgram>, u: ptr<f64>, out: ptr<f64>,
+    k1: ptr<f64>, k2: ptr<f64>, k3: ptr<f64>, k4: ptr<f64>, tmp: ptr<f64>,
+    n: i32, dx: f64, dt: f64, bc: i32, left: f64, right: f64, method: i32
+) -> i32` | Euler, midpoint (RK2) or classic RK4 on a scalar PDE. The buffers u,out,k1,k2,k3,k4,tmp must all be mutually distinct and have n elements. No allocation. Caller is responsible for the method's CFL/stability limit. |
+| `sofia_ir_integral_1d` | `(u: ptr<f64>, n: i32, dx: f64) -> f64` | Sum the samples times the uniform cell spacing, useful for conservation. |
 
 ### `science/sofia_lattice_boltzmann.flow`
 
