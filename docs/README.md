@@ -66,7 +66,7 @@ Flow evolves quickly. Pages describing proposed designs, research, roadmaps or e
 
 ## Maintaining the documentation
 
-The custom documentation site is generated from content in this directory and the shell in the repository's site directory. **[docs/nav.json](nav.json) is the canonical sidebar and content map**; the demo navigation portions are generated from the demo catalog. Edit source material rather than generated site output.
+The custom documentation site is generated from content in this directory and the shell in the repository's site directory. **[docs/nav.json](https://github.com/flooooooooooow/flow/blob/main/docs/nav.json) is the canonical sidebar and content map**; the demo navigation portions are generated from the demo catalog. Edit source material rather than generated site output.
 
 After changing documentation, verify the generated website, internal links and any relevant live example interactions with the repository's documented toolchain:
 
