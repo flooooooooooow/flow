@@ -1358,12 +1358,7 @@ function main() -> i32 {
             const modal = document.getElementById('shareModal');
             modal.classList.add('visible');
             modal.setAttribute('aria-hidden', 'false');
-            // Wait for the visibility transition to start before moving keyboard focus.
-            requestAnimationFrame(() => {
-                if (modal.classList.contains('visible')) {
-                    document.getElementById('shareUrl').focus();
-                }
-            });
+            document.getElementById('shareUrl').focus();
         }
 
         function closeShareModal() {
