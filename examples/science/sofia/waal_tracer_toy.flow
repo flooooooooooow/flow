@@ -1,0 +1,47 @@
+# Passive tracer prototype for a structured synthetic river in native Flow.
+# This is NOT the Waal river geometry, bathymetry or discharge boundary.
+# Run: ./flow run examples/science/sofia/waal_tracer_toy.flow
+import "apps/sofia/tracers.flow"
+import "stdlib/science/sofia_domain.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function main() -> i32 {
+    let grid: SofiaGrid2D = SofiaGrid2D {
+        nx: 64, ny: 24, lx: 640.0, ly: 240.0,
+        dx: 10.0, dy: 10.0, origin_x: 0.0, origin_y: 0.0
+    }
+    let h: array<f64, 1536> = [0.0, 0.0, 0.0, 0.0]
+    let mx: array<f64, 1536> = [0.0, 0.0, 0.0, 0.0]
+    let my: array<f64, 1536> = [0.0, 0.0, 0.0, 0.0]
+    for y in 0 to 24 {
+        for x in 0 to 64 {
+            let i: i32 = y * 64 + x
+            h[i] = 2.0
+            mx[i] = 1.8
+            my[i] = 0.08
+        }
+    }
+    let particles: array<SofiaTracer, 64> = [
+        SofiaTracer { x: 15.0, y: 55.0, active: 1 }
+    ]
+    for i in 0 to 64 {
+        particles[i] = SofiaTracer {
+            x: 25.0, y: 30.0 + ((i as f64) * 2.0), active: 1
+        }
+    }
+    let mut alive: i32 = 64
+    for step in 0 to 40 {
+        alive = sofia_tracers_step(particles, 64, grid, h, mx, my, 5.0, 0.01)
+        if alive < 0 { return 1 }
+    }
+    println("Flow synthetic shallow-water passive tracers")
+    print("first tracer x = ")
+    printf("%.3f\n", particles[0].x)
+    print("first tracer y = ")
+    printf("%.3f\n", particles[0].y)
+    println("This is not a calibrated Waal simulation.")
+    return 0
+}
