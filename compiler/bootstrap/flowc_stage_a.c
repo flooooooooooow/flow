@@ -60300,6 +60300,9 @@ int32_t flowc_cgen_try_emit_vector_kernel(CgenBuf* w, AstArena arena, uint8_t* s
   if (kind == 0) {
   return 0;
 }
+  if (kind == 5 || kind == 6) {
+  return 0;
+}
   int32_t typed = dst;
   if (typed == AST_NONE) {
   typed = src0;
