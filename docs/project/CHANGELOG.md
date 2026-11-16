@@ -9,6 +9,18 @@ All notable changes to FLOW will be documented in this file.
   error. The MLIR backend now links a program's `flow.toml` `[native]` sources, libraries
   and frameworks, as the C backend does, and honours `FLOW_OPT_LEVEL` in its link step,
   which a hardcoded `-O2` overrode. Covered by `tests/scripts/run_program_args.flow`.
+- GPU: `flow gpu-lower PROGRAM --target spirv|msl|metal|mlx|ptx|cubin|hsaco|all`
+  lowers `@gpu` kernels from the MLIR gpu dialect to every GPU target, and
+  `--run` compares each result buffer with the CPU build of the same
+  program. SPIR-V runs through Vulkan (MoltenVK on macOS), MSL and the
+  .metallib through Metal, and the MLX target as `mx.fast.metal_kernel`;
+  PTX and the AMDGPU code object are generated and checked. The saxpy,
+  reduction, 2D stencil, Lennard-Jones and zero-trip kernels in
+  `tests/gpu_lower/kernels/` match the CPU bit for bit on all three Apple
+  paths (`./flow tool tests/gpu_lower/run.flow`). `flow mlir-spirv spirv`
+  now uses the same passes and produces valid SPIR-V; `--emit-spirv` and
+  the `flow ml test` SPIR-V smoke succeed. See
+  docs/gpu/lowering-pipeline.md.
 - GPU (#811): render jobs. `lib/stdlib/gpu_shader.flow` builds vertex and
   fragment stages from typed expressions that emit WGSL and Metal together;
   `gpu_render.flow` describes buffers, textures, samplers, pipelines,

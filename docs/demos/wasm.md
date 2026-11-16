@@ -1,12 +1,11 @@
 # WebAssembly Gallery
 
-158 Flow examples compiled to WebAssembly, every one of them runnable in a
+161 Flow examples compiled to WebAssembly, every one of them runnable in a
 browser. Every one is the unedited source from this repository, put through
 Flow → C → `emcc`.
 
-**[Open the live gallery](../wasm/index.html)**. The pages below only run
-there. This markdown page cannot host WebAssembly; the wiki renders it as
-text, so the gallery is a separate static site under `/wasm/`.
+**[Open the searchable live gallery](../wasm/index.html)**. Individual examples have shareable URLs, including [Gray Scott](../wasm/index.html#gray_scott), [Snake](../wasm/index.html#snake_gfx) and [2048](../wasm/index.html#2048_gfx). The pages below only run
+there. This page describes the examples; the interactive runners live in the separate static gallery under `/wasm/`.
 
 The games and the field simulations link `runtime/gfx_wasm.c`, a canvas
 backend for the same gfx API that drives the native window and the headless
@@ -15,7 +14,7 @@ GIF recorder. Nothing in any example was changed to make it run in a browser.
 Build the whole thing:
 
 ```bash
-python3 scripts/build_wasm_gallery.py
+./flow tool wasm_build gallery
 python3 -m http.server 8000 --directory site
 # open http://localhost:8000/wasm/
 ```

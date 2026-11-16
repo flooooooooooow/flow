@@ -91,7 +91,7 @@
           "external": true
         },
         {
-          "label": "Docs Index",
+          "label": "Documentation Guide",
           "path": "README.md"
         }
       ]
@@ -871,6 +871,10 @@
           "path": "gpu/persistent-compute.md"
         },
         {
+          "label": "GPU lowering pipeline",
+          "path": "gpu/lowering-pipeline.md"
+        },
+        {
           "label": "Running Flow",
           "path": "language/flow-run.md"
         },
@@ -983,6 +987,10 @@
         {
           "label": "Agentic Loop",
           "path": "project/agentic-loop.md"
+        },
+        {
+          "label": "Agent Trust Boundaries",
+          "path": "project/agent-trust-boundaries.md"
         },
         {
           "label": "AI Safety Architecture",

@@ -8,6 +8,7 @@
 </head>
 <body>
 <div class="wrap">
+  <nav class="gallery-nav" aria-label="Documentation navigation"><a href="../index.html#demos/overview.md">Showcase</a><a href="../index.html#demos/wasm.md">WASM guide</a><a href="../index.html">Documentation</a></nav>
   <h1>Flow in the browser</h1>
   <p class="lede">@@total_ok@@ Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
@@ -17,6 +18,8 @@
   games or the field simulations had to change.</p>
   <p class="lede">Click Run, then click inside the frame so it takes the
   keyboard. Esc closes the frame.</p>
+
+  <div class="demo-search"><label for="demoSearch">Find a demo</label><input id="demoSearch" type="search" placeholder="Search by name or description (press /)" autocomplete="off"><output id="matchCount" aria-live="polite"></output></div>
 
 @@sections@@
 
@@ -41,7 +44,8 @@
   <div class="bar">
     <strong id="label"></strong>
     <a id="open" href="#" target="_blank" style="color:#6b7ca8">open in a tab</a>
-    <button id="close">Close</button>
+    <button id="share" type="button">Copy link</button>
+    <button id="close" type="button">Close</button>
   </div>
   <iframe id="frame" src="about:blank" title="Flow example"></iframe>
 </div>

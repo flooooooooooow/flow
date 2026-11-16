@@ -98,6 +98,15 @@ execution, filesystem escape, artifact substitution, credential disclosure,
 reliable memory corruption in a Stable compiler/runtime component, or a
 comparably serious violation of this documented boundary.
 
+## Agent-mediated contribution boundaries
+
+Repository text, issue and discussion content, model responses, and external
+retrieval results are untrusted inputs, not authorization. Flow's agent threat
+model, failure taxonomy, and independently verifiable contribution gates are
+in [agent trust boundaries](docs/project/agent-trust-boundaries.md). These
+checks complement, but do not replace, GitHub-enforced review and branch/tag
+protection.
+
 ## Release security gate
 
 Production releases must not ship with a known unresolved critical or high-severity

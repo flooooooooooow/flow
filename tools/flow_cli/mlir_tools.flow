@@ -72,6 +72,7 @@ import "tools/flow_cli/shape_specializer.flow"
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/tool.flow"
+import "tools/flow_cli/gpu_passes.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
 # ---------------------------------------------------------------------------
@@ -778,46 +779,16 @@ function cat_sub(p: string) -> string {
     return s_chomp_all(read_text(p))
 }
 
+# The gpu dialect -> SPIR-V steps of gpu_passes.flow (`flow gpu-lower
+# --target spirv`): the kernel module out of the host module, then
+# mlir-opt, mlir-translate --serialize-spirv and spirv-val.
 function to_spirv(input: string, output: string, extra: ptr<ProcStrs>, work: string) -> i32 {
-    let opt: string = spirv_tool("mlir-opt", env("MLIR_OPT"), "llvm")
-    if s_len(opt) == 0 {
+    if gp_prepare(input, work + "/kernels.mlir") != 0 {
         return 1
     }
-    let translate: string = spirv_tool("mlir-translate", env("MLIR_TRANSLATE"), "llvm")
-    if s_len(translate) == 0 {
+    if gp_spirv(work + "/kernels.mlir", output, extra, work) != 0 {
         return 1
     }
-    # Outline kernels and lower to the SPIR-V dialect.
-    let o: ptr<ProcStrs> = sl_of1(opt)
-    sl_extend(o, s_words("-gpu-kernel-outlining -convert-scf-to-spirv -convert-memref-to-spirv -convert-arith-to-spirv -convert-index-to-spirv -convert-gpu-to-spirv -reconcile-unrealized-casts"))
-    sl_extend(o, extra)
-    sl_push(o, input)
-    sl_push2(o, "-o", work + "/spirv.mlir")
-    let oc: ptr<ProcCmd> = cmd(o)
-    cmd_no_stdin(oc)
-    let rc: i32 = run_split(oc, work + "/opt.out", work + "/opt.err")
-    if rc != 0 {
-        let mut why: string = cat_sub(work + "/opt.err")
-        if not nonempty(work + "/opt.err") {
-            why = cat_sub(work + "/opt.out")
-        }
-        return spirv_die("mlir-opt SPIR-V lowering failed (exit " + s_itoa(rc) + "):\n" + why)
-    }
-    # Serialize the SPIR-V binary.
-    # -o rather than a stdout capture: the SPIR-V is binary.
-    let t: ptr<ProcStrs> = sl_of3(translate, "--mlir-to-spirv", work + "/spirv.mlir")
-    sl_push2(t, "-o", work + "/out.spv")
-    let tc: ptr<ProcCmd> = cmd(t)
-    cmd_no_stdin(tc)
-    let trc: i32 = run_err_to_file(tc, work + "/tr.err")
-    if trc != 0 {
-        return spirv_die("mlir-translate --mlir-to-spirv failed (exit " + s_itoa(trc) + "):\n" + cat_sub(work + "/tr.err"))
-    }
-    if not nonempty(work + "/out.spv") {
-        return spirv_die("mlir-translate produced empty SPIR-V output")
-    }
-    mkdir_parent(output)
-    let _c: bool = copy_file(work + "/out.spv", output)
     return 0
 }
 
@@ -834,31 +805,11 @@ function has_non_space(text: string) -> bool {
     return false
 }
 
+# SPIR-V -> MSL with every entry point (SPIRV-Cross, one run per kernel).
 function to_msl(input: string, output: string, extra: ptr<ProcStrs>, work: string) -> i32 {
-    let cross: string = spirv_tool("spirv-cross", env("SPIRV_CROSS"), "spirv-cross")
-    if s_len(cross) == 0 {
+    if gp_msl(input, output, extra, work) != 0 {
         return 1
     }
-    if not nonempty(input) {
-        return spirv_die("SPIR-V input missing or empty: " + input)
-    }
-    let a: ptr<ProcStrs> = sl_of3(cross, input, "--msl")
-    sl_extend(a, extra)
-    let c: ptr<ProcCmd> = cmd(a)
-    cmd_no_stdin(c)
-    let rc: i32 = run_split(c, work + "/out.metal", work + "/cross.err")
-    if rc != 0 {
-        let mut why: string = cat_sub(work + "/cross.err")
-        if not nonempty(work + "/cross.err") {
-            why = cat_sub(work + "/out.metal")
-        }
-        return spirv_die("spirv-cross MSL lowering failed (exit " + s_itoa(rc) + "):\n" + why)
-    }
-    if not has_non_space(read_text(work + "/out.metal")) {
-        return spirv_die("spirv-cross produced empty MSL output")
-    }
-    mkdir_parent(output)
-    let _c: bool = copy_file(work + "/out.metal", output)
     return 0
 }
 

@@ -19,6 +19,7 @@ extern {
     function free(p: ptr<f32>) -> void
     function expf(x: f32) -> f32
     function logf(x: f32) -> f32
+    function log1pf(x: f32) -> f32
     function flow_rt_monotonic_ns() -> i64
     function printf(fmt: string, val: f64) -> i32
 }
@@ -255,14 +256,32 @@ function forward(x: ptr<f32>, label: i32) -> f32 {
     for k in 0 to N_CLASSES {
         probs[k] = probs[k] / denom
     }
-    return 0.0 - logf(probs[label] + 0.0000001)
+    # Log-sum-exp loss without subtracting rounded probabilities.
+    # mx >= logits[label], so every exponential argument is nonpositive.
+    let mut others: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        if k != label {
+            others = others + expf(logits[k] - mx)
+        }
+    }
+    let target_exp: f32 = expf(logits[label] - mx)
+    if logits[label] == mx {
+        return log1pf(others)
+    }
+    return (mx - logits[label]) + logf(target_exp + others)
 }
 
 # Backward pass for the sample last passed through forward().
 # Accumulates into gw1/gb1/gw2/gb2.
 function backward(x: ptr<f32>, label: i32) -> void {
     # dlogits = probs - onehot(label), reuse probs in place
-    probs[label] = probs[label] - 1.0
+    let mut non_target: f32 = 0.0
+    for k in 0 to N_CLASSES {
+        if k != label {
+            non_target = non_target + probs[k]
+        }
+    }
+    probs[label] = 0.0 - non_target
     for k in 0 to N_CLASSES {
         gb2[k] = gb2[k] + probs[k]
     }

@@ -2026,12 +2026,19 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
             let ty: i32 = arena.nodes[item].a
             flowc_tc_bind_value(ctx, arena.nodes[item].name_start, arena.nodes[item].name_end, ty)
         }
+        # An exported enum arrives wrapped in AST_EXPORT.
+        let mut en: i32 = AST_NONE
         if kind == AST_ENUM {
+            en = item
+        } elif kind == AST_EXPORT and arena.nodes[item].a != AST_NONE and arena.nodes[arena.nodes[item].a].kind == AST_ENUM {
+            en = arena.nodes[item].a
+        }
+        if en != AST_NONE {
             # Bind qualified enum variant names (EnumName_VariantName) as
             # global constants, matching the C generator's naming.
-            let ens: i32 = arena.nodes[item].name_start
-            let ene: i32 = arena.nodes[item].name_end
-            let mut var: i32 = arena.nodes[item].a
+            let ens: i32 = arena.nodes[en].name_start
+            let ene: i32 = arena.nodes[en].name_end
+            let mut var: i32 = arena.nodes[en].a
             while var != AST_NONE {
                 # Construct "EnumName_VariantName" in the seed buffer.
                 flowc_tc_seed_bind_enum_variant(ctx, ctx[0].src, ens, ene, arena.nodes[var].name_start, arena.nodes[var].name_end)

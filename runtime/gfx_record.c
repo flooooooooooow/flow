@@ -61,6 +61,7 @@ typedef struct {
     int width;
     int height;
     uint8_t *pixels; // width*height*4 RGBA
+    int32_t scale;   // pixels per point x 100, from flow_gfx_init_hidpi
 
     uint8_t dir[1024];
     int32_t max_frames;
@@ -92,6 +93,7 @@ void *flow_gfx_init(int32_t w, int32_t h, const char *title_utf8) {
 
     rec->width = w;
     rec->height = h;
+    rec->scale = 100;
     rec->pixels = (uint8_t *)calloc((size_t)w * (size_t)h * 4u, 1);
     if (!rec->pixels) {
         free(rec);
@@ -397,6 +399,79 @@ void flow_gfx_text(void* handle, int32_t x, int32_t y, const char* text,
         }
         pen_x += 6 * size;
     }
+}
+
+/* Copy the rectangle (x, y, w, h) of src, a packed RGB8 image src_w pixels
+ * wide holding the whole framebuffer, to the same place. */
+void flow_gfx_blit_rgb_region(void *handle, const uint8_t *src, int32_t src_w,
+                              int32_t x, int32_t y, int32_t w, int32_t h) {
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
+    if (!rec || !rec->pixels || !src || src_w <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w; if (x1 > rec->width) x1 = rec->width;
+    int y1 = y + h; if (y1 > rec->height) y1 = rec->height;
+    if (x1 > src_w) x1 = src_w;
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t *srow = src + ((size_t)yy * (size_t)src_w + (size_t)x0) * 3u;
+        uint8_t *drow = rec->pixels + ((size_t)yy * (size_t)rec->width + (size_t)x0) * 4u;
+        for (int xx = x0; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
+/* HiDPI in the recorder: FLOW_GFX_RECORD_SCALE (1 or 2, default 1) plays the
+ * part of the display's backing scale, so a recording can check a layout at
+ * Retina density. The window is w x h points; frames are w*s x h*s pixels. */
+void *flow_gfx_init_hidpi(int32_t w, int32_t h, const char *title_utf8, int32_t flags) {
+    (void)flags;
+    int32_t s = flow_gfx_rec_env_int("FLOW_GFX_RECORD_SCALE", 1);
+    if (s < 1) s = 1;
+    if (s > 4) s = 4;
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)flow_gfx_init(w * s, h * s, title_utf8);
+    if (rec) rec->scale = s * 100;
+    return rec;
+}
+
+int32_t flow_gfx_metrics(void *handle, int32_t *out) {
+    FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
+    if (!out) return 0;
+    if (!rec) { out[0] = out[1] = out[2] = out[3] = 0; return 0; }
+    out[0] = rec->width;
+    out[1] = rec->height;
+    out[2] = rec->scale;
+    out[3] = 0;
+    return 1;
+}
+
+void flow_gfx_cursor(void *handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+/* The 5x7 bitmap font at the integer multiple nearest size / 9, sitting on
+ * the baseline. Widths are exact for this font, so layout that measures
+ * text stays consistent in recordings. */
+int32_t flow_gfx_text_ex(void *handle, int32_t x, int32_t baseline, const char *text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)style;
+    if (!text || size <= 0) return 0;
+    int32_t k = (size + 4) / 9;
+    if (k < 1) k = 1;
+    int32_t n = 0;
+    while (text[n]) n++;
+    if (!measure) {
+        flow_gfx_text(handle, x, baseline - 7 * k, text, k,
+                      (uint8_t)((rgb >> 16) & 255), (uint8_t)((rgb >> 8) & 255),
+                      (uint8_t)(rgb & 255));
+    }
+    return n * 6 * k;
 }
 
 void flow_gfx_present(void *handle) {

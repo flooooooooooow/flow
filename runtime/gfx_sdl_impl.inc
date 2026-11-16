@@ -439,6 +439,63 @@ void flow_gfx_text(void* handle, int32_t x, int32_t y, const char* text,
     (void)r; (void)g; (void)b;
 }
 
+
+/* Copy the rectangle (x, y, w, h) of a full-size packed RGB8 image src_w
+ * pixels wide to the same place. */
+void flow_gfx_blit_rgb_region(void* handle, const uint8_t* src, int32_t src_w,
+                              int32_t x, int32_t y, int32_t w, int32_t h) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || !ctx->pixels || !src || src_w <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w; if (x1 > ctx->width) x1 = ctx->width;
+    int y1 = y + h; if (y1 > ctx->height) y1 = ctx->height;
+    if (x1 > src_w) x1 = src_w;
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t* srow = src + ((size_t)yy * (size_t)src_w + (size_t)x0) * 3u;
+        uint8_t* drow = ctx->pixels + ((size_t)yy * (size_t)ctx->width + (size_t)x0) * 4u;
+        for (int xx = x0; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
+/* HiDPI calls. This backend has no backing scale, so the framebuffer is in
+ * points and the scale reads 100. Text is not rendered here; text_ex still
+ * returns a width so layouts that measure text keep working. */
+void* flow_gfx_init_hidpi(int32_t w, int32_t h, const char* title_utf8, int32_t flags) {
+    (void)flags;
+    return flow_gfx_init(w, h, title_utf8);
+}
+
+int32_t flow_gfx_metrics(void* handle, int32_t* out) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!out) return 0;
+    if (!ctx) { out[0] = out[1] = out[2] = out[3] = 0; return 0; }
+    out[0] = ctx->width;
+    out[1] = ctx->height;
+    out[2] = 100;
+    out[3] = 0;
+    return 1;
+}
+
+void flow_gfx_cursor(void* handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+int32_t flow_gfx_text_ex(void* handle, int32_t x, int32_t baseline, const char* text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)handle; (void)x; (void)baseline; (void)rgb; (void)style; (void)measure;
+    if (!text || size <= 0) return 0;
+    return (int32_t)(strlen(text) * (size_t)size * 55u / 100u);
+}
+
 #else /* FLOW_GFX_STUB or no SDL2 headers */
 
 #ifndef FLOW_GFX_STUB_MSG
@@ -558,6 +615,44 @@ int32_t flow_gfx_run(void* handle, int32_t max_frames) {
     (void)max_frames;
     flow_gfx_sdl_warn_once();
     return 0;
+}
+
+
+/* Copy the rectangle (x, y, w, h) of a full-size packed RGB8 image src_w
+ * pixels wide to the same place. */
+void flow_gfx_blit_rgb_region(void* handle, const uint8_t* src, int32_t src_w,
+                              int32_t x, int32_t y, int32_t w, int32_t h) {
+    (void)handle; (void)src; (void)src_w; (void)x; (void)y; (void)w; (void)h;
+}
+
+/* HiDPI calls. This backend has no backing scale, so the framebuffer is in
+ * points and the scale reads 100. Text is not rendered here; text_ex still
+ * returns a width so layouts that measure text keep working. */
+void* flow_gfx_init_hidpi(int32_t w, int32_t h, const char* title_utf8, int32_t flags) {
+    (void)flags;
+    return flow_gfx_init(w, h, title_utf8);
+}
+
+int32_t flow_gfx_metrics(void* handle, int32_t* out) {
+    (void)handle;
+    if (!out) return 0;
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 100;
+    out[3] = 0;
+    return 0;
+}
+
+void flow_gfx_cursor(void* handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+int32_t flow_gfx_text_ex(void* handle, int32_t x, int32_t baseline, const char* text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)handle; (void)x; (void)baseline; (void)rgb; (void)style; (void)measure;
+    if (!text || size <= 0) return 0;
+    return (int32_t)(strlen(text) * (size_t)size * 55u / 100u);
 }
 
 #endif /* FLOW_GFX_USE_SDL2 */

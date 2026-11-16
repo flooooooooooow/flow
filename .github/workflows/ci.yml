@@ -692,6 +692,13 @@ jobs:
       - name: MLIR bufferization boundary checks
         run: ./flow tool tests/scripts/mlir_bufferize_boundary.flow
 
+      # flow gpu-lower: the gpu dialect to SPIR-V, PTX and an AMDGPU code
+      # object, each checked (the PTX against llc's). The runs need a GPU
+      # and skip here; tests/gpu_lower/cases.txt has the results on Apple
+      # silicon.
+      - name: GPU lowering pipeline (flow gpu-lower)
+        run: ./flow tool tests/gpu_lower/run.flow --require ptx,hsaco
+
   # Host tools written in Flow (flow repl) run their stdin transcripts with
   # python and python3 removed from PATH, so a Python fallback cannot hide.
   # The same job runs tests/scripts, the Flow tests that replaced the pytest

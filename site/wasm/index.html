@@ -77,10 +77,22 @@ table.status th { color: #8a8fa3; font-weight: 600; }
 footer { margin-top: 56px; color: #575c6e; font-size: 13px;
          border-top: 1px solid #1a1c24; padding-top: 16px; }
 footer a { color: #6b7ca8; }
+
+/* Shared with the generated WebAssembly gallery. */
+.gallery-nav { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 22px; font-size: 13px; }
+.gallery-nav a { color: #8baefa; text-decoration: none; }
+.gallery-nav a:hover { text-decoration: underline; }
+.demo-search { display: flex; align-items: center; gap: 14px; margin: 22px 0 8px; flex-wrap: wrap; }
+.demo-search label { font-weight: 600; }
+.demo-search input { flex: 1; min-width: 230px; max-width: 600px; color: #d8dae4; background: #101219; border: 1px solid #3b4052; border-radius: 6px; padding: 10px 12px; font: inherit; }
+.demo-search input:focus { outline: 2px solid #7aa2f7; outline-offset: 1px; }
+.demo-search output { color: #8a8fa3; font-size: 13px; }
+.card[hidden] { display: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <nav class="gallery-nav" aria-label="Documentation navigation"><a href="../index.html#demos/overview.md">Showcase</a><a href="../index.html#demos/wasm.md">WASM guide</a><a href="../index.html">Documentation</a></nav>
   <h1>Flow in the browser</h1>
   <p class="lede">161 Flow examples compiled to WebAssembly and running
   live on this page. Each one is the unedited source from the repository, put
@@ -90,6 +102,8 @@ footer a { color: #6b7ca8; }
   games or the field simulations had to change.</p>
   <p class="lede">Click Run, then click inside the frame so it takes the
   keyboard. Esc closes the frame.</p>
+
+  <div class="demo-search"><label for="demoSearch">Find a demo</label><input id="demoSearch" type="search" placeholder="Search by name or description (press /)" autocomplete="off"><output id="matchCount" aria-live="polite"></output></div>
 
     <h2>Games
       <span class="count">25 of 25 running</span></h2>
@@ -1942,37 +1956,118 @@ footer a { color: #6b7ca8; }
   <div class="bar">
     <strong id="label"></strong>
     <a id="open" href="#" target="_blank" style="color:#6b7ca8">open in a tab</a>
-    <button id="close">Close</button>
+    <button id="share" type="button">Copy link</button>
+    <button id="close" type="button">Close</button>
   </div>
   <iframe id="frame" src="about:blank" title="Flow example"></iframe>
 </div>
 
 <script>
 (function () {
+  'use strict';
   var modal = document.getElementById('modal');
   var frame = document.getElementById('frame');
   var label = document.getElementById('label');
   var link = document.getElementById('open');
+  var share = document.getElementById('share');
+  var search = document.getElementById('demoSearch');
+  var matches = document.getElementById('matchCount');
+  var buttons = Array.from(document.querySelectorAll('button[data-run]'));
+  var cards = buttons.map(function (button) { return button.closest('.card'); });
+  var activePage = '';
 
-  function run(page, title) {
-    label.textContent = title;
-    link.href = page;
-    frame.src = page + '?autostart=1';
-    modal.classList.add('open');
-    setTimeout(function () { frame.focus(); }, 60);
+  function pathFor(button) {
+    return button.getAttribute('data-run');
   }
-  function close() {
+
+  function nameFor(button) {
+    return pathFor(button).split('/')[0];
+  }
+
+  function hide() {
+    activePage = '';
     modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
     frame.src = 'about:blank';
   }
+
+  function show(button) {
+    var page = pathFor(button);
+    if (activePage === page) return;
+    activePage = page;
+    label.textContent = button.getAttribute('data-title') || nameFor(button);
+    link.href = page + '?autostart=1';
+    frame.src = page + '?autostart=1';
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    frame.addEventListener('load', function focusFrame() {
+      frame.removeEventListener('load', focusFrame);
+      try { frame.contentWindow.focus(); } catch (_) { frame.focus(); }
+    });
+  }
+
+  function syncRoute() {
+    var name;
+    try { name = decodeURIComponent(location.hash.slice(1)); }
+    catch (_) { name = ''; }
+    if (!name) { hide(); return; }
+    var button = buttons.find(function (candidate) { return nameFor(candidate) === name; });
+    if (button) show(button);
+    else hide();
+  }
+
+  function open(button) {
+    var hash = '#' + encodeURIComponent(nameFor(button));
+    if (location.hash !== hash) location.hash = hash;
+    syncRoute();
+  }
+
+  function close() {
+    if (location.hash) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+    hide();
+  }
+
+  function filter() {
+    var query = (search.value || '').trim().toLowerCase();
+    var visible = 0;
+    cards.forEach(function (card, index) {
+      var hit = !query || (card.textContent + ' ' + nameFor(buttons[index])).toLowerCase().includes(query);
+      card.hidden = !hit;
+      if (hit) visible++;
+    });
+    matches.textContent = visible + ' of ' + buttons.length + ' examples';
+  }
+
   document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest('[data-run]');
-    if (btn) { run(btn.getAttribute('data-run'), btn.getAttribute('data-title')); }
-    if (ev.target.id === 'close' || ev.target === modal) { close(); }
+    var button = ev.target.closest('button[data-run]');
+    if (button) { open(button); return; }
+    if (ev.target.id === 'close' || ev.target === modal) close();
   });
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && modal.classList.contains('open')) { close(); }
+    if (ev.key === 'Escape' && modal.classList.contains('open')) {
+      ev.preventDefault();
+      close();
+    } else if (ev.key === '/' && !modal.classList.contains('open') &&
+               !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
+      ev.preventDefault();
+      search.focus();
+    }
   });
+  if (share) share.addEventListener('click', function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(location.href).then(function () {
+        share.textContent = 'Copied';
+      }).catch(function () {
+        share.textContent = 'Copy URL from address bar';
+      });
+    }
+  });
+  search.addEventListener('input', filter);
+  window.addEventListener('hashchange', syncRoute);
+  filter();
+  syncRoute();
 })();
 </script>
 </body>

@@ -210,6 +210,10 @@ the driver and `--jit` use it.
 | transpiler `--mlir` entry | `flow flow-to-mlir`, `flow flow-to-llvm` |
 | `gpu_integration.py`, `gpu_runtime.py`, `metal_runtime.py` | `benchmarks/gpu/gpu_microbenchmark.c`, `runtime/gpu_metal.m` |
 
+The gpu dialect lowering to every GPU target (SPIR-V, MSL, Metal, MLX, PTX,
+cubin, AMDGPU), with execution parity against the CPU build, is
+`flow gpu-lower`: see [GPU lowering pipeline](../gpu/lowering-pipeline.md).
+
 `./flow tool tests/mlir_commands/run.flow` checks 72 command cases (`flow mlir`,
 `mlir-run`, `jit`, `ml`, `test-mlir`, `test-matmul`, `compile-audio --mlir`,
 `--mlir-gpu`, `--emit-spirv` and the pass pipelines) against goldens

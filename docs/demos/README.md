@@ -1,5 +1,7 @@
 # Demo recordings
 
+[Browse the showcase](overview.md) · [Run the WebAssembly demos](../wasm/index.html) · [Read the browser guide](wasm.md)
+
 The visual output in this folder is produced by running real Flow code. It is
 not illustration or concept art. CPU `gfx` demos are recorded from the same
 drawing API used by native windows; FSL shader demos are rendered through the
@@ -16,8 +18,8 @@ The Wiki uses these words deliberately:
   galleries. It is not another synonym for the complete example bank.
 
 The canonical collection metadata lives in [`catalog.json`](catalog.json).
-`scripts/build_demo_overview.py` turns it into the visual
-[Demo Showcase](overview.md), and `scripts/sync_demo_nav.py` uses the same
+`./flow tool demo_overview` turns it into the visual
+[Demo Showcase](overview.md), and `./flow tool demo_nav` uses the same
 catalog to keep the Gallery tab organised by rendering, systems-through-time,
 and interactive work.
 
@@ -155,8 +157,8 @@ For a new **gallery**, add one record to `docs/demos/catalog.json` with its page
 preview, count, runtime and section. Re-run:
 
 ```bash
-python3 scripts/build_demo_overview.py
-python3 scripts/sync_demo_nav.py
+./flow tool demo_overview
+./flow tool demo_nav
 ```
 
 The Wiki presentation is intentionally separate from the Markdown source.

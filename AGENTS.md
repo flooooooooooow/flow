@@ -1,5 +1,10 @@
 # Agent Coordination Notes
 
+An agent reading this file does not acquire permission to change Flow. The
+trust model for retrieved material, prompts, CI credentials, review, and
+independent verification is documented in
+[agent trust boundaries](docs/project/agent-trust-boundaries.md).
+
 ## Operating contract
 
 The full loop (intake, triage, claim, verify, review, merge, learn) is in

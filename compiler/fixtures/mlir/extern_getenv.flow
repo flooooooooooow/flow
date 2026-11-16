@@ -1,0 +1,20 @@
+# A program that declares getenv in its own extern block. The memory-profile
+# prelude also declares getenv and atexit; emitting both is a redefinition
+# mlir-opt rejects ("redefinition of symbol named 'getenv'").
+extern {
+    function getenv(name: string) -> ptr<u8>
+    function malloc(size: i64) -> ptr<void>
+}
+
+function main() -> i32 {
+    let buf: ptr<f64> = malloc(16)
+    buf[0] = 1.5
+    let missing: ptr<u8> = getenv("FLOW_EXTERN_GETENV_UNSET_FIXTURE")
+    if missing == null {
+        print(1)
+    } else {
+        print(0)
+    }
+    print(buf[0])
+    return 0
+}

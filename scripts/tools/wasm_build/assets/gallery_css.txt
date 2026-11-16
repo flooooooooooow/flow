@@ -71,3 +71,14 @@ table.status th { color: #8a8fa3; font-weight: 600; }
 footer { margin-top: 56px; color: #575c6e; font-size: 13px;
          border-top: 1px solid #1a1c24; padding-top: 16px; }
 footer a { color: #6b7ca8; }
+
+/* Shared with the generated WebAssembly gallery. */
+.gallery-nav { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 22px; font-size: 13px; }
+.gallery-nav a { color: #8baefa; text-decoration: none; }
+.gallery-nav a:hover { text-decoration: underline; }
+.demo-search { display: flex; align-items: center; gap: 14px; margin: 22px 0 8px; flex-wrap: wrap; }
+.demo-search label { font-weight: 600; }
+.demo-search input { flex: 1; min-width: 230px; max-width: 600px; color: #d8dae4; background: #101219; border: 1px solid #3b4052; border-radius: 6px; padding: 10px 12px; font: inherit; }
+.demo-search input:focus { outline: 2px solid #7aa2f7; outline-offset: 1px; }
+.demo-search output { color: #8a8fa3; font-size: 13px; }
+.card[hidden] { display: none; }

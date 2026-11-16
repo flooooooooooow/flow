@@ -447,6 +447,64 @@ void flow_gfx_fill_rect(void *handle, int32_t x, int32_t y, int32_t w, int32_t h
     }
 }
 
+/* Copy the rectangle (x, y, w, h) of src, a packed RGB8 image src_w pixels
+ * wide holding the whole framebuffer, to the same place. */
+void flow_gfx_blit_rgb_region(void *handle, const uint8_t *src, int32_t src_w,
+                              int32_t x, int32_t y, int32_t w, int32_t h) {
+    FlowGfxWasm *g = (FlowGfxWasm *)handle;
+    if (!g || !g->pixels || !src || src_w <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w; if (x1 > g->width) x1 = g->width;
+    int y1 = y + h; if (y1 > g->height) y1 = g->height;
+    if (x1 > src_w) x1 = src_w;
+    for (int yy = y0; yy < y1; yy++) {
+        const uint8_t *srow = src + ((size_t)yy * (size_t)src_w + (size_t)x0) * 3u;
+        uint8_t *drow = g->pixels + ((size_t)yy * (size_t)g->width + (size_t)x0) * 4u;
+        for (int xx = x0; xx < x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
+/* HiDPI calls. The canvas is sized in CSS pixels here, so the scale reads
+ * 100. There is no text rendering on this backend; text_ex returns a width
+ * estimate so layouts that measure text still run. */
+void *flow_gfx_init_hidpi(int32_t w, int32_t h, const char *title_utf8, int32_t flags) {
+    (void)flags;
+    return flow_gfx_init(w, h, title_utf8);
+}
+
+int32_t flow_gfx_metrics(void *handle, int32_t *out) {
+    FlowGfxWasm *g = (FlowGfxWasm *)handle;
+    if (!out) return 0;
+    if (!g) { out[0] = out[1] = out[2] = out[3] = 0; return 0; }
+    out[0] = g->width;
+    out[1] = g->height;
+    out[2] = 100;
+    out[3] = 0;
+    return 1;
+}
+
+void flow_gfx_cursor(void *handle, int32_t kind) {
+    (void)handle;
+    (void)kind;
+}
+
+int32_t flow_gfx_text_ex(void *handle, int32_t x, int32_t baseline, const char *text,
+                         int32_t size, int32_t rgb, int32_t style, int32_t measure) {
+    (void)handle; (void)x; (void)baseline; (void)rgb; (void)style; (void)measure;
+    if (!text || size <= 0) return 0;
+    int32_t n = 0;
+    while (text[n]) n++;
+    return n * size * 55 / 100;
+}
+
 void flow_gfx_present(void *handle) {
     FlowGfxWasm *g = (FlowGfxWasm *)handle;
     if (!g || !g->pixels) return;

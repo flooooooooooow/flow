@@ -1,17 +1,21 @@
-# WAV File I/O (32-bit IEEE float PCM)
+# WAV File I/O
 #
 # Offline render target for the audio examples: everything that can play to a
 # device can also write a file, so audio is testable without a sound card.
 #
-# Format: RIFF/WAVE, WAVE_FORMAT_IEEE_FLOAT (tag 3), 32-bit little-endian
-# samples, interleaved. Float is used instead of 16-bit PCM so a render is
-# bit-exact: assertions on peak level need no quantisation tolerance, and two
+# Writing produces RIFF/WAVE, WAVE_FORMAT_IEEE_FLOAT (tag 3), 32-bit
+# little-endian samples, interleaved. Float is used instead of 16-bit PCM so
+# a render is bit-exact: assertions on peak level need no quantisation tolerance, and two
 # runs of the same program produce byte-identical files.
 #
 # Writing (one file open at a time; state lives in module statics):
 #   wav_write_open("out.wav", 48000, 2)
 #   wav_write_frames(buf, frames)      # interleaved f32
 #   wav_write_close()                  # patches the RIFF sizes
+#
+# Reading accepts files as other tools write them: extra chunks before
+# "data", odd-sized chunks, WAVE_FORMAT_EXTENSIBLE, and 8, 16, 24 and 32-bit
+# integer PCM as well as 32-bit float. Samples always come back as f32.
 #
 # Reading (streaming, one file at a time):
 #   let info: WavInfo = wav_read_open("out.wav")
@@ -32,6 +36,7 @@ extern {
 }
 
 export const WAV_SEEK_SET: i32 = 0
+export const WAV_SEEK_CUR: i32 = 1
 export const WAV_HEADER_BYTES: i64 = 44
 export const WAV_STAGE_FRAMES: i32 = 1024
 
@@ -47,6 +52,8 @@ let mut wav_out_frames: i64 = 0
 let mut wav_in: ptr<void> = null
 let mut wav_in_rate: i32 = 0
 let mut wav_in_channels: i32 = 0
+let mut wav_in_bits: i32 = 0
+let mut wav_in_format: i32 = 0
 let mut wav_in_frames: i64 = 0
 let mut wav_in_read: i64 = 0
 
@@ -224,9 +231,29 @@ export function wav_info_duration(info: WavInfo) -> f64 {
     return (info.frames as f64) / (info.rate as f64)
 }
 
-# Open a canonical 44-byte-header WAV for streaming reads. Only the layout
-# this module writes is accepted (float32, one "data" chunk at offset 36).
+# Seek forward over `bytes`, plus the pad byte RIFF adds after an odd-sized
+# chunk. Returns false at a seek failure.
+function wav_skip(f: ptr<void>, bytes: i64) -> bool {
+    let mut n: i64 = bytes
+    if n % 2 == 1 {
+        n = n + 1
+    }
+    return fseek(f, n, WAV_SEEK_CUR) == 0
+}
+
+function wav_read_fail(f: ptr<void>, why: string) -> WavInfo {
+    println(why)
+    fclose(f)
+    return wav_info_bad()
+}
+
+# Open a WAV file for streaming reads: 8, 16, 24 or 32-bit PCM or 32-bit float.
+# `bits` and `format` in the result describe the file.
 export function wav_read_open(path: string) -> WavInfo {
+    # The chunks after "WAVE" are walked in order. "fmt " is parsed, including
+    # WAVE_FORMAT_EXTENSIBLE; "data" starts the samples; anything else (LIST,
+    # fact, bext, Apple's FLLR padding) is skipped. Whatever the file holds, the
+    # samples always come back from wav_read_frames as f32.
     if wav_in != null {
         println("audio/wav: a file is already open for reading")
         return wav_info_bad()
@@ -237,47 +264,81 @@ export function wav_read_open(path: string) -> WavInfo {
         return wav_info_bad()
     }
     let hp: ptr<u8> = wav_hdr
-    let got: i64 = fread(hp as ptr<void>, 1, WAV_HEADER_BYTES, f)
-    if got != WAV_HEADER_BYTES {
-        println("audio/wav: file shorter than a WAV header")
-        fclose(f)
-        return wav_info_bad()
+    if fread(hp as ptr<void>, 1, 12, f) != 12 {
+        return wav_read_fail(f, "audio/wav: file shorter than a WAV header")
     }
-    # "RIFF" .... "WAVE" "fmt "
+    # "RIFF" .... "WAVE"
     if wav_hdr[0] != 82 or wav_hdr[1] != 73 or wav_hdr[2] != 70 or wav_hdr[3] != 70 {
-        println("audio/wav: not a RIFF file")
-        fclose(f)
-        return wav_info_bad()
+        return wav_read_fail(f, "audio/wav: not a RIFF file")
     }
     if wav_hdr[8] != 87 or wav_hdr[9] != 65 or wav_hdr[10] != 86 or wav_hdr[11] != 69 {
-        println("audio/wav: not a WAVE file")
-        fclose(f)
-        return wav_info_bad()
+        return wav_read_fail(f, "audio/wav: not a WAVE file")
     }
-    if wav_hdr[36] != 100 or wav_hdr[37] != 97 or wav_hdr[38] != 116 or wav_hdr[39] != 97 {
-        println("audio/wav: unsupported chunk layout (expected data at offset 36)")
-        fclose(f)
-        return wav_info_bad()
+
+    let mut have_fmt: bool = false
+    let mut fmt: i32 = 0
+    let mut channels: i32 = 0
+    let mut rate: i64 = 0
+    let mut bits: i32 = 0
+    let mut data_bytes: i64 = -1
+    while data_bytes < 0 {
+        # Chunk header into wav_hdr[0..8], chunk body (up to 36 bytes) after it.
+        if fread(hp as ptr<void>, 1, 8, f) != 8 {
+            return wav_read_fail(f, "audio/wav: no data chunk")
+        }
+        let size: i64 = wav_hdr_u32(4)
+        if wav_hdr[0] == 102 and wav_hdr[1] == 109 and wav_hdr[2] == 116 and wav_hdr[3] == 32 {
+            # "fmt "
+            if size < 16 {
+                return wav_read_fail(f, "audio/wav: fmt chunk too short")
+            }
+            let mut take: i64 = size
+            if take > 36 {
+                take = 36
+            }
+            if fread((hp + 8) as ptr<void>, 1, take, f) != take {
+                return wav_read_fail(f, "audio/wav: truncated fmt chunk")
+            }
+            fmt = wav_hdr_u16(8)
+            channels = wav_hdr_u16(10)
+            rate = wav_hdr_u32(12)
+            bits = wav_hdr_u16(22)
+            # WAVE_FORMAT_EXTENSIBLE: the real tag opens the subformat GUID.
+            if fmt == 65534 {
+                if take < 26 {
+                    return wav_read_fail(f, "audio/wav: truncated extensible fmt chunk")
+                }
+                fmt = wav_hdr_u16(32)
+            }
+            have_fmt = true
+            if not wav_skip(f, size - take) {
+                return wav_read_fail(f, "audio/wav: truncated fmt chunk")
+            }
+        } elif wav_hdr[0] == 100 and wav_hdr[1] == 97 and wav_hdr[2] == 116 and wav_hdr[3] == 97 {
+            # "data": leave the file positioned at the first sample.
+            if not have_fmt {
+                return wav_read_fail(f, "audio/wav: data chunk before fmt chunk")
+            }
+            data_bytes = size
+        } elif not wav_skip(f, size) {
+            return wav_read_fail(f, "audio/wav: truncated chunk")
+        }
     }
-    let fmt: i32 = wav_hdr_u16(20)
-    let channels: i32 = wav_hdr_u16(22)
-    let rate: i64 = wav_hdr_u32(24)
-    let bits: i32 = wav_hdr_u16(34)
-    let data_bytes: i64 = wav_hdr_u32(40)
-    if fmt != 3 or bits != 32 {
-        println("audio/wav: only 32-bit IEEE float WAV is supported")
-        fclose(f)
-        return wav_info_bad()
+
+    let pcm_ok: bool = fmt == 1 and (bits == 8 or bits == 16 or bits == 24 or bits == 32)
+    let float_ok: bool = fmt == 3 and bits == 32
+    if not pcm_ok and not float_ok {
+        return wav_read_fail(f, "audio/wav: only 8/16/24/32-bit PCM and 32-bit float WAV are supported")
     }
     if channels < 1 {
-        println("audio/wav: bad channel count")
-        fclose(f)
-        return wav_info_bad()
+        return wav_read_fail(f, "audio/wav: bad channel count")
     }
-    let frames: i64 = data_bytes / ((channels * 4) as i64)
+    let frames: i64 = data_bytes / ((channels * (bits / 8)) as i64)
     wav_in = f
     wav_in_rate = rate as i32
     wav_in_channels = channels
+    wav_in_bits = bits
+    wav_in_format = fmt
     wav_in_frames = frames
     wav_in_read = 0
     return WavInfo {
@@ -290,8 +351,37 @@ export function wav_read_open(path: string) -> WavInfo {
     }
 }
 
+# Integer PCM sample `i` of a raw byte run, scaled to [-1, 1).
+function wav_pcm_at(b: ptr<u8>, i: i64, bytes: i32) -> f32 {
+    let at: i64 = i * (bytes as i64)
+    if bytes == 1 {
+        return (((b[at] as i32) - 128) as f32) / 128.0
+    }
+    if bytes == 2 {
+        let mut v: i32 = (b[at] as i32) + (b[at + 1] as i32) * 256
+        if v >= 32768 {
+            v = v - 65536
+        }
+        return (v as f32) / 32768.0
+    }
+    if bytes == 3 {
+        let mut v: i32 = (b[at] as i32) + (b[at + 1] as i32) * 256 + (b[at + 2] as i32) * 65536
+        if v >= 8388608 {
+            v = v - 16777216
+        }
+        return (v as f32) / 8388608.0
+    }
+    let mut v: i64 = (b[at] as i64) + (b[at + 1] as i64) * 256 + (b[at + 2] as i64) * 65536 + (b[at + 3] as i64) * 16777216
+    if v >= 2147483648 {
+        v = v - 4294967296
+    }
+    return ((v as f64) / 2147483648.0) as f32
+}
+
 # Read up to `frames` interleaved f32 frames into `dst`. Returns frames read
-# (0 at end of file).
+# (0 at end of file). Integer PCM is read as raw bytes into `dst` and widened
+# to f32 in place, last sample first: each f32 is at least as wide as its
+# source sample, so no unread byte is overwritten.
 export function wav_read_frames(dst: ptr<f32>, frames: i32) -> i32 {
     if wav_in == null or frames <= 0 {
         return 0
@@ -304,8 +394,17 @@ export function wav_read_frames(dst: ptr<f32>, frames: i32) -> i32 {
     if want <= 0 {
         return 0
     }
+    let bytes: i32 = wav_in_bits / 8
     let count: i64 = want * (wav_in_channels as i64)
-    let got: i64 = fread(dst as ptr<void>, 4, count, wav_in)
+    let got: i64 = fread(dst as ptr<void>, bytes as i64, count, wav_in)
+    if wav_in_format == 1 {
+        let raw: ptr<u8> = dst as ptr<u8>
+        let mut i: i64 = got - 1
+        while i >= 0 {
+            dst[i] = wav_pcm_at(raw, i, bytes)
+            i = i - 1
+        }
+    }
     let frames_got: i64 = got / (wav_in_channels as i64)
     wav_in_read = wav_in_read + frames_got
     return frames_got as i32
@@ -319,6 +418,8 @@ export function wav_read_close() -> void {
     wav_in = null
     wav_in_rate = 0
     wav_in_channels = 0
+    wav_in_bits = 0
+    wav_in_format = 0
     wav_in_frames = 0
     wav_in_read = 0
 }

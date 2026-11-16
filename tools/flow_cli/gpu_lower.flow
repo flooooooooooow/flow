@@ -1,0 +1,753 @@
+# @module tools.flow_cli.gpu_lower
+# @means  `flow gpu-lower`: one pipeline from a Flow program's @gpu
+#         kernels, through the MLIR gpu dialect, to SPIR-V, Metal, MLX,
+#         PTX, a cubin and an AMDGPU code object, with an execution parity
+#         check against the CPU build of the same program.
+#
+#   flow gpu-lower PROGRAM.flow [--target T] [-o OUT] [--run] [--ulp N]
+#                  [--chip SM] [--amd-chip GFX] [--sdk SDK]
+#
+# T is one of
+#   spirv  SPIR-V for Vulkan (.spv), checked with spirv-val
+#   msl    Metal Shading Language (.metal), through SPIRV-Cross
+#   metal  a Metal library (.metallib), through xcrun metal and metallib
+#   mlx    a Python script that runs the MSL kernels as
+#          mx.fast.metal_kernel (_mlx.py)
+#   ptx    NVIDIA PTX (.ptx) for SM (default sm_80)
+#   cubin  an NVIDIA cubin (.cubin); needs ptxas
+#   hsaco  an AMDGPU code object (.hsaco) for GFX (default gfx90a)
+#   all    every target into build/gpu-lower/STEM/; a target whose tools
+#          are missing is skipped with a note
+# The default target is spirv; OUT defaults to build/gpu-lower/STEM/STEM.EXT.
+# The passes are in gpu_passes.flow and docs/gpu/lowering-pipeline.md.
+#
+# --run runs the kernels where this machine can: spirv through Vulkan
+# (MoltenVK on macOS) with tools/gpu_lower/vk_run.c, msl and metal through
+# Metal with tools/gpu_lower/metal_run.m, mlx through MLX. It first builds
+# and runs the CPU build of the same program (flowc to C, cc -O2), whose
+# main() runs each kernel once per thread id and writes, to the directory
+# in $FLOW_GPU_LOWER_DATA:
+#   launch.txt   `buffer IDX f32|i32 COUNT ROLE` lines, then
+#                `dispatch KERNEL GX GY GZ IDX...` lines (workgroups of 64)
+#   in_IDX.bin   each buffer before the first dispatch
+#   out_IDX.bin  each result buffer after the CPU run
+# The GPU run starts from in_IDX.bin, and every out_IDX.bin is compared
+# with the GPU's buffer: an i32 buffer must match exactly, an f32 buffer
+# to N units in the last place (--ulp, default 0, which is bit for bit).
+# tests/gpu_lower/kernels/ has programs written this way.
+#
+# The CPU build uses $FLOW_GPU_LOWER_CC (default clang, else cc) and
+# $FLOW_GPU_LOWER_CFLAGS, default -O2 -ffp-model=strict
+# -ffp-contract=on (clang): strict keeps each loop's additions in source
+# order, which flowc's `#pragma clang loop vectorize(enable)` on a
+# reduction would otherwise let clang reorder; contract=on fuses a * b + c
+# within one expression, as the Metal compiler does. ptx, cubin and
+# hsaco cannot run here: they need an NVIDIA or AMD GPU and its driver.
+# $FLOW_MLX_PYTHON names a Python with mlx; the default is
+# build/mlx-venv/bin/python.
+#
+# Status 0; 1 when a step fails or a parity check is out of tolerance; 2
+# for usage; 3 when a tool, or the hardware for --run, is missing.
+
+import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/toolchain.flow"
+import "tools/flow_cli/mlir_tools.flow"
+import "tools/flow_cli/gpu_passes.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+function gl_usage() -> i32 {
+    errln("usage: flow gpu-lower PROGRAM.flow [--target spirv|msl|metal|mlx|ptx|cubin|hsaco|all] [-o OUT] [--run] [--ulp N] [--chip SM] [--amd-chip GFX] [--sdk SDK]")
+    return 2
+}
+
+function gl_ext(target: string) -> string {
+    if s_eq(target, "spirv") { return ".spv" }
+    if s_eq(target, "msl") { return ".metal" }
+    if s_eq(target, "metal") { return ".metallib" }
+    if s_eq(target, "mlx") { return "_mlx.py" }
+    if s_eq(target, "ptx") { return ".ptx" }
+    if s_eq(target, "cubin") { return ".cubin" }
+    if s_eq(target, "hsaco") { return ".hsaco" }
+    return ""
+}
+
+# ---------------------------------------------------------------------------
+# Host runners
+# ---------------------------------------------------------------------------
+
+# The Vulkan include and library directories: $VULKAN_SDK, then
+# `brew --prefix`, then /usr. "" after printing why when there is no
+# vulkan/vulkan.h.
+function gl_vulkan_prefix() -> string {
+    let sdk: string = env("VULKAN_SDK")
+    if s_len(sdk) > 0 and is_file(sdk + "/include/vulkan/vulkan.h") {
+        return sdk
+    }
+    if have("brew") {
+        let c: ptr<ProcCmd> = cmd(sl_of2("brew", "--prefix"))
+        cmd_quiet_err(c)
+        let p: string = capture(c)
+        if s_len(p) > 0 and is_file(p + "/include/vulkan/vulkan.h") {
+            return p
+        }
+    }
+    if is_file("/usr/include/vulkan/vulkan.h") {
+        return "/usr"
+    }
+    errln("Vulkan headers not found (vulkan/vulkan.h). Install the Vulkan loader and headers (brew install vulkan-loader vulkan-headers molten-vk) or set VULKAN_SDK.")
+    return ""
+}
+
+# The runner binary for `name` (vk_run or metal_run), built from
+# tools/gpu_lower/ when missing or older than its source. "" on failure.
+function gl_runner(name: string) -> string {
+    let bin_dir: string = build_root() + "/gpu-lower/bin"
+    let _m: bool = mkdir_p(bin_dir)
+    let bin: string = bin_dir + "/" + name
+    let mut src: string = root() + "/tools/gpu_lower/" + name + ".c"
+    if s_eq(name, "metal_run") {
+        src = root() + "/tools/gpu_lower/metal_run.m"
+    }
+    if is_exec(bin) and not newer(src, bin) {
+        return bin
+    }
+    let mut argv: ptr<ProcStrs> = sl_new()
+    if s_eq(name, "metal_run") {
+        if not s_eq(uname_s(), "Darwin") {
+            errln("Metal needs macOS")
+            return ""
+        }
+        argv = sl_of3("clang", "-O2", "-fobjc-arc")
+        sl_push2(argv, "-o", bin)
+        sl_push(argv, src)
+        sl_push2(argv, "-framework", "Metal")
+        sl_push2(argv, "-framework", "Foundation")
+    } else {
+        let vp: string = gl_vulkan_prefix()
+        if s_len(vp) == 0 {
+            return ""
+        }
+        argv = sl_of3(cc_default(), "-O2", "-I" + vp + "/include")
+        sl_push2(argv, "-o", bin)
+        sl_push(argv, src)
+        sl_push2(argv, "-L" + vp + "/lib", "-lvulkan")
+        if s_eq(uname_s(), "Darwin") {
+            sl_push(argv, "-Wl,-rpath," + vp + "/lib")
+        }
+    }
+    if gp_step(argv, "building " + name) != 0 {
+        return ""
+    }
+    return bin
+}
+
+# A Python that imports mlx.core, or "" after printing how to get one.
+function gl_mlx_python() -> string {
+    let mut py: string = env("FLOW_MLX_PYTHON")
+    if s_len(py) == 0 {
+        py = root() + "/build/mlx-venv/bin/python"
+    }
+    if is_exec(py) {
+        let c: ptr<ProcCmd> = cmd(sl_of3(py, "-c", "import mlx.core"))
+        cmd_quiet(c)
+        cmd_no_stdin(c)
+        if run(c) == 0 {
+            return py
+        }
+    }
+    errln("MLX not found: no Python with mlx at " + py + ". Create it with `python3 -m venv build/mlx-venv && build/mlx-venv/bin/pip install mlx numpy`, or set FLOW_MLX_PYTHON.")
+    return ""
+}
+
+# ---------------------------------------------------------------------------
+# The MLX wrapper
+# ---------------------------------------------------------------------------
+
+function gl_hex(s: string) -> string {
+    let n: i32 = s_len(s)
+    let digits: string = "0123456789abcdef"
+    let buf: ptr<u8> = malloc((2 * n + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = s_byte(s, i)
+        buf[2 * i] = s_byte(digits, c / 16) as u8
+        buf[2 * i + 1] = s_byte(digits, c % 16) as u8
+        i = i + 1
+    }
+    buf[2 * n] = 0 as u8
+    return buf as string
+}
+
+# One kernel of the MLX script: `'NAME': (HEADER_HEX, [PARAMS], [WRITES]),`.
+# The header is SPIRV-Cross's MSL for the kernel with the kernel function
+# made a helper, NAME_flow, whose buffer parameters have the address
+# space FLOW_AS_I for the script to fill in. A param is ('b', I, 'STRUCT')
+# for argument buffer I, or ('v', 'ATTR', '') for a builtin, which MLX
+# declares under the attribute's name.
+function gl_mlx_kernel(name: string, kline: string, work: string) -> string {
+    let msl: string = read_text(work + "/msl/" + name + ".metal")
+    let ks: i32 = s_find(msl, "kernel void " + name + "(", 0)
+    if ks < 0 {
+        errln("MLX: no kernel " + name + " in the MSL")
+        return ""
+    }
+    let ps: i32 = ks + 13 + s_len(name)
+    let pe: i32 = s_find(msl, ")\n{", ps)
+    let params: ptr<ProcStrs> = sl_new()
+    let mut rest: string = s_slice(msl, ps, pe)
+    while s_len(rest) > 0 {
+        let close: i32 = s_find(rest, "]]", 0)
+        if close < 0 {
+            rest = ""
+        } else {
+            sl_push(params, s_slice(rest, 0, close + 2))
+            rest = s_from(rest, close + 2)
+            if s_starts(rest, ", ") {
+                rest = s_from(rest, 2)
+            }
+        }
+    }
+    let mut sig: string = ""
+    let mut plist: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(params) {
+        let p: string = sl_get(params, i)
+        let ao: i32 = s_find(p, " [[", 0)
+        let decl: string = s_slice(p, 0, ao)
+        let attr: string = s_slice(p, ao + 3, s_len(p) - 2)
+        let sp: i32 = s_rfind_byte(decl, 32)
+        let pname: string = s_from(decl, sp + 1)
+        let mut ty: string = s_slice(decl, 0, sp)
+        if i > 0 {
+            sig = sig + ", "
+        }
+        if s_starts(attr, "buffer(") {
+            let idx: string = s_slice(attr, 7, s_len(attr) - 1)
+            if s_starts(ty, "const ") {
+                ty = s_from(ty, 6)
+            }
+            if s_starts(ty, "device ") {
+                ty = s_from(ty, 7)
+            }
+            if s_ends(ty, "&") {
+                ty = s_slice(ty, 0, s_len(ty) - 1)
+            }
+            sig = sig + "FLOW_AS_" + idx + " " + ty + "& " + pname
+            plist = plist + "('b', " + idx + ", '" + ty + "'), "
+        } else {
+            sig = sig + ty + " " + pname
+            plist = plist + "('v', '" + attr + "', ''), "
+        }
+        i = i + 1
+    }
+    let mut header: string = s_slice(msl, 0, ks) + "static inline void " + name + "_flow(" + sig + s_from(msl, pe)
+    header = s_replace(header, "#include <metal_stdlib>\n", "")
+    header = s_replace(header, "#include <simd/simd.h>\n", "")
+    header = s_replace(header, "using namespace metal;\n", "")
+    let kw: ptr<ProcStrs> = s_words(kline)
+    let mut writes: string = ""
+    let mut j: i32 = 3
+    while j < sl_len(kw) {
+        writes = writes + sl_get(kw, j) + ", "
+        j = j + 1
+    }
+    return "    '" + name + "': ('" + gl_hex(header) + "', [" + plist + "], [" + writes + "]),\n"
+}
+
+let GL_MLX_MAIN: string = "
+def main():
+    if len(sys.argv) != 3:
+        sys.exit('usage: python SCRIPT DATA_DIR OUT_DIR')
+    data, out = sys.argv[1], sys.argv[2]
+    dt, cur, disp = {}, {}, []
+    for line in open(data + '/launch.txt').read().splitlines():
+        t = line.split()
+        if not t:
+            continue
+        if t[0] == 'buffer':
+            b = int(t[1])
+            dt[b] = np.float32 if t[2] == 'f32' else np.int32
+            cur[b] = np.fromfile(data + '/in_%d.bin' % b, dtype=dt[b])
+        elif t[0] == 'dispatch':
+            disp.append((t[1], [int(v) for v in t[2:5]], [int(v) for v in t[5:]]))
+    print('mlx_run: device %s, mlx %s' % (mx.default_device(), mx.__version__), file=sys.stderr)
+    for name, g, args in disp:
+        hexhead, params, writes = KERNELS[name]
+        header = bytes.fromhex(hexhead).decode()
+        ins, outs, call = [], [], []
+        for p in params:
+            if p[0] == 'v':
+                call.append(p[1])
+                continue
+            i, s = p[1], p[2]
+            b = args[i]
+            if i in writes:
+                if np.any(cur[b] != 0):
+                    sys.exit('mlx_run: %s writes buffer %d, which does not start at zero; an MLX output starts at zero' % (name, b))
+                outs.append(b)
+                space = 'device'
+                call.append('*(device %s*)(o%d)' % (s, b))
+            else:
+                ins.append(b)
+                # MLX passes an input of fewer than 8 elements in the constant address space.
+                space = 'constant' if cur[b].size < 8 else 'device'
+                call.append('*(%s %s*)(b%d)' % (space, s, b))
+            header = header.replace('FLOW_AS_%d ' % i, space + ' ')
+        if not outs:
+            sys.exit('mlx_run: %s writes no buffer' % name)
+        kernel = mx.fast.metal_kernel(
+            name='flow_' + name,
+            input_names=['b%d' % b for b in ins],
+            output_names=['o%d' % b for b in outs],
+            source='%s_flow(%s);' % (name, ', '.join(call)),
+            header=header)
+        res = kernel(
+            inputs=[mx.array(cur[b]) for b in ins],
+            grid=(g[0] * 64, g[1], g[2]),
+            threadgroup=(64, 1, 1),
+            output_shapes=[cur[b].shape for b in outs],
+            output_dtypes=[mx.float32 if dt[b] == np.float32 else mx.int32 for b in outs],
+            init_value=0)
+        mx.eval(res)
+        for b, r in zip(outs, res):
+            cur[b] = np.array(r).astype(dt[b])
+    for b in cur:
+        cur[b].tofile(out + '/gpu_%d.bin' % b)
+
+
+main()
+"
+
+# Kernel module -> the MLX script: SPIR-V, MSL per kernel, then the
+# script that wraps each kernel as mx.fast.metal_kernel.
+function gl_mlx(kmod: string, program: string, output: string, kernels: ptr<ProcStrs>, work: string) -> i32 {
+    let spv: string = work + "/kernels.spv"
+    let rc: i32 = gp_spirv(kmod, spv, sl_new(), work)
+    if rc != 0 {
+        return rc
+    }
+    if s_len(gp_tool("spirv-cross", env("SPIRV_CROSS"), "spirv-cross")) == 0 {
+        return 3
+    }
+    let names: ptr<ProcStrs> = gp_msl_kernels(spv, sl_new(), work)
+    if sl_len(names) == 0 {
+        return 1
+    }
+    let mut table: string = ""
+    let mut k: i32 = 0
+    while k < sl_len(kernels) {
+        let kl: string = sl_get(kernels, k)
+        let entry: string = gl_mlx_kernel(sl_get(s_words(kl), 0), kl, work)
+        if s_len(entry) == 0 {
+            return 1
+        }
+        table = table + entry
+        k = k + 1
+    }
+    let mut py: string = "# Generated by `flow gpu-lower --target mlx` from " + program + ".\n"
+    py = py + "# The MSL is SPIRV-Cross's output for the SPIR-V that mlir-opt lowered from\n"
+    py = py + "# the gpu dialect; each kernel runs as mx.fast.metal_kernel, whose body\n"
+    py = py + "# calls the kernel function. DATA_DIR holds launch.txt and in_IDX.bin;\n"
+    py = py + "# OUT_DIR gets gpu_IDX.bin. Usage: python SCRIPT DATA_DIR OUT_DIR\n"
+    py = py + "import sys\n\nimport mlx.core as mx\nimport numpy as np\n\nKERNELS = {\n" + table + "}\n" + GL_MLX_MAIN
+    let _m: bool = mkdir_p(path_dirname(output))
+    if not write_text(output, py) {
+        return gp_die("cannot write " + output)
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Build one target
+# ---------------------------------------------------------------------------
+
+function gl_build(target: string, kmod: string, program: string, output: string, kernels: ptr<ProcStrs>, chip: string, amd_chip: string, sdk: string, work: string) -> i32 {
+    let tw: string = work + "/" + target
+    rm_rf(tw)
+    let _m: bool = mkdir_p(tw)
+    if s_eq(target, "spirv") {
+        return gp_spirv(kmod, output, sl_new(), tw)
+    }
+    if s_eq(target, "msl") or s_eq(target, "metal") {
+        let rc: i32 = gp_spirv(kmod, tw + "/kernels.spv", sl_new(), tw)
+        if rc != 0 {
+            return rc
+        }
+        if s_eq(target, "msl") {
+            return gp_msl(tw + "/kernels.spv", output, sl_new(), tw)
+        }
+        let rc2: i32 = gp_msl(tw + "/kernels.spv", tw + "/kernels.metal", sl_new(), tw)
+        if rc2 != 0 {
+            return rc2
+        }
+        return gp_metallib(tw + "/kernels.metal", output, sdk, tw)
+    }
+    if s_eq(target, "mlx") {
+        return gl_mlx(kmod, program, output, kernels, tw)
+    }
+    if s_eq(target, "ptx") {
+        let rc3: i32 = gp_nvvm(kmod, output, chip, "isa", tw)
+        if rc3 != 0 {
+            return rc3
+        }
+        let rc5: i32 = gp_check_ptx(output, chip, kernels)
+        if rc5 != 0 {
+            return rc5
+        }
+        return gp_check_ptx_llc(kmod, output, chip, tw)
+    }
+    if s_eq(target, "cubin") {
+        return gp_nvvm(kmod, output, chip, "bin", tw)
+    }
+    if s_eq(target, "hsaco") {
+        let rc4: i32 = gp_hsaco(kmod, output, amd_chip, tw)
+        if rc4 != 0 {
+            return rc4
+        }
+        return gp_check_hsaco(output, kernels, tw)
+    }
+    return gl_usage()
+}
+
+# ---------------------------------------------------------------------------
+# The parity run
+# ---------------------------------------------------------------------------
+
+# The C compiler of the CPU build: $FLOW_GPU_LOWER_CC, else clang (the
+# default flags are clang's), else cc.
+function gl_cpu_cc() -> string {
+    let c: string = env("FLOW_GPU_LOWER_CC")
+    if s_len(c) > 0 {
+        return c
+    }
+    if have("clang") {
+        return "clang"
+    }
+    return cc_default()
+}
+
+# The CPU build of `program` run with its data directory `data`.
+function gl_cpu_run(program: string, data: string, work: string) -> i32 {
+    rm_rf(data)
+    let _m: bool = mkdir_p(data)
+    sink_push(SINK_NULL, SINK_SAME)
+    let ec: i32 = flowc_emit_to_c(program, work + "/cpu.c")
+    let _s: string = sink_pop()
+    if ec != 0 {
+        return gp_die("the CPU build of " + program + " failed (flowc)")
+    }
+    let argv: ptr<ProcStrs> = sl_of1(gl_cpu_cc())
+    sl_extend(argv, s_words(env_or("FLOW_GPU_LOWER_CFLAGS", "-O2 -ffp-model=strict -ffp-contract=on")))
+    sl_push(argv, "-w")
+    sl_push2(argv, "-o", work + "/cpu")
+    sl_push2(argv, work + "/cpu.c", "-lm")
+    if gp_step(argv, "the CPU build of " + program + " (cc)") != 0 {
+        return 1
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of1(work + "/cpu"))
+    cmd_env(c, "FLOW_GPU_LOWER_DATA", data)
+    cmd_no_stdin(c)
+    let rc: i32 = run(c)
+    if rc != 0 {
+        return gp_die("the CPU build of " + program + " exited " + s_itoa(rc))
+    }
+    if not is_file(data + "/launch.txt") {
+        return gp_die(program + ": main() wrote no launch.txt to $FLOW_GPU_LOWER_DATA, so there is nothing to run (see `flow gpu-lower` in docs/gpu/lowering-pipeline.md)")
+    }
+    return 0
+}
+
+# Distance in units in the last place between two f32 bit patterns, with
+# -0 and +0 equal. A NaN on either side is 2^31 unless the bits match.
+function gl_ulp(a: i32, b: i32) -> i64 {
+    if a == b {
+        return 0
+    }
+    let ma: i64 = (a as i64) & 2147483647
+    let mb: i64 = (b as i64) & 2147483647
+    if ma > 2139095040 or mb > 2139095040 {
+        return 2147483648
+    }
+    let mut oa: i64 = ma
+    let mut ob: i64 = mb
+    if a < 0 {
+        oa = 0 - ma
+    }
+    if b < 0 {
+        ob = 0 - mb
+    }
+    let d: i64 = oa - ob
+    if d < 0 {
+        return 0 - d
+    }
+    return d
+}
+
+# Compare every out_IDX.bin of the CPU run with the GPU's gpu_IDX.bin.
+# Prints one line per buffer; 0 when all are within `ulp`.
+function gl_compare(target: string, data: string, gpu: string, ulp: i32) -> i32 {
+    let lines: ptr<ProcStrs> = s_lines(read_text(data + "/launch.txt"))
+    let mut bad: i32 = 0
+    let mut checked: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let w: ptr<ProcStrs> = s_words(sl_get(lines, i))
+        i = i + 1
+        if not s_eq(sl_get(w, 0), "buffer") {
+            continue
+        }
+        let idx: string = sl_get(w, 1)
+        let ty: string = sl_get(w, 2)
+        let want: string = data + "/out_" + idx + ".bin"
+        if not is_file(want) {
+            continue
+        }
+        checked = checked + 1
+        let x: Bytes = read_bytes(want)
+        let y: Bytes = read_bytes(gpu + "/gpu_" + idx + ".bin")
+        if y.len != x.len {
+            errln("  buffer " + idx + ": the GPU run wrote " + s_itoa(y.len as i32) + " bytes, the CPU run " + s_itoa(x.len as i32))
+            bad = bad + 1
+            continue
+        }
+        let n: i32 = (x.len / 4) as i32
+        let pa: ptr<i32> = x.data as ptr<i32>
+        let pb: ptr<i32> = y.data as ptr<i32>
+        let mut same: i32 = 0
+        let mut worst: i64 = 0
+        let mut worst_at: i32 = 0
+        let mut over: i32 = 0
+        let mut k: i32 = 0
+        while k < n {
+            if pa[k] == pb[k] {
+                same = same + 1
+            } else {
+                let mut d: i64 = 2147483648
+                if s_eq(ty, "f32") {
+                    d = gl_ulp(pa[k], pb[k])
+                }
+                if d > worst {
+                    worst = d
+                    worst_at = k
+                }
+                if d > (ulp as i64) {
+                    over = over + 1
+                }
+            }
+            k = k + 1
+        }
+        let mut msg: string = "  buffer " + idx + " (" + ty + " x" + s_itoa(n) + "): " + s_itoa(same) + "/" + s_itoa(n) + " bit-identical"
+        if s_eq(ty, "f32") {
+            if worst >= 2147483648 {
+                msg = msg + ", max 2^31 ulp or more (a NaN, or opposite signs) at [" + s_itoa(worst_at) + "]"
+            } else {
+                msg = msg + ", max " + s_itoa(worst as i32) + " ulp"
+                if worst > 0 {
+                    msg = msg + " at [" + s_itoa(worst_at) + "]"
+                }
+            }
+        }
+        if over > 0 {
+            msg = msg + ", " + s_itoa(over) + " over the " + s_itoa(ulp) + " ulp tolerance"
+            bad = bad + 1
+        }
+        outln(msg)
+    }
+    if checked == 0 {
+        return gp_die("parity: the CPU run wrote no out_IDX.bin, so nothing was compared")
+    }
+    return bad
+}
+
+function gl_run(target: string, artefact: string, program: string, ulp: i32, work: string) -> i32 {
+    if s_eq(target, "ptx") or s_eq(target, "cubin") {
+        errln("gpu-lower: " + target + " cannot run here: it needs an NVIDIA GPU and the CUDA driver")
+        return 3
+    }
+    if s_eq(target, "hsaco") {
+        errln("gpu-lower: hsaco cannot run here: it needs an AMD GPU and the ROCm runtime")
+        return 3
+    }
+    let data: string = work + "/data"
+    let gpu: string = work + "/run-" + target
+    # The runner first, so a machine without the GPU stack stops (status 3)
+    # before the CPU build.
+    let mut argv: ptr<ProcStrs> = sl_new()
+    let mut lib: string = artefact
+    if s_eq(target, "spirv") {
+        let vk: string = gl_runner("vk_run")
+        if s_len(vk) == 0 {
+            return 3
+        }
+        argv = sl_of3(vk, artefact, data)
+    } elif s_eq(target, "metal") or s_eq(target, "msl") {
+        let mr: string = gl_runner("metal_run")
+        if s_len(mr) == 0 {
+            return 3
+        }
+        if s_eq(target, "msl") {
+            lib = work + "/msl/run.metallib"
+            let _d: bool = mkdir_p(work + "/msl")
+            let lrc: i32 = gp_metallib(artefact, lib, "macosx", work + "/msl")
+            if lrc != 0 {
+                return lrc
+            }
+        }
+        argv = sl_of3(mr, lib, data)
+    } elif s_eq(target, "mlx") {
+        let py: string = gl_mlx_python()
+        if s_len(py) == 0 {
+            return 3
+        }
+        argv = sl_of3(py, "-I", artefact)
+        sl_push(argv, data)
+    } else {
+        return gl_usage()
+    }
+    if not is_file(data + "/launch.txt") {
+        let crc: i32 = gl_cpu_run(program, data, work)
+        if crc != 0 {
+            return crc
+        }
+    }
+    rm_rf(gpu)
+    let _m: bool = mkdir_p(gpu)
+    sl_push(argv, gpu)
+    let rrc: i32 = gp_step(argv, "the " + target + " run")
+    if rrc == 3 {
+        return 3
+    }
+    if rrc != 0 {
+        return 1
+    }
+    outln("parity " + target + " " + program + " (tolerance " + s_itoa(ulp) + " ulp):")
+    let bad: i32 = gl_compare(target, data, gpu, ulp)
+    if bad != 0 {
+        outln("FAIL " + target + " " + program)
+        return 1
+    }
+    outln("PASS " + target + " " + program)
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# The command
+# ---------------------------------------------------------------------------
+
+export function gpu_lower(args: ptr<ProcStrs>) -> i32 {
+    let mut program: string = ""
+    let mut target: string = "spirv"
+    let mut output: string = ""
+    let mut do_run: bool = false
+    let mut ulp: i32 = 0
+    let mut chip: string = "sm_80"
+    let mut amd_chip: string = "gfx90a"
+    let mut sdk: string = "macosx"
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        let a: string = sl_get(args, i)
+        if s_eq(a, "--target") or s_eq(a, "-t") {
+            target = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_eq(a, "-o") or s_eq(a, "--output") {
+            output = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_eq(a, "--run") {
+            do_run = true
+        } elif s_eq(a, "--ulp") {
+            ulp = s_atoi(sl_get(args, i + 1), 0 - 1)
+            i = i + 1
+        } elif s_eq(a, "--chip") {
+            chip = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_eq(a, "--amd-chip") {
+            amd_chip = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_eq(a, "--sdk") {
+            sdk = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "-") or s_len(program) > 0 {
+            return gl_usage()
+        } else {
+            program = a
+        }
+        i = i + 1
+    }
+    let all: bool = s_eq(target, "all")
+    if s_len(program) == 0 or ulp < 0 or (not all and s_len(gl_ext(target)) == 0) {
+        return gl_usage()
+    }
+    if not is_file(program) {
+        return gp_die("gpu-lower: no such file: " + program)
+    }
+    let stem: string = path_stem(program, ".flow")
+    let out_dir: string = build_root() + "/gpu-lower/" + stem
+    let work: string = out_dir + "/work"
+    rm_rf(work)
+    if not mkdir_p(work) {
+        return gp_die("gpu-lower: cannot create " + work)
+    }
+    # Flow -> MLIR with the gpu dialect.
+    if flow_emit_mlir(sl_of3("--gpu", program, work + "/host.mlir")) != 0 {
+        return gp_die("gpu-lower: " + program + " did not compile to MLIR")
+    }
+    let kmod: string = work + "/kernels.mlir"
+    let prc: i32 = gp_prepare(work + "/host.mlir", kmod)
+    if prc != 0 {
+        return prc
+    }
+    let kernels: ptr<ProcStrs> = gp_kernels(read_text(kmod))
+    if sl_len(kernels) == 0 {
+        return gp_die("gpu-lower: " + program + " has no @gpu kernels")
+    }
+    let _k: bool = write_text(work + "/kernels.txt", sl_join(kernels, "\n") + "\n")
+    let targets: ptr<ProcStrs> = sl_new()
+    if all {
+        sl_extend(targets, s_words("spirv msl metal mlx ptx cubin hsaco"))
+    } else {
+        sl_push(targets, target)
+    }
+    let mut status: i32 = 0
+    let mut t: i32 = 0
+    while t < sl_len(targets) {
+        let tg: string = sl_get(targets, t)
+        t = t + 1
+        let mut out: string = output
+        if all or s_len(out) == 0 {
+            out = out_dir + "/" + stem + gl_ext(tg)
+        }
+        let rc: i32 = gl_build(tg, kmod, program, out, kernels, chip, amd_chip, sdk, work)
+        if rc == 3 and all {
+            outln("skip " + tg + ": a tool is missing (above)")
+            continue
+        }
+        if rc != 0 {
+            if rc != 3 {
+                errln("gpu-lower: " + tg + " failed")
+            }
+            if not all {
+                return rc
+            }
+            status = 1
+            continue
+        }
+        outln("wrote " + out)
+        if do_run {
+            let rr: i32 = gl_run(tg, out, program, ulp, work)
+            if rr == 3 and all {
+                continue
+            }
+            if rr != 0 {
+                if not all {
+                    return rr
+                }
+                status = 1
+            }
+        }
+    }
+    return status
+}

@@ -1,0 +1,62 @@
+# Regression for FP32 softmax target-gradient cancellation.
+# Run: ./flow run examples/ml/softmax_fp32_regression.flow
+# Reference: https://arxiv.org/abs/2610.31642
+
+extern {
+    function expf(x: f32) -> f32
+    function log1pf(x: f32) -> f32
+}
+
+function abs32(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+function main() -> i32 {
+    let a: f32 = expf(0.0)
+    let b: f32 = expf(0.0 - 18.0)
+    let c: f32 = expf(0.0 - 18.0)
+    let denom: f32 = a + b + c
+    let p0: f32 = a / denom
+    let p1: f32 = b / denom
+    let p2: f32 = c / denom
+
+    let naive_target: f32 = p0 - 1.0
+    let stable_target: f32 = 0.0 - (b + c) / denom
+    let naive_sum: f32 = naive_target + p1 + p2
+    let stable_sum: f32 = stable_target + p1 + p2
+    let stable_loss: f32 = log1pf(b + c)
+
+    if naive_target != 0.0 {
+        println("FAIL: expected FP32 target rounding; inspect backend precision")
+        return 1
+    }
+    if abs32(stable_loss - 0.00000003045996) > 0.00000000001 {
+        println("FAIL: log1p loss disagrees with reference")
+        return 1
+    }
+    if stable_target >= 0.0 {
+        println("FAIL: stable target gradient vanished")
+        return 1
+    }
+    if abs32(stable_target + 0.00000003045996) > 0.00000000001 {
+        println("FAIL: stable target gradient disagrees with reference")
+        return 1
+    }
+    if abs32(stable_sum) > 0.00000000000001 {
+        println("FAIL: stable gradient violates shift invariance")
+        return 1
+    }
+    if abs32(p1 - p2) > 0.00000000000001 {
+        println("FAIL: symmetric logits produced asymmetric gradients")
+        return 1
+    }
+    if naive_sum <= 0.0 {
+        println("FAIL: expected naive gradient-sum defect")
+        return 1
+    }
+    println("PASS: FP32 softmax collapse reproduced; stable gradient conserved")
+    return 0
+}

@@ -1,0 +1,119 @@
+# `flow debug` on a program that imports stdlib/gfx.flow. The debug build
+# used to link through flowc_link_c alone, which has no graphics backend,
+# so every flow_gfx_* symbol was undefined at link time. It now links the
+# same backend, frameworks and sources as `flow gfx`, at -O0 -g3. The
+# checks only build (--no-launch), so they need no display.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function gfx_program() -> string {
+    let mut p: string = "import \"stdlib/gfx.flow\"\n"
+    p = p + "\n"
+    p = p + "export function main() -> i32 {\n"
+    p = p + "    let g = gfx_open(64, 48, \"debug link\")\n"
+    p = p + "    gfx_clear(g, 0, 0, 0)\n"
+    p = p + "    gfx_present(g)\n"
+    p = p + "    gfx_close(g)\n"
+    p = p + "    return 0\n"
+    p = p + "}\n"
+    return p
+}
+
+function plain_program() -> string {
+    let mut p: string = "export function main() -> i32 {\n"
+    p = p + "    println(\"plain debug build\")\n"
+    p = p + "    return 0\n"
+    p = p + "}\n"
+    return p
+}
+
+# `flow debug FILE --no-launch` with the build directory inside the check's
+# scratch directory. The status.
+function debug_build(file: string) -> i32 {
+    let tmp: string = t_tmp()
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "debug", file)
+    sl_push(argv, "--no-launch")
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, tmp)
+    cmd_env(c, "FLOW_BUILD_ROOT", tmp + "/build")
+    return t_run(c)
+}
+
+# On Linux and Windows the gfx backend needs the SDL2 headers.
+function need_gfx_toolchain() -> i32 {
+    let need: i32 = t_need("clang")
+    if need != T_PASS {
+        return need
+    }
+    if s_eq(uname_s(), "Darwin") {
+        return T_PASS
+    }
+    if have("pkg-config") and run_argv(sl_of3("pkg-config", "--exists", "sdl2")) == 0 {
+        return T_PASS
+    }
+    if have("sdl2-config") {
+        return T_PASS
+    }
+    return t_skip("requires SDL2 for the gfx backend")
+}
+
+function check_gfx_debug_links() -> i32 {
+    let need: i32 = need_gfx_toolchain()
+    if need != T_PASS {
+        return need
+    }
+    let tmp: string = t_tmp()
+    let src: string = tmp + "/debug_gfx.flow"
+    let _w: bool = write_text(src, gfx_program())
+    let rc: i32 = debug_build(src)
+    out(read_text(t_out()))
+    out(read_text(t_err()))
+    if not a_eq(s_itoa(rc), "0", "flow debug --no-launch exit code for a gfx program") {
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_err()), "flow_gfx_") {
+        return T_FAIL
+    }
+    if not a_exists(tmp + "/build/debug_gfx.debug") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_plain_debug_links() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let tmp: string = t_tmp()
+    let src: string = tmp + "/debug_plain.flow"
+    let _w: bool = write_text(src, plain_program())
+    let rc: i32 = debug_build(src)
+    out(read_text(t_out()))
+    out(read_text(t_err()))
+    if not a_eq(s_itoa(rc), "0", "flow debug --no-launch exit code for a plain program") {
+        return T_FAIL
+    }
+    let exe: string = tmp + "/build/debug_plain.debug"
+    if not a_exists(exe) {
+        return T_FAIL
+    }
+    if not a_eq(s_itoa(t_run_argv(sl_of1(exe))), "0", "plain debug binary exit code") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "plain debug build") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("debug_gfx_link")
+    t_start()
+    t_end("gfx_program_links", check_gfx_debug_links())
+    t_start()
+    t_end("plain_program_links", check_plain_debug_links())
+    t_done()
+    return 0
+}
