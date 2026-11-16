@@ -401,6 +401,8 @@ async function docsBrowserCheck(wikiRoot, opts) {
                 }
             }
 
+            await page.waitForFunction(() => document.activeElement?.id === 'shareUrl', null,
+                { timeout: opts.timeout });
             await expectFocus(url);
             await expectFocus(copy, 'Shift+Tab');
             await expectFocus(url, 'Tab');
