@@ -4,6 +4,11 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- CLI: `flow run <program> -- <args>` passes the arguments to the program; a word after
+  the program path is passed the same way, where it used to be an "Unexpected argument"
+  error. The MLIR backend now links a program's `flow.toml` `[native]` sources, libraries
+  and frameworks, as the C backend does, and honours `FLOW_OPT_LEVEL` in its link step,
+  which a hardcoded `-O2` overrode. Covered by `tests/scripts/run_program_args.flow`.
 - GPU: `flow gpu-lower PROGRAM --target spirv|msl|metal|mlx|ptx|cubin|hsaco|all`
   lowers `@gpu` kernels from the MLIR gpu dialect to every GPU target, and
   `--run` compares each result buffer with the CPU build of the same

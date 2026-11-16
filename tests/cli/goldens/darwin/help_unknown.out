@@ -3,7 +3,7 @@ Flow Programming Language v2.0.0
 Usage: flow [OPTIONS] <program.flow>
 
 Options:
-  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety]
+  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety] [-- args...]
                     Compile and run program
   compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]
                     Compile program only; --show-flags prints clang flags

@@ -18,6 +18,7 @@ FLOW is a statically-typed, systems programming language with first-class suppor
 ### Commands
 ```bash
 flow run <file.flow>      # Compile and run with flowc
+flow run <file.flow> -- a b   # The same, passing a and b to the program
 flow compile <file.flow>  # Compile to executable
 flow fmt <file.flow>      # Format source code
 flow test                 # Run all tests
