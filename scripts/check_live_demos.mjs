@@ -369,6 +369,67 @@ async function docsBrowserCheck(wikiRoot, opts) {
             }
         });
 
+        await check('playground keyboard and screen-reader accessibility', async page => {
+            await page.goto(base + '/playground/index.html', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.getByRole('textbox', { name: 'Flow source code editor' })
+                .waitFor({ timeout: opts.timeout });
+            if (await page.locator('#output').getAttribute('role') !== 'status' ||
+                await page.locator('#output').getAttribute('aria-live') !== 'polite') {
+                throw new Error('Playground output lacks accessible status announcements');
+            }
+
+            const share = page.locator('button[onclick="shareCode()"]');
+            await share.focus();
+            await page.keyboard.press('Enter');
+
+            const dialog = page.getByRole('dialog', { name: 'Share Your Code' });
+            await dialog.waitFor({ state: 'visible', timeout: opts.timeout });
+            if (await dialog.getAttribute('aria-modal') !== 'true' ||
+                await page.locator('#shareModal').getAttribute('aria-hidden') !== 'false') {
+                throw new Error('Share dialog lacks modal accessibility semantics');
+            }
+
+            const url = dialog.getByRole('textbox', { name: 'Shareable playground URL' });
+            const close = dialog.getByRole('button', { name: 'Close' });
+            const copy = dialog.getByRole('button', { name: 'Copy URL' });
+            async function expectFocus(target, action) {
+                if (action) await page.keyboard.press(action);
+                if (!(await target.evaluate(element => document.activeElement === element))) {
+                    throw new Error('Dialog keyboard focus lost at ' + (action || 'open'));
+                }
+            }
+
+            await expectFocus(url);
+            await expectFocus(copy, 'Shift+Tab');
+            await expectFocus(url, 'Tab');
+            await expectFocus(close, 'Tab');
+            await expectFocus(copy, 'Tab');
+            await expectFocus(url, 'Tab');
+
+            const statusBefore = await page.locator('#editorStatusText').textContent();
+            await page.keyboard.press('Control+Enter');
+            if (await page.locator('#editorStatusText').textContent() !== statusBefore) {
+                throw new Error('Editor shortcut executed through the open share dialog');
+            }
+
+            await page.keyboard.press('Escape');
+            await dialog.waitFor({ state: 'hidden', timeout: opts.timeout });
+            if (await page.locator('#shareModal').getAttribute('aria-hidden') !== 'true' ||
+                !(await share.evaluate(element => document.activeElement === element))) {
+                throw new Error('Escape did not dismiss share dialog and restore focus');
+            }
+
+            await page.keyboard.press('Enter');
+            await dialog.waitFor({ state: 'visible', timeout: opts.timeout });
+            await close.click();
+            await dialog.waitFor({ state: 'hidden', timeout: opts.timeout });
+            if (!(await share.evaluate(element => document.activeElement === element))) {
+                throw new Error('Close button did not restore the original focus');
+            }
+        });
+
         await check('browser representation preview', async page => {
             await page.goto(base + '/playground/pyodide.html', {
                 waitUntil: 'domcontentloaded', timeout: opts.timeout,
