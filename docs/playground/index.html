@@ -1183,7 +1183,8 @@ function main() -> i32 {
         }
 
         function openBrowserPreview() {
-            window.open('pyodide.html', '_blank', 'noopener');
+            const encoded = btoa(encodeURIComponent(editor.value));
+            window.open('pyodide.html?code=' + encodeURIComponent(encoded), '_blank', 'noopener');
         }
 
         async function runWasmLocal() {
