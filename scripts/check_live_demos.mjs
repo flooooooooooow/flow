@@ -323,7 +323,7 @@ async function docsBrowserCheck(wikiRoot, opts) {
                 const content = document.getElementById('markdownContent')?.textContent.trim();
                 return title && content && !content.includes('Loading documentation');
             }, null, { timeout: opts.timeout });
-            if (/not found|failed to load/i.test(await page.locator('#markdownContent').innerText())) {
+            if (await page.locator('#markdownContent .not-found-panel').count()) {
                 throw new Error('Wiki could not render Start Here');
             }
             await page.locator('#searchTrigger').click();
