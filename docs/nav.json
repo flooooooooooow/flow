@@ -1017,6 +1017,10 @@
           "path": "project/pattern-adoption.md"
         },
         {
+          "label": "Semantic Modernization Programme",
+          "path": "project/idiom-modernization-program.md"
+        },
+        {
           "label": "FIR-G",
           "path": "project/fir-g.md"
         },
