@@ -41,9 +41,14 @@ C / MLIR backends.
 
 ## Documentation
 
-Python-style entry points. Pick a section; the sidebar tabs mirror this map.
+Choose a path by what you want to do. Learning, reference material, interactive examples and project information have distinct entry points.
 
 <nav class="wiki-doc-index" aria-label="Documentation sections">
+
+<a class="wiki-doc" href="README.md">
+<strong>Documentation guide</strong>
+<span>Find the right learning path, language reference, live environment or contribution guide without browsing the entire sidebar.</span>
+</a>
 
 <a class="wiki-doc" href="book/README.md">
 <strong>The Flow Book</strong>
