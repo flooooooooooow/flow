@@ -5,7 +5,7 @@
 
 ---
 
-## Current state (Phase 0-1, shipped)
+## Existing website capabilities
 
 | Item | Status |
 |------|--------|
@@ -13,9 +13,9 @@
 | Tab navigation + collapsible sidebar | ✅ |
 | ⌘K search over docs + proofs | ✅ |
 | KaTeX math in proof pages | ✅ |
-| Third-party `flow-verify` section (1000+ proofs) | ✅ |
+| Optional third-party `flow-verify` proof section | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
-| Build script (`scripts/build_wiki.py`) | ✅ |
+| Flow-native site builder (`./flow tool build_wiki`) | ✅ |
 | Deploy script (`./flow tool deploy_wiki`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
 | Version dropdown + changelog | ✅ |
 | GitHub Pages deploy (`wiki.yml`) | ✅ |
@@ -23,7 +23,7 @@
 | Grammar page + EBNF viewer | ✅ |
 | Language roadmap linked in nav | ✅ |
 | Admonitions (`note/tip/warning/important/caution`) | ✅ |
-| Interactive tutorials app (40+ lessons) | ✅ |
+| Interactive tutorials application | ✅ |
 | 404 / not-found panel in wiki shell | ✅ |
 | Proof link resolution + HTML-fallback guard | ✅ |
 | Mobile drawer (backdrop / Escape / aria) | ✅ |
@@ -42,7 +42,7 @@
 | Benchmark results in wiki | ✅ | `project/benchmark-results.md` |
 | Effects guide in nav | ✅ | `effects-showcase.md` |
 | Autodiff guide | ✅ | `library/autodiff-guide.md` |
-| Stdlib API autogen | ✅ | `scripts/gen_stdlib_docs.py` → `library/stdlib-api.md` |
+| Stdlib API autogen | ✅ | `./flow tool gen_stdlib_docs` → `library/stdlib-api.md` |
 | Split `LANGUAGE_SPEC.md` into sections | ✅ | Index: `language/spec-index.md` (anchors + focused pages); full spec kept intact |
 | RT-safety policy (audio) | ✅ | `library/rt-safety.md` linked from Audio DSP + nav |
 | Changelog auto-sync on release | ✅ | `copy_docs()` ships `project/CHANGELOG.md`; `write_releases_index` + `versions.json` regenerate each build |
@@ -51,18 +51,18 @@
 
 ---
 
-## Phase 3: Interactive & searchable (2-4 months)
+## Phase 3: Interactive & searchable
 
 | Task | Notes |
 |------|-------|
 | Pagefind wiki search | ✅ | `./flow tool build_wiki --pagefind` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
-| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `./flow tool playground_server` (#132); next: emscripten hello artifact (`./flow tool scripts/build_wasm_hello.flow`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
-| Proof graph visualization | ✅ partial: module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
+| Playground and browser execution | partial | Browser interpreter, **Run (native local)** via `./flow tool playground_server`, and precompiled WASM demos are distinct targets; an in-browser native-equivalent Flow compiler remains deferred (#121). See [WebAssembly](language/wasm.md) and the [documentation guide](README.md) |
+| Proof graph visualization | partial | Module-level import graph at `third-party/proof-graph.md`; per-theorem Claim Path edges remain open |
 | Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 
 ---
 
-## Phase 4: Platform (6+ months)
+## Phase 4: Platform
 
 | Task | Notes |
 |------|-------|
@@ -87,25 +87,40 @@ The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** r
 
 ---
 
-## Metrics
+## Quality and acceptance gates
 
-| Metric | Target (now) | Target (Phase 4) |
-|--------|--------------|------------------|
-| Pages in nav | 50+ | 200+ |
-| Proof pages hosted | 1000+ | 2,000+ |
-| Deploy time | < 2 min | < 30 s (CI) |
-| Search latency | < 100 ms | < 50 ms (Pagefind) |
+The historical page counts and performance targets are not evidence of the
+current deployed site. Read the latest build and deployment logs rather than
+copying a number from this roadmap. A documentation improvement is complete when
+its canonical source and navigation are correct, generated pages have no broken
+internal links, and the affected browser workflows pass on the proposed commit.
 
----
+For interactive changes, distinguish the browser interpreter, precompiled WASM,
+and native compilation. Validate keyboard navigation, accessible labels, output,
+reset/share behaviour, and target-specific runtime errors in Chromium. Follow up
+with a production Pages check after deployment; build-time tests do not prove
+the public site is current.
 
 ## How to contribute
 
-1. Edit markdown under `docs/`
-2. Run `python3 scripts/gen_stdlib_docs.py` (if touching stdlib)
-3. Run `python3 scripts/build_wiki.py` (also runs Pagefind if `node`/`npx` are available)
-4. Optional re-index only: `./flow tool build_wiki --pagefind`
-5. Preview: `./flow tool wiki_browser serve build/wiki 8777`
-6. Browser checks: serve on port 8899 (`./flow tool wiki_browser serve`), then run `./flow tool wiki_browser verify` and `./flow tool wiki_browser contrast`. Production deploys from `main` via GitHub Pages
+Edit the canonical Markdown under `docs/` and the navigation source in
+`docs/nav.json`. Never edit generated `build/wiki/` files. The maintained
+toolchain is Flow-native:
+
+```bash
+./flow tool gen_stdlib_docs --check
+./flow tool build_wiki
+./flow tool wiki_links
+./flow tool wiki_browser verify
+./flow tool wiki_browser contrast
+```
+
+The first command matters when standard-library exports or documentation
+change. Browser tooling requires an available browser environment. For the
+interactive playground, tutorials, live gallery or generated site routing, run
+the corresponding Chromium checks in `.github/workflows/live-demos.yml`.
+To preview the site locally, run
+`./flow tool wiki_browser serve build/wiki 8777`.
 
 ### Releases / changelog
 
