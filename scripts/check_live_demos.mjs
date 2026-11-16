@@ -401,6 +401,7 @@ async function docsBrowserCheck(wikiRoot, opts) {
                         active: document.activeElement?.outerHTML.slice(0, 220),
                         controls: Array.from(document.querySelectorAll('#shareModal input, #shareModal button'))
                             .map(element => element.outerHTML.slice(0, 90)),
+                        tabTrace: window.__flowTabTrace || [],
                     }));
                     throw new Error('Dialog keyboard focus lost at ' + (action || 'open') +
                         ': ' + JSON.stringify(state));
@@ -409,6 +410,28 @@ async function docsBrowserCheck(wikiRoot, opts) {
 
             await page.waitForFunction(() => document.activeElement?.id === 'shareUrl', null,
                 { timeout: opts.timeout });
+            await page.evaluate(() => {
+                window.__flowTabTrace = [];
+                document.addEventListener('keydown', event => {
+                    if (event.key === 'Tab') {
+                        window.__flowTabTrace.push({
+                            phase: 'capture',
+                            shift: event.shiftKey,
+                            active: document.activeElement?.outerHTML.slice(0, 100),
+                        });
+                    }
+                }, true);
+                document.addEventListener('keydown', event => {
+                    if (event.key === 'Tab') {
+                        window.__flowTabTrace.push({
+                            phase: 'bubble',
+                            shift: event.shiftKey,
+                            prevented: event.defaultPrevented,
+                            active: document.activeElement?.outerHTML.slice(0, 100),
+                        });
+                    }
+                });
+            });
             await expectFocus(url);
             await expectFocus(copy, 'Shift+Tab');
             await expectFocus(url, 'Tab');
