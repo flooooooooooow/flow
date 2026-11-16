@@ -401,15 +401,6 @@ async function docsBrowserCheck(wikiRoot, opts) {
                 }
             }
 
-            await page.waitForTimeout(250);
-            const focusDiagnostic = await page.evaluate(() => ({
-                active: document.activeElement?.id,
-                element: document.activeElement?.tagName,
-                overlayVisibility: getComputedStyle(document.getElementById('shareModal')).visibility,
-                inputVisibility: getComputedStyle(document.getElementById('shareUrl')).visibility,
-                modalClass: document.getElementById('shareModal').className,
-            }));
-            console.log('Playground modal focus diagnostic: ' + JSON.stringify(focusDiagnostic));
             await page.waitForFunction(() => document.activeElement?.id === 'shareUrl', null,
                 { timeout: opts.timeout });
             await expectFocus(url);
