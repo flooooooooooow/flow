@@ -549,7 +549,7 @@
                 <div class="panel-content">
                     <div class="editor-wrap">
                         <pre id="highlight" aria-hidden="true"><code id="highlightCode"></code></pre>
-                        <textarea id="editor" spellcheck="false" placeholder="# Write your FLOW code here..."></textarea>
+                        <textarea id="editor" aria-label="Flow source code editor" spellcheck="false" placeholder="# Write your FLOW code here..."></textarea>
                     </div>
                 </div>
             </div>
@@ -559,7 +559,7 @@
                     <span id="outputPanelLabel">Output</span>
                 </div>
                 <div class="panel-content" style="display: flex; flex-direction: column;">
-                    <div id="output" class="output-content" style="flex: 1;">Click "Check Syntax" for basic lint checks, or "Run (browser)" when available for interpreter output. Browser run is not the native compiler.</div>
+                    <div id="output" class="output-content" role="status" aria-live="polite" aria-atomic="true" style="flex: 1;">Click "Check Syntax" for basic lint checks, or "Run (browser)" when available for interpreter output. Browser run is not the native compiler.</div>
                     <div class="howto">
                         <h4>Run this program for real (native)</h4>
                         <p>The browser button uses a client-side interpreter only. FLOW's real path is the self-hosted Flow compiler → C → native. Save the editor contents as <code>main.flow</code> and run:</p>
@@ -590,10 +590,10 @@ cd flow
     </footer>
 
     <!-- Share Modal -->
-    <div class="modal-overlay" id="shareModal">
-        <div class="modal">
-            <h3>Share Your Code</h3>
-            <input type="text" id="shareUrl" readonly>
+    <div class="modal-overlay" id="shareModal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+            <h3 id="shareTitle">Share Your Code</h3>
+            <input type="text" id="shareUrl" aria-label="Shareable playground URL" readonly>
             <div class="modal-actions">
                 <button class="btn" onclick="closeShareModal()">Close</button>
                 <button class="btn btn-primary" onclick="copyShareUrl()">Copy URL</button>
@@ -1346,17 +1346,26 @@ function main() -> i32 {
         }
 
         // Share code via URL
+        let shareReturnFocus = null;
+
         function shareCode() {
+            shareReturnFocus = document.activeElement;
             const code = editor.value;
             const encoded = btoa(encodeURIComponent(code));
             const url = window.location.origin + window.location.pathname + '?code=' + encoded;
 
             document.getElementById('shareUrl').value = url;
-            document.getElementById('shareModal').classList.add('visible');
+            const modal = document.getElementById('shareModal');
+            modal.classList.add('visible');
+            modal.setAttribute('aria-hidden', 'false');
+            document.getElementById('shareUrl').focus();
         }
 
         function closeShareModal() {
-            document.getElementById('shareModal').classList.remove('visible');
+            const modal = document.getElementById('shareModal');
+            modal.classList.remove('visible');
+            modal.setAttribute('aria-hidden', 'true');
+            if (shareReturnFocus) shareReturnFocus.focus();
         }
 
         function copyShareUrl() {
@@ -1388,6 +1397,25 @@ function main() -> i32 {
         editor.addEventListener('scroll', syncScroll);
 
         document.addEventListener('keydown', (e) => {
+            const shareModal = document.getElementById('shareModal');
+            if (shareModal.classList.contains('visible')) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeShareModal();
+                } else if (e.key === 'Tab') {
+                    const controls = Array.from(shareModal.querySelectorAll('input, button'));
+                    const first = controls[0];
+                    const last = controls[controls.length - 1];
+                    if (e.shiftKey && document.activeElement === first) {
+                        e.preventDefault();
+                        last.focus();
+                    } else if (!e.shiftKey && document.activeElement === last) {
+                        e.preventDefault();
+                        first.focus();
+                    }
+                }
+                return;
+            }
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
                 e.preventDefault();
                 if (browserEngineAvailable()) runInBrowser();
