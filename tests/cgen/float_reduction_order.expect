@@ -1,2 +1,7 @@
+flags --library --strict
+- vectorize(enable)
+- #pragma omp simd
+- #pragma GCC ivdep
 - reduction(+:s)
+- __flowc_vacc
 exit 0

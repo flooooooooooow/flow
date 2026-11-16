@@ -11966,6 +11966,12 @@ function flowc_cgen_try_emit_vector_kernel(w: ptr<CgenBuf>, arena: AstArena, src
     if kind == 0 {
         return 0
     }
+    # A lane-accumulating sum or dot changes the serial addition order even
+    # without a vectorization pragma. Keep these floating-point reductions
+    # in the ordered scalar loop (#1694).
+    if kind == 5 or kind == 6 {
+        return 0
+    }
     let mut typed: i32 = dst
     if typed == AST_NONE {
         typed = src0
