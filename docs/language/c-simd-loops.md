@@ -7,6 +7,8 @@ vector extensions. Every fast path has a scalar fallback. Integer results
 and stores are exact. Vector sum and dot reassociate floating-point addition,
 as the clang `vectorize(enable)` hint on the scalar loop already allows.
 
+> **Floating-point reproducibility warning (open issue [#1694](https://github.com/flooooooooooow/flow/issues/1694)):** The current C emitter requests clang loop vectorization even for some loop-carried floating-point reductions, including counted `while` loops lowered to C `for`. Clang can use this explicit request to reassociate additions despite `-fno-fast-math`, changing low-order result bits relative to an index-ordered accumulation. `-ffp-contract=off` alone does not prevent this. Do not rely on bitwise-identical sequential floating-point sums across C builds until the emitter's hint policy and corresponding golden tests are corrected. This warning describes current behavior, not a guarantee about other backends.
+
 Parent issue: [#739](https://github.com/flooooooooooow/flow/issues/739)
 (performance epic [#727](https://github.com/flooooooooooow/flow/issues/727)).
 
