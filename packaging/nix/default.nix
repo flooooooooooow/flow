@@ -62,7 +62,10 @@ pkgs.stdenv.mkDerivation {
     export HOME=$TMPDIR
     $out/bin/flow version
     printf 'function main() -> i32 {\n    println("nix ok")\n    return 0\n}\n' > $TMPDIR/hello.flow
-    $out/bin/flow run $TMPDIR/hello.flow | grep -q "nix ok"
+    # Do not pipe the CLI into grep -q: an early match closes the reader and
+    # propagates SIGPIPE (141) from Flow under the Nix shell's pipefail.
+    "$out/bin/flow" run "$TMPDIR/hello.flow" > "$TMPDIR/hello.out"
+    grep -Fq "nix ok" "$TMPDIR/hello.out"
     runHook postInstallCheck
   '';
 
