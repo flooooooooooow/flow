@@ -1,0 +1,74 @@
+# Numerical regression of Flow-only Waal precursor tracers.
+# Bilinear interpolation, midpoint RK2, dry cells, and outflow deactivation.
+import "apps/sofia/tracers.flow"
+import "stdlib/science/sofia_domain.flow"
+
+function ta(x: f64) -> f64 {
+    if x < 0.0 { return -x }
+    return x
+}
+
+function main() -> i32 {
+    let g: SofiaGrid2D = SofiaGrid2D {
+        nx: 12, ny: 12,
+        lx: 12.0, ly: 12.0, dx: 1.0, dy: 1.0,
+        origin_x: 0.0, origin_y: 0.0
+    }
+    let h: array<f64, 144> = [0.0, 0.0, 0.0, 0.0]
+    let mx: array<f64, 144> = [0.0, 0.0, 0.0, 0.0]
+    let my: array<f64, 144> = [0.0, 0.0, 0.0, 0.0]
+    for i in 0 to 144 {
+        h[i] = 2.0
+        mx[i] = 2.0
+        my[i] = 1.0
+    }
+    let mut tracer: SofiaTracer = SofiaTracer { x: 4.5, y: 4.5, active: 1 }
+    let sample: SofiaTracerSample = sofia_tracer_sample(
+        g, h, mx, my, tracer.x, tracer.y, 0.05
+    )
+    if sample.valid != 1 or ta(sample.ux - 1.0) > 1e-12
+        or ta(sample.uy - 0.5) > 1e-12 { return 1 }
+
+    if sofia_tracer_step(&tracer, g, h, mx, my, 2.0, 0.05) != 1 { return 2 }
+    if ta(tracer.x - 6.5) > 1e-12 or ta(tracer.y - 5.5) > 1e-12 {
+        return 3
+    }
+
+    # Dry source cell deactivates the particle at its last valid position.
+    h[5 * 12 + 6] = 0.0
+    mx[5 * 12 + 6] = 0.0
+    my[5 * 12 + 6] = 0.0
+    if sofia_tracer_step(&tracer, g, h, mx, my, 0.1, 0.05) != 0 { return 4 }
+    if tracer.active != 0 or ta(tracer.x - 6.5) > 1e-12 { return 5 }
+
+    let mut outlet: SofiaTracer = SofiaTracer { x: 11.5, y: 4.5, active: 1 }
+    if sofia_tracer_step(&outlet, g, h, mx, my, 1.0, 0.05) != 0 { return 6 }
+    if outlet.active != 0 or ta(outlet.x - 11.5) > 1e-12 { return 7 }
+
+    # A spatially linear velocity is exactly interpolated by bilinear weights.
+    # Midpoint RK2 has an exact polynomial step for linear autonomous flow.
+    for y in 0 to 12 {
+        for x in 0 to 12 {
+            let i: i32 = y * 12 + x
+            h[i] = 2.0
+            mx[i] = 2.0 * 0.1 * ((x as f64) + 0.5)
+            my[i] = 2.0 * 0.05 * ((y as f64) + 0.5)
+        }
+    }
+    let mut linear: SofiaTracer = SofiaTracer { x: 2.5, y: 2.5, active: 1 }
+    if sofia_tracer_step(&linear, g, h, mx, my, 0.1, 0.05) != 1 { return 8 }
+    if ta(linear.x - 2.525125) > 1e-10 { return 9 }
+    if ta(linear.y - 2.51253125) > 1e-10 { return 10 }
+    if sofia_tracer_step(&linear, g, h, mx, my, 0.0, 0.05) != -1 { return 11 }
+
+    let particles: array<SofiaTracer, 3> = [
+        SofiaTracer { x: 3.5, y: 3.5, active: 1 },
+        SofiaTracer { x: 4.5, y: 4.5, active: 1 },
+        SofiaTracer { x: 5.5, y: 5.5, active: 0 }
+    ]
+    if sofia_tracers_step(particles, 3, g, h, mx, my, 0.1, 0.05) != 2 {
+        return 12
+    }
+    if particles[2].active != 0 { return 13 }
+    return 0
+}
