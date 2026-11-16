@@ -1,101 +1,79 @@
-# Flow Documentation
+# Flow documentation
 
-<img src="assets/flow-logo-with-text.png" alt="Flow logo" width="300" align="right">
+Flow's documentation is organised by task. Start with one path below; use the language specification when you need precise syntax or a statement of supported behaviour.
 
-Welcome to the Flow programming language documentation!
+This index is a guide to the documentation, **not** a competing language specification or a list of release promises.
 
-## Quick Links
+## Choose your path
 
-| Document | Description |
-|----------|-------------|
-| **[Introduction to Flow](book/README.md)** | Formal, example-led book |
-| **[Flow Coding Challenges](book/19-coding-challenge-series.md)** | 36 syntax-enforced problems |
-| **[Getting Started](getting-started.md)** | Installation and first program |
-| **[Demo Showcase](demos/overview.md)** | Galleries and recorded simulations |
-| **[Live WebAssembly Demos](../wasm/index.html)** | Search and run compiled Flow programs in the browser |
-| **[Language Spec](LANGUAGE_SPEC.md)** | Complete language reference |
-| **[Grammar](grammar.ebnf)** | Formal EBNF grammar |
+| Your goal | Start here | Then continue with |
+| --- | --- | --- |
+| Learn programming with Flow | [Start here](start-here.md) | [The Flow Book](book/README.md) |
+| Install Flow and run a native program | [Getting started](getting-started.md) | [Development and CLI](DEVELOPMENT.md) |
+| Learn the language systematically | [The Flow Book](book/README.md) | [Tutorial tracks](tutorials/README.md) |
+| Try Flow before installing anything | [Browser playground](playground/index.html) | [Interactive tutorials](https://flooooooooooow.github.io/flow/tutorials/) |
+| Run a compiled example in the browser | [Live WebAssembly gallery](https://flooooooooooow.github.io/flow/wasm/index.html) | [WebAssembly target guide](language/wasm.md) |
+| Look up a language rule | [Language reference index](language/spec-index.md) | [Full language specification](LANGUAGE_SPEC.md) |
+| Find a standard-library function | [Standard-library reference](library/stdlib-reference.md) | [Generated API signatures](library/stdlib-api.md) |
+| Build graphics or simulations | [Graphics](language/graphics.md) and [dynamics](language/dynamics-dsl.md) | [Demo showcase](demos/overview.md) |
+| Use Flow from another language | [FFI buffer ABI](language/ffi-buffer.md) | [Export ABI](language/export-abi.md) |
+| Contribute to the compiler or docs | [Development](DEVELOPMENT.md) | [Contribution guide](project/CONTRIBUTING.md) |
 
-## Modern Flow
+## Live examples: three different execution environments
 
-- [Idiomatic Flow](idiomatic-flow.md) - Prefer expressive, verified language constructs and modernize examples
+The browser experiences are useful, but they do **not** all execute the same engine. The distinction matters when investigating a parser, numerical, graphics, or backend issue.
 
-## Language Reference
+| Experience | What it runs | Use it for |
+| --- | --- | --- |
+| [Playground](playground/index.html) | A **browser-side Flow interpreter and syntax explorer** supporting a subset of native Flow | Exploring syntax, experimenting with examples and inspecting available representations |
+| [Interactive tutorials](https://flooooooooooow.github.io/flow/tutorials/) | An in-browser lesson runner; individual lessons may have target-specific limitations | Guided experiments and practising concepts |
+| [Live WebAssembly gallery](https://flooooooooooow.github.io/flow/wasm/index.html) | Flow programs **precompiled** to WebAssembly | Running and comparing the published, browser-compatible demos |
+| Native Flow | Flow's self-hosted compiler and the selected C or MLIR toolchain | Authoritative compilation, cross-target investigation and full regression tests |
 
-- [Overview](language/overview.md) - Language philosophy and features
-- [Syntax](language/syntax.md) - Lexical structure and grammar
-- [Types](language/types.md) - Type system
-- [FFI buffer ABI](language/ffi-buffer.md) - Zero-copy pointer/span/array handoff
-- [FFI boundary audit](language/ffi-boundary-audit.md) - C / Python / native crossings and break-even
-- [C SIMD loops](language/c-simd-loops.md) - Portable SIMD-aware C lowering for hot loops
-- [Functions](language/functions.md) - Function definitions
-- [Variables](language/variables.md) - Variables and mutability
-- [Graphics](language/graphics.md) - Native graphics API
+**A browser interpreter result is not proof that the native compiler accepts the same program.** A compiled WASM demo is likewise not an in-browser Flow compiler. If behaviour differs, record the specific target and reproduce it with the native CLI before reporting a language regression. See the [WASM target guide](language/wasm.md) and [language specification](LANGUAGE_SPEC.md) for the relevant boundaries.
 
-## Safety
+## Learn, reference, and explore
 
-- `--profile safety` - Strict C compiler flags (`-Werror -pedantic`), literal div-by-zero and shift UB rejected at type-check time
-- `FLOW_UBSAN=1`, `FLOW_ASAN=1`, `FLOW_TSAN=1` - Sanitizer instrumentation
+### Learn
 
-## Standard Library
+[Start here](start-here.md) is the shortest first-run walkthrough. [Getting started](getting-started.md) focuses on installing and running Flow. [The Flow Book](book/README.md) is the ordered curriculum. [Interactive and written tutorials](tutorials/README.md) provide short, focused exercises after that.
 
-- [Autodiff](library/autodiff.md) - Automatic differentiation
-- [Audio DSP](library/audio.md) - Real-time audio DSP utilities
-- [Memory](library/memory.md) - Memory management
-- [Strings and text I/O](library/strings.md) - Concat, parse/format, UTF-8 policy
+Do not treat the book, tutorials and specification as parallel authorities: the book teaches, tutorials exercise, and the specification defines.
 
-## Third-Party Libraries
+### Reference
 
-- [Overview](third-party/README.md) - Packages outside the core stdlib
-- [flow-verify](third-party/flow-verify.md) - Formal math proofs and Claim Paths
-- [Proof Catalog](third-party/flow-verify-catalog.md) - Auto-generated proof index
+Use [the focused language reference](language/README.md) to browse by feature, [the specification index](language/spec-index.md) to find the canonical section, and [the formal grammar](grammar.ebnf) when syntax details matter. [The standard-library reference](library/stdlib-reference.md) is the human-oriented entry point; [generated API documentation](library/stdlib-api.md) is the signature-level index.
 
-## Strategy and Roadmaps
+For runtime and performance-sensitive work, continue with [memory management](library/memory.md), [real-time safety](library/rt-safety.md), [C SIMD lowering](language/c-simd-loops.md) and [debugging](language/debugging.md).
 
-- [Language Roadmap](../ROADMAP.md) - Strategic roadmap and physical beachhead phases
-- [Vision](../VISION.md) - Physical systems evolution thesis and architecture
-- [Memory Safety Architecture](project/roadmap-2.0.md) - Design checklist for Epic #679
-- [Wiki Roadmap](wiki-roadmap.md) - Documentation platform delivery plan
-- [Wiki Strategy](wiki-strategy.md) - Long-term documentation architecture
+### Explore examples
 
-## Verification
+The [demo showcase](demos/overview.md) is a curated directory of graphics, games, numerical methods, audio and simulations, not a promise that every demo runs on every target. Each collection distinguishes live browser output, recorded output and source where possible. The [WASM gallery](https://flooooooooooow.github.io/flow/wasm/index.html) is the entry point for browser-executable compiled programs.
 
-- [Verification Design](language/verification.md) - `theorem` / `therefore` language spec
-- [Epistemology](language/epistemology.md) - Claim Path grammar
-- [Proof Book](language/math-proof-book.md) - Numbered proof book plan
-- [Mathlib Roadmap](language/mathlib-equivalence-toc.md) - Mathlib parity TOC
+## Documentation status and authority
 
-## Tutorials
+Flow evolves quickly. Pages describing proposed designs, research, roadmaps or experimental features should not be interpreted as evidence of shipping compiler behaviour.
 
-- [Beginner](tutorials/beginner.md) - Learn the basics
-- [Intermediate](tutorials/intermediate.md) - Deeper concepts
-- [Advanced](tutorials/advanced.md) - Expert techniques
+| Question | Authoritative source |
+| --- | --- |
+| Supported syntax and semantics | [Full specification](LANGUAGE_SPEC.md), tests and compiler behaviour |
+| Implemented language features | [Language reference](language/README.md) and tests |
+| Recent shipped changes | [Changelog](project/CHANGELOG.md) |
+| Planned language work | [Roadmap](../ROADMAP.md) and linked GitHub issues |
+| Open design questions | [Questions](project/Questions.md) |
+| Release and compatibility commitments | [Stability policy](../STABILITY.md) |
+| Source and contribution rules | [Contributing](project/CONTRIBUTING.md) and [repository structure](project/repository-structure.md) |
 
-## Project
+## Maintaining the documentation
 
-- [Contributing](project/CONTRIBUTING.md) - How to contribute, security policy
-- [Changelog](project/CHANGELOG.md) - Version history and audit fixes
-- [Navigation Index](NEXT.md) - Documentation navigation surface
-- [Audit Report (2026-02-10)](project/archive/AUDIT_2026-02-10.md) - Latest full audit findings
-- [Development](DEVELOPMENT.md) - Building Flow
+The custom documentation site is generated from content in this directory and the shell in the repository's site directory. **[docs/nav.json](nav.json) is the canonical sidebar and content map**; the demo navigation portions are generated from the demo catalog. Edit source material rather than generated site output.
 
-## Examples
+After changing documentation, verify the generated website, internal links and any relevant live example interactions with the repository's documented toolchain:
 
-All examples are in the [`examples/`](../examples/) directory:
+    ./flow tool build_wiki
+    ./flow tool wiki_links
+    node scripts/check_live_demos.mjs --wiki build/wiki
 
-```
-examples/
-├── basics/           # Hello world, fibonacci, etc.
-├── games/            # Tetris, 2048 with graphics
-├── ml/               # ML framework + autodiff/
-├── effects/          # Algebraic effects demos
-├── stats/            # Regression / stats
-├── net/              # Networking sketches
-└── ...
-```
+For playground, tutorial, or browser-runner changes, also run the documentation-specific Chromium checks where available; the GitHub Actions live-demos workflow supplies browser-level coverage. Report whether the verification was run locally or in CI, and never describe an untested example as working.
 
-Run any example:
-
-```bash
-./flow run examples/basics/hello_world.flow
-```
+Broken examples and misleading pages should be reported through [GitHub issues](https://github.com/flooooooooooow/flow/issues) with the URL, target, reproduction steps and actual output. Documentation changes should link to a working example or a verification step whenever they make an executable claim.
