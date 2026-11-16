@@ -58,6 +58,13 @@
       const view = document.getElementById('view');
       let result = null;
 
+      try {
+        const code = new URLSearchParams(location.search).get('code');
+        if (code) document.getElementById('src').value = decodeURIComponent(atob(code));
+      } catch (_) {
+        status.textContent = 'Could not decode shared source';
+      }
+
       function render() {
         if (!result) return;
         if (result.unsupported || !result.ok) {
