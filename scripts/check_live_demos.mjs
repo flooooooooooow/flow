@@ -130,13 +130,19 @@ function staticCheck(wiki) {
     return manifest.entries;
 }
 
-function serveSite() {
+function serveSite(contentRoot = site) {
     const types = {
         '.html': 'text/html; charset=utf-8',
         '.js': 'application/javascript; charset=utf-8',
         '.wasm': 'application/wasm',
         '.json': 'application/json; charset=utf-8',
         '.css': 'text/css; charset=utf-8',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.woff2': 'font/woff2',
+        '.gif': 'image/gif',
     };
     const server = createServer((request, response) => {
         response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
@@ -144,7 +150,7 @@ function serveSite() {
         response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
         try {
             const relative = decodeURIComponent(new URL(request.url, 'http://localhost').pathname).replace(/^\/+/, '');
-            let path = confined(site, relative);
+            let path = confined(contentRoot, relative);
             if (existsSync(path) && statSync(path).isDirectory()) path = join(path, 'index.html');
             if (!existsSync(path) || !statSync(path).isFile()) {
                 response.writeHead(404);
@@ -257,12 +263,179 @@ async function browserCheck(entries, opts) {
     if (failures.length) throw new Error(failures.join('\n'));
 }
 
+
+// Exercise the actual deployed wiki layout, not only the source gallery directory.
+// These pages are copied/assembled by build_wiki and can fail independently.
+async function docsBrowserCheck(wikiRoot, opts) {
+    if (!wikiRoot || !existsSync(join(wikiRoot, 'index.html'))) {
+        throw new Error('Build the wiki before --docs-browser: ./flow tool build_wiki');
+    }
+    let chromium;
+    try {
+        ({ chromium } = await import('playwright'));
+    } catch (_) {
+        throw new Error('Playwright not installed; run npm install --no-save playwright@1.55.0');
+    }
+    const server = serveSite(wikiRoot);
+    await new Promise((resolveListen, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolveListen);
+    });
+    const base = 'http://127.0.0.1:' + server.address().port;
+    const failures = [];
+    let browser;
+    try {
+        browser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-dev-shm-usage'],
+        });
+        const context = await browser.newContext();
+
+        async function check(name, fn) {
+            const page = await context.newPage();
+            const errors = [];
+            page.on('pageerror', error => errors.push(error.message));
+            page.on('response', response => {
+                if (response.status() >= 400 && response.url().startsWith(base + '/') &&
+                    /\.(js|wasm|json)(\?|$)/.test(response.url())) {
+                    errors.push('HTTP ' + response.status() + ' ' + response.url());
+                }
+            });
+            try {
+                await fn(page);
+                if (errors.length) throw new Error(errors.join('; '));
+                console.log('PASS docs ' + name);
+            } catch (error) {
+                const why = error.message.split('\n')[0];
+                failures.push(name + ': ' + why);
+                console.error('FAIL docs ' + name + ': ' + why);
+            } finally {
+                await page.close();
+            }
+        }
+
+        await check('wiki navigation', async page => {
+            await page.goto(base + '/index.html#start-here.md', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.waitForFunction(() => {
+                const title = document.getElementById('docTitle')?.textContent.trim();
+                const content = document.getElementById('markdownContent')?.textContent.trim();
+                return title && content && !content.includes('Loading documentation');
+            }, null, { timeout: opts.timeout });
+            if (/not found|failed to load/i.test(await page.locator('#markdownContent').innerText())) {
+                throw new Error('Wiki could not render Start Here');
+            }
+            await page.locator('#searchTrigger').click();
+            await page.locator('#searchInput').fill('memory');
+            await page.locator('#searchResults li').first().waitFor({ timeout: opts.timeout });
+            await page.locator('#searchInput').press('Escape');
+            await page.goto(base + '/index.html#getting-started.md', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.waitForFunction(() => document.getElementById('docTitle')?.textContent.trim(), null,
+                { timeout: opts.timeout });
+        });
+
+        await check('playground interpreter, examples and sharing', async page => {
+            await page.goto(base + '/playground/index.html', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.locator('#runBrowserBtn:visible').waitFor({ timeout: opts.timeout });
+            const original = await page.locator('#editor').inputValue();
+            await page.locator('#runBrowserBtn').click();
+            await page.waitForFunction(() => /^Exited /.test(
+                document.getElementById('editorStatusText')?.textContent || ''), null,
+                { timeout: opts.timeout });
+            if (!(await page.locator('#output').innerText()).includes('browser interpreter')) {
+                throw new Error('Playground did not execute the browser interpreter');
+            }
+            await page.locator('#examples').selectOption('fibonacci');
+            if (!(await page.locator('#editor').inputValue()).includes('function main')) {
+                throw new Error('Example selector did not populate the editor');
+            }
+            await page.locator('#examples').selectOption('hello');
+            await page.locator('button[onclick="shareCode()"]').click();
+            const shareUrl = await page.locator('#shareUrl').inputValue();
+            if (!shareUrl.includes('?code=')) throw new Error('Share action produced no code URL');
+            const shared = await context.newPage();
+            try {
+                await shared.goto(shareUrl, { waitUntil: 'domcontentloaded', timeout: opts.timeout });
+                if (await shared.locator('#editor').inputValue() !== original) {
+                    throw new Error('Shared URL did not restore the code');
+                }
+            } finally {
+                await shared.close();
+            }
+        });
+
+        await check('browser representation preview', async page => {
+            await page.goto(base + '/playground/pyodide.html', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.locator('#run:enabled').waitFor({ timeout: opts.timeout });
+            await page.locator('#run').click();
+            await page.waitForFunction(() => /^Exited /.test(
+                document.getElementById('status')?.textContent || ''), null,
+                { timeout: opts.timeout });
+            await page.locator('#view').selectOption('output');
+            if (!(await page.locator('#out').innerText()).includes('hello from Flow')) {
+                throw new Error('Browser preview did not run the supplied code');
+            }
+            await page.locator('#view').selectOption('c');
+            if (!(await page.locator('#out').innerText()).trim()) {
+                throw new Error('C preview is empty');
+            }
+        });
+
+        await check('interactive tutorials', async page => {
+            await page.goto(base + '/tutorials/index.html', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.locator('.tutorials-lesson').first().waitFor({ timeout: opts.timeout });
+            await page.locator('[data-runner-slot] button[data-run]').click();
+            await page.waitForFunction(() => {
+                const status = document.querySelector('[data-runner-slot] [data-status]')?.textContent || '';
+                return /^(Exited |Native only|Error$)/.test(status);
+            }, null, { timeout: opts.timeout });
+            const status = await page.locator('[data-runner-slot] [data-status]').innerText();
+            if (!status.startsWith('Exited ')) throw new Error('First interactive lesson: ' + status);
+            const output = await page.locator('[data-runner-slot] [data-pane="output"]').innerText();
+            if (!output.trim()) throw new Error('Interactive lesson output is empty');
+            await page.locator('.tutorials-track').filter({ hasText: /^All \(/ }).click();
+            if (!(await page.locator('.tutorials-lesson').count())) {
+                throw new Error('Tutorial track filter returned no lessons');
+            }
+        });
+
+        await check('deployed WASM sample', async page => {
+            await page.goto(base + '/wasm/hello_world/index.html?autostart=1', {
+                waitUntil: 'domcontentloaded', timeout: opts.timeout,
+            });
+            await page.waitForFunction(() => /^exit -?\d+$/.test(
+                (document.getElementById('status')?.textContent || '').trim()), null,
+                { timeout: opts.timeout });
+            if (!(await page.locator('#out').innerText()).includes('main returned')) {
+                throw new Error('WASM did not execute main');
+            }
+        });
+
+        await context.close();
+    } finally {
+        if (browser) await browser.close();
+        await new Promise(resolveClose => server.close(resolveClose));
+    }
+    console.log('Docs browser: ' + (5 - failures.length) + '/5 scenarios passed');
+    if (failures.length) throw new Error(failures.join('\n'));
+}
+
 async function main() {
-    const opts = { browser: false, wiki: null, shardIndex: 0, shardCount: 1, names: new Set(), timeout: 25000 };
+    const opts = { browser: false, docsBrowser: false, wiki: null, shardIndex: 0, shardCount: 1, names: new Set(), timeout: 25000 };
     const args = process.argv.slice(2);
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg === '--browser') opts.browser = true;
+        else if (arg === '--docs-browser') opts.docsBrowser = true;
         else if (arg === '--wiki') opts.wiki = resolve(args[++i]);
         else if (arg === '--shard-index') opts.shardIndex = Number(args[++i]);
         else if (arg === '--shard-count') opts.shardCount = Number(args[++i]);
@@ -275,6 +448,7 @@ async function main() {
         opts.shardIndex >= opts.shardCount) throw new Error('Invalid browser shard');
     const entries = staticCheck(opts.wiki);
     if (opts.browser) await browserCheck(entries, opts);
+    if (opts.docsBrowser) await docsBrowserCheck(opts.wiki, opts);
 }
 
 main().catch(error => {
