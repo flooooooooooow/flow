@@ -4,6 +4,9 @@
 > **Inventory baseline:** main at 7687fc936365e17bc6286415585c55fcc6ea64c3 (2026-11-16).
 > **Operating contract:** AGENTS.md, docs/project/agentic-loop.md and docs/project/repository-structure.md. Existing PRs and issues take precedence over this static plan.
 
+> **Agent startup:** [Start Here](idiom-modernization/START-HERE.md) · [50 work packages](idiom-modernization/work-packages.json) · [feature surface map](idiom-modernization/FEATURE-SURFACES.md) · [verification](idiom-modernization/VERIFICATION.md) · [held-out agent evaluations](idiom-modernization/AGENT-EVAL.md).
+> **Live status:** This document is a planning RFC. GitHub issues, PRs and actual tests always supersede its historical inventory snapshot. External agents enter through `AGENTS.md`, not through an assumed background scheduler.
+
 ## Outcome
 
 An engineer or AI agent confronting a real task should naturally choose the *highest-level correct and supported Flow representation*: units for physical quantities, flow/evolves for continuous state, every/becomes for sampled transitions, when for hybrid events, typed effects/capabilities for replaceable environmental policy, connect for valid subsystem topology, the appropriate field/dsys/circuit representation for the underlying mathematics, pipelines/forks/choose for suitable dataflow, and typed spans plus explicit real-time constraints for resource-sensitive kernels.
