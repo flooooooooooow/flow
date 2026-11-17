@@ -1,6 +1,6 @@
 # Formal Grammar
 
-Flow's syntax is defined by a single EBNF specification, kept in sync with `src/flow/parser.py`. This page explains the notation and maps the grammar into readable sections.
+Flow's active source parser is written in Flow in [`compiler/src/parser.flow`](../../compiler/src/parser.flow), alongside the lexer in [`compiler/src/lexer.flow`](../../compiler/src/lexer.flow) and dedicated language expanders such as [`compiler/src/flow_blocks.flow`](../../compiler/src/flow_blocks.flow). This page and [`grammar.ebnf`](../grammar.ebnf) are **illustrative guides**, not an exhaustive or mechanically generated parser specification. For an accepted construct, the compiler and its versioned fixtures/tests are authoritative.
 
 > **Machine-readable source:** [grammar.ebnf](../grammar.ebnf) · **Human guide:** [Syntax](syntax.md)
 
@@ -26,7 +26,7 @@ Comments (`# ...`) and section banners are documentation only. The lexer rule th
 
 ## Program structure
 
-A compilation unit is a sequence of top-level declarations followed by end-of-input.
+The following is a **selected core subset** for reading the EBNF notation. It is not a complete list of Flow top-level forms: units, evolutions, equations, test/proof constructs, traits, modules and specialized DSL extensions are implemented and tested through additional parser/expander paths. Do not use this abbreviated production to reject code without checking the active compiler.
 
 ```
 program        ::= declaration* EOF
@@ -135,6 +135,4 @@ See [Verification](../language/verification.md) for the proof-oriented extension
 
 ## Full specification
 
-The complete EBNF (including lexical tokens, keywords, and symbol definitions) is in **[grammar.ebnf](../grammar.ebnf)**.
-
-Open it in the wiki for syntax highlighting, section navigation, and rule search.
+For an **illustrative EBNF inventory** of lexical tokens, keywords and common statements, see [grammar.ebnf](../grammar.ebnf). It is not currently a complete, automatically verified grammar for the entire implemented language. The parser source, language fixtures and [`./flow tool compiler/scripts/parse_coverage.flow --check`](../../compiler/scripts/parse_coverage.flow) provide executable evidence about actual accepted syntax. Parse coverage is not proof that every construct typechecks, lowers, executes or works across backends; use the relevant language, C and MLIR parity tests for those claims.
