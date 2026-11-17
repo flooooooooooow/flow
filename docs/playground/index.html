@@ -1402,15 +1402,15 @@ function main() -> i32 {
                     e.preventDefault();
                     closeShareModal();
                 } else if (e.key === 'Tab') {
-                    const controls = Array.from(shareModal.querySelectorAll('input, button'));
-                    const first = controls[0];
-                    const last = controls[controls.length - 1];
-                    if (e.shiftKey && document.activeElement === first) {
+                    const controls = Array.from(shareModal.querySelectorAll('input, button'))
+                        .filter(control => !control.disabled && control.getClientRects().length > 0);
+                    if (controls.length > 0) {
                         e.preventDefault();
-                        last.focus();
-                    } else if (!e.shiftKey && document.activeElement === last) {
-                        e.preventDefault();
-                        first.focus();
+                        const current = controls.indexOf(document.activeElement);
+                        const next = current < 0
+                            ? (e.shiftKey ? controls.length - 1 : 0)
+                            : (current + (e.shiftKey ? -1 : 1) + controls.length) % controls.length;
+                        controls[next].focus();
                     }
                 }
                 return;
@@ -1428,7 +1428,7 @@ function main() -> i32 {
                 e.preventDefault();
                 formatCode();
             }
-        });
+        }, true);
 
         // Initialize
         editor.value = examples.hello;
