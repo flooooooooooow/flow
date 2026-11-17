@@ -10,6 +10,8 @@ This is the practical entrypoint for an authorized coding agent (Freebuff, Codex
 
 The work queue is a *plan*, not a live status database. The live status of claims, issues, PRs, merged changes, blockers and required checks is GitHub. Never infer completion merely because a task ID exists in a JSON file or because someone marked a checklist done in prose.
 
+**GitHub execution tracker:** [programme #1713](https://github.com/flooooooooooow/flow/issues/1713). Initial independently claimable issues: [FM-001 #1714](https://github.com/flooooooooooow/flow/issues/1714) and [FM-007 #1715](https://github.com/flooooooooooow/flow/issues/1715). See live issue/PR state before opening another issue; these are not already claimed or completed merely because they exist.
+
 ## Immediate action on an unassigned modernization session
 
 1. Read this file, `AGENTS.md`, `docs/project/agentic-loop.md`, and the task queue. Respect explicit higher-priority instructions from the operator. If given an issue or PR number, work on that instead of self-selecting.
