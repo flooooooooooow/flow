@@ -60,5 +60,20 @@ function main() -> i32 {
     let wrong2: i32 = sofia_ir_constant(&bad2, 1.0, 2, -1, 0)
     if sofia_ir_add(&bad2, f2, wrong2) >= 0 { return 9 }
     if sofia_ir_validate(&bad2) == 0 { return 10 }
+
+    # Even unused scratch buffers are part of the public no-aliasing contract.
+    # Duplicate stage buffers used to pass validation and could corrupt RK4.
+    if sofia_ir_step_1d(&p, state, next, k1, k1, k3, k4, tmp,
+        32, 1.0 / 31.0, 0.01, SOFIA_BC_DIRICHLET, 0.0, 1.0,
+        SOFIA_RK_CLASSIC_4) != 18 { return 11 }
+    if sofia_ir_step_1d(&p, state, next, k1, k2, k3, next, tmp,
+        32, 1.0 / 31.0, 0.01, SOFIA_BC_DIRICHLET, 0.0, 1.0,
+        SOFIA_RK_CLASSIC_4) != 18 { return 12 }
+    if sofia_ir_step_1d(&p, state, next, k1, k2, k3, k4, k4,
+        32, 1.0 / 31.0, 0.01, SOFIA_BC_DIRICHLET, 0.0, 1.0,
+        SOFIA_RK_CLASSIC_4) != 18 { return 13 }
+    if sofia_ir_step_1d(&p, state, next, k1, k2, k3, k3, tmp,
+        32, 1.0 / 31.0, 0.01, SOFIA_BC_DIRICHLET, 0.0, 1.0,
+        SOFIA_RK_CLASSIC_4) != 18 { return 14 }
     return 0
 }
