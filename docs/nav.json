@@ -1021,6 +1021,22 @@
           "path": "project/idiom-modernization-program.md"
         },
         {
+          "label": "Modernization: Start Here",
+          "path": "project/idiom-modernization/START-HERE.md"
+        },
+        {
+          "label": "Modernization: Feature Surfaces",
+          "path": "project/idiom-modernization/FEATURE-SURFACES.md"
+        },
+        {
+          "label": "Modernization: Verification",
+          "path": "project/idiom-modernization/VERIFICATION.md"
+        },
+        {
+          "label": "Modernization: Agent Evaluation",
+          "path": "project/idiom-modernization/AGENT-EVAL.md"
+        },
+        {
           "label": "FIR-G",
           "path": "project/fir-g.md"
         },
