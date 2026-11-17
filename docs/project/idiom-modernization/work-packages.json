@@ -782,7 +782,6 @@
       "owned_paths": [
         "lib/stdlib/dynamics/",
         "lib/stdlib/circuit.flow",
-        "lib/stdlib/control.flow",
         "examples/dynamics/"
       ],
       "scope": "Remove duplicated application-level solver policy only where high-level Flow can own it; preserve lower-level integrators as tested general-purpose library kernels and independent oracle.",
@@ -1249,7 +1248,7 @@
       "id": "FM-065",
       "phase": "P5",
       "priority": 2,
-      "title": "Tree-sitter and tmLanguage current grammar",
+      "title": "Tree-sitter Flow current grammar coverage",
       "repository": "flooooooooooow/tree-sitter-flow",
       "depends_on": [
         "FM-051",
@@ -1258,14 +1257,14 @@
       "owned_paths": [
         "grammar.js",
         "test/corpus/",
-        "syntaxes/",
         "README.md"
       ],
-      "scope": "Sync current syntax categories, units, equations, flow/evolves, handlers, patterns, contextual keywords and doc status without claiming grammar handles semantic lowering.",
+      "scope": "Sync current syntax categories, units, equations, flow/evolves, handlers, patterns, contextual keywords and doc status without claiming grammar handles semantic lowering. Coordinate a distinct tracking issue for flow-tmLanguage (separate repository) and record it as a downstream continuation, not a same-PR edit.",
       "acceptance": [
         "Grammar corpus accepts supported source forms",
         "Editor highlight examples crosscheck",
-        "No syntax invented ahead of compiler"
+        "No syntax invented ahead of compiler",
+        "Separate flow-tmLanguage grammar consumer issue has exact path and tests, and is linked from this packet"
       ],
       "verification": [],
       "decision_gate": "none"
