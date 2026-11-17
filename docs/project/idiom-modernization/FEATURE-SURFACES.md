@@ -1,6 +1,6 @@
 # Feature and ownership coverage: complete inventory schema
 
-This map tells agents *where to look*, not that every named construct is fully supported. Treat feature maturity, targets and compiler version as unknown until tested on the actual checkout. `work-packages.json` is the work queue; a generated registry (FM-003/004) must become the source of truth for support claims.
+This map tells agents where to look. It does not certify that every named construct is fully supported. Treat feature maturity, targets and compiler version as unknown until tested on the actual checkout. `work-packages.json` is the work queue; a generated registry (FM-003/004) must become the source of truth for support claims.
 
 | Feature family | Primary implementation | Semantic/negative evidence | Canonical teaching and consumers |
 | --- | --- | --- | --- |
@@ -39,3 +39,7 @@ The distinction between *lexically recognized*, *parsed*, *typed*, *lowered*, *c
 Classify all candidate source by purpose before counting eligible migrations. Explicitly distinguish `compiler/fixtures/` (compiler oracle and negative syntax), `examples/verify/` (separate formal/proof notation), intentionally manual numerical baselines, AI-prompt adversarial files, generated files, production implementations, tutorials, and target-specific demos. A unit-bearing `f64` used as an internal normalized computation is not automatically an anti-idiom.
 
 The feature registry should eventually generate this mapping. Until that exists, use this file for discovery only and do not duplicate its claims into more manual "status matrices".
+
+## Machine-readable path evidence
+
+Run `./flow tool feature_evidence` to emit `flow.feature-evidence.v1` JSON for the current Git revision. Each report records whether the worktree was clean. Each feature row preserves the map's backtick references, resolves exact paths, directory prefixes and simple `*` patterns against `git ls-files`, and lists references with no tracked match. The report marks implementation and support status as `unverified`. A tracked path proves that an anchor exists. It does not prove that the feature works or is supported.
