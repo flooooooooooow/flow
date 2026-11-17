@@ -1,0 +1,164 @@
+# Resolve the discovery map's backtick path references against tracked files.
+# The report records source evidence and keeps support status unverified.
+import .text { ft_outln, ft_errln, ft_read_file, ft_len, ft_byte, ft_slice, ft_find, ft_ends, ft_starts, ft_basename, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, ft_list_sort, StrList }
+import .repo { rp_enter_root, rp_git_ls, rp_capture, rp_argv2, rp_status }
+import .json { json_quote }
+
+const MAP: string = "docs/project/idiom-modernization/FEATURE-SURFACES.md"
+
+function trim(s: string) -> string {
+    let mut a: i32 = 0
+    let mut b: i32 = ft_len(s)
+    while a < b and (ft_byte(s, a) == 32 or ft_byte(s, a) == 9 or ft_byte(s, a) == 10 or ft_byte(s, a) == 13) { a = a + 1 }
+    while b > a and (ft_byte(s, b - 1) == 32 or ft_byte(s, b - 1) == 9 or ft_byte(s, b - 1) == 10 or ft_byte(s, b - 1) == 13) { b = b - 1 }
+    return ft_slice(s, a, b)
+}
+
+function is_table_row(s: string) -> bool {
+    return ft_len(s) > 0 and ft_byte(s, 0) == 124
+}
+
+function cells(row: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let mut start: i32 = 1
+    let mut i: i32 = 1
+    while i < ft_len(row) {
+        if ft_byte(row, i) == 124 {
+            ft_list_push(out, trim(ft_slice(row, start, i)))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function add_refs(cell: string, refs: ptr<StrList>) {
+    let mut i: i32 = 0
+    while i < ft_len(cell) {
+        if ft_byte(cell, i) == 96 {
+            let start: i32 = i + 1
+            let mut end: i32 = start
+            while end < ft_len(cell) and ft_byte(cell, end) != 96 { end = end + 1 }
+            if end < ft_len(cell) {
+                let raw: string = trim(ft_slice(cell, start, end))
+                # Cells may name several files in one code span.
+                let mut p: i32 = 0
+                let mut q: i32 = 0
+                while q <= ft_len(raw) {
+                    if q == ft_len(raw) or ft_byte(raw, q) == 32 or ft_byte(raw, q) == 44 {
+                        if q > p {
+                            let path: string = trim(ft_slice(raw, p, q))
+                            if ft_len(path) > 0 and not ft_list_has(refs, path) { ft_list_push(refs, path) }
+                        }
+                        p = q + 1
+                    }
+                    q = q + 1
+                }
+                i = end
+            }
+        }
+        i = i + 1
+    }
+}
+
+function resolved(path: string, tracked: ptr<StrList>) -> string {
+    if ft_list_has(tracked, path) { return path }
+    let star: i32 = ft_find(path, "*", 0)
+    let mut prefix: string = path
+    let mut suffix: string = ""
+    if star >= 0 {
+        prefix = ft_slice(path, 0, star)
+        suffix = ft_slice(path, star + 1, ft_len(path))
+    }
+    let mut i: i32 = 0
+    while i < ft_list_len(tracked) {
+        let candidate: string = ft_list_get(tracked, i)
+        if ft_ends(candidate, "/" + path) { return candidate }
+        if ft_ends(path, "/") and ft_starts(candidate, path) { return candidate }
+        if star >= 0 and ft_starts(candidate, prefix) and ft_ends(candidate, suffix) { return candidate }
+        if star >= 0 and ft_find(prefix, "/", 0) < 0 and ft_starts(ft_basename(candidate), prefix) and ft_ends(candidate, suffix) { return candidate }
+        i = i + 1
+    }
+    return ""
+}
+
+function emit_refs(refs: ptr<StrList>, tracked: ptr<StrList>, missing: bool) -> string {
+    let out: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(refs) {
+        let p: string = ft_list_get(refs, i)
+        let found: string = resolved(p, tracked)
+        if (missing and ft_len(found) == 0) or (not missing and ft_len(found) > 0) { ft_list_push(out, p) }
+        i = i + 1
+    }
+    ft_list_sort(out)
+    let mut s: string = "["
+    i = 0
+    while i < ft_list_len(out) {
+        if i > 0 { s = s + "," }
+        s = s + json_quote(ft_list_get(out, i))
+        i = i + 1
+    }
+    return s + "]"
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc != 1 {
+        ft_errln("usage: ./flow tool feature_evidence")
+        return 2
+    }
+    if rp_enter_root() == false { ft_errln("feature_evidence: cannot enter repository root"); return 1 }
+    let text: string = ft_read_file(MAP)
+    if ft_len(text) == 0 { ft_errln("feature_evidence: cannot read " + MAP); return 1 }
+    let tracked: ptr<StrList> = rp_git_ls(ft_list_new())
+    if tracked as ptr<u8> == null { ft_errln("feature_evidence: git ls-files failed"); return 1 }
+    let lines: ptr<StrList> = ft_split_lines(text)
+    let rev_args: ptr<StrList> = ft_list_new()
+    ft_list_push(rev_args, "git")
+    ft_list_push(rev_args, "rev-parse")
+    ft_list_push(rev_args, "HEAD")
+    let revision: string = trim(rp_capture(rev_args))
+    if rp_status() != 0 { ft_errln("feature_evidence: cannot read git revision"); return 1 }
+    let status_args: ptr<StrList> = ft_list_new()
+    ft_list_push(status_args, "git")
+    ft_list_push(status_args, "status")
+    ft_list_push(status_args, "--porcelain")
+    let worktree: string = rp_capture(status_args)
+    if rp_status() != 0 { ft_errln("feature_evidence: cannot read worktree status"); return 1 }
+    let mut clean: string = "false"
+    if ft_len(trim(worktree)) == 0 { clean = "true" }
+    ft_outln("{\"schema\":\"flow.feature-evidence.v1\",\"revision\":" + json_quote(revision) + ",\"worktree_clean\":" + clean + ",\"source\":" + json_quote(MAP) + ",\"support_status\":\"unverified\",\"features\":[")
+    let mut emitted: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let row: string = ft_list_get(lines, i)
+        if is_table_row(row) {
+            let cs: ptr<StrList> = cells(row)
+            if ft_list_len(cs) == 4 {
+                let name: string = ft_list_get(cs, 0)
+                if name != "Feature family" and ft_len(name) > 0 and ft_byte(name, 0) != 45 {
+                    let refs: ptr<StrList> = ft_list_new()
+                    add_refs(ft_list_get(cs, 1), refs)
+                    add_refs(ft_list_get(cs, 2), refs)
+                    add_refs(ft_list_get(cs, 3), refs)
+                    if emitted > 0 { ft_outln(",") }
+                    ft_out("{\"family\":" + json_quote(name) + ",\"references\":[")
+                    let mut j: i32 = 0
+                    while j < ft_list_len(refs) {
+                        if j > 0 { ft_out(",") }
+                        let p: string = ft_list_get(refs, j)
+                        let found: string = resolved(p, tracked)
+                        ft_out("{\"path\":" + json_quote(p) + ",\"resolved_path\":" + (if ft_len(found) > 0 { json_quote(found) } else { "null" }) + ",\"tracked\":" + (if ft_len(found) > 0 { "true" } else { "false" }) + "}")
+                        j = j + 1
+                    }
+                    ft_out("],\"missing_references\":" + emit_refs(refs, tracked, true) + ",\"implementation_status\":\"unverified\"}")
+                    emitted = emitted + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    ft_outln("]}")
+    if emitted == 0 { ft_errln("feature_evidence: no feature rows found"); return 1 }
+    return 0
+}

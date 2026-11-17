@@ -1,0 +1,77 @@
+# The FM-001 report is revision stamped and resolves map references to tracked paths.
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+function report_is_valid_json() -> i32 {
+    let rc: i32 = t_run_argv(sl_of3("./flow", "tool", "feature_evidence"))
+    if not a_eq(s_itoa(rc), "0", "feature_evidence exit") { return T_FAIL }
+    let parsed: ptr<Json> = json_parse(read_text(t_out()))
+    if s_len(json_error(parsed)) > 0 { outln(json_error(parsed)); return T_FAIL }
+    let root: i32 = 0
+    if not a_eq(json_str(parsed, json_get(parsed, root, "schema")), "flow.feature-evidence.v1", "schema") { return T_FAIL }
+    if not a_eq(json_str(parsed, json_get(parsed, root, "revision")), git_head(), "revision stamp") { return T_FAIL }
+    if not a_eq(json_str(parsed, json_get(parsed, root, "support_status")), "unverified", "support status") { return T_FAIL }
+    let clean_kind: i32 = json_kind(parsed, json_get(parsed, root, "worktree_clean"))
+    if clean_kind != json_kind_false() and clean_kind != json_kind_true() { return T_FAIL }
+    let features: i32 = json_get(parsed, root, "features")
+    if not a_true("feature inventory is populated", json_len(parsed, features) >= 20) { return T_FAIL }
+    json_free(parsed)
+    return T_PASS
+}
+
+function trim_newline(s: string) -> string {
+    let n: i32 = s_len(s)
+    if n > 0 and s_byte(s, n - 1) == 10 { return s_slice(s, 0, n - 1) }
+    return s
+}
+
+function git_head() -> string {
+    let rc: i32 = t_run_argv(sl_of3("git", "rev-parse", "HEAD"))
+    if rc != 0 { return "" }
+    return trim_newline(read_text(t_out()))
+}
+
+function resolves_wildcard_anchors() -> i32 {
+    if t_run_argv(sl_of3("./flow", "tool", "feature_evidence")) != 0 { return T_FAIL }
+    let parsed: ptr<Json> = json_parse(read_text(t_out()))
+    let features: i32 = json_get(parsed, 0, "features")
+    let mut feature: i32 = json_first(parsed, features)
+    while feature >= 0 {
+        let refs: i32 = json_get(parsed, feature, "references")
+        let mut ref_id: i32 = json_first(parsed, refs)
+        while ref_id >= 0 {
+            if a_eq(json_str(parsed, json_get(parsed, ref_id, "path")), "overload*.flow", "wildcard anchor") {
+                let ok: bool = json_kind(parsed, json_get(parsed, ref_id, "tracked")) == json_kind_true()
+                json_free(parsed)
+                if ok { return T_PASS }
+                return T_FAIL
+            }
+            ref_id = json_next(parsed, ref_id)
+        }
+        feature = json_next(parsed, feature)
+    }
+    json_free(parsed)
+    outln("wildcard anchor was absent")
+    return T_FAIL
+}
+
+function rejects_arguments() -> i32 {
+    let args: ptr<ProcStrs> = sl_of3("./flow", "tool", "feature_evidence")
+    sl_push(args, "--bad")
+    let rc: i32 = t_run_argv(args)
+    if a_eq(s_itoa(rc), "2", "invalid argument exit") { return T_PASS }
+    return T_FAIL
+}
+
+function main() -> i32 {
+    t_begin("feature_evidence")
+    t_start()
+    t_end("report_is_valid_json", report_is_valid_json())
+    t_start()
+    t_end("resolves_wildcard_anchors", resolves_wildcard_anchors())
+    t_start()
+    t_end("rejects_arguments", rejects_arguments())
+    t_done()
+    return 0
+}
