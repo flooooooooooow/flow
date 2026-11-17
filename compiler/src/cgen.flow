@@ -11012,12 +11012,37 @@ function flowc_cgen_emit_omp_reductions(w: ptr<CgenBuf>, arena: AstArena, src: p
     flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*")
 }
 
+# 1 when the loop body accumulates into a variable that is not a known integer:
+# `acc = acc + x` with acc f32, f64, complex, or of a type cgen cannot see. A
+# forced vectorizer (clang's `vectorize(enable)`, or `omp simd reduction`) may
+# reassociate such a sum, so its result would depend on the vector width. Those
+# loops get no hint and keep the order written in the source.
+function flowc_cgen_body_has_ordered_reduction(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        if flowc_cgen_reduction_op(arena, src, st) != 0 {
+            let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[st].a)
+            if flowc_cgen_ty_is_int_name(arena, src, ty) == 0 {
+                return 1
+            }
+        }
+        st = arena.nodes[st].next
+    }
+    return 0
+}
+
 # Portable SIMD hints for a straight-line counted loop (#739). A body that
 # flowc_cgen_loop_omp_safe accepts gets OpenMP simd (with a reduction clause
 # for a reduction) when the compiler defines `_OPENMP`, else clang loop hints
 # or GCC ivdep. Any other simple body keeps only the clang hint, so no
 # iteration is promised independent without proof.
 function flowc_cgen_emit_simd_pragmas(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, loop_id: i32) {
+    if flowc_cgen_body_has_ordered_reduction(w, arena, src, body) == 1 {
+        return
+    }
     if flowc_cgen_loop_omp_safe(w, arena, src, body, loop_id, AST_NONE) == 1 {
         flowc_cgen_puts(w, "#if defined(_OPENMP)\n")
         flowc_cgen_puts(w, "#pragma omp simd")
@@ -11533,6 +11558,9 @@ function flowc_cgen_body_is_simple_skip(arena: AstArena, src: ptr<u8>, body: i32
 # `for (;` outright), and it privatizes `i`, which a while loop often reads
 # after the loop.
 function flowc_cgen_emit_simd_pragmas_skip(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, skip: i32, iv: i32) {
+    if flowc_cgen_body_has_ordered_reduction(w, arena, src, body) == 1 {
+        return
+    }
     flowc_cgen_puts(w, "#if defined(__clang__)\n")
     flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
     if flowc_cgen_loop_omp_safe(w, arena, src, body, iv, skip) == 1 {
@@ -11936,6 +11964,12 @@ function flowc_cgen_try_emit_vector_kernel(w: ptr<CgenBuf>, arena: AstArena, src
         }
     }
     if kind == 0 {
+        return 0
+    }
+    # A lane-accumulating sum or dot changes the serial addition order even
+    # without a vectorization pragma. Keep these floating-point reductions
+    # in the ordered scalar loop (#1694).
+    if kind == 5 or kind == 6 {
         return 0
     }
     let mut typed: i32 = dst

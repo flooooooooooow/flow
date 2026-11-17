@@ -1,0 +1,80 @@
+# A float sum keeps the order written in the source: adding 1.0 to 1.0e8 in f32
+# rounds the 1.0 away, so a reassociated or vector-width sum gives another answer.
+
+function step(a: f32, b: f32) -> f32 {
+    return a + b
+}
+
+function kinetic(vx: ptr<f64>, vy: ptr<f64>, mass: ptr<f64>, count: i32) -> f64 {
+    let mut total: f64 = 0.0
+    for i in 0 to count {
+        total += 0.5 * mass[i] * (vx[i] * vx[i] + vy[i] * vy[i])
+    }
+    return total
+}
+
+function kinetic_while(vx: ptr<f64>, vy: ptr<f64>, mass: ptr<f64>, count: i32) -> f64 {
+    let mut total: f64 = 0.0
+    let mut i: i32 = 0
+    while i < count {
+        total += 0.5 * mass[i] * (vx[i] * vx[i] + vy[i] * vy[i])
+        i += 1
+    }
+    return total
+}
+
+function sum_f32(x: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + x[i]
+    }
+    return s
+}
+
+function sum_f32_ordered(x: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = step(s, x[i])
+    }
+    return s
+}
+
+function main() -> i32 {
+    let vx: [f64; 3] = [1.0, 2.0, 3.0]
+    let vy: [f64; 3] = [0.0, 1.0, 2.0]
+    let mass: [f64; 3] = [1.0, 1.0, 1.0]
+    if kinetic(&vx[0], &vy[0], &mass[0], 3) != 9.5 { return 1 }
+    if kinetic_while(&vx[0], &vy[0], &mass[0], 3) != 9.5 { return 2 }
+
+    let vx_cancel: [f64; 64] = [1.0; 64]
+    let vy_cancel: [f64; 64] = [0.0; 64]
+    let mass_cancel: [f64; 64] = [
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0,
+        20000000000000000.0, 2.0, 0.0 - 20000000000000000.0, 2.0
+    ]
+    if kinetic(&vx_cancel[0], &vy_cancel[0], &mass_cancel[0], 64) != 1.0 { return 4 }
+    if kinetic_while(&vx_cancel[0], &vy_cancel[0], &mass_cancel[0], 64) != 1.0 { return 5 }
+
+    let mut x: [f32; 64] = [1.0; 64]
+    x[0] = 100000000.0
+    x[63] = 0.0 - 100000000.0
+    let got: f32 = sum_f32(&x[0], 64)
+    let want: f32 = sum_f32_ordered(&x[0], 64)
+    printf("sum %f ordered %f\n", got as f64, want as f64)
+    if got != want { return 3 }
+    return 0
+}
