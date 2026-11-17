@@ -370,6 +370,19 @@ async function docsBrowserCheck(wikiRoot, opts) {
         });
 
         await check('playground keyboard and screen-reader accessibility', async page => {
+            await page.addInitScript(() => {
+                const originalFocus = HTMLElement.prototype.focus;
+                HTMLElement.prototype.focus = function (...args) {
+                    originalFocus.apply(this, args);
+                    const calls = window.__flowFocusCalls || (window.__flowFocusCalls = []);
+                    if (calls.length < 32) {
+                        calls.push({
+                            target: this.outerHTML.slice(0, 130),
+                            after: document.activeElement?.outerHTML.slice(0, 130),
+                        });
+                    }
+                };
+            });
             await page.goto(base + '/playground/index.html', {
                 waitUntil: 'domcontentloaded', timeout: opts.timeout,
             });
@@ -397,10 +410,30 @@ async function docsBrowserCheck(wikiRoot, opts) {
             async function expectFocus(target, action) {
                 if (action) await page.keyboard.press(action);
                 if (!(await target.evaluate(element => document.activeElement === element))) {
+                    const element = await target.elementHandle();
+                    if (element) {
+                        try {
+                            await page.waitForFunction(
+                                candidate => document.activeElement === candidate,
+                                element, { timeout: 500 });
+                        } catch {
+                            // The final assertion below still reports the
+                            // focus failure with browser state and call trace.
+                        }
+                    }
+                }
+                if (!(await target.evaluate(element => document.activeElement === element))) {
                     const state = await page.evaluate(() => ({
                         active: document.activeElement?.outerHTML.slice(0, 220),
                         controls: Array.from(document.querySelectorAll('#shareModal input, #shareModal button'))
-                            .map(element => element.outerHTML.slice(0, 90)),
+                            .map(element => ({
+                                html: element.outerHTML.slice(0, 110),
+                                rects: element.getClientRects().length,
+                                hidden: getComputedStyle(element).visibility,
+                                display: getComputedStyle(element).display,
+                                tabIndex: element.tabIndex,
+                            })),
+                        focusCalls: window.__flowFocusCalls || [],
                         tabTrace: window.__flowTabTrace || [],
                     }));
                     throw new Error('Dialog keyboard focus lost at ' + (action || 'open') +
@@ -433,8 +466,10 @@ async function docsBrowserCheck(wikiRoot, opts) {
                 });
             });
             await expectFocus(url);
-            await expectFocus(copy, 'Shift+Tab');
-            await expectFocus(url, 'Tab');
+            for (let cycle = 0; cycle < 32; cycle++) {
+                await expectFocus(copy, 'Shift+Tab');
+                await expectFocus(url, 'Tab');
+            }
             await expectFocus(close, 'Tab');
             await expectFocus(copy, 'Tab');
             await expectFocus(url, 'Tab');
