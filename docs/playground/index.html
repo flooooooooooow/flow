@@ -1410,7 +1410,20 @@ function main() -> i32 {
                         const next = current < 0
                             ? (e.shiftKey ? controls.length - 1 : 0)
                             : (current + (e.shiftKey ? -1 : 1) + controls.length) % controls.length;
-                        controls[next].focus();
+                        const target = controls[next];
+                        const previous = document.activeElement;
+                        target.focus();
+                        if (document.activeElement !== target) {
+                            // Some Chromium builds ignore focus() during a
+                            // captured Tab keydown. Retry after dispatch,
+                            // without overriding a newer user focus change.
+                            setTimeout(() => {
+                                if (shareModal.classList.contains('visible')
+                                    && document.activeElement === previous) {
+                                    target.focus();
+                                }
+                            }, 0);
+                        }
                     }
                 }
                 return;
