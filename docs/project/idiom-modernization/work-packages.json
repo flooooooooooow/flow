@@ -301,10 +301,13 @@
     {
       "id": "FM-014",
       "phase": "P1",
-      "priority": 0,
+      "priority": 1,
       "title": "Fix ordered floating-point reduction safety",
       "repository": "flooooooooooow/flow",
-      "depends_on": [],
+      "depends_on": [
+        "FM-001",
+        "FM-007"
+      ],
       "owned_paths": [
         "compiler/src/cgen.flow",
         "compiler/src/pipeline_fusion.flow",
@@ -761,7 +764,7 @@
         "Invalid dimensional mixes rejected by dedicated tests"
       ],
       "verification": [
-        "./flow test-stdlib"
+        "./flow test --compiler --strict --tier2"
       ],
       "decision_gate": "public_api"
     },
@@ -789,7 +792,7 @@
         "No reduction in supported physical model class"
       ],
       "verification": [
-        "./flow test-stdlib"
+        "./flow test --compiler --strict --tier2"
       ],
       "decision_gate": "public_api"
     },
@@ -816,7 +819,7 @@
         "New public wrappers remain compatible or versioned"
       ],
       "verification": [
-        "./flow test-stdlib"
+        "./flow test --compiler --strict --tier2"
       ],
       "decision_gate": "public_api"
     },
@@ -876,7 +879,7 @@
         "Reference test proves preserved behavior"
       ],
       "verification": [
-        "./flow test-stdlib"
+        "./flow test --compiler --strict --tier2"
       ],
       "decision_gate": "public_api"
     },
