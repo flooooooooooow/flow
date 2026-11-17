@@ -1,0 +1,96 @@
+# FM-001: tracked-source census must be reproducible and distinguish
+# compiler fixtures, proof notation and ordinary examples.
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function check_json() -> i32 {
+    if t_run_argv(sl_of3("./flow", "tool", "idiom_census")) != 0 {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let j: ptr<Json> = tj_parse(read_text(t_out()))
+    if not tj_ok(j) { return T_FAIL }
+    if not a_eq(tj_raw(j, tj_get(j, 0, "schema_version")), "1", "schema_version") {
+        return T_FAIL
+    }
+    let rev: string = tj_raw(j, tj_get(j, 0, "revision"))
+    if not a_true("full Git revision present", s_len(rev) == 40) { return T_FAIL }
+    let total: i32 = s_atoi(tj_raw(j, tj_get(j, 0, "tracked_flow")), -1)
+    let parts: i32 = tj_get(j, 0, "partitions")
+    if not a_true("13 exclusive file purpose partitions", tj_len(j, parts) == 13) {
+        return T_FAIL
+    }
+    let mut sum: i32 = 0
+    let mut node: i32 = tj_first(j, parts)
+    while node >= 0 {
+        let count: i32 = s_atoi(tj_raw(j, node), -1)
+        if count < 0 { return T_FAIL }
+        sum = sum + count
+        node = tj_next(j, node)
+    }
+    if not a_eq_int(sum, total, "all tracked Flow files partitioned exactly once") {
+        return T_FAIL
+    }
+    if not a_true("compiler fixtures exist",
+        s_atoi(tj_raw(j, tj_get(j, parts, "compiler_fixture")), 0) > 0) {
+        return T_FAIL
+    }
+    if not a_true("proof corpus exists",
+        s_atoi(tj_raw(j, tj_get(j, parts, "proof_corpus")), 0) > 0) {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_paths() -> i32 {
+    let cmdline: ptr<ProcStrs> = sl_of3("./flow", "tool", "idiom_census")
+    sl_push(cmdline, "--paths")
+    if t_run_argv(cmdline) != 0 {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let printed: string = read_text(t_out())
+    if not a_contains(printed, "compiler_fixture\tcompiler/fixtures/flow_blocks/ok_elided_units.flow") {
+        return T_FAIL
+    }
+    if not a_contains(printed, "proof_corpus\texamples/verify/") {
+        return T_FAIL
+    }
+    if not a_contains(printed, "example\texamples/evolution/") {
+        return T_FAIL
+    }
+    if not a_contains(printed, "repository_tool\tscripts/tools/idiom_census/main.flow") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_cli() -> i32 {
+    let cmdline: ptr<ProcStrs> = sl_of3("./flow", "tool", "idiom_census")
+    sl_push(cmdline, "--check")
+    if t_run_argv(cmdline) != 0 {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "idiom_census: PASS") {
+        return T_FAIL
+    }
+    let invalid: ptr<ProcStrs> = sl_of3("./flow", "tool", "idiom_census")
+    sl_push(invalid, "--does-not-exist")
+    if t_run_argv(invalid) != 2 {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("idiom_census")
+    t_start()
+    t_end("json_partitions_sum_to_tracked_files", check_json())
+    t_start()
+    t_end("fixture_proof_and_example_classifications", check_paths())
+    t_start()
+    t_end("check_and_invalid_option", check_cli())
+    t_done()
+    return 0
+}
