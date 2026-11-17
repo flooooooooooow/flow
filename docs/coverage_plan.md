@@ -11,7 +11,7 @@
 | Continuous state, events and connections | [`compiler/src/flow_blocks.flow`](../compiler/src/flow_blocks.flow) | `./flow tool compiler/scripts/parity_flow_blocks.flow`, compiled evolution examples and analytic/numerical reference checks |
 | Dynamics, fields and physics | [`dynamics_dsl.flow`](../compiler/src/dynamics_dsl.flow), [`field_dsl.flow`](../compiler/src/field_dsl.flow), [`physics_dsl.flow`](../compiler/src/physics_dsl.flow) | `parity_dynamics_dsl.flow` and `parity_field_dsl.flow` in `compiler/scripts/`, followed by compiled domain-specific examples |
 | C code generation, memory and optimizations | [`compiler/src/cgen.flow`](../compiler/src/cgen.flow), native runtime, optimization modules | `./flow tool tests/cgen/run.flow`, `./flow test-lang`, generated-C inspection and negative numeric/alias/effect cases |
-| MLIR and target parity | [`compiler/src/mlirgen.flow`](../compiler/src/mlirgen.flow) and target modules | `./flow tool compiler/scripts/mlir_vs_c.flow --check` on advertised supported programs; record unsupported targets explicitly |
+| MLIR and target parity | [`compiler/src/mlirgen.flow`](../compiler/src/mlirgen.flow), [`wgsl_codegen.flow`](../compiler/src/wgsl_codegen.flow) and other target modules | `./flow tool compiler/scripts/mlir_vs_c.flow --check` for C/MLIR parity; GPU shader goldens for WGSL; record unsupported targets explicitly |
 | Tooling and public CLI | [`tools/flow_cli/`](../tools/flow_cli/), [`scripts/tools/`](../scripts/tools/) | `./flow test-scripts` and focused CLI, LSP, formatter and command goldens |
 | Docs, examples and browser | [`docs/`](./), [`examples/`](../examples/), website builder | `./flow tool doc_coverage`, documentation-example/route checks, real Chromium live demo CI |
 
