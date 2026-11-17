@@ -1,6 +1,8 @@
 name: Live WASM demos
 
 on:
+  merge_group:
+    types: [checks_requested]
   pull_request:
     branches: [main, master]
     paths:
