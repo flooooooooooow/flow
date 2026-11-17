@@ -214,7 +214,7 @@ export function sofia_ir_validate(p: ptr<SofiaIrProgram>) -> i32 {
         } elif n.kind == SOFIA_IR_GRAD_X or n.kind == SOFIA_IR_LAPLACIAN_X {
             if n.a != p[0].field or n.a >= i { return 12 }
             let child: SofiaIrNode = p[0].nodes[n.a]
-            let order: i32 = 1
+            let mut order: i32 = 1
             if n.kind == SOFIA_IR_LAPLACIAN_X { order = 2 }
             if n.length_dim != child.length_dim - order
                 or n.time_dim != child.time_dim
