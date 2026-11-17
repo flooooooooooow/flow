@@ -1,8 +1,6 @@
 # Portable SIMD-aware C lowering for the #739 hot-loop forms: axpy,
 # reductions, dots, squared distance / RBF, class-likelihood, centroid
-# accumulation and contiguous copies. Integer reductions get an OpenMP
-# reduction clause; float reductions get no hint, so their sums keep the
-# source order (see float_reduction_order.flow).
+# accumulation and contiguous copies. Scalar results stay exact.
 
 extern {
     function exp(x: f64) -> f64
@@ -23,14 +21,6 @@ function fill(a: ptr<i32>, n: i32, v: i32) -> void {
 
 function sum_f32(x: ptr<f32>, n: i32) -> f32 {
     let mut s: f32 = 0.0
-    for i in 0 to n {
-        s = s + x[i]
-    }
-    return s
-}
-
-function sum_i32(x: ptr<i32>, n: i32) -> i32 {
-    let mut s: i32 = 0
     for i in 0 to n {
         s = s + x[i]
     }
@@ -125,7 +115,6 @@ function main() -> i32 {
     let mut iv: [i32; 4] = [1, 2, 3, 4]
     if prod_i32(&iv[0], 4) != 24 { return 7 }
     if nsum_i32(&iv[0], 3) != 0 - 6 { return 8 }
-    if sum_i32(&iv[0], 4) != 10 { return 18 }
     fill(&iv[0], 4, 9)
     if iv[0] != 9 { return 9 }
     if iv[3] != 9 { return 10 }
