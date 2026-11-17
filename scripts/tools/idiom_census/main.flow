@@ -1,0 +1,133 @@
+# @module tools.idiom_census
+# @means  Reproducible directory-level inventory of tracked Flow sources.
+#
+# ./flow tool idiom_census            emits revision-stamped JSON counts
+# ./flow tool idiom_census --paths    emits category TAB tracked-source-path
+# ./flow tool idiom_census --check    checks the inventory is nonempty
+#
+# Classification is by source purpose, NOT feature maturity or migration
+# eligibility. In particular, compiler fixtures and examples/verify are not
+# ordinary applications and must not enter an idiom adoption denominator.
+# Pair this with ./flow tool doc_coverage --inventory for compiler-defined
+# language keywords, attributes, backends, CLI commands and stdlib modules.
+
+import .text { ft_outln, ft_errln, ft_eq, ft_ends, ft_starts, ft_itoa, ft_list_new, ft_list_len, ft_list_get, StrList }
+import .repo { rp_enter_root, rp_git_ls, rp_capture, rp_argv3, rp_status }
+import .unicode { uc_strip }
+import .json { json_quote }
+
+const CATEGORY_COUNT: i32 = 13
+
+function category(i: i32) -> string {
+    if i == 0 { return "compiler_fixture" }
+    if i == 1 { return "proof_corpus" }
+    if i == 2 { return "test" }
+    if i == 3 { return "compiler_source" }
+    if i == 4 { return "compiler_tool" }
+    if i == 5 { return "stdlib" }
+    if i == 6 { return "example" }
+    if i == 7 { return "repository_tool" }
+    if i == 8 { return "other_tool" }
+    if i == 9 { return "application" }
+    if i == 10 { return "benchmark" }
+    if i == 11 { return "script" }
+    return "other_source"
+}
+
+function classify(path: string) -> i32 {
+    if ft_starts(path, "compiler/fixtures/") { return 0 }
+    if ft_starts(path, "examples/verify/") { return 1 }
+    if ft_starts(path, "tests/") { return 2 }
+    if ft_starts(path, "compiler/src/") { return 3 }
+    if ft_starts(path, "compiler/scripts/") { return 4 }
+    if ft_starts(path, "lib/stdlib/") { return 5 }
+    if ft_starts(path, "examples/") { return 6 }
+    if ft_starts(path, "scripts/tools/") { return 7 }
+    if ft_starts(path, "tools/") { return 8 }
+    if ft_starts(path, "apps/") { return 9 }
+    if ft_starts(path, "benchmarks/") { return 10 }
+    if ft_starts(path, "scripts/") { return 11 }
+    return 12
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let mut paths: bool = false
+    let mut check: bool = false
+    if argc > 2 {
+        ft_errln("usage: ./flow tool idiom_census [--paths | --check | --json]")
+        return 2
+    }
+    if argc == 2 {
+        if ft_eq(argv[1], "--paths") {
+            paths = true
+        } elif ft_eq(argv[1], "--check") {
+            check = true
+        } elif ft_eq(argv[1], "--help") or ft_eq(argv[1], "-h") {
+            ft_outln("usage: ./flow tool idiom_census [--paths | --check | --json]")
+            return 0
+        } elif not ft_eq(argv[1], "--json") {
+            ft_errln("unknown option: " + argv[1])
+            return 2
+        }
+    }
+    if not rp_enter_root() {
+        ft_errln("idiom_census: cannot enter repository root")
+        return 1
+    }
+    let tracked: ptr<StrList> = rp_git_ls(ft_list_new())
+    if tracked == null {
+        ft_errln("idiom_census: git ls-files failed")
+        return 1
+    }
+    let counts: array<i32, 13> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(tracked) {
+        let path: string = ft_list_get(tracked, i)
+        if ft_ends(path, ".flow") {
+            let kind: i32 = classify(path)
+            counts[kind] = counts[kind] + 1
+            total = total + 1
+            if paths {
+                ft_outln(category(kind) + "\t" + path)
+            }
+        }
+        i = i + 1
+    }
+    if paths { return 0 }
+    let mut sum: i32 = 0
+    let mut k: i32 = 0
+    while k < CATEGORY_COUNT {
+        sum = sum + counts[k]
+        k = k + 1
+    }
+    if total == 0 or sum != total or counts[0] == 0 or counts[1] == 0 or counts[2] == 0 {
+        ft_errln("idiom_census: missing compiler fixtures, proof corpus or tests")
+        return 1
+    }
+    if check {
+        ft_outln("idiom_census: PASS " + ft_itoa(total) + " tracked Flow files")
+        return 0
+    }
+    let revision: string = uc_strip(rp_capture(rp_argv3("git", "rev-parse", "HEAD")))
+    if rp_status() != 0 {
+        ft_errln("idiom_census: git rev-parse failed")
+        return 1
+    }
+    ft_outln("{")
+    ft_outln("  \"schema_version\": 1,")
+    ft_outln("  \"revision\": " + json_quote(revision) + ",")
+    ft_outln("  \"tracked_flow\": " + ft_itoa(total) + ",")
+    ft_outln("  \"classification\": \"directory purpose only; adoption eligibility and compiler support unverified\",")
+    ft_outln("  \"partitions\": {")
+    let mut c: i32 = 0
+    while c < CATEGORY_COUNT {
+        let mut suffix: string = ","
+        if c + 1 == CATEGORY_COUNT { suffix = "" }
+        ft_outln("    " + json_quote(category(c)) + ": " + ft_itoa(counts[c]) + suffix)
+        c = c + 1
+    }
+    ft_outln("  }")
+    ft_outln("}")
+    return 0
+}
