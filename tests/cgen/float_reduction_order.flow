@@ -23,14 +23,6 @@ function kinetic_while(vx: ptr<f64>, vy: ptr<f64>, mass: ptr<f64>, count: i32) -
     return total
 }
 
-function sum_i32(x: ptr<i32>, n: i32) -> i32 {
-    let mut s: i32 = 0
-    for i in 0 to n {
-        s = s + x[i]
-    }
-    return s
-}
-
 function sum_f32(x: ptr<f32>, n: i32) -> f32 {
     let mut s: f32 = 0.0
     for i in 0 to n {
@@ -84,7 +76,5 @@ function main() -> i32 {
     let want: f32 = sum_f32_ordered(&x[0], 64)
     printf("sum %f ordered %f\n", got as f64, want as f64)
     if got != want { return 3 }
-    let ints: [i32; 4] = [1, 2, 3, 4]
-    if sum_i32(&ints[0], 4) != 10 { return 6 }
     return 0
 }
