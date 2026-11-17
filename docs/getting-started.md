@@ -176,9 +176,23 @@ flow run examples/evolution/pendulum_evolves.flow
 ```bash
 flow version
 flow run file.flow
+flow run file.flow -- input.bin --steps 40
 flow compile file.flow
 flow test
 flow fmt file.flow
+```
+
+Everything after `--` is passed to the program, which reads it with `proc_argc` and
+`proc_argv` from `std.process`. A plain word after the file name is passed the same way.
+
+A program that calls C code declares it in its project's `flow.toml`, and both backends
+link it, so no compiler flags are needed on the command line:
+
+```toml
+[native]
+sources = ["kernels.c"]
+frameworks = ["Accelerate"]
+libs = ["sleef"]
 ```
 
 `flowc` is the self-hosted compiler and builds programs directly to native executables. See [self-hosting](project/self-hosting.md) for compiler internals and verification proofs.
