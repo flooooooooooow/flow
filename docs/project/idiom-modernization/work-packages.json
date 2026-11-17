@@ -1,0 +1,1383 @@
+{
+  "schema_version": 1,
+  "programme": "Flow semantic modernization and idiom adoption",
+  "authority": "GitHub issues/PRs and exact-revision compiler tests are authoritative. This file defines proposed work, not live status or approval.",
+  "entrypoint": "docs/project/idiom-modernization/START-HERE.md",
+  "source_plan": "docs/project/idiom-modernization-program.md",
+  "task_selection": "Select minimal priority value with dependencies verified complete and no live overlapping issue, PR or claim. Design-gated packages require explicit approval before language/API/security changes. Open one issue per concrete slice if none exists.",
+  "live_status": "Do not store is_done or in_progress here. Determine them from GitHub issues, merged PRs and evidence; this manifest intentionally has no status field.",
+  "packages": [
+    {
+      "id": "FM-001",
+      "phase": "P0",
+      "priority": 0,
+      "title": "Generate comprehensive Flow feature census",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [],
+      "owned_paths": [
+        "compiler/src/",
+        "compiler/fixtures/",
+        "tests/",
+        "docs/",
+        "tools/",
+        "examples/"
+      ],
+      "scope": "Enumerate all public surface forms, separate parser/DSL expander/API/experimental proposals, and connect grammar, typecheck, lowering, runtime fixtures, backend and docs by file path. Exclude generated proofs and fixtures from adoption denominator.",
+      "acceptance": [
+        "Reproducible machine-readable baseline at exact SHA with missing anchors distinguished from missing implementations",
+        "Each feature has confidence and maturity, not an invented shipped label",
+        "Counts classify source, generated, proof, negative and pedagogical files"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parse_coverage.flow --check",
+        "./flow tool doc_coverage"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-002",
+      "phase": "P0",
+      "priority": 0,
+      "title": "Build documentation contradiction ledger",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "docs/LANGUAGE_SPEC.md",
+        "docs/language/",
+        "docs/vision/north-star.md",
+        "docs/grammar.ebnf",
+        "docs/project/maturity.md",
+        "docs/coverage_plan.md"
+      ],
+      "scope": "Compare every current-tense feature claim with exact compiler and test evidence, including stale Python-host references, RK4, connect, represent and unit-aware evolution claims.",
+      "acceptance": [
+        "A per-claim path/line evidence ledger with current correction and proposed status",
+        "Documentation-only fixes landed in narrowly scoped PRs; historical design preserved or marked archive"
+      ],
+      "verification": [
+        "./flow tool doc_examples --check-ledger",
+        "./flow tool wiki_links"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-003",
+      "phase": "P0",
+      "priority": 0,
+      "title": "Decide canonical feature metadata ownership and schema",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "docs/project/Questions.md",
+        "docs/project/",
+        "compiler/src/",
+        "scripts/tools/"
+      ],
+      "scope": "Specify one authoritative registry or source-to-generated card pipeline, stable feature IDs, lifecycle tier, target compatibility, exact tests and evidence revision. Do not hand-maintain multiple truth matrices.",
+      "acceptance": [
+        "Design record states source owner, schema, regeneration and version policy",
+        "Unknown/not verified distinct from unsupported and proposed",
+        "No implementation of new semantics without approval"
+      ],
+      "verification": [],
+      "decision_gate": "architecture"
+    },
+    {
+      "id": "FM-004",
+      "phase": "P0",
+      "priority": 1,
+      "title": "Implement a feature registry with evidence validation",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-003"
+      ],
+      "owned_paths": [
+        "scripts/tools/",
+        "tests/",
+        "docs/generated/",
+        "docs/language/"
+      ],
+      "scope": "Implement in Flow a source-owned, validation-capable feature ledger and derived views. Audit links/paths/test anchors, refuse stale unverified promises.",
+      "acceptance": [
+        "Feature cards generated and reproducible at exact SHA",
+        "Bad/missing anchors fail with actionable errors",
+        "Source provenance and backend support recorded separately"
+      ],
+      "verification": [
+        "./flow test-lang",
+        "./flow tool doc_coverage"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-005",
+      "phase": "P0",
+      "priority": 1,
+      "title": "Inventory eligible idiom-adoption candidates",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "examples/",
+        "apps/",
+        "lib/stdlib/",
+        "registry/packages/",
+        "benchmarks/"
+      ],
+      "scope": "Classify code by purpose and mathematical structure; tag canonical, pedagogical, independent reference, performance, adversarial fixture, proof-only, target-only and legacy. Discover cases of duplicated hand integration, raw dimensioned APIs and manual sampling.",
+      "acceptance": [
+        "Per-file or per-package candidate map with measurable eligibility rules",
+        "No reclassification of examples/verify as ordinary runnable examples",
+        "Each proposed rewrite identifies risks, reference, cost and intended checker"
+      ],
+      "verification": [
+        "./flow tool verify_examples"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-006",
+      "phase": "P0",
+      "priority": 1,
+      "title": "Baseline agent-generated Flow idiom selection",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "docs/project/",
+        "tests/",
+        "tools/check/"
+      ],
+      "scope": "Create evaluation prompts/cases across ODE, DAE, sampled control, effectful shell, data pipelines, memory and RT; measure correct high-level selection and unjustified feature overuse before training guidance.",
+      "acceptance": [
+        "Blind evaluated baseline and scoring rubric at a pinned Flow revision",
+        "Outputs compile or are explicitly classified unsupported",
+        "Both false-positive and missed-idiom rates reported"
+      ],
+      "verification": [
+        "./flow tool tests/check/run.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-007",
+      "phase": "P0",
+      "priority": 1,
+      "title": "Map in-flight issues, PR overlap and release constraints",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [],
+      "owned_paths": [
+        "docs/project/agentic-loop.md",
+        "docs/project/",
+        "AGENTS.md"
+      ],
+      "scope": "Refresh live GitHub tasks, paths, branch conflicts and protected merge rules before any work package is claimed. Link to existing #1703/#1694 and already-implemented #761 rather than duplicating.",
+      "acceptance": [
+        "Live overlap mapping and exact-head evidence links",
+        "No duplicate implementation PR spawned",
+        "Unclaimed task selection demonstrated on a dry run"
+      ],
+      "verification": [],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-010",
+      "phase": "P1",
+      "priority": 0,
+      "title": "Prove units plus evolved derivative type checking",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "compiler/src/flow_blocks.flow",
+        "compiler/src/sem_check.flow",
+        "compiler/src/sem_types.flow",
+        "compiler/fixtures/flow_blocks/",
+        "compiler/fixtures/typecheck_rules/",
+        "tests/cgen/"
+      ],
+      "scope": "Reproduce unit-member derivative emission and dimension validation; decide whether derivatives carry dimensions through the semantic layer or are checked and then erased; implement only after approved design.",
+      "acceptance": [
+        "Distance/time and acceleration RHS accepted; distance RHS as velocity derivative rejected",
+        "Unit-typed states survive generated Euler/RK4 without invalid casts",
+        "Both incorrect algebra and hidden f64 coercion negative tests"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parity_flow_blocks.flow",
+        "./flow tool compiler/scripts/parity_typecheck.flow --check",
+        "./flow test-lang"
+      ],
+      "decision_gate": "semantics"
+    },
+    {
+      "id": "FM-011",
+      "phase": "P1",
+      "priority": 0,
+      "title": "Make time, solver and unit bridge coherent",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-010"
+      ],
+      "owned_paths": [
+        "compiler/src/flow_blocks.flow",
+        "compiler/src/sem_check.flow",
+        "compiler/fixtures/flow_blocks/",
+        "examples/evolution/",
+        "docs/book/13-evolution-and-dynamics.md"
+      ],
+      "scope": "Verify solver dt, fixed-period accumulation, simultaneous state updates, RK4 stages and typed time conversion. Document intentional numeric erasure and event granularity.",
+      "acceptance": [
+        "dt unit misuse rejected where syntax supports it",
+        "No silent change to scheduling or update order",
+        "Analytic time and convergence regression cases"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parity_flow_blocks.flow",
+        "./flow run examples/evolution/thermostat_evolves.flow"
+      ],
+      "decision_gate": "semantics"
+    },
+    {
+      "id": "FM-012",
+      "phase": "P1",
+      "priority": 0,
+      "title": "Inventory exact equation-style mathematical syntax",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "compiler/src/parser.flow",
+        "compiler/src/expr_type.flow",
+        "compiler/src/dynamics_dsl.flow",
+        "compiler/src/field_dsl.flow",
+        "compiler/src/math_prose.flow",
+        "docs/language/",
+        "examples/"
+      ],
+      "scope": "Extract real accepted equation/function notations from compiler fixtures and distinguish mathematical prose rendering, algebraic residuals, ODE RHS, DAE/MNA, symbolic PDE and ordinary typed function expressions.",
+      "acceptance": [
+        "Every advertised mathematical syntax has a real small compilable fixture",
+        "Desired but unsupported notation is proposed rather than claimed shipped",
+        "Document precise precedence, type and evaluation constraints"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parse_coverage.flow --check",
+        "./flow test-lang"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-013",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Define equation/DAE/ODE/PDE selection and solver ownership",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-012"
+      ],
+      "owned_paths": [
+        "docs/project/Questions.md",
+        "docs/language/",
+        "lib/stdlib/dynamics/",
+        "lib/stdlib/circuit.flow"
+      ],
+      "scope": "Set domain distinctions: explicit ODE vs algebraic constraint vs index-1 DAE vs discretized spatial PDE. Decide what belongs in syntax, typed library builder or solver IR without rushing new grammar.",
+      "acceptance": [
+        "Counterexample ideal-voltage-source circuit does not get forced into evolves",
+        "Solver convergence and data-dependency policy specified",
+        "No conflation of renderer notation with executable expressions"
+      ],
+      "verification": [],
+      "decision_gate": "architecture"
+    },
+    {
+      "id": "FM-014",
+      "phase": "P1",
+      "priority": 0,
+      "title": "Fix ordered floating-point reduction safety",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [],
+      "owned_paths": [
+        "compiler/src/cgen.flow",
+        "compiler/src/pipeline_fusion.flow",
+        "compiler/fixtures/",
+        "tests/cgen/",
+        "docs/language/c-simd-loops.md"
+      ],
+      "scope": "Coordinate with existing issue #1694 and its PR history. Specify exact sequential/contractible/reorderable reduction rules and vectorization hints before making any idiom rule recommend aggregation or parallelization.",
+      "acceptance": [
+        "Known non-associative reduction reproduces expected ordered result under chosen contract",
+        "Elementwise vectorization retained where safe",
+        "Generated C/MLIR inspected and numerical regression runs at multiple optimizations"
+      ],
+      "verification": [
+        "./flow tool tests/cgen/run.flow",
+        "./flow tool compiler/scripts/mlir_vs_c.flow --check"
+      ],
+      "decision_gate": "semantics"
+    },
+    {
+      "id": "FM-015",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Verify hybrid events, guarantees, invariants and reset semantics",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-011"
+      ],
+      "owned_paths": [
+        "compiler/src/flow_blocks.flow",
+        "compiler/fixtures/flow_blocks/",
+        "examples/evolution/",
+        "docs/book/13-evolution-and-dynamics.md"
+      ],
+      "scope": "Test when/reaches behavior, zero-crossing granularity, reset-before/after outputs, always/never/guarantee runtime semantics, no false proof claims and event serialization.",
+      "acceptance": [
+        "Time-step refinement and threshold crossing tests",
+        "Simultaneous reset and failure trap negative cases",
+        "Docs distinguish sampled runtime check from formal invariant"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parity_flow_blocks.flow",
+        "./flow run examples/evolution/bouncing_ball_evolves.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-016",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Validate effect/capability/handler contracts and target parity",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-001"
+      ],
+      "owned_paths": [
+        "compiler/src/effects.flow",
+        "compiler/src/sem_check.flow",
+        "compiler/src/mlirgen.flow",
+        "compiler/fixtures/effects/",
+        "tests/lang/",
+        "examples/effects/"
+      ],
+      "scope": "Verify effect rows, stateless capability scope, nested handler replacement, strict/permissive mode, impurity inside derivatives, unknown operations and honest MLIR support.",
+      "acceptance": [
+        "Unhandled effects rejected in strict profile",
+        "Nested handlers have known evaluation and restoration order",
+        "MLIR parity or explicit unsupported diagnostic, no silent fallback"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parity_effects.flow",
+        "./flow run examples/effects/effect_rows.flow"
+      ],
+      "decision_gate": "semantics"
+    },
+    {
+      "id": "FM-017",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Validate connection topology, rates and linear representations",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-011",
+        "FM-013"
+      ],
+      "owned_paths": [
+        "compiler/src/flow_blocks.flow",
+        "compiler/src/dynamics_dsl.flow",
+        "compiler/fixtures/dynamics_dsl/",
+        "compiler/fixtures/flow_blocks/",
+        "examples/evolution/"
+      ],
+      "scope": "Test nested flow ports, same-unit conversion, state-broken feedback, algebraic-loop rejection, represent linear explicit Jacobian, limited system sizes and dsys/sense/analyze interplay.",
+      "acceptance": [
+        "Nonzero-dimensional mismatch and algebraic loop fail with useful diagnostics",
+        "Named model works with independent state-space oracle",
+        "No automatic Jacobian claim without implementation"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parity_flow_blocks.flow",
+        "./flow tool compiler/scripts/parity_dynamics_dsl.flow",
+        "./flow run examples/evolution/pendulum_represent_linear.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-018",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Reconcile field, typed symbolic PDE and physics DSL",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-013"
+      ],
+      "owned_paths": [
+        "compiler/src/field_dsl.flow",
+        "compiler/src/field_dsl_core.flow",
+        "compiler/src/physics_dsl.flow",
+        "lib/stdlib/science/",
+        "examples/science/sofia/"
+      ],
+      "scope": "Coordinate with PR #1703 and Sofia solver design; separate 1D field expander, typed PDE DAG, boundary/timestep/numerical convergence and @physics status. Do not merge unapproved APIs into stable docs.",
+      "acceptance": [
+        "Boundary and unit invalid cases pinned",
+        "Independent analytic and semi-discrete reference tests",
+        "Compiler/API maturity state and GPU/backend reach explicitly labelled"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/parity_field_dsl.flow",
+        "./flow test-lang"
+      ],
+      "decision_gate": "architecture"
+    },
+    {
+      "id": "FM-019",
+      "phase": "P1",
+      "priority": 2,
+      "title": "Differentiation, tensor and symbolic algebra contracts",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-012"
+      ],
+      "owned_paths": [
+        "lib/stdlib/autodiff.flow",
+        "lib/stdlib/autodiff_reverse.flow",
+        "compiler/src/expr_type.flow",
+        "examples/ml/autodiff/",
+        "tests/cgen/"
+      ],
+      "scope": "Audit Dual/Tensor operator legality, reverse-mode available forms, function expressions, numeric stability and effect/aliasing restrictions; avoid teaching non-existent loss.grad syntax.",
+      "acceptance": [
+        "Gradient check vs finite difference and reference implementation",
+        "Unit-bearing differentiation where supported or explicit diagnostic",
+        "Backend matrix and performance reference"
+      ],
+      "verification": [
+        "./flow run examples/ml/autodiff/nn_gradcheck.flow",
+        "./flow test-lang"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-020",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Make pipeline/fork/choose and implementation selection semantics explicit",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-014"
+      ],
+      "owned_paths": [
+        "compiler/src/parser.flow",
+        "compiler/src/pipeline_fusion.flow",
+        "compiler/src/constraints.flow",
+        "compiler/src/sort_plans.flow",
+        "tests/lang/",
+        "examples/basics/"
+      ],
+      "scope": "Validate single evaluation, effect order, parenthesis and placeholder behavior, alternative selection provenance, side effects and floating-point safety; keep @require attribute ideas marked future until wired.",
+      "acceptance": [
+        "Side-effect and aliasing negative cases",
+        "Exact implementable plan/sort/search syntax demonstrated",
+        "flow explain reports selected legal plans and reasons"
+      ],
+      "verification": [
+        "./flow run examples/basics/pipeline_fork.flow",
+        "./flow run examples/basics/pipeline_choose.flow",
+        "./flow test-lang"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-021",
+      "phase": "P1",
+      "priority": 1,
+      "title": "Cross-module real-time, lifetime and resource contracts",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-016"
+      ],
+      "owned_paths": [
+        "compiler/src/rt_summary.flow",
+        "compiler/src/wcet.flow",
+        "compiler/src/sem_check.flow",
+        "compiler/fixtures/rt_summary/",
+        "compiler/fixtures/typecheck_rules/",
+        "examples/audio/"
+      ],
+      "scope": "Verify transitive blocking/alloc/IO/UNKNOWN, function pointers, closures, trait dispatch, annotated lifetimes, scratch/stack limits and call graph holes; do not equate @rt_safe with measured worst-case deadlines.",
+      "acceptance": [
+        "Deliberately unsafe callback and unknown extern rejected",
+        "Safe bounded callback accepted with independent runtime check",
+        "Profile limitations documented on all supported targets"
+      ],
+      "verification": [
+        "./flow run examples/audio/rt_safe_callback.flow",
+        "./flow tool compiler/scripts/parity_typecheck.flow --check"
+      ],
+      "decision_gate": "semantics"
+    },
+    {
+      "id": "FM-022",
+      "phase": "P1",
+      "priority": 2,
+      "title": "Conformance matrix and backend truth",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-004"
+      ],
+      "owned_paths": [
+        "compiler/src/cgen.flow",
+        "compiler/src/mlirgen.flow",
+        "compiler/src/wasm_gen.flow",
+        "compiler/fixtures/mlir/",
+        "compiler/mlir_vs_c/",
+        "tests/"
+      ],
+      "scope": "Define exact compatibility test for C/native, MLIR verified/native, C->WASM, GPU/JS where appropriate, refusing unsupported syntax instead of silent semantic change.",
+      "acceptance": [
+        "Per-feature target status supported/unsupported/unverified with revision",
+        "Same source and assertions on claimed targets",
+        "One negative regression for misleading successes"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/mlir_vs_c.flow --check",
+        "./flow tool compiler/scripts/corpus_parity.flow --check"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-023",
+      "phase": "P1",
+      "priority": 2,
+      "title": "Compiler explainability and representation-loss diagnostics",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-004",
+        "FM-022"
+      ],
+      "owned_paths": [
+        "compiler/src/semantic_pipeline.flow",
+        "compiler/src/denotation.flow",
+        "compiler/src/fir_analysis.flow",
+        "compiler/src/fir_route.flow",
+        "docs/design/representation-aware.md"
+      ],
+      "scope": "Show why an abstraction is selected, rewritten, limited or rejected; do not erase physical time/units/effect/numeric constraints just to obtain an optimization.",
+      "acceptance": [
+        "Representative source-to-lowering trace with stable fields and exact revision",
+        "Invalid rewrite counterexample refused with provenance",
+        "Build/profile and cost evidence separated from semantics"
+      ],
+      "verification": [
+        "./flow tool tests/fir/run.flow"
+      ],
+      "decision_gate": "architecture"
+    },
+    {
+      "id": "FM-030",
+      "phase": "P2",
+      "priority": 1,
+      "title": "Dimensioned transport and vehicle flagship",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-010",
+        "FM-011"
+      ],
+      "owned_paths": [
+        "examples/evolution/",
+        "examples/flow_way/",
+        "docs/demos/",
+        "tests/lang/"
+      ],
+      "scope": "Make a small braking/longitudinal vehicle model canonically equation-first with typed quantities, independent analytic solution and deliberately wrong units test. Keep the original numeric reference.",
+      "acceptance": [
+        "Analytic distance/time and RK4 convergence tested",
+        "Compile-time units failure proved",
+        "C/MLIR statuses and measured cost recorded"
+      ],
+      "verification": [
+        "./flow test-lang"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-031",
+      "phase": "P2",
+      "priority": 1,
+      "title": "Hybrid controller flagship with capability-selected environment",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-015",
+        "FM-016",
+        "FM-017"
+      ],
+      "owned_paths": [
+        "examples/evolution/",
+        "examples/effects/",
+        "docs/tutorials/"
+      ],
+      "scope": "Build/reference a thermostatic/servo hybrid with continuous plant, sampled controller, event reset, model checks, and effect-swappable telemetry/time/IO shell.",
+      "acceptance": [
+        "Live and simulated handlers produce same pure model trajectory",
+        "Periodic rate and invariant checks asserted",
+        "No effects called from derivative RHS"
+      ],
+      "verification": [
+        "./flow run examples/evolution/thermostat_evolves.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-032",
+      "phase": "P2",
+      "priority": 1,
+      "title": "Circuit DAE anti-example and MNA reference",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-013"
+      ],
+      "owned_paths": [
+        "examples/circuits/",
+        "lib/stdlib/circuit.flow",
+        "docs/tutorials/"
+      ],
+      "scope": "Demonstrate when NOT to use evolves: ideal voltage sources plus algebraic KCL, MNA reference vs genuine RC ODE, with units and residual tolerance.",
+      "acceptance": [
+        "KCL and power residual tests, singular-network negative case",
+        "No misleading proof of general nonlinear DAE",
+        "Measured values match analytic reference"
+      ],
+      "verification": [
+        "./flow run examples/circuits/mna_dc.flow",
+        "./flow run examples/circuits/rc_rl_rlc.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-033",
+      "phase": "P2",
+      "priority": 1,
+      "title": "Field/PDE flagship with truthful solver and boundary limits",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-018"
+      ],
+      "owned_paths": [
+        "examples/evolution/heat_diffusion.flow",
+        "examples/science/sofia/",
+        "docs/demos/"
+      ],
+      "scope": "Show a 1D heat model with dimensioned coefficients where implemented, stable timestep, convergence and independent eigenmode reference; stage broader Sofia only through approved PR.",
+      "acceptance": [
+        "Stability and boundary error cases",
+        "Convergence measured over dt and dx",
+        "Experimental vs stable separated in demos"
+      ],
+      "verification": [
+        "./flow run examples/evolution/heat_diffusion.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-034",
+      "phase": "P2",
+      "priority": 1,
+      "title": "DSP and real-time callback flagship",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-021"
+      ],
+      "owned_paths": [
+        "examples/audio/",
+        "lib/stdlib/audio/",
+        "docs/tutorials/rt-audio.md"
+      ],
+      "scope": "Demonstrate an effect-free allocation-free signal kernel, host capabilities at the boundary, span ownership, typed rates and latency evidence; compare a procedural reference.",
+      "acceptance": [
+        "Transitive RT contract passes strict mode",
+        "No hidden allocation/lock in measured kernel",
+        "Golden sample signal equivalence and bounded performance measured"
+      ],
+      "verification": [
+        "./flow run examples/audio/rt_safe_callback.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-035",
+      "phase": "P2",
+      "priority": 2,
+      "title": "General dataflow/functional composition flagship",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-020"
+      ],
+      "owned_paths": [
+        "examples/basics/",
+        "examples/flow_way/",
+        "examples/generics_traits/"
+      ],
+      "scope": "Create an executable problem-driven pipeline/fork/choose/match example with side-effect order checks and ordinary function fallback when it is clearer.",
+      "acceptance": [
+        "Source evaluated once and appropriate named records tested",
+        "No change in observable effects through optimization",
+        "Comparison with plain code includes rationale not just line count"
+      ],
+      "verification": [
+        "./flow run examples/basics/pipeline_fork.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-040",
+      "phase": "P3",
+      "priority": 1,
+      "title": "Unit-safe standard-library API audit",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-005",
+        "FM-010"
+      ],
+      "owned_paths": [
+        "lib/stdlib/units_si.flow",
+        "lib/stdlib/rf.flow",
+        "lib/stdlib/dynamics/",
+        "lib/stdlib/circuit.flow",
+        "lib/stdlib/math.flow"
+      ],
+      "scope": "Classify public f64/f32 parameters by dimension and API stability. Propose minimal typed wrappers/overloads, safe conversions and compatibility plan where semantics matter; do not indiscriminately replace all scalars.",
+      "acceptance": [
+        "Per-module signature map and selected, versioned migration",
+        "FFI/ABI and profiler checks",
+        "Invalid dimensional mixes rejected by dedicated tests"
+      ],
+      "verification": [
+        "./flow test-stdlib"
+      ],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-041",
+      "phase": "P3",
+      "priority": 1,
+      "title": "Numerical integrators and control utilities modernization",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-011",
+        "FM-013",
+        "FM-017"
+      ],
+      "owned_paths": [
+        "lib/stdlib/dynamics/",
+        "lib/stdlib/circuit.flow",
+        "lib/stdlib/control.flow",
+        "examples/dynamics/"
+      ],
+      "scope": "Remove duplicated application-level solver policy only where high-level Flow can own it; preserve lower-level integrators as tested general-purpose library kernels and independent oracle.",
+      "acceptance": [
+        "Method/dt ownership documented",
+        "Energy, stability and control oracle tests",
+        "No reduction in supported physical model class"
+      ],
+      "verification": [
+        "./flow test-stdlib"
+      ],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-042",
+      "phase": "P3",
+      "priority": 1,
+      "title": "Audio and RF library rates/effects ownership",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-021",
+        "FM-034"
+      ],
+      "owned_paths": [
+        "lib/stdlib/audio/",
+        "lib/stdlib/rf.flow",
+        "lib/stdlib/dsp.flow",
+        "examples/audio/"
+      ],
+      "scope": "Audit sample/frame units, parameter smoothing, spans, hidden memory allocation, DSP kernels and capabilities at host side; avoid effects inside audio callback.",
+      "acceptance": [
+        "Golden-output tests and performance baseline",
+        "Unsupported timing guarantees not advertised",
+        "New public wrappers remain compatible or versioned"
+      ],
+      "verification": [
+        "./flow test-stdlib"
+      ],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-043",
+      "phase": "P3",
+      "priority": 2,
+      "title": "Evolve canonical nonproof examples systematically",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-005",
+        "FM-030",
+        "FM-031",
+        "FM-032",
+        "FM-033"
+      ],
+      "owned_paths": [
+        "examples/evolution/",
+        "examples/neuro/",
+        "examples/morphogenesis/",
+        "examples/circuits/",
+        "examples/flow_way/",
+        "examples/README.md"
+      ],
+      "scope": "Apply per-file adoption decisions, leave pedagogical hand-integration and independently tested references intentional, update first-hit tours after proof.",
+      "acceptance": [
+        "All selected migrations have before/after model oracle",
+        "Each preserved low-level exception tagged",
+        "No generated example status report hand-edited"
+      ],
+      "verification": [
+        "./flow tool verify_examples",
+        "./flow tool record_demos --check"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-044",
+      "phase": "P3",
+      "priority": 2,
+      "title": "Audited package/registry APIs and portability",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-005",
+        "FM-040"
+      ],
+      "owned_paths": [
+        "registry/packages/",
+        "lib/stdlib/",
+        "tests/stdlib/",
+        "docs/library/"
+      ],
+      "scope": "Review package boundaries, effects, ownership/borrow API, experimental semantics, version requirements and C vs MLIR parity; migrate one library per PR.",
+      "acceptance": [
+        "Current package compatibility baseline recorded",
+        "No inadvertent ABI or dependency break",
+        "Reference test proves preserved behavior"
+      ],
+      "verification": [
+        "./flow test-stdlib"
+      ],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-050",
+      "phase": "P4",
+      "priority": 1,
+      "title": "Unified semantic idiom-advisor rules",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-004",
+        "FM-006"
+      ],
+      "owned_paths": [
+        "tools/check/main.flow",
+        "tools/lsp/diag.flow",
+        "tests/check/",
+        "tests/tools/lsp/",
+        "compiler/src/conventions.flow"
+      ],
+      "scope": "Build on shipped FIDIOM001/FIDIOM002, deduplicate equivalent rule logic between CLI and LSP and add advisory-but-not-autofix representation hints tied to verified feature versions.",
+      "acceptance": [
+        "Same diagnostic ID/span/rationale and suppression across CLI and LSP",
+        "Fixes only when demonstrably behavior preserving",
+        "Advisory architectural hints do not create code edits"
+      ],
+      "verification": [
+        "./flow tool tests/check/run.flow",
+        "./flow tool tests/tools/lsp/run.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-051",
+      "phase": "P4",
+      "priority": 1,
+      "title": "Compiler aware editor and formatting synchronization",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-004",
+        "FM-050"
+      ],
+      "owned_paths": [
+        "tools/lsp/catalog.flow",
+        "tools/lsp/diag.flow",
+        "compiler/src/lsp_syntax.flow",
+        "compiler/src/lsp_dynamics.flow",
+        "compiler/src/fmt.flow",
+        "tests/tools/lsp/"
+      ],
+      "scope": "Align hover, completion, source spans, syntax-aware formatter and snippets with feature registry; negative examples should not surface futuristic syntax.",
+      "acceptance": [
+        "Identical feature ID/status in hover and docs",
+        "Formatting stable under roundtrip",
+        "LSP golden transcript tests updated from actual output"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/fmt_check.flow --check",
+        "./flow tool tests/tools/lsp/run.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-052",
+      "phase": "P4",
+      "priority": 1,
+      "title": "Documentation and grammar reconciliation",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-002",
+        "FM-004"
+      ],
+      "owned_paths": [
+        "docs/LANGUAGE_SPEC.md",
+        "docs/grammar.ebnf",
+        "docs/language/",
+        "docs/vision/north-star.md",
+        "docs/project/maturity.md",
+        "docs/coverage_plan.md"
+      ],
+      "scope": "Replace stale feature/architecture statements, map grammar accurately, flag proposals and pre-parse expanders explicitly and preserve dated design history.",
+      "acceptance": [
+        "All current feature claims trace to tests and exact host/backend state",
+        "Retired Python-host references corrected, or labelled historical",
+        "Documentation snippets compile at their advertised target"
+      ],
+      "verification": [
+        "./flow tool doc_examples --check-ledger",
+        "./flow tool doc_coverage",
+        "./flow tool wiki_links"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-053",
+      "phase": "P4",
+      "priority": 1,
+      "title": "Problem-first tutorials, book and AI handbook",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-030",
+        "FM-031",
+        "FM-032",
+        "FM-033",
+        "FM-052"
+      ],
+      "owned_paths": [
+        "docs/idiomatic-flow.md",
+        "docs/tutorials/",
+        "docs/book/",
+        "docs/AI_FLOW_HANDBOOK.md",
+        "docs/effects-showcase.md"
+      ],
+      "scope": "Teach selection of representation by domain and problem with anti-examples, unsupported cases, units/equations/evolves/effects, performance and target limitations. No fabricated examples.",
+      "acceptance": [
+        "Each feature has working, linked example and negative case",
+        "Human and agent-facing guidance agree",
+        "Book/handbook claims carry verifiable versioned links"
+      ],
+      "verification": [
+        "./flow tool doc_examples --run --check-ledger",
+        "./flow tool wiki_links"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-054",
+      "phase": "P4",
+      "priority": 1,
+      "title": "Website, playground, WASM and gallery accuracy",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-052",
+        "FM-053"
+      ],
+      "owned_paths": [
+        "site/",
+        "docs/playground/",
+        "site/wasm/",
+        "scripts/check_live_demos.mjs",
+        "docs/nav.json"
+      ],
+      "scope": "Make modern syntax discoverable, live examples actually executable on their advertised backends, and browser/editor accessibility correct. Coordinate with existing PR #1707.",
+      "acceptance": [
+        "Browser executes real built WASM when labelled live, no fake JS proxy",
+        "Playground parser/highlight understands active syntax",
+        "Built wiki links and keyboard/browser checks pass"
+      ],
+      "verification": [
+        "./flow tool build_wiki",
+        "node scripts/check_live_demos.mjs --docs-browser --wiki build/wiki"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-055",
+      "phase": "P4",
+      "priority": 1,
+      "title": "Agent skill and first-turn selection evaluation",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-006",
+        "FM-050",
+        "FM-052"
+      ],
+      "owned_paths": [
+        "AGENTS.md",
+        "docs/project/agentic-loop.md",
+        "docs/project/idiom-modernization/",
+        "docs/AI_FLOW_HANDBOOK.md"
+      ],
+      "scope": "Give a model with just the repo URL a deterministic read/claim/select/test/PR process for this programme; publish evaluated guidance to downstream flow-skills without duplicating language truths.",
+      "acceptance": [
+        "New agent identifies queue, overlap, next eligible task without human-provided detailed prompt",
+        "Fails closed on unavailable GitHub access or semantic approval",
+        "Adversarial agent prompts reject future syntax and cargo-culting"
+      ],
+      "verification": [
+        "./flow tool tests/check/run.flow"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-056",
+      "phase": "P4",
+      "priority": 2,
+      "title": "Grammar consumers and syntax-highlighting parity",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-052"
+      ],
+      "owned_paths": [
+        "site/flow-lang.js",
+        "site/flow-compile.js",
+        "tools/lsp/catalog.flow",
+        "docs/grammar.ebnf"
+      ],
+      "scope": "Keep repository editor/browser source displays compatible with actual compiler syntax and coordinate downstream tree-sitter/tmLanguage updates without claiming they are parser oracles.",
+      "acceptance": [
+        "Representative syntax highlights correctly in compiled docs browser",
+        "Unsupported constructs are not rendered as runnable",
+        "Differential source corpus includes current constructs"
+      ],
+      "verification": [
+        "node scripts/check_live_demos.mjs --docs-browser --wiki build/wiki"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-057",
+      "phase": "P4",
+      "priority": 2,
+      "title": "Portable feature-collision and benchmark showcase",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-022",
+        "FM-043"
+      ],
+      "owned_paths": [
+        "examples/flow_way/",
+        "examples/",
+        "benchmarks/",
+        "docs/"
+      ],
+      "scope": "Select a coherent subset of advanced patterns that survive together with target guarantees. Compare complexity/CPU/runtime costs to meaningful low-level alternatives, avoid all-features stunt files.",
+      "acceptance": [
+        "Exact-revision C+MLIR or explicitly target-only verification",
+        "Program checks before timings",
+        "Numerics, memory, effects and ownership collisions tested"
+      ],
+      "verification": [
+        "./flow tool compiler/scripts/mlir_vs_c.flow --check"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-060",
+      "phase": "P5",
+      "priority": 1,
+      "title": "Modernize Flow Idiomatics corpus and claims",
+      "repository": "flooooooooooow/flow-idiomatics",
+      "depends_on": [
+        "FM-022",
+        "FM-053"
+      ],
+      "owned_paths": [
+        "STYLE.md",
+        "FEATURE_MATRIX.md",
+        "BACKEND_PARITY.md",
+        "portable-programs.txt",
+        "showcases/",
+        "maximal/"
+      ],
+      "scope": "Update target-specific and obsolete Python-host claims; promote compiler-verified examples; keep low-level counterexamples and portable manifest executable.",
+      "acceptance": [
+        "Each showcase has target, compiler version and proof",
+        "STYLE not a second source of syntax truth",
+        "C run and MLIR verifier for portable set"
+      ],
+      "verification": [],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-061",
+      "phase": "P5",
+      "priority": 1,
+      "title": "Herbie dimensioned automotive and engineering models",
+      "repository": "flooooooooooow/herbie",
+      "depends_on": [
+        "FM-030",
+        "FM-040"
+      ],
+      "owned_paths": [
+        "src/",
+        "examples/",
+        "tests/",
+        "docs/"
+      ],
+      "scope": "Unify dimensioned equation-first vehicle model, port topology, sampled control and manufacturing tolerances with hand RK4/MNA as independent references; do not imply universal Simulink/Simscape parity.",
+      "acceptance": [
+        "Analytic trajectory, energy, dimensional and covariance negative tests",
+        "Pure reference retained and checked against generated RK4",
+        "Compiler pinned, no unverified production-safety claim"
+      ],
+      "verification": [
+        "./flow run examples/equation_vehicle.flow",
+        "./flow run tests/linear_stackups.flow"
+      ],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-062",
+      "phase": "P5",
+      "priority": 1,
+      "title": "Flow Audio real-time, rate and capability modernization",
+      "repository": "flooooooooooow/flow-audio",
+      "depends_on": [
+        "FM-034",
+        "FM-042"
+      ],
+      "owned_paths": [
+        "src/",
+        "examples/",
+        "tests/",
+        "conformance/",
+        "docs/"
+      ],
+      "scope": "Audit sample/frame-rate contracts, spans, callback effects, host boundary, automation and model DSL where applicable; prove golden audio and bounded allocation behavior.",
+      "acceptance": [
+        "CMajor feature parity not overstated",
+        "No hidden allocation/block inside callback",
+        "Version and latency test baseline preserved"
+      ],
+      "verification": [],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-063",
+      "phase": "P5",
+      "priority": 2,
+      "title": "Flow DSP sample-equivalence modernization",
+      "repository": "flooooooooooow/flow-dsp",
+      "depends_on": [
+        "FM-034",
+        "FM-042"
+      ],
+      "owned_paths": [
+        "src/",
+        "tests/",
+        "examples/"
+      ],
+      "scope": "Audit structured DSP state, numerical determinism, units/rates and API boundaries; migrate only where compiler semantics preserve sample-by-sample output.",
+      "acceptance": [
+        "Golden impulse/step/WAV checks",
+        "Aliasing, coefficient and sample order unchanged or versioned",
+        "Benchmark provenance recorded"
+      ],
+      "verification": [],
+      "decision_gate": "public_api"
+    },
+    {
+      "id": "FM-064",
+      "phase": "P5",
+      "priority": 1,
+      "title": "Flow Skills instructions, examples and evaluation parity",
+      "repository": "flooooooooooow/flow-skills",
+      "depends_on": [
+        "FM-053",
+        "FM-055"
+      ],
+      "owned_paths": [
+        "skills/",
+        "references/syntax-card.md",
+        "AGENTS.md",
+        "README.md"
+      ],
+      "scope": "Update installed public agent skills and syntax card with verified idioms, decision tree, executable examples, version/backend gates and clear future syntax labels.",
+      "acceptance": [
+        "Sample model produces valid Flow for current compiler",
+        "Conflicting skill instructions removed",
+        "Regression evaluation includes refusing overuse"
+      ],
+      "verification": [],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-065",
+      "phase": "P5",
+      "priority": 2,
+      "title": "Tree-sitter and tmLanguage current grammar",
+      "repository": "flooooooooooow/tree-sitter-flow",
+      "depends_on": [
+        "FM-051",
+        "FM-056"
+      ],
+      "owned_paths": [
+        "grammar.js",
+        "test/corpus/",
+        "syntaxes/",
+        "README.md"
+      ],
+      "scope": "Sync current syntax categories, units, equations, flow/evolves, handlers, patterns, contextual keywords and doc status without claiming grammar handles semantic lowering.",
+      "acceptance": [
+        "Grammar corpus accepts supported source forms",
+        "Editor highlight examples crosscheck",
+        "No syntax invented ahead of compiler"
+      ],
+      "verification": [],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-066",
+      "phase": "P5",
+      "priority": 2,
+      "title": "Secondary compiler and other dependent repos governance",
+      "repository": "flooooooooooow/flow-compiler",
+      "depends_on": [
+        "FM-022",
+        "FM-055"
+      ],
+      "owned_paths": [
+        "README.md",
+        "AGENTS.md",
+        "compiler/",
+        "docs/"
+      ],
+      "scope": "Decide whether flow-compiler is a distribution/mirror or maintained branch; identify other consumers by actual manifests and pins and avoid diverging grammar sources.",
+      "acceptance": [
+        "One canonical compiler semantics owner",
+        "Mirrors specify sync/compatibility policy",
+        "Downstream change list grounded in actual dependencies"
+      ],
+      "verification": [],
+      "decision_gate": "architecture"
+    },
+    {
+      "id": "FM-070",
+      "phase": "P6",
+      "priority": 2,
+      "title": "Regression-proof release and CI ratchet",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-022",
+        "FM-050",
+        "FM-052",
+        "FM-054"
+      ],
+      "owned_paths": [
+        ".github/workflows/",
+        "scripts/tools/",
+        "tests/",
+        "docs/project/release-qualification.md"
+      ],
+      "scope": "Extend existing CI gates for feature status, snippets, editor and agent selection; respect release candidate freeze and existing CODEOWNERS. Do not add expensive duplicate workflows.",
+      "acceptance": [
+        "Ratchets baseline-green before enforcement",
+        "No skipped required checks treated as evidence of semantic success",
+        "Exact-head merge-group and release qualification records"
+      ],
+      "verification": [
+        "./flow test-lang",
+        "./flow tool doc_examples --run --check-ledger"
+      ],
+      "decision_gate": "security_policy"
+    },
+    {
+      "id": "FM-071",
+      "phase": "P6",
+      "priority": 2,
+      "title": "Adoption metrics and exceptions audit",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-005",
+        "FM-050",
+        "FM-070"
+      ],
+      "owned_paths": [
+        "scripts/tools/",
+        "docs/generated/",
+        "docs/project/",
+        "tests/"
+      ],
+      "scope": "Produce deterministic, per-revision scorecards for eligible domain models, approved exceptions, stale feature claims, suggestion precision, backend coverage, runtime and cost regressions; report without changing semantics.",
+      "acceptance": [
+        "Denominator explicitly excludes proof/fixtures/reference code",
+        "Measured before/after selection and false positives",
+        "No blanket target percentage before baseline"
+      ],
+      "verification": [
+        "./flow tool doc_coverage"
+      ],
+      "decision_gate": "none"
+    },
+    {
+      "id": "FM-072",
+      "phase": "P6",
+      "priority": 3,
+      "title": "Close migration and maintain continuing work",
+      "repository": "flooooooooooow/flow",
+      "depends_on": [
+        "FM-061",
+        "FM-062",
+        "FM-063",
+        "FM-064",
+        "FM-065",
+        "FM-070",
+        "FM-071"
+      ],
+      "owned_paths": [
+        "docs/project/",
+        "AGENTS.md",
+        "ROADMAP.md"
+      ],
+      "scope": "Validate programme exit criteria, link accepted evidence, merge/close duplicated work and leave a maintainable process for future language features; no promise of universal MATLAB or backend parity.",
+      "acceptance": [
+        "Every adopted feature has accurate compiler, IDE, documentation and model consumer evidence",
+        "Remaining gaps tracked and explicitly qualified",
+        "Agents now pick the correct supported idiom in held-out evals"
+      ],
+      "verification": [],
+      "decision_gate": "none"
+    }
+  ]
+}
