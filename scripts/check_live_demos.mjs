@@ -410,6 +410,19 @@ async function docsBrowserCheck(wikiRoot, opts) {
             async function expectFocus(target, action) {
                 if (action) await page.keyboard.press(action);
                 if (!(await target.evaluate(element => document.activeElement === element))) {
+                    const element = await target.elementHandle();
+                    if (element) {
+                        try {
+                            await page.waitForFunction(
+                                candidate => document.activeElement === candidate,
+                                element, { timeout: 500 });
+                        } catch {
+                            // The final assertion below still reports the
+                            // focus failure with browser state and call trace.
+                        }
+                    }
+                }
+                if (!(await target.evaluate(element => document.activeElement === element))) {
                     const state = await page.evaluate(() => ({
                         active: document.activeElement?.outerHTML.slice(0, 220),
                         controls: Array.from(document.querySelectorAll('#shareModal input, #shareModal button'))
