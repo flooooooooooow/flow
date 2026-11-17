@@ -199,9 +199,29 @@ export function sofia_ir_validate(p: ptr<SofiaIrProgram>) -> i32 {
         let n: SofiaIrNode = p[0].nodes[i]
         if n.kind == SOFIA_IR_ADD or n.kind == SOFIA_IR_SUB or n.kind == SOFIA_IR_MUL {
             if n.a < 0 or n.a >= i or n.b < 0 or n.b >= i { return 11 }
+            let a: SofiaIrNode = p[0].nodes[n.a]
+            let b: SofiaIrNode = p[0].nodes[n.b]
+            if n.kind == SOFIA_IR_MUL {
+                if n.length_dim != a.length_dim + b.length_dim
+                    or n.time_dim != a.time_dim + b.time_dim
+                    or n.quantity_dim != a.quantity_dim + b.quantity_dim { return 20 }
+            } else {
+                if a.length_dim != b.length_dim or a.time_dim != b.time_dim
+                    or a.quantity_dim != b.quantity_dim
+                    or n.length_dim != a.length_dim or n.time_dim != a.time_dim
+                    or n.quantity_dim != a.quantity_dim { return 20 }
+            }
         } elif n.kind == SOFIA_IR_GRAD_X or n.kind == SOFIA_IR_LAPLACIAN_X {
             if n.a != p[0].field or n.a >= i { return 12 }
-        } elif n.kind != SOFIA_IR_FIELD and n.kind != SOFIA_IR_CONSTANT {
+            let child: SofiaIrNode = p[0].nodes[n.a]
+            let order: i32 = 1
+            if n.kind == SOFIA_IR_LAPLACIAN_X { order = 2 }
+            if n.length_dim != child.length_dim - order
+                or n.time_dim != child.time_dim
+                or n.quantity_dim != child.quantity_dim { return 20 }
+        } elif n.kind == SOFIA_IR_FIELD {
+            if i != p[0].field { return 21 }
+        } elif n.kind != SOFIA_IR_CONSTANT {
             return 13
         }
     }
