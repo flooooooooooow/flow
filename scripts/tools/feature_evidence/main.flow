@@ -1,6 +1,6 @@
 # Resolve the discovery map's backtick path references against tracked files.
 # The report records source evidence and keeps support status unverified.
-import .text { ft_outln, ft_errln, ft_read_file, ft_len, ft_byte, ft_slice, ft_find, ft_ends, ft_starts, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, ft_list_sort, StrList }
+import .text { ft_outln, ft_errln, ft_read_file, ft_len, ft_byte, ft_slice, ft_find, ft_ends, ft_starts, ft_basename, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, ft_list_sort, StrList }
 import .repo { rp_enter_root, rp_git_ls, rp_capture, rp_argv2, rp_status }
 import .json { json_quote }
 
@@ -76,6 +76,7 @@ function resolved(path: string, tracked: ptr<StrList>) -> string {
         if ft_ends(candidate, "/" + path) { return candidate }
         if ft_ends(path, "/") and ft_starts(candidate, path) { return candidate }
         if star >= 0 and ft_starts(candidate, prefix) and ft_ends(candidate, suffix) { return candidate }
+        if star >= 0 and ft_find(prefix, "/", 0) < 0 and ft_starts(ft_basename(candidate), prefix) and ft_ends(candidate, suffix) { return candidate }
         i = i + 1
     }
     return ""
