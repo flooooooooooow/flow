@@ -14,7 +14,9 @@ From the `flow` driver (`debug_program`):
 1. Compiles Flow → C with `--debug-info --lenient` into
    `build/<name>.debug.c` (coarse `#line` mappings back to `.flow`).
 2. Links with `clang -g -O0 -fno-omit-frame-pointer` into
-   `build/<name>.debug`.
+   `build/<name>.debug`. A program that imports `stdlib/gfx.flow` links
+   the same native graphics backend, frameworks and runtime sources as
+   `flow gfx`, at `-O0 -g3`.
 3. Starts **LLDB** if available, else GDB; otherwise prints the binary path.
 
 Tip printed by the CLI: `(lldb) b main ; run ; bt`.
@@ -72,5 +74,5 @@ If LLDB is missing and GDB is on `PATH`, `flow debug` launches GDB:
 ## Related
 
 - Roadmap status: [ROADMAP.md](../../ROADMAP.md) § Debugger Integration
-- Graphics / GPU runs use other CLI verbs (`gfx`, etc.); prefer `flow debug`
-  for ordinary non-window programs.
+- `flow debug` builds gfx programs with the native window backend. GPU runs
+  use other CLI verbs.

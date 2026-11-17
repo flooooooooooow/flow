@@ -4044,6 +4044,116 @@ function flowc_cgen_expr_type_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return AST_NONE
 }
 
+# 1 for a numeric literal, or a negated one. In Flow such a literal takes
+# the type of the other operand.
+function flowc_cgen_is_num_lit(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_INT or k == AST_FLOAT {
+        return 1
+    }
+    if k == AST_UNARY and arena.nodes[id].ival == TOK_MINUS {
+        return flowc_cgen_is_num_lit(arena, arena.nodes[id].a)
+    }
+    return 0
+}
+
+# 1 for the operators whose result has the type of their operands.
+function flowc_cgen_binop_is_arith(op: i32) -> i32 {
+    if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR or op == TOK_SLASH or op == TOK_PERCENT {
+        return 1
+    }
+    if op == TOK_AMP or op == TOK_BAR or op == TOK_CARET or op == TOK_SHL or op == TOK_SHR {
+        return 1
+    }
+    return 0
+}
+
+# `ty` when the numeric literal `lit` can take that type, else AST_NONE.
+# A float literal does not make an integer value.
+function flowc_cgen_lit_fits(arena: AstArena, src: ptr<u8>, ty: i32, lit: i32) -> i32 {
+    let mut l: i32 = lit
+    while arena.nodes[l].kind == AST_UNARY {
+        l = arena.nodes[l].a
+    }
+    if arena.nodes[l].kind == AST_FLOAT and flowc_cgen_ty_is_float_name(arena, src, ty) == 0 {
+        return AST_NONE
+    }
+    return ty
+}
+
+# Type node for the value of an unannotated `let` initialiser, or AST_NONE.
+# Names, field reads, indexing, casts and calls resolve through
+# flowc_cgen_expr_type_node, and a name bound by another unannotated `let`
+# through that let's initialiser. Negation and `~` keep the operand's type.
+# Arithmetic and bit operators take the type of a typed operand when the
+# other operand has the same type or is a numeric literal; an integer type
+# beside a float literal stays unknown. Comparisons, logic and string `+`
+# stay unknown here. Only scalar, struct and ptr<...> types are returned,
+# so arrays, spans and function values keep their own paths.
+function flowc_cgen_infer_value_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, depth: i32) -> i32 {
+    if id == AST_NONE or depth > 32 {
+        return AST_NONE
+    }
+    let kind: i32 = arena.nodes[id].kind
+    let mut ty: i32 = AST_NONE
+    if kind == AST_IDENT {
+        let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, id)
+        if decl != AST_NONE and arena.nodes[decl].kind == AST_LET and arena.nodes[decl].a == AST_NONE {
+            ty = flowc_cgen_infer_type_node(arena, src, arena.nodes[decl].b)
+            if ty == AST_NONE {
+                ty = flowc_cgen_infer_value_type(w, arena, src, arena.nodes[decl].b, depth + 1)
+            }
+        } else {
+            ty = flowc_cgen_expr_type_node(w, arena, src, id)
+        }
+    } elif kind == AST_FIELD_ACCESS or kind == AST_INDEX or kind == AST_CAST or kind == AST_CALL {
+        ty = flowc_cgen_expr_type_node(w, arena, src, id)
+    } elif kind == AST_UNARY {
+        let op: i32 = arena.nodes[id].ival
+        if op == TOK_MINUS or op == TOK_TILDE {
+            ty = flowc_cgen_infer_value_type(w, arena, src, arena.nodes[id].a, depth + 1)
+        }
+    } elif kind == AST_BINOP {
+        let op: i32 = arena.nodes[id].ival
+        let arith: i32 = flowc_cgen_binop_is_arith(op)
+        if arith == 1 and flowc_cgen_expr_is_string(w, arena, src, id) == 0 {
+            let l: i32 = arena.nodes[id].a
+            let r: i32 = arena.nodes[id].b
+            let lt: i32 = flowc_cgen_infer_value_type(w, arena, src, l, depth + 1)
+            if op == TOK_SHL or op == TOK_SHR {
+                ty = lt
+            } else {
+                let rt: i32 = flowc_cgen_infer_value_type(w, arena, src, r, depth + 1)
+                if lt != AST_NONE and rt != AST_NONE {
+                    if flowc_cgen_span_eq(src, arena.nodes[lt].name_start, arena.nodes[lt].name_end, arena.nodes[rt].name_start, arena.nodes[rt].name_end) == 1 {
+                        ty = lt
+                    }
+                } elif lt != AST_NONE and flowc_cgen_is_num_lit(arena, r) == 1 {
+                    ty = flowc_cgen_lit_fits(arena, src, lt, r)
+                } elif rt != AST_NONE and flowc_cgen_is_num_lit(arena, l) == 1 {
+                    ty = flowc_cgen_lit_fits(arena, src, rt, l)
+                }
+            }
+        }
+    }
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        return AST_NONE
+    }
+    if arena.nodes[ty].c == AST_TYPE_CAPABILITY or arena.nodes[ty].ival != 0 {
+        return AST_NONE
+    }
+    if arena.nodes[ty].a != AST_NONE and flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr") == 0 {
+        return AST_NONE
+    }
+    if arena.nodes[ty].name_end <= arena.nodes[ty].name_start {
+        return AST_NONE
+    }
+    return ty
+}
+
 # The base of a field read is a pointer: what flowc_cgen_expr_is_ptr
 # resolves, plus a cast to ptr<...> and a call of a function this module
 # defines that returns ptr<...> (#1065).
@@ -12299,6 +12409,9 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         let mut ty: i32 = ann
         if ann == AST_NONE {
             ty = flowc_cgen_infer_type_node(arena, src, init)
+            if ty == AST_NONE {
+                ty = flowc_cgen_infer_value_type(w, arena, src, init, 0)
+            }
         }
         # Check if this variable is captured by a lambda. If so, still
         # declare a local. The lambda expression will snapshot the local

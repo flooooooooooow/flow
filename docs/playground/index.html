@@ -398,7 +398,6 @@
             z-index: 1000;
             opacity: 0;
             visibility: hidden;
-            transition: all 0.2s ease;
         }
 
         .modal-overlay.visible {
@@ -466,14 +465,14 @@
     </header>
 
     <div class="notice" id="notice">
-        <strong>Three ways to run.</strong>
+        <strong>Ways to run Flow.</strong>
         <strong>Check Syntax</strong> is editor lint only.
         <strong>Run (browser)</strong> uses the tutorial interpreter (<code>flow-compile.js</code>) rather than native code.
         <strong>Run (native local)</strong> talks to a loopback compile API
         (<code>./flow tool playground_server</code>, or <code>./flow playground</code>) that uses the real Flow→C toolchain (#132).
-        <strong>WASM hello</strong> loads a local emscripten artifact when present
-        (<code>./flow wasm</code> / <code>./flow tool scripts/build_wasm_hello.flow</code> →
-        <code>build/wasm_hello/hello.html</code>). Full in-browser Flow compiler remains deferred (#121).
+        <strong>WASM hello</strong> runs a precompiled Flow program from the published gallery.
+        <strong>Browser preview</strong> shows the browser interpreter’s AST, C and MLIR views.
+        Full native Flow compilation in the browser remains deferred (#121).
         Tutorials:
         <a href="../tutorials/index.html" style="color: var(--accent)">Interactive Tutorials</a>;
         memory:
@@ -528,11 +527,11 @@
                 <button class="btn" id="runWasmBtn" onclick="runWasmLocal()" title="Flow→C→emcc via localhost compile API">
                     Run (WASM local)
                 </button>
-                <button class="btn" onclick="openWasmHello()" title="Open build/wasm_hello/hello.html if built">
+                <button class="btn" onclick="openWasmHello()" title="Run the published Flow WebAssembly Hello World example">
                     WASM hello
                 </button>
-                <button class="btn" onclick="openPyodide()" title="In-browser Flow→C via Pyodide">
-                    Browser transpile
+                <button class="btn" onclick="openBrowserPreview()" title="Inspect interpreter-generated C, MLIR, AST and output">
+                    Browser preview
                 </button>
             </div>
         </div>
@@ -549,7 +548,7 @@
                 <div class="panel-content">
                     <div class="editor-wrap">
                         <pre id="highlight" aria-hidden="true"><code id="highlightCode"></code></pre>
-                        <textarea id="editor" spellcheck="false" placeholder="# Write your FLOW code here..."></textarea>
+                        <textarea id="editor" aria-label="Flow source code editor" spellcheck="false" placeholder="# Write your FLOW code here..."></textarea>
                     </div>
                 </div>
             </div>
@@ -559,15 +558,15 @@
                     <span id="outputPanelLabel">Output</span>
                 </div>
                 <div class="panel-content" style="display: flex; flex-direction: column;">
-                    <div id="output" class="output-content" style="flex: 1;">Click "Check Syntax" for basic lint checks, or "Run (browser)" when available for interpreter output. Browser run is not the native compiler.</div>
+                    <div id="output" class="output-content" role="status" aria-live="polite" aria-atomic="true" style="flex: 1;">Click "Check Syntax" for basic lint checks, or "Run (browser)" when available for interpreter output. Browser run is not the native compiler.</div>
                     <div class="howto">
                         <h4>Run this program for real (native)</h4>
-                        <p>The browser button uses a client-side interpreter only. FLOW's real path is Python transpiler → C → native. Save the editor contents as <code>main.flow</code> and run:</p>
+                        <p>The browser button uses a client-side interpreter only. FLOW's real path is the self-hosted Flow compiler → C → native. Save the editor contents as <code>main.flow</code> and run:</p>
                         <pre>git clone https://github.com/flooooooooooow/flow.git
 cd flow
 # paste the editor contents into main.flow, then:
 ./flow run main.flow</pre>
-                        <p>Advanced: <code>python3 -m flow.transpiler main.flow --c -o main.c</code> emits C; <code>./flow mlir main.flow</code> emits MLIR.</p>
+                        <p>Advanced: <code>./flow build main.flow</code> builds a native executable; <code>./flow mlir main.flow</code> emits MLIR.</p>
                         <p>Every example in the dropdown is verified against the current compiler.</p>
                     </div>
                 </div>
@@ -578,9 +577,9 @@ cd flow
     <footer>
         <div>
             <a href="../">Documentation</a> ·
-            <a href="../LANGUAGE_SPEC/">Language Spec</a> ·
-            <a href="../getting-started/">Getting Started</a> ·
-            <a href="../comparison/">Language Comparison</a>
+            <a href="../#LANGUAGE_SPEC.md">Language Spec</a> ·
+            <a href="../#getting-started.md">Getting Started</a> ·
+            <a href="../#comparison.md">Language Comparison</a>
         </div>
         <div class="keyboard-shortcuts">
             <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Check</span>
@@ -590,10 +589,10 @@ cd flow
     </footer>
 
     <!-- Share Modal -->
-    <div class="modal-overlay" id="shareModal">
-        <div class="modal">
-            <h3>Share Your Code</h3>
-            <input type="text" id="shareUrl" readonly>
+    <div class="modal-overlay" id="shareModal" aria-hidden="true">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+            <h3 id="shareTitle">Share Your Code</h3>
+            <input type="text" id="shareUrl" aria-label="Shareable playground URL" readonly>
             <div class="modal-actions">
                 <button class="btn" onclick="closeShareModal()">Close</button>
                 <button class="btn btn-primary" onclick="copyShareUrl()">Copy URL</button>
@@ -1182,9 +1181,9 @@ function main() -> i32 {
             }
         }
 
-        function openPyodide() {
-            const href = (nativeCompileBase || 'http://127.0.0.1:8765') + '/pyodide';
-            window.open(href, '_blank', 'noopener');
+        function openBrowserPreview() {
+            const encoded = btoa(encodeURIComponent(editor.value));
+            window.open('pyodide.html?code=' + encodeURIComponent(encoded), '_blank', 'noopener');
         }
 
         async function runWasmLocal() {
@@ -1215,32 +1214,12 @@ function main() -> i32 {
             }
         }
 
-        async function openWasmHello() {
-            const outputEl = document.getElementById('output');
-            const candidates = [
-                '../../build/wasm_hello/hello.html',
-                '/build/wasm_hello/hello.html',
-            ];
+        function openWasmHello() {
+            window.open('../wasm/hello_world/index.html?autostart=1', '_blank', 'noopener');
             document.getElementById('outputPanelLabel').textContent = 'WASM hello';
-            for (const href of candidates) {
-                try {
-                    const res = await fetch(href, { method: 'HEAD' });
-                    if (res.ok) {
-                        window.open(href, '_blank', 'noopener');
-                        outputEl.className = 'output-content success';
-                        outputEl.textContent =
-                            'Opened ' + href + '\n\nBuild with:\n  ./flow tool scripts/build_wasm_hello.flow\n  ./flow wasm examples/basics/hello_world.flow';
-                        return;
-                    }
-                } catch (e) { /* try next */ }
-            }
-            outputEl.className = 'output-content error';
-            outputEl.textContent =
-                'No build/wasm_hello/hello.html found.\n\n' +
-                'From the repo root (needs emcc):\n' +
-                '  ./flow tool scripts/build_wasm_hello.flow\n' +
-                '  python3 -m http.server 8765 --directory build/wasm_hello\n\n' +
-                'Native-local Run still uses the real Flow→C toolchain on localhost.';
+            const outputEl = document.getElementById('output');
+            outputEl.className = 'output-content success';
+            outputEl.textContent = 'Opened the published Flow WebAssembly Hello World example in a new tab.';
         }
 
         async function runNativeLocal() {
@@ -1366,17 +1345,26 @@ function main() -> i32 {
         }
 
         // Share code via URL
+        let shareReturnFocus = null;
+
         function shareCode() {
+            shareReturnFocus = document.activeElement;
             const code = editor.value;
             const encoded = btoa(encodeURIComponent(code));
             const url = window.location.origin + window.location.pathname + '?code=' + encoded;
 
             document.getElementById('shareUrl').value = url;
-            document.getElementById('shareModal').classList.add('visible');
+            const modal = document.getElementById('shareModal');
+            modal.classList.add('visible');
+            modal.setAttribute('aria-hidden', 'false');
+            document.getElementById('shareUrl').focus();
         }
 
         function closeShareModal() {
-            document.getElementById('shareModal').classList.remove('visible');
+            const modal = document.getElementById('shareModal');
+            modal.classList.remove('visible');
+            modal.setAttribute('aria-hidden', 'true');
+            if (shareReturnFocus) shareReturnFocus.focus();
         }
 
         function copyShareUrl() {
@@ -1408,6 +1396,25 @@ function main() -> i32 {
         editor.addEventListener('scroll', syncScroll);
 
         document.addEventListener('keydown', (e) => {
+            const shareModal = document.getElementById('shareModal');
+            if (shareModal.classList.contains('visible')) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeShareModal();
+                } else if (e.key === 'Tab') {
+                    const controls = Array.from(shareModal.querySelectorAll('input, button'))
+                        .filter(control => !control.disabled && control.getClientRects().length > 0);
+                    if (controls.length > 0) {
+                        e.preventDefault();
+                        const current = controls.indexOf(document.activeElement);
+                        const next = current < 0
+                            ? (e.shiftKey ? controls.length - 1 : 0)
+                            : (current + (e.shiftKey ? -1 : 1) + controls.length) % controls.length;
+                        controls[next].focus();
+                    }
+                }
+                return;
+            }
             if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
                 e.preventDefault();
                 if (browserEngineAvailable()) runInBrowser();
@@ -1421,7 +1428,7 @@ function main() -> i32 {
                 e.preventDefault();
                 formatCode();
             }
-        });
+        }, true);
 
         // Initialize
         editor.value = examples.hello;

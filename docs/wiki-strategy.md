@@ -25,10 +25,10 @@ The wiki is **not** a dump of markdown files. It is a product with:
 | Principle | What it means |
 |-----------|---------------|
 | **Source lives in `docs/`** | Markdown in-repo; wiki shell in `site/`; output in `build/wiki/` |
-| **Generated ≠ hand-written** | Proof catalogs, nav JSON, search index are build artifacts |
+| **Generated ≠ hand-written** | Edit the source map in `docs/nav.json`; the published `wiki-nav.json`, proof catalogs and search index are generated |
 | **Two speeds** | Tutorials change slowly; grammar/spec track the compiler |
 | **Proofs are first-class** | `flow-verify` is a third-party library section, not an appendix |
-| **No orphan pages** | Every doc appears in `wiki-nav.json` or is linked from a parent |
+| **No orphan pages** | Every documentation page is listed in `docs/nav.json`, explicitly unlisted with a reason, or linked from its parent |
 | **Deploy is boring** | `.github/workflows/wiki.yml` → GitHub Pages |
 
 ---
@@ -39,11 +39,11 @@ The wiki is **not** a dump of markdown files. It is a product with:
 Home (wiki-home.md) — brand, docs index, showcases, demos, install
 ├── Start       → install, vision, book/tutorials shortcuts, popular galleries
 ├── Gallery     → recorded demos + live WASM
-├── Book        → 19 chapters + appendices
+├── Book        → guided chapters + appendices
 ├── Tutorials   → interactive tracks (core · systems · vision · applied)
 ├── Language    → spec, grammar, types, effects, graphics, wasm, spans
 ├── Library     → stdlib reference (core, autodiff, audio, memory)
-├── Tooling     → CLI, Python target
+├── Tooling     → CLI, compiler toolchain, targets and interop
 ├── Project     → changelog, contributing, roadmaps, research
 └── Proofs      → optional flow-verify (third-party; not required)
 ```
@@ -64,18 +64,21 @@ Home (wiki-home.md) — brand, docs index, showcases, demos, install
 
 ## Build pipeline
 
-```
-docs/**/*.md  ─┐
-lib/verify/   ─┼─► scripts/build_wiki.py ─► build/wiki/
-examples/verify/┘         │
-site/{html,css,js}        ├─ wiki-nav.json      (nav)
-                          ├─ search-index.json  (⌘K fallback)
-                          ├─ pagefind/          (⌘K primary when built)
-                          ├─ flow-verify-catalog.md
-                          ├─ releases.md / versions.json  (from CHANGELOG)
-                          └─ euclid-book-*.md   (generated indexes)
+The public site uses the custom shell in `site/`. The Flow-native builder
+validates the source navigation map and assembles the pages and generated data.
 
-build/wiki/ ─► GitHub Actions (wiki.yml) ─► flooooooooooow.github.io/flow/
+```text
+docs/**/*.md ───┐
+docs/nav.json ───┤
+lib/verify/ ─────┼──> ./flow tool build_wiki ──> build/wiki/
+examples/ ──────┤                                  │
+site/ ──────────┘                                  ├── wiki-nav.json
+                                                   ├── search-index.json
+                                                   ├── proof catalogs
+                                                   ├── releases.md / versions.json
+                                                   └── optional Pagefind index
+
+build/wiki/ ──> .github/workflows/wiki.yml ──> GitHub Pages
 ```
 
 **Rule:** Never edit files in `build/wiki/` by hand. Always change source and rebuild.
@@ -88,11 +91,11 @@ VPS deploy is off. Local build: `./flow tool deploy_wiki` (builds only). Emergen
 
 | Area | Source of truth | Update trigger |
 |------|-----------------|----------------|
-| Language semantics | `docs/LANGUAGE_SPEC.md`, `parser.py` | Syntax/compiler change |
-| Grammar | `docs/grammar.ebnf` | Parser change |
+| Language semantics | `docs/LANGUAGE_SPEC.md`, `compiler/src/`, regression tests | Syntax/compiler change |
+| Grammar | `docs/grammar.ebnf`, `compiler/src/` | Parser change |
 | Stdlib | `lib/stdlib/*.flow` + `docs/library/` | New module or API change |
 | Proofs | `lib/verify/`, `examples/verify/` | `./flow doc proof` |
-| Wiki IA | `scripts/build_wiki.py` (`write_nav`) | New section or package |
+| Wiki IA | `docs/nav.json` (source), `scripts/tools/build_wiki/` (builder) | New section or package |
 | Changelog / releases | `docs/project/CHANGELOG.md` | New version section → rebuild (auto-syncs `releases.md` + `versions.json`) |
 | Language roadmap | `ROADMAP.md` (repo root) | Quarterly planning |
 | Wiki roadmap | `docs/wiki-roadmap.md` | This strategy doc |
@@ -115,11 +118,11 @@ We deliberately **do not** use MkDocs for the live site today. The custom shell 
 ## Long-term targets
 
 1. **Custom domain**: `flow-lang.org` (referenced in verification docs; DNS TBD)
-2. **Versioned docs**: `/transpile/v0.7/` alongside `latest`
+2. **Versioned docs**: published, version-scoped language references with a stable `latest` route
 3. **API autogen**: stdlib signatures from `flow doc` or LSP
-4. **Pagefind**: ✅ optional post-build index (`./flow tool build_wiki --pagefind`); ⌘K prefers Pagefind, falls back to `search-index.json`
+4. **Pagefind**: optional post-build index (`./flow tool build_wiki --pagefind`); search falls back to `search-index.json`
 5. **Playground embed**: runnable snippets from tutorial pages
-6. **CI deploy**: ✅ GitHub Pages via `wiki.yml` on `docs/` / `site/` change
+6. **CI deploy**: GitHub Pages via `.github/workflows/wiki.yml` on eligible changes to `main`
 
 See [Wiki Roadmap](wiki-roadmap.md) for phased delivery.
 
@@ -135,3 +138,5 @@ A page is "done" when it:
 - For grammar/spec: matches the compiler at HEAD
 
 The grammar page must never be a raw `.ebnf` dump without context. Always route through `language/grammar.md` first.
+
+Every executable documentation claim also needs an appropriate verification surface. Run `./flow tool build_wiki` and `./flow tool wiki_links` for content changes; check the generated playground/tutorial/WASM routes with the browser jobs in `.github/workflows/live-demos.yml`. CI on a generated artifact is not a substitute for checking the deployed public site after a release.

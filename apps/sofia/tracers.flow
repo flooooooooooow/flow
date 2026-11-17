@@ -1,0 +1,130 @@
+# Flow-native passive tracer advection for structured shallow-water grids.
+# Implements second-order midpoint particle stepping with bilinearly
+# interpolated depth/momentum. No Python, external solver, heap or GIS runtime.
+# Application-level research module, separate from stable stdlib exports.
+#
+# Coordinates: physical metres in the axis-aligned SofiaGrid2D domain.
+# Grid cells store water depth h and depth-integrated momenta mx,my.
+# Sampled particle velocity is interpolated momentum / interpolated depth.
+# If dry or outside the grid, particles deactivate; no reflection or wrapping.
+# No particle feedback onto the fluid, diffusion or resuspension.
+
+import "stdlib/science/sofia_domain.flow"
+
+export struct SofiaTracer {
+    x: f64,
+    y: f64,
+    active: i32
+}
+
+export struct SofiaTracerSample {
+    ux: f64,
+    uy: f64,
+    depth: f64,
+    valid: i32
+}
+
+function sofia_tracer_abs(x: f64) -> f64 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+# Bilinear sample of the fluid conserved fields at arbitrary physical position.
+# Out-of-bounds or dry samples are explicitly invalid, never silently wrapped.
+export function sofia_tracer_sample(
+    grid: SofiaGrid2D, h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>,
+    x: f64, y: f64, dry_threshold: f64
+) -> SofiaTracerSample {
+    let zero: SofiaTracerSample = SofiaTracerSample {
+        ux: 0.0, uy: 0.0, depth: 0.0, valid: 0
+    }
+    if grid.nx < 2 or grid.ny < 2 or grid.dx <= 0.0 or grid.dy <= 0.0 {
+        return zero
+    }
+    if h == null or mx == null or my == null { return zero }
+    if x != x or y != y { return zero }
+    if x < grid.origin_x or y < grid.origin_y
+        or x >= grid.origin_x + (grid.nx as f64) * grid.dx
+        or y >= grid.origin_y + (grid.ny as f64) * grid.dy {
+        return zero
+    }
+    let fx: f64 = (x - grid.origin_x) / grid.dx - 0.5
+    let fy: f64 = (y - grid.origin_y) / grid.dy - 0.5
+    # Conversion of negative float to integer truncates toward zero. Correct
+    # it to a mathematical floor for the half-cell fringe at the perimeter.
+    let mut ix: i32 = fx as i32
+    let mut iy: i32 = fy as i32
+    if (ix as f64) > fx { ix = ix - 1 }
+    if (iy as f64) > fy { iy = iy - 1 }
+    let mut tx: f64 = fx - (ix as f64)
+    let mut ty: f64 = fy - (iy as f64)
+    if ix < 0 { ix = 0; tx = 0.0 }
+    if iy < 0 { iy = 0; ty = 0.0 }
+    if ix >= grid.nx - 1 { ix = grid.nx - 2; tx = 1.0 }
+    if iy >= grid.ny - 1 { iy = grid.ny - 2; ty = 1.0 }
+
+    let i00: i32 = iy * grid.nx + ix
+    let i10: i32 = i00 + 1
+    let i01: i32 = i00 + grid.nx
+    let i11: i32 = i01 + 1
+    let a: f64 = (1.0 - tx) * (1.0 - ty)
+    let b: f64 = tx * (1.0 - ty)
+    let c: f64 = (1.0 - tx) * ty
+    let d: f64 = tx * ty
+    let depth: f64 = a * h[i00] + b * h[i10] + c * h[i01] + d * h[i11]
+    if depth != depth or depth <= 1e-12 or depth <= dry_threshold {
+        return zero
+    }
+    let qx: f64 = a * mx[i00] + b * mx[i10] + c * mx[i01] + d * mx[i11]
+    let qy: f64 = a * my[i00] + b * my[i10] + c * my[i01] + d * my[i11]
+    return SofiaTracerSample {
+        ux: qx / depth, uy: qy / depth, depth: depth, valid: 1
+    }
+}
+
+# Midpoint RK2; validates velocity at the initial point, midpoint and exit.
+# Deactivation leaves coordinates at the last valid position.
+export function sofia_tracer_step(
+    tracer: ptr<SofiaTracer>, grid: SofiaGrid2D,
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>,
+    dt: f64, dry_threshold: f64
+) -> i32 {
+    if tracer == null or tracer[0].active == 0 { return 0 }
+    if dt <= 0.0 { return -1 }
+    let first: SofiaTracerSample = sofia_tracer_sample(
+        grid, h, mx, my, tracer[0].x, tracer[0].y, dry_threshold
+    )
+    if first.valid == 0 { tracer[0].active = 0; return 0 }
+    let xmid: f64 = tracer[0].x + 0.5 * dt * first.ux
+    let ymid: f64 = tracer[0].y + 0.5 * dt * first.uy
+    let mid: SofiaTracerSample = sofia_tracer_sample(
+        grid, h, mx, my, xmid, ymid, dry_threshold
+    )
+    if mid.valid == 0 { tracer[0].active = 0; return 0 }
+    let xn: f64 = tracer[0].x + dt * mid.ux
+    let yn: f64 = tracer[0].y + dt * mid.uy
+    let end: SofiaTracerSample = sofia_tracer_sample(
+        grid, h, mx, my, xn, yn, dry_threshold
+    )
+    if end.valid == 0 { tracer[0].active = 0; return 0 }
+    tracer[0].x = xn
+    tracer[0].y = yn
+    return 1
+}
+
+# Advect every active particle and return the number still active.
+export function sofia_tracers_step(
+    particles: ptr<SofiaTracer>, count: i32, grid: SofiaGrid2D,
+    h: ptr<f64>, mx: ptr<f64>, my: ptr<f64>,
+    dt: f64, dry_threshold: f64
+) -> i32 {
+    if particles == null or count < 0 or dt <= 0.0 { return -1 }
+    let mut alive: i32 = 0
+    for i in 0 to count {
+        let rc: i32 = sofia_tracer_step(particles + i, grid, h, mx, my,
+                                       dt, dry_threshold)
+        if rc < 0 { return -1 }
+        alive = alive + rc
+    }
+    return alive
+}
