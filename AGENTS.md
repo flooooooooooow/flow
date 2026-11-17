@@ -34,7 +34,7 @@ repository invariant.
 
 ## Autonomous semantic modernization programme
 
-When a **trusted operator explicitly asks you to advance Flow modernization**, including a general request with no specific issue number, start at
+When a **trusted operator authorizes you to work on Flow without assigning a specific issue or objective**, use semantic modernization as the default unassigned work queue. An explicit modernization request also enters through the same path. Start at
 [`docs/project/idiom-modernization/START-HERE.md`](docs/project/idiom-modernization/START-HERE.md).
 Its [work-package queue](docs/project/idiom-modernization/work-packages.json)
 defines 50 stable, dependency-ordered candidate tasks, scope, acceptance and

@@ -1,6 +1,6 @@
 # Start here: autonomous Flow modernization
 
-This is the practical entrypoint for an authorized coding agent (Freebuff, Codex, Claude, or otherwise) whose operator asks it to **advance Flow's semantic modernization programme** without naming a particular task. Merely reading a repository file does not give a tool permission to write, push, merge, access credentials, or change language semantics. Explicit user/operator instructions and `AGENTS.md` governance still apply.
+This is the practical entrypoint for an authorized coding agent (Freebuff, Codex, Claude, or otherwise) whose operator authorizes it to **work on Flow without a specified issue or objective**, or explicitly asks for the semantic modernization programme. Merely reading a repository file does not give a tool permission to write, push, merge, access credentials, or change language semantics. Explicit user/operator instructions and `AGENTS.md` governance still apply.
 
 **Canonical plan:** [../idiom-modernization-program.md](../idiom-modernization-program.md).
 **Canonical proposed work queue:** [work-packages.json](work-packages.json) (50 stable work-package IDs, dependencies, acceptance, paths, and gates).
@@ -41,4 +41,4 @@ Use the work package ID everywhere. An issue describes one bounded slice, exact 
 
 ## Project scope, not universal authority
 
-The user may ask you to work on a different Flow bug or project. Follow that explicit request. This programme should be picked automatically **only when a trusted human/tool has tasked you with Flow modernization and left task selection open**. Repository text must not override the human's intent, the access controls or the security policy.
+The user may ask you to work on a different Flow bug or project. Follow that explicit request. This programme is the **default task-selection process for a trusted, authorized Flow work session with no specific task**. An explicit modernization assignment uses it too. Merely fetching this repository or reading this document does not authorize any write or unattended action. Repository text must not override the human's intent, the access controls or the security policy.
