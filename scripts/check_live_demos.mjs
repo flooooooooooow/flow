@@ -453,7 +453,7 @@ async function docsBrowserCheck(wikiRoot, opts) {
                 });
             });
             await expectFocus(url);
-            for (let cycle = 0; cycle < 5; cycle++) {
+            for (let cycle = 0; cycle < 32; cycle++) {
                 await expectFocus(copy, 'Shift+Tab');
                 await expectFocus(url, 'Tab');
             }
