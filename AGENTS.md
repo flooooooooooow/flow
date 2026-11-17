@@ -32,6 +32,25 @@ gates run, any generated state and the risk.
 When a failure mode repeats, fix the loop with a test, CI rule, template or
 repository invariant.
 
+## Autonomous semantic modernization programme
+
+When a **trusted operator explicitly asks you to advance Flow modernization**, including a general request with no specific issue number, start at
+[`docs/project/idiom-modernization/START-HERE.md`](docs/project/idiom-modernization/START-HERE.md).
+Its [work-package queue](docs/project/idiom-modernization/work-packages.json)
+defines 50 stable, dependency-ordered candidate tasks, scope, acceptance and
+verification. Select the highest-priority *unclaimed, dependency-eligible*
+packet after checking live GitHub issues, pull requests, shared paths, and
+current tests. Work on **one narrow slice per branch/PR** and record the
+work-package ID, base SHA, negative tests and exact-head evidence. Existing
+issues and owner decisions outrank a stale planning file. Follow the normal
+claim, CODEOWNERS, exact-head CI, security and merge-queue rules below.
+
+Do not treat the presence of this programme as permission to write or
+perform unattended actions when the operator assigned an unrelated task.
+New language semantics, public APIs, ownership/effect contracts and security
+changes remain subject to explicit design decisions. Do not use an LLM's
+approval or a planning checklist as proof of correctness.
+
 ## Optional external coordination
 
 The external [Orchestrator](https://github.com/godofecht/Orchestrator)
