@@ -32,6 +32,7 @@ const USAGE: string = "usage: ./flow tool compiler/scripts/parity_field_dsl.flow
 const FIX: string = "compiler/fixtures/field_dsl"
 const WORK: string = "compiler/build/parity_field_dsl"
 const HEAT: string = "examples/evolution/heat_diffusion.flow"
+const INLINE_BOUNDARY: string = "tests/lang/test_field_inline_boundary.flow"
 
 let mut BIN_P: ptr<u8> = null
 
@@ -106,6 +107,7 @@ function main() -> i32 {
     # Fixture corpus: the fixtures plus the one example that uses the DSL.
     let fixtures: ptr<ProcStrs> = glob_suffix(FIX, ".flow")
     sl_push(fixtures, HEAT)
+    sl_push(fixtures, INLINE_BOUNDARY)
 
     if s_eq(mode, "--write-golden") {
         if s_len(rev) == 0 {
@@ -159,7 +161,7 @@ function main() -> i32 {
     while i < sl_len(corpus) {
         let f: string = sl_get(corpus, i)
         i = i + 1
-        if s_eq(f, HEAT) {
+        if sl_has(fixtures, f) {
             continue
         }
         let key: string = pl_key(f)
