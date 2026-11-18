@@ -208,7 +208,7 @@ async function verifyStatusHistoryDiagnostics(context, base) {
         const start = Date.now();
         let timedOut = false;
         try {
-            await page.waitForFunction(() => /^exit -?\\d+$/.test(
+            await page.waitForFunction(() => /^exit -?\d+$/.test(
                 document.getElementById('status')?.textContent || ''), null, { timeout: 250 });
         } catch (error) {
             if (!/Timeout/i.test(error.message)) throw error;
@@ -224,8 +224,10 @@ async function verifyStatusHistoryDiagnostics(context, base) {
                 JSON.stringify({ timedOut, history }));
         }
         await page.evaluate(() => { document.getElementById('status').textContent = 'exit 55'; });
-        await page.waitForFunction(() => /^exit -?\\d+$/.test(
+        await page.waitForFunction(() => /^exit -?\d+$/.test(
             document.getElementById('status')?.textContent || ''), null, { timeout: 1500 });
+        await page.waitForFunction(() => window.__flowStatusHistory?.at(-1)?.status === 'exit 55',
+            null, { timeout: 1500 });
         const positive = await page.evaluate(() => window.__flowStatusHistory);
         if (positive[positive.length - 1]?.status !== 'exit 55') {
             throw new Error('WASM nonzero Flow return control failed: ' + JSON.stringify(positive));
