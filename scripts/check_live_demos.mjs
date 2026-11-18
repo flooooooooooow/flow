@@ -239,6 +239,28 @@ async function browserCheck(entries, opts) {
                     missing.push(response.url());
                 }
             });
+            const startedAt = Date.now();
+            await page.addInitScript(() => {
+                window.__flowStatusHistory = [];
+                const observeStatus = () => {
+                    const element = document.getElementById('status');
+                    if (!element) return false;
+                    const record = () => {
+                        const status = (element.textContent || '').trim();
+                        const history = window.__flowStatusHistory;
+                        if (history.length && history[history.length - 1].status === status) return;
+                        if (history.length < 32) history.push({ ms: Math.round(performance.now()), status });
+                    };
+                    record();
+                    new MutationObserver(record).observe(element, { childList: true, characterData: true, subtree: true });
+                    return true;
+                };
+                if (!observeStatus()) {
+                    new MutationObserver((observer) => {
+                        if (observeStatus()) observer.disconnect();
+                    }).observe(document, { childList: true, subtree: true });
+                }
+            });
             try {
                 await page.goto(base + '/wasm/' + entry.page + '?autostart=1', {
                     waitUntil: 'domcontentloaded',
@@ -264,10 +286,12 @@ async function browserCheck(entries, opts) {
                 const diagnostics = await page.evaluate(() => ({
                     status: document.getElementById('status')?.textContent?.trim() || '',
                     readyState: document.readyState,
+                    statusHistory: window.__flowStatusHistory || [],
                 })).catch(e => ({ inspectionError: e.message }));
                 const detail = entry.name + ': ' + why + '; diagnostics=' +
                     JSON.stringify({
                         ...diagnostics,
+                        elapsedMs: Date.now() - startedAt,
                         pageErrors: browserErrors.slice(0, 10),
                         consoleErrors: consoleErrors.slice(0, 10),
                         missingAssets: missing.slice(0, 10),
@@ -577,7 +601,7 @@ async function docsBrowserCheck(wikiRoot, opts) {
         if (browser) await browser.close();
         await new Promise(resolveClose => server.close(resolveClose));
     }
-    console.log('Docs browser: ' + (5 - failures.length) + '/5 scenarios passed');
+    console.log('Docs browser: ' + (6 - failures.length) + '/6 scenarios passed');
     if (failures.length) throw new Error(failures.join('\n'));
 }
 
