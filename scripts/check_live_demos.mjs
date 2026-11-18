@@ -221,8 +221,12 @@ async function browserCheck(entries, opts) {
             const page = await context.newPage();
             const missing = [];
             const browserErrors = [];
+            const pageErrors = [];
             const consoleErrors = [];
-            page.on('pageerror', error => browserErrors.push(error.message));
+            page.on('pageerror', error => {
+                pageErrors.push(error.message);
+                browserErrors.push(error.message);
+            });
             page.on('console', message => {
                 if (message.type() === 'error') consoleErrors.push(message.text());
             });
@@ -245,7 +249,7 @@ async function browserCheck(entries, opts) {
                     return /^(running|finished after|exit -?\d+|failed to load)/.test(status);
                 }, null, { timeout: opts.timeout });
                 const status = (await page.locator('#status').innerText()).trim();
-                if (status.startsWith('failed') || missing.length) {
+                if (status.startsWith('failed') || missing.length || pageErrors.length) {
                     throw new Error('status=' + status + ', missing=' + missing.join(','));
                 }
                 if (entry.gfx) {
