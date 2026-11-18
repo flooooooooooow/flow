@@ -249,7 +249,8 @@ async function browserCheck(entries, opts) {
                     return /^(running|finished after|exit -?\d+|failed to load)/.test(status);
                 }, null, { timeout: opts.timeout });
                 const status = (await page.locator('#status').innerText()).trim();
-                if (status.startsWith('failed') || missing.length || pageErrors.length) {
+                if (status.startsWith('failed') || /^exit (?!0(?:\s|$))-?\d+/.test(status) ||
+                    missing.length || pageErrors.length) {
                     throw new Error('status=' + status + ', missing=' + missing.join(','));
                 }
                 if (entry.gfx) {
