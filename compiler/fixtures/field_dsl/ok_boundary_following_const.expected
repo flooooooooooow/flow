@@ -1,5 +1,5 @@
 import "stdlib/dynamics/pde.flow"
-const SWALLOWED: i32 = 1
+const FOLLOWING: i32 = 1
 const KEPT: i32 = 2
 
 

@@ -4,16 +4,14 @@
 #         reads, so `field T : f64[N] on Line`, `T evolves as laplacian(T)`
 #         and `boundary T { left = A  right = B }` compile without Python.
 #
-# Output preserves the historical Python expander's lexical behavior except
-# that Laplacian multipliers are now correctly applied to the Euler ratio.
-# compiler/scripts/parity_field_dsl.flow checks current native goldens;
-# the optional old-Python byte comparison records historical behavior; the
-# oracle for coefficient lowering. Other quirks kept on purpose:
+# Output retains historical lexical conventions with corrections for
+# Laplacian coefficients and one-line boundary termination.
+# compiler/scripts/parity_field_dsl.flow checks current native goldens.
+# The optional old-Python comparison records legacy behavior. Numerical
+# regressions check coefficient lowering. Retained conventions:
 #
 #   * The result is the kept lines joined by "\n", so a trailing newline is
 #     dropped (Python `"\n".join(source.splitlines())`).
-#   * A one-line `boundary T { ... }` also consumes the line after it
-#     (`_extract_brace_block` only returns once it is past the start line).
 #   * `#` starts a comment anywhere, including inside a string.
 #
 # Regex has no Stage-A equivalent. Each pattern is a hand-written scan; the
