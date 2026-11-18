@@ -167,6 +167,75 @@ function serveSite(contentRoot = site) {
     return server;
 }
 
+function observeDemoStatusHistory() {
+    window.__flowStatusHistory = [];
+    const observeStatus = () => {
+        const element = document.getElementById('status');
+        if (!element) return false;
+        const record = () => {
+            const status = (element.textContent || '').trim();
+            const history = window.__flowStatusHistory;
+            if (history.length && history[history.length - 1].status === status) return;
+            if (history.length < 32) history.push({ ms: Math.round(performance.now()), status });
+        };
+        record();
+        new MutationObserver(record).observe(element, { childList: true, characterData: true, subtree: true });
+        return true;
+    };
+    if (!observeStatus()) {
+        new MutationObserver((_mutations, observer) => {
+            if (observeStatus()) observer.disconnect();
+        }).observe(document, { childList: true, subtree: true });
+    }
+}
+
+// Negative control: a running demo which never completes must time out and
+// retain both its initial and subsequent status transitions for diagnosis.
+// The positive control preserves Flow's legitimate nonzero return values.
+async function verifyStatusHistoryDiagnostics(context, base) {
+    const page = await context.newPage();
+    try {
+        await page.route('**/__flow_status_diagnostics__', route => route.fulfill({
+            contentType: 'text/html',
+            body: '<!doctype html><html><body><div id="status">starting</div>' +
+                '<script>setTimeout(() => { document.getElementById("status").textContent = "running"; }, 10);</script>' +
+                '</body></html>',
+        }));
+        await page.addInitScript(observeDemoStatusHistory);
+        await page.goto(base + '/__flow_status_diagnostics__', { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.getElementById('status')?.textContent === 'running',
+            null, { timeout: 1500 });
+        const start = Date.now();
+        let timedOut = false;
+        try {
+            await page.waitForFunction(() => /^exit -?\\d+$/.test(
+                document.getElementById('status')?.textContent || ''), null, { timeout: 250 });
+        } catch (error) {
+            if (!/Timeout/i.test(error.message)) throw error;
+            timedOut = true;
+        }
+        const history = await page.evaluate(() => window.__flowStatusHistory);
+        if (!timedOut || Date.now() - start < 200 ||
+            !Array.isArray(history) || history.length < 2 ||
+            history[0].status !== 'starting' ||
+            history[history.length - 1].status !== 'running' ||
+            history.some(record => !Number.isFinite(record.ms))) {
+            throw new Error('WASM status timeout diagnostic negative control failed: ' +
+                JSON.stringify({ timedOut, history }));
+        }
+        await page.evaluate(() => { document.getElementById('status').textContent = 'exit 55'; });
+        await page.waitForFunction(() => /^exit -?\\d+$/.test(
+            document.getElementById('status')?.textContent || ''), null, { timeout: 1500 });
+        const positive = await page.evaluate(() => window.__flowStatusHistory);
+        if (positive[positive.length - 1]?.status !== 'exit 55') {
+            throw new Error('WASM nonzero Flow return control failed: ' + JSON.stringify(positive));
+        }
+        console.log('PASS WASM diagnostic negative timeout and nonzero return controls');
+    } finally {
+        await page.close();
+    }
+}
+
 async function browserCheck(entries, opts) {
     let chromium;
     try {
@@ -192,6 +261,7 @@ async function browserCheck(entries, opts) {
             args: ['--no-sandbox', '--disable-dev-shm-usage'],
         });
         const context = await browser.newContext();
+        await verifyStatusHistoryDiagnostics(context, base);
         const gallery = await context.newPage();
         try {
             await gallery.goto(base + '/wasm/index.html#' + encodeURIComponent(selected[0].name), {
@@ -240,27 +310,7 @@ async function browserCheck(entries, opts) {
                 }
             });
             const startedAt = Date.now();
-            await page.addInitScript(() => {
-                window.__flowStatusHistory = [];
-                const observeStatus = () => {
-                    const element = document.getElementById('status');
-                    if (!element) return false;
-                    const record = () => {
-                        const status = (element.textContent || '').trim();
-                        const history = window.__flowStatusHistory;
-                        if (history.length && history[history.length - 1].status === status) return;
-                        if (history.length < 32) history.push({ ms: Math.round(performance.now()), status });
-                    };
-                    record();
-                    new MutationObserver(record).observe(element, { childList: true, characterData: true, subtree: true });
-                    return true;
-                };
-                if (!observeStatus()) {
-                    new MutationObserver((_mutations, observer) => {
-                        if (observeStatus()) observer.disconnect();
-                    }).observe(document, { childList: true, subtree: true });
-                }
-            });
+            await page.addInitScript(observeDemoStatusHistory);
             try {
                 await page.goto(base + '/wasm/' + entry.page + '?autostart=1', {
                     waitUntil: 'domcontentloaded',
