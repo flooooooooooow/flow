@@ -256,7 +256,7 @@ async function browserCheck(entries, opts) {
                     return true;
                 };
                 if (!observeStatus()) {
-                    new MutationObserver((observer) => {
+                    new MutationObserver((_mutations, observer) => {
                         if (observeStatus()) observer.disconnect();
                     }).observe(document, { childList: true, subtree: true });
                 }
