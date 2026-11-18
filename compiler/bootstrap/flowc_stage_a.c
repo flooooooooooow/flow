@@ -22351,7 +22351,7 @@ int32_t fx_extract_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, i
 }
 }
 }
-  if (depth <= 0 && i > start) {
+  if (depth <= 0 && (i > start || has_open == 1)) {
   cnt[0] = nb;
   return (i + 1);
 }
