@@ -220,6 +220,16 @@ async function browserCheck(entries, opts) {
         for (const entry of selected) {
             const page = await context.newPage();
             const missing = [];
+            const browserErrors = [];
+            const consoleErrors = [];
+            page.on('pageerror', error => browserErrors.push(error.message));
+            page.on('console', message => {
+                if (message.type() === 'error') consoleErrors.push(message.text());
+            });
+            page.on('requestfailed', request => {
+                browserErrors.push('request failed: ' + request.url() + ' (' +
+                    (request.failure()?.errorText || 'unknown') + ')');
+            });
             page.on('response', response => {
                 if (response.status() >= 400 && /\.(wasm|js)(\?|$)/.test(response.url())) {
                     missing.push(response.url());
@@ -247,8 +257,19 @@ async function browserCheck(entries, opts) {
                 console.log('PASS ' + entry.name + ': ' + status);
             } catch (error) {
                 const why = error.message.split('\n')[0];
-                failures.push(entry.name + ': ' + why);
-                console.error('FAIL ' + entry.name + ': ' + why);
+                const diagnostics = await page.evaluate(() => ({
+                    status: document.getElementById('status')?.textContent?.trim() || '',
+                    readyState: document.readyState,
+                })).catch(e => ({ inspectionError: e.message }));
+                const detail = entry.name + ': ' + why + '; diagnostics=' +
+                    JSON.stringify({
+                        ...diagnostics,
+                        pageErrors: browserErrors.slice(0, 10),
+                        consoleErrors: consoleErrors.slice(0, 10),
+                        missingAssets: missing.slice(0, 10),
+                    });
+                failures.push(detail);
+                console.error('FAIL ' + detail);
             } finally {
                 await page.close();
             }
