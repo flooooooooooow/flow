@@ -1,10 +1,25 @@
 # Resolve the discovery map's backtick path references against tracked files.
 # The report records source evidence and keeps support status unverified.
-import .text { ft_outln, ft_errln, ft_read_file, ft_len, ft_byte, ft_slice, ft_find, ft_ends, ft_starts, ft_basename, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, ft_list_sort, StrList }
+#
+# ./flow tool feature_evidence                  flow.feature-evidence.v1 JSON
+# ./flow tool feature_evidence --roles          ROLE/BACKEND/GAP TSV rows
+# ./flow tool feature_evidence --check          exit 1 on any role gap
+# ./flow tool feature_evidence --map PATH       read an alternate map
+#
+# A resolved path proves only that an anchor exists. Role rows say which of
+# the map's own columns an anchor came from; they do not claim the feature
+# works, that a backend is exercised, or that a family is adoption-eligible.
+import .text { ft_outln, ft_errln, ft_eq, ft_out, ft_itoa, ft_read_file, ft_exists, ft_len, ft_byte, ft_slice, ft_find, ft_ends, ft_starts, ft_basename, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, ft_list_sort, StrList }
 import .repo { rp_enter_root, rp_git_ls, rp_capture, rp_argv2, rp_status }
 import .json { json_quote }
 
 const MAP: string = "docs/project/idiom-modernization/FEATURE-SURFACES.md"
+
+# The map's columns after the family name, in order.
+const ROLE_IMPLEMENTATION: i32 = 0
+const ROLE_SEMANTICS: i32 = 1
+const ROLE_TEACHING: i32 = 2
+const ROLE_COUNT: i32 = 3
 
 function trim(s: string) -> string {
     let mut a: i32 = 0
@@ -102,16 +117,139 @@ function emit_refs(refs: ptr<StrList>, tracked: ptr<StrList>, missing: bool) -> 
     return s + "]"
 }
 
+# ---------------------------------------------------------------------------
+# role coverage
+# ---------------------------------------------------------------------------
+
+function role_name(r: i32) -> string {
+    if r == ROLE_IMPLEMENTATION { return "implementation" }
+    if r == ROLE_SEMANTICS { return "semantics_or_negative" }
+    return "teaching"
+}
+
+# Tracked paths an anchor cell resolves to, deduplicated.
+function cell_paths(cell: string, tracked: ptr<StrList>, out: ptr<StrList>) {
+    let refs: ptr<StrList> = ft_list_new()
+    add_refs(cell, refs)
+    let mut i: i32 = 0
+    while i < ft_list_len(refs) {
+        let found: string = resolved(ft_list_get(refs, i), tracked)
+        if ft_len(found) > 0 and not ft_list_has(out, found) { ft_list_push(out, found) }
+        i = i + 1
+    }
+}
+
+# Which independent backend an implementation anchor belongs to, or "" when
+# the path is not a backend emitter. Most specific name first.
+function backend_of(path: string) -> string {
+    if ft_find(path, "gpu", 0) >= 0 or ft_find(path, "shader", 0) >= 0 { return "gpu" }
+    if ft_find(path, "wasm", 0) >= 0 { return "wasm" }
+    if ft_find(path, "mlir", 0) >= 0 { return "mlir" }
+    if ft_find(path, "cgen", 0) >= 0 { return "c" }
+    return ""
+}
+
+# Print one family's ROLE rows, BACKEND rows and GAP rows. Returns the number
+# of roles that resolved to no tracked anchor.
+function role_rows(name: string, cs: ptr<StrList>, tracked: ptr<StrList>) -> i32 {
+    let mut gaps: i32 = 0
+    let targets: ptr<StrList> = ft_list_new()
+    let mut r: i32 = 0
+    while r < ROLE_COUNT {
+        let paths: ptr<StrList> = ft_list_new()
+        cell_paths(ft_list_get(cs, r + 1), tracked, paths)
+        ft_list_sort(paths)
+        if ft_list_len(paths) == 0 {
+            ft_outln("GAP\t" + name + "\t" + role_name(r))
+            gaps = gaps + 1
+        }
+        let mut i: i32 = 0
+        while i < ft_list_len(paths) {
+            let path: string = ft_list_get(paths, i)
+            ft_outln("ROLE\t" + name + "\t" + role_name(r) + "\t" + path)
+            if r == ROLE_IMPLEMENTATION {
+                let target: string = backend_of(path)
+                if ft_len(target) > 0 and not ft_list_has(targets, target) {
+                    ft_list_push(targets, target)
+                    ft_outln("BACKEND\t" + name + "\t" + target)
+                }
+            }
+            i = i + 1
+        }
+        r = r + 1
+    }
+    return gaps
+}
+
+# Every table row of the map, as the role report sees it.
+function role_report(text: string, tracked: ptr<StrList>) -> i32 {
+    let lines: ptr<StrList> = ft_split_lines(text)
+    let mut families: i32 = 0
+    let mut gaps: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let row: string = ft_list_get(lines, i)
+        if is_table_row(row) {
+            let cs: ptr<StrList> = cells(row)
+            if ft_list_len(cs) == 4 {
+                let name: string = ft_list_get(cs, 0)
+                if name != "Feature family" and ft_len(name) > 0 and ft_byte(name, 0) != 45 {
+                    gaps = gaps + role_rows(name, cs, tracked)
+                    families = families + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    if families == 0 {
+        ft_errln("feature_evidence: no feature rows found")
+        return -1
+    }
+    if gaps > 0 {
+        ft_errln("feature_evidence: " + ft_itoa(gaps) + " unresolved roles across " + ft_itoa(families) + " families")
+    }
+    return gaps
+}
+
+function usage() {
+    ft_outln("usage: ./flow tool feature_evidence [--roles | --check] [--map PATH]")
+}
+
 function main(argc: i32, argv: ptr<string>) -> i32 {
-    if argc != 1 {
-        ft_errln("usage: ./flow tool feature_evidence")
-        return 2
+    let mut roles: bool = false
+    let mut check: bool = false
+    let mut map: string = MAP
+    let mut a: i32 = 1
+    while a < argc {
+        if ft_eq(argv[a], "--roles") {
+            roles = true
+        } elif ft_eq(argv[a], "--check") {
+            check = true
+        } elif ft_eq(argv[a], "--map") {
+            if a + 1 >= argc { usage(); return 2 }
+            map = argv[a + 1]
+            a = a + 1
+        } elif ft_eq(argv[a], "--help") or ft_eq(argv[a], "-h") {
+            usage()
+            return 0
+        } else {
+            ft_errln("unknown option: " + argv[a])
+            return 2
+        }
+        a = a + 1
     }
     if rp_enter_root() == false { ft_errln("feature_evidence: cannot enter repository root"); return 1 }
-    let text: string = ft_read_file(MAP)
-    if ft_len(text) == 0 { ft_errln("feature_evidence: cannot read " + MAP); return 1 }
+    if not ft_exists(map) { ft_errln("feature_evidence: cannot read " + map); return 1 }
+    let text: string = ft_read_file(map)
+    if ft_len(text) == 0 { ft_errln("feature_evidence: cannot read " + map); return 1 }
     let tracked: ptr<StrList> = rp_git_ls(ft_list_new())
     if tracked as ptr<u8> == null { ft_errln("feature_evidence: git ls-files failed"); return 1 }
+    if roles or check {
+        let gaps: i32 = role_report(text, tracked)
+        if gaps < 0 { return 1 }
+        if check and gaps > 0 { return 1 }
+        return 0
+    }
     let lines: ptr<StrList> = ft_split_lines(text)
     let rev_args: ptr<StrList> = ft_list_new()
     ft_list_push(rev_args, "git")
