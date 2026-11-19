@@ -1423,6 +1423,44 @@ export function flowc_resolve_dotted_path(
     return flowc_resolve_claim_domain_path(import_span_src, s, e, search_dir, out_path, out_path_cap)
 }
 
+# Search the supplied distribution root independently of the process cwd.
+function flowc_resolve_stdlib_path(
+    src: ptr<u8>, s: i32, e: i32, search_dir: string,
+    out_path: ptr<u8>, out_path_cap: i32
+) -> i32 {
+    let length: i64 = strlen(search_dir)
+    if length <= 0 or length > (FLOWC_RESOLVE_PATH_CAP - 12) as i64 {
+        return 0 - 1
+    }
+    let dir: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    if dir == null { return 0 - 1 }
+    let n: i32 = length as i32
+    let mut i: i32 = 0
+    while i < n {
+        dir[i] = (search_dir as ptr<u8>)[i]
+        i = i + 1
+    }
+    let suffix: string = "/lib/stdlib"
+    i = 0
+    while i < 11 {
+        dir[n + i] = (suffix as ptr<u8>)[i]
+        i = i + 1
+    }
+    dir[n + 11] = 0
+    let mut result: i32 = flowc_resolve_dotted_path(src, s, e, dir as string, out_path, out_path_cap)
+    # The generic dotted helper also tries a cwd-relative lib path. Leave
+    # that legacy fallback to the caller so lookup precedence stays intact.
+    if result < n + 12 { result = 0 - 1 }
+    i = 0
+    while result >= 0 and i < n + 11 {
+        if out_path[i] != dir[i] { result = 0 - 1 }
+        i = i + 1
+    }
+    if result >= 0 and out_path[n + 11] != 47 { result = 0 - 1 }
+    free(dir)
+    return result
+}
+
 # A dotted import as the Python resolver reads it: against the importing
 # module's directory, then the search dir (and lib/), and when neither has
 # the file, with the last segment taken as a symbol (`import a.b.sym` names
@@ -1454,6 +1492,8 @@ function flowc_resolve_dotted_any(
         if end - s > 4 and src[s] == 115 and src[s + 1] == 116 and src[s + 2] == 100 and src[s + 3] == 46 {
             ss = s + 4
         }
+        let from_root: i32 = flowc_resolve_stdlib_path(src, ss, end, search_dir, out_path, out_path_cap)
+        if from_root >= 0 { return from_root }
         let r3: i32 = flowc_resolve_dotted_path(src, ss, end, "lib/stdlib", out_path, out_path_cap)
         if r3 >= 0 {
             return r3

@@ -1,0 +1,41 @@
+# Compiler embedding must resolve the distribution's stdlib from another cwd.
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd }
+
+function check_import(root: string, dir: string, name: string, backend: string) -> bool {
+    let source: string = dir + "/probe.flow"
+    let output: string = dir + "/probe." + backend
+    let text: string = "import " + name + " { io_read_text }\nfunction main() -> i32 {\n    let r: FileRead = io_read_text(\"/etc/hosts\")\n    if not r.ok { return 1 }\n    return 0\n}\n"
+    if not write_text(source, text) { return false }
+    let c: ptr<ProcCmd> = cmd(sl_of1(env_or("FLOWC_BIN", root + "/compiler/build/flowc_bootstrap")))
+    cmd_cwd(c, dir)
+    cmd_env(c, "PWD", dir)
+    cmd_env(c, "FLOWC_ROOT", root)
+    cmd_env(c, "FLOWC_DIR", root)
+    cmd_env(c, "FLOWC_IN", source)
+    cmd_env(c, "FLOWC_OUT", output)
+    cmd_env(c, "FLOWC_BUNDLE", "1")
+    if s_eq(backend, "mlir") { cmd_env(c, "FLOWC_EMIT", "mlir") }
+    let log: string = capture_merged(c)
+    if last_status() != 0 {
+        errln(log)
+        return false
+    }
+    if not is_file(output) { return false }
+    return s_contains(read_text(output), "io_read_text")
+}
+
+function main() -> i32 {
+    let root: string = env("FLOW_CLI_ROOT")
+    if s_len(root) == 0 { return 1 }
+    let dir: string = mktemp_dir(tmp_base() + "/flow-stdlib-cwd.XXXXXX")
+    if s_len(dir) == 0 { return 2 }
+    let _manifest: bool = write_text(dir + "/flow.toml", "")
+    let mut rc: i32 = 0
+    if not check_import(root, dir, "std.io", "mlir") { rc = 3 }
+    elif not check_import(root, dir, "io", "mlir") { rc = 4 }
+    elif not check_import(root, dir, "std.io", "c") { rc = 5 }
+    elif not check_import(root, dir, "io", "c") { rc = 6 }
+    rm_rf(dir)
+    return rc
+}
