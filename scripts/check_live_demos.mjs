@@ -247,6 +247,11 @@ async function browserCheck(entries, opts) {
     }
     const selected = entries.filter((entry, index) => index % opts.shardCount === opts.shardIndex &&
         (!opts.names.size || opts.names.has(entry.name)));
+    for (const name of opts.requireCompletion) {
+        if (!selected.some(entry => entry.name === name)) {
+            throw new Error('Completion-required demo is not in this shard: ' + name);
+        }
+    }
     if (!selected.length) throw new Error('No demos matched this browser shard');
     const server = serveSite();
     await new Promise((resolveListen, reject) => {
@@ -322,6 +327,12 @@ async function browserCheck(entries, opts) {
                     const status = (document.getElementById('status')?.textContent || '').trim();
                     return /^(running|finished after|exit -?\d+|failed to load)/.test(status);
                 }, null, { timeout: opts.timeout });
+                if (opts.requireCompletion.has(entry.name)) {
+                    await page.waitForFunction(() => {
+                        const status = (document.getElementById('status')?.textContent || '').trim();
+                        return /^(finished after|exit -?\d+|failed to load)/.test(status);
+                    }, null, { timeout: opts.timeout });
+                }
                 const status = (await page.locator('#status').innerText()).trim();
                 if (status.startsWith('failed') || missing.length || pageErrors.length) {
                     throw new Error('status=' + status + ', missing=' + missing.join(','));
@@ -658,7 +669,7 @@ async function docsBrowserCheck(wikiRoot, opts) {
 }
 
 async function main() {
-    const opts = { browser: false, docsBrowser: false, wiki: null, shardIndex: 0, shardCount: 1, names: new Set(), timeout: 25000 };
+    const opts = { browser: false, docsBrowser: false, wiki: null, shardIndex: 0, shardCount: 1, names: new Set(), requireCompletion: new Set(), timeout: 25000 };
     const args = process.argv.slice(2);
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -668,6 +679,7 @@ async function main() {
         else if (arg === '--shard-index') opts.shardIndex = Number(args[++i]);
         else if (arg === '--shard-count') opts.shardCount = Number(args[++i]);
         else if (arg === '--name') opts.names.add(args[++i]);
+        else if (arg === '--require-completion') opts.requireCompletion.add(args[++i]);
         else if (arg === '--timeout-ms') opts.timeout = Number(args[++i]);
         else throw new Error('Unknown argument ' + arg);
     }
