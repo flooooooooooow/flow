@@ -4,16 +4,14 @@
 #         reads, so `field T : f64[N] on Line`, `T evolves as laplacian(T)`
 #         and `boundary T { left = A  right = B }` compile without Python.
 #
-# Output preserves the historical Python expander's lexical behavior except
-# that Laplacian multipliers are now correctly applied to the Euler ratio.
-# compiler/scripts/parity_field_dsl.flow checks current native goldens;
-# the optional old-Python byte comparison is historical, not a correctness
-# oracle for coefficient lowering. Other quirks kept on purpose:
+# Output retains historical lexical conventions with corrections for
+# Laplacian coefficients and one-line boundary termination.
+# compiler/scripts/parity_field_dsl.flow checks current native goldens.
+# The optional old-Python comparison records legacy behavior. Numerical
+# regressions check coefficient lowering. Retained conventions:
 #
 #   * The result is the kept lines joined by "\n", so a trailing newline is
 #     dropped (Python `"\n".join(source.splitlines())`).
-#   * A one-line `boundary T { ... }` also consumes the line after it
-#     (`_extract_brace_block` only returns once it is past the start line).
 #   * `#` starts a comment anywhere, including inside a string.
 #
 # Regex has no Stage-A equivalent. Each pattern is a hand-written scan; the
@@ -654,7 +652,7 @@ function fx_extract_block(
                 }
             }
         }
-        if depth <= 0 and i > start {
+        if depth <= 0 and (i > start or has_open == 1) {
             cnt[0] = nb
             return i + 1
         }
@@ -1022,7 +1020,7 @@ function fx_parse(
 
 # expand_field_dsl(). Writes the expanded source to `out` and returns its
 # length. Source without the DSL is copied unchanged. Returns -1 on a DSL
-# error (message in `err`, not NUL-terminated; err[0].len bytes) and -2 when
+# error (message in `err` has err[0].len bytes) and -2 when
 # `out` is too small.
 export function flowc_field_expand(p: ptr<u8>, n: i32, out: ptr<FxBuf>, err: ptr<FxBuf>) -> i32 {
     if flowc_field_has_dsl(p, n) == 0 {

@@ -17,6 +17,7 @@ const PEAK: f64 = 100.0
 const R: f64 = 0.4
 const DX: f64 = 1.0
 
+
 function heat_char(temp: f64) -> string {
     let mut x: f64 = (temp - AMBIENT) / (PEAK - AMBIENT)
     if x < 0.0 { x = 0.0 }
