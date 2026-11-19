@@ -99550,6 +99550,7 @@ int32_t mli_infer_args(AstArena arena, uint8_t* src, int32_t st, int32_t lit, ui
 int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap);
 int32_t flowc_resolve_sibling_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, int32_t name_end, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
+int32_t flowc_resolve_stdlib_path(uint8_t* src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dotted_any(uint8_t* src, int32_t s, int32_t e, const char* mod_search, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_claim_domain_path(uint8_t* import_span_src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s);
@@ -100852,6 +100853,50 @@ int32_t flowc_resolve_dotted_path(uint8_t* import_span_src, int32_t name_start, 
   return flowc_resolve_claim_domain_path(import_span_src, s, e, search_dir, out_path, out_path_cap);
 }
 
+int32_t flowc_resolve_stdlib_path(uint8_t* src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
+  int64_t length = strlen(search_dir);
+  if (length <= 0 || length > (int64_t)((FLOWC_RESOLVE_PATH_CAP - 12))) {
+  return (0 - 1);
+}
+  uint8_t* dir = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  if (dir == NULL) {
+  return (0 - 1);
+}
+  int32_t n = (int32_t)(length);
+  int32_t i = 0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+  for (; i < (n); i = i + 1) {
+  dir[i] = ((uint8_t*)(search_dir))[i];
+}
+  const char* suffix = "/lib/stdlib";
+  i = 0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+  for (; i < (11); i = i + 1) {
+  dir[(n + i)] = ((uint8_t*)(suffix))[i];
+}
+  dir[(n + 11)] = 0;
+  int32_t result = flowc_resolve_dotted_path(src, s, e, (const char*)(dir), out_path, out_path_cap);
+  if (result < (n + 12)) {
+  result = (0 - 1);
+}
+  i = 0;
+  while (result >= 0 && i < (n + 11)) {
+  if (out_path[i] != dir[i]) {
+  result = (0 - 1);
+}
+  i = (i + 1);
+}
+  if (result >= 0 && out_path[(n + 11)] != 47) {
+  result = (0 - 1);
+}
+  flow_mem_free(dir);
+  return result;
+}
+
 int32_t flowc_resolve_dotted_any(uint8_t* src, int32_t s, int32_t e, const char* mod_search, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
   int32_t end = e;
   int32_t tries = 0;
@@ -100867,6 +100912,10 @@ int32_t flowc_resolve_dotted_any(uint8_t* src, int32_t s, int32_t e, const char*
   int32_t ss = s;
   if ((end - s) > 4 && src[s] == 115 && src[(s + 1)] == 116 && src[(s + 2)] == 100 && src[(s + 3)] == 46) {
   ss = (s + 4);
+}
+  int32_t from_root = flowc_resolve_stdlib_path(src, ss, end, search_dir, out_path, out_path_cap);
+  if (from_root >= 0) {
+  return from_root;
 }
   int32_t r3 = flowc_resolve_dotted_path(src, ss, end, "lib/stdlib", out_path, out_path_cap);
   if (r3 >= 0) {
@@ -102046,13 +102095,13 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
 }
   flowc_prof_note_source(src, nsrc, ((p).arena).len);
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st12060 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st12060; }
+  { __typeof__(tpl_len[0]) __flowc_st12278 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st12278; }
 }
   if (nsrc > ext0) {
   flowc_resolve_unlink_from((p).arena, root, ext0);
 }
   if (decl != NULL) {
-  { __typeof__(decl_len[0]) __flowc_st12091 = flowc_resolve_add_decls((p).arena, root, src, own, decl, decl_cap, decl_len[0]); decl_len[0] = __flowc_st12091; }
+  { __typeof__(decl_len[0]) __flowc_st12309 = flowc_resolve_add_decls((p).arena, root, src, own, decl, decl_cap, decl_len[0]); decl_len[0] = __flowc_st12309; }
 }
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
@@ -102063,8 +102112,8 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st12158 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12158; }
-  { __typeof__(siglen[0]) __flowc_st12172 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12172; }
+  { __typeof__(siglen[0]) __flowc_st12376 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12376; }
+  { __typeof__(siglen[0]) __flowc_st12390 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st12390; }
 }
   flowc_parser_free(p);
   flow_mem_free(src);
@@ -102346,8 +102395,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st13611 = sem_error_count(c); counts[0] = __flowc_st13611; }
-  { __typeof__(counts[1]) __flowc_st13617 = sem_fatal_count(c); counts[1] = __flowc_st13617; }
+  { __typeof__(counts[0]) __flowc_st13829 = sem_error_count(c); counts[0] = __flowc_st13829; }
+  { __typeof__(counts[1]) __flowc_st13835 = sem_fatal_count(c); counts[1] = __flowc_st13835; }
   return 0;
 }
 
