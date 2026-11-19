@@ -1,0 +1,111 @@
+# Proof for the semantic analyzer's module capacity.
+#
+# The resolver bundles up to FLOWC_RESOLVE_MAX_MODS (128) modules, but
+# sem_new reserved room for only 64. A program whose import chain passed the
+# 64th module wrote past the end of four module tables and killed flowc with
+# SIGBUS. The generated chain below has 70 modules; it must compile, link and
+# evaluate to the ordered sum of the chain.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, proc_env }
+
+const MODULES: i32 = 70
+
+function host_bin() -> string {
+    let c: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    let _r: i32 = t_run(c)
+    if t_rc() != 0 {
+        return ""
+    }
+    return s_chomp_all(read_text(t_out()))
+}
+
+# Module i imports module i+1 and adds one to its value. The last module has
+# no import and returns its own index, so g0() is 2 * MODULES - 2.
+function module_source(i: i32) -> string {
+    let last: i32 = MODULES - 1
+    if i == last {
+        return "function g" + s_itoa(i) + "() -> i32 {\n    return " + s_itoa(i) + "\n}\n"
+    }
+    let mut s: string = "import \"m" + s_itoa(i + 1) + ".flow\"\n"
+    s = s + "function g" + s_itoa(i) + "() -> i32 {\n    return g" + s_itoa(i + 1) + "() + 1\n}\n"
+    return s
+}
+
+function root_source() -> string {
+    let mut s: string = "import \"m0.flow\"\n\n"
+    s = s + "function main() -> i32 {\n"
+    s = s + "    if g0() != " + s_itoa(2 * MODULES - 2) + " { return 1 }\n"
+    s = s + "    return 0\n}\n"
+    return s
+}
+
+function write_chain(dir: string) -> bool {
+    let mut i: i32 = 0
+    while i < MODULES {
+        if not write_text(dir + "/m" + s_itoa(i) + ".flow", module_source(i)) {
+            return false
+        }
+        i = i + 1
+    }
+    return write_text(dir + "/root.flow", root_source())
+}
+
+function link_c(c_out: string, bin: string) -> i32 {
+    let cc: string = env_or("CC", "cc")
+    let argv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-w")
+    sl_extend(argv, s_words("-O1 -o"))
+    sl_push2(argv, bin, c_out)
+    sl_push(argv, "-lm")
+    return t_run_argv(argv)
+}
+
+function check_module_capacity() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let dir: string = t_tmp() + "/chain"
+    let _d: bool = mkdir_p(dir)
+    if not write_chain(dir) {
+        outln("could not write the module chain")
+        return T_FAIL
+    }
+    let c_out: string = dir + "/root.c"
+    let bin: string = dir + "/root"
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", dir + "/root.flow")
+    proc_env(c, "FLOWC_OUT", c_out)
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_DIR", dir)
+    if t_run(c) != 0 {
+        outln("flowc emit failed for " + s_itoa(MODULES) + " modules")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if link_c(c_out, bin) != 0 {
+        outln("cc failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let rc: i32 = t_run_argv(sl_of1(bin))
+    if rc != 0 {
+        outln("the bundled program returned " + s_itoa(rc))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("sem_module_capacity")
+    t_start()
+    t_end("module_capacity", check_module_capacity())
+    t_done()
+    return 0
+}
