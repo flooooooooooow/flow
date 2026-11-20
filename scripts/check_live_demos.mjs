@@ -298,6 +298,13 @@ async function verifyNonterminatingWasmCompletion(context, base) {
     }
 }
 
+// flowlm_charlm took 33.7s to reach exit 0 on the 20 November 2026
+// Chromium runner (issue #1725). Give only this model a bounded 60s
+// startup/completion budget; other demos retain the 25s default.
+function demoReadinessTimeout(entry, defaultTimeout) {
+    return entry.name === 'flowlm_charlm' ? Math.max(defaultTimeout, 60000) : defaultTimeout;
+}
+
 async function browserCheck(entries, opts) {
     let chromium;
     try {
@@ -378,21 +385,23 @@ async function browserCheck(entries, opts) {
                 }
             });
             const startedAt = Date.now();
+            const readinessTimeout = demoReadinessTimeout(entry, opts.timeout);
+            const requireCompletion = opts.requireCompletion.has(entry.name) || entry.name === 'flowlm_charlm';
             await page.addInitScript(observeDemoStatusHistory);
             try {
                 await page.goto(base + '/wasm/' + entry.page + '?autostart=1', {
                     waitUntil: 'domcontentloaded',
-                    timeout: opts.timeout,
+                    timeout: readinessTimeout,
                 });
                 await page.waitForFunction(() => {
                     const status = (document.getElementById('status')?.textContent || '').trim();
                     return /^(running|finished after|exit -?\d+|failed to load)/.test(status);
-                }, null, { timeout: opts.timeout });
-                if (opts.requireCompletion.has(entry.name)) {
+                }, null, { timeout: readinessTimeout });
+                if (requireCompletion) {
                     await page.waitForFunction(() => {
                         const status = (document.getElementById('status')?.textContent || '').trim();
                         return /^(finished after|exit -?\d+|failed to load)/.test(status);
-                    }, null, { timeout: opts.timeout });
+                    }, null, { timeout: readinessTimeout });
                 }
                 const status = (await page.locator('#status').innerText()).trim();
                 if (status.startsWith('failed') || missing.length || pageErrors.length) {
