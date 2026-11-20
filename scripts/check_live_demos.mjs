@@ -238,6 +238,66 @@ async function verifyStatusHistoryDiagnostics(context, base) {
     }
 }
 
+// Run a genuinely nonterminating WebAssembly function in a worker. Unlike a
+// synthetic status-only fixture, this exercises a live WASM execution that
+// cannot return, while keeping Chromium's main thread responsive to the
+// completion watchdog. The 127-byte WASM module exports hang(), an infinite
+// volatile-increment loop compiled from C; it is not a Flow runtime fixture.
+async function verifyNonterminatingWasmCompletion(context, base) {
+    const page = await context.newPage();
+    try {
+        const wasm = 'AGFzbQEAAAABBAFgAAADAgEABAUBcAEBAQUDAQACBggBfwFBgIgECwcRAgZtZW1vcnkCAARoYW5nAAAKQgFAAQd/I4CAgIAAIQBBECEBIAAgAWshAkEAIQMgAiADNgIMA0AgAigCDCEEQQEhBSAEIAVqIQYgAiAGNgIMDAALCw==';
+        const workerScript = `const bytes = Uint8Array.from(atob('${wasm}'), c => c.charCodeAt(0));
+            WebAssembly.instantiate(bytes).then(({ instance }) => {
+                postMessage('running');
+                instance.exports.hang();
+            }).catch(error => postMessage('error: ' + error.message));`;
+        const html = `<!doctype html><html><body><div id="status">starting</div>
+            <script>
+                const script = ${JSON.stringify(workerScript)};
+                const worker = new Worker(URL.createObjectURL(new Blob([script], { type: 'text/javascript' })));
+                worker.onmessage = event => {
+                    document.getElementById('status').textContent = event.data;
+                };
+                worker.onerror = event => {
+                    document.getElementById('status').textContent = 'error: ' + event.message;
+                };
+            </script></body></html>`;
+        await page.route('**/__flow_nonterminating_wasm__', route => route.fulfill({
+            contentType: 'text/html',
+            body: html,
+        }));
+        await page.addInitScript(observeDemoStatusHistory);
+        await page.goto(base + '/__flow_nonterminating_wasm__', { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.getElementById('status')?.textContent === 'running',
+            null, { timeout: 2000 });
+        let timedOut = false;
+        try {
+            await page.waitForFunction(() => {
+                const status = (document.getElementById('status')?.textContent || '').trim();
+                return /^(finished after|exit -?\\d+|failed to load)/.test(status);
+            }, null, { timeout: 350 });
+        } catch (error) {
+            if (!/Timeout/i.test(error.message)) throw error;
+            timedOut = true;
+        }
+        const result = await page.evaluate(() => ({
+            status: document.getElementById('status')?.textContent,
+            history: window.__flowStatusHistory,
+        }));
+        if (!timedOut || result.status !== 'running' ||
+            !Array.isArray(result.history) ||
+            result.history[0]?.status !== 'starting' ||
+            result.history.at(-1)?.status !== 'running') {
+            throw new Error('Nonterminating WASM completion watchdog failed: ' +
+                JSON.stringify({ timedOut, ...result }));
+        }
+        console.log('PASS nonterminating WASM worker completion timeout');
+    } finally {
+        await page.close();
+    }
+}
+
 async function browserCheck(entries, opts) {
     let chromium;
     try {
@@ -269,6 +329,7 @@ async function browserCheck(entries, opts) {
         });
         const context = await browser.newContext();
         await verifyStatusHistoryDiagnostics(context, base);
+        await verifyNonterminatingWasmCompletion(context, base);
         const gallery = await context.newPage();
         try {
             await gallery.goto(base + '/wasm/index.html#' + encodeURIComponent(selected[0].name), {
