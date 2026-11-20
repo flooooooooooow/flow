@@ -1,0 +1,257 @@
+# Frame loop benchmark: a full-screen fragment pass at 1440x900 or 2880x1800 with
+# presentation, on the resident host (BENCH_MODE=new) and on the old per-job path
+# (BENCH_MODE=old). The same typed shader (stdlib/gpu_shader.flow) feeds both.
+#
+#   BENCH_W=1440 BENCH_H=900 BENCH_MODE=new ./flow gfx tests/gpu_live/bench_frame.flow
+#   BENCH_W=1440 BENCH_H=900 BENCH_MODE=old FLOW_GPU_BACKENDS=metal ./flow gfx tests/gpu_live/bench_frame.flow
+#
+# new mode opens a hidden window (no focus). Frames: 30 warm-up, then BENCH_FRAMES
+# (default 300) timed. Prints one line per variant.
+
+import "stdlib/gfx.flow"
+import "stdlib/gpu_live.flow"
+import "stdlib/gpu_render_host.flow"
+
+extern {
+    function getenv(name: string) -> ptr<u8>
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function atoi(s: ptr<u8>) -> i32
+    function malloc(n: i64) -> ptr<void>
+}
+
+function env_int(name: string, dflt: i32) -> i32 {
+    let v: ptr<u8> = getenv(name)
+    if v == null { return dflt }
+    return atoi(v)
+}
+
+function env_is(name: string, want: string) -> bool {
+    let v: ptr<u8> = getenv(name)
+    if v == null { return false }
+    return gpu_str_eq(v as string, want)
+}
+
+# Both stages. Eleven rounds of sin and cos on a warped coordinate: cheap enough
+# to run at display rate, heavy enough that the GPU does real work.
+function fill_stages(vs: ptr<GxFn>, fs: ptr<GxFn>) -> void {
+    let vid: GxExpr = gx_f32_of(gx_vertex_index(vs))
+    let tx: GxExpr = gx_mul(vid, gx_sub(gx_f(2.0), vid))
+    let ty: GxExpr = gx_mul(gx_mul(vid, gx_sub(vid, gx_f(1.0))), gx_f(0.5))
+    let x: GxExpr = gx_let(vs, gx_sub(gx_mul(tx, gx_f(4.0)), gx_f(1.0)))
+    let y: GxExpr = gx_let(vs, gx_sub(gx_mul(ty, gx_f(4.0)), gx_f(1.0)))
+    gx_out_position(vs, gx_vec4(x, y, gx_f(0.0), gx_f(1.0)))
+    gx_out(vs, 0, gx_vec2(gx_add(gx_mul(x, gx_f(0.5)), gx_f(0.5)), gx_add(gx_mul(y, gx_f(0.5)), gx_f(0.5))))
+    let uv: GxExpr = gx_in(fs, 0)
+    let mut p: GxExpr = gx_let(fs, gx_mul(uv, gx_f(8.0)))
+    let mut i: i32 = 0
+    while i < 11 {
+        let a: GxExpr = gx_sin(gx_add(gx_mul(gx_x(p), gx_f(1.3)), gx_y(p)))
+        let b: GxExpr = gx_cos(gx_sub(gx_y(p), gx_mul(gx_x(p), gx_f(0.7))))
+        p = gx_let(fs, gx_vec2(gx_add(gx_x(p), gx_mul(b, gx_f(0.7))), gx_add(gx_y(p), gx_mul(a, gx_f(0.7)))))
+        i = i + 1
+    }
+    let r: GxExpr = gx_add(gx_mul(gx_sin(gx_x(p)), gx_f(0.5)), gx_f(0.5))
+    let g: GxExpr = gx_add(gx_mul(gx_cos(gx_y(p)), gx_f(0.5)), gx_f(0.5))
+    let b2: GxExpr = gx_add(gx_mul(gx_sin(gx_add(gx_x(p), gx_y(p))), gx_f(0.5)), gx_f(0.5))
+    gx_out_color(fs, gx_vec4(r, g, b2, gx_f(1.0)))
+}
+
+function varying0() -> GpuVarying {
+    return GpuVarying { location: 0, scalar: GPU_SCALAR_F32, components: 2, interpolation: GPU_INTERPOLATE_PERSPECTIVE }
+}
+
+function metal_source() -> string {
+    let ifc: ptr<GxIface> = gx_iface_new()
+    let vs: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_VERTEX)
+    let fs: ptr<GxFn> = gx_fn_new(ifc, GPU_STAGE_FRAGMENT)
+    ifc[0].vary[0] = varying0()
+    ifc[0].nvary = 1
+    fill_stages(vs, fs)
+    return gx_emit_metal(vs, fs)
+}
+
+# One old-path job: write the job directory, launch the host, read the frame back.
+function old_job(w: i32, h: i32, tag: string) -> i32 {
+    let job: ptr<GpuJob> = gpu_job_new("bench_" + tag, w, h, gpu_job_root())
+    let color: GpuTextureDesc = GpuTextureDesc {
+        dimension: GPU_TEX_2D, format: GPU_FORMAT_RGBA8,
+        width: w, height: h, layers: 1, samples: 1,
+        usage: GPU_USE_COLOR_ATTACHMENT
+    }
+    let targets: GpuRenderTargets = GpuRenderTargets { color: color, depth: color, has_depth: false }
+    let vo: array<GpuVarying, 1> = [varying0()]
+    let fi: array<GpuVarying, 1> = [varying0()]
+    let p: ptr<GpuPipeline> = gpu_pipeline_new(job, "fs", &vo[0], 1, &fi[0], 1)
+    gpu_pipeline_targets(p, targets)
+    fill_stages(gpu_pipeline_vs(p), gpu_pipeline_fs(p))
+    let _id: i32 = gpu_pipeline_finish(p)
+    let t: i32 = gpu_texture(job, color, null)
+    gpu_pass(job, t, 0 - 1, 0 - 1, 0.0, 0.0, 0.0, 1.0)
+    let none: array<i32, 1> = [0]
+    gpu_draw(job, p, 0 - 1, &none[0], 0, 3, 1, 0, 0)
+    gpu_output(job, t)
+    return gpu_job_run(job)
+}
+
+function now() -> f64 {
+    return gfx_time_ms(Gfx { ctx: null })
+}
+
+struct Stats {
+    cpu_ms: f64,
+    gpu_ms: f64,
+    wall_ms: f64,
+    frames: i32
+}
+
+# variant: 0 direct to window, 1 offscreen then blit, 2 offscreen + full overlay
+# upload, 3 offscreen + 600x200 dirty overlay, 4 offscreen only, submitted without
+# presenting (the host's own cost and the GPU rate with no display pacing).
+function run_variant(g: Gfx, variant: i32, pipe: i32, off: i32, w: i32, h: i32, frames: i32) -> Stats {
+    let mut cpu: f64 = 0.0
+    let mut gpu: f64 = 0.0
+    let mut t_start: f64 = 0.0
+    let mut f: i32 = 0
+    let total: i32 = frames + 30
+    while f < total {
+        if f == 30 { t_start = now() }
+        if g.ctx != null and getenv("BENCH_NOPOLL") == null { gfx_poll(g) }
+        let t0: f64 = now()
+        gl_begin_frame()
+        if variant == 0 {
+            gl_pass_begin(GL_WINDOW, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
+            gl_draw(pipe, GL_TRIANGLES, 0, 3, 1)
+            gl_pass_end()
+        } elif variant == 4 {
+            gl_pass_name("scene")
+            gl_pass_begin(off, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
+            gl_draw(pipe, GL_TRIANGLES, 0, 3, 1)
+            gl_pass_end()
+
+        } else {
+            gl_pass_name("scene")
+            gl_pass_begin(off, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
+            gl_draw(pipe, GL_TRIANGLES, 0, 3, 1)
+            gl_pass_end()
+            gl_pass_name("present")
+            gl_blit(off, GL_WINDOW, GL_BLEND_NONE)
+        }
+        if variant == 2 or variant == 3 {
+            gl_overlay_begin(g.ctx)
+            gfx_fill_rect(g, 40, 40, 500, 40, 0, 0, 0)
+            gfx_text(g, 50, 70, "FPS 120  speed 63 km/h  gear 4", 28, 255, 255, 255)
+            if variant == 2 {
+                gl_overlay_present(0, 0, w, h)
+            } else {
+                gl_overlay_present(30, 30, 600, 200)
+            }
+        }
+        if variant == 4 { gl_submit() } else { gl_present() }
+        let t1: f64 = now()
+        if f >= 30 {
+            cpu = cpu + (t1 - t0)
+            gpu = gpu + gl_gpu_time_ms()
+        }
+        f = f + 1
+    }
+    gl_wait_idle()
+    let wall: f64 = now() - t_start
+    return Stats { cpu_ms: cpu / (frames as f64), gpu_ms: gpu / (frames as f64), wall_ms: wall, frames: frames }
+}
+
+function report(label: string, s: Stats) -> void {
+    let fps: f64 = (s.frames as f64) * 1000.0 / s.wall_ms
+    println("BENCH " + label + " cpu_ms=" + s.cpu_ms + " gpu_ms=" + s.gpu_ms + " frame_ms=" + (s.wall_ms / (s.frames as f64)) + " fps=" + fps)
+}
+
+function main() -> i32 {
+    let w: i32 = env_int("BENCH_W", 1440)
+    let h: i32 = env_int("BENCH_H", 900)
+    let frames: i32 = env_int("BENCH_FRAMES", 300)
+    if env_is("BENCH_MODE", "old") {
+        let reps: i32 = env_int("BENCH_JOBS", 5)
+        let mut i: i32 = 0
+        let mut first: f64 = 0.0
+        let mut rest: f64 = 0.0
+        while i < reps {
+            let t0: f64 = now()
+            let rc: i32 = old_job(w, h, "" + w + "x" + h)
+            let dt: f64 = now() - t0
+            if rc != 0 { println("old job failed rc=" + rc); return 1 }
+            if i == 0 { first = dt } else { rest = rest + dt }
+            i = i + 1
+        }
+        let per: f64 = rest / ((reps - 1) as f64)
+        println("BENCH old " + w + "x" + h + " first_job_ms=" + first + " later_job_ms=" + per + " fps=" + (1000.0 / per))
+        return 0
+    }
+    # Presentation pacing needs a window the display can see: BENCH_VISIBLE=1 shows
+    # it (never key, never activated) for the few seconds the run takes.
+    if getenv("BENCH_VISIBLE") != null { setenv("FLOW_GFX_HIDDEN", "2", 1) } else { setenv("FLOW_GFX_HIDDEN", "1", 1) }
+    if not gl_init(0) { println("no GPU: " + gl_last_error()); return 1 }
+    if env_is("BENCH_MODE", "upload") {
+        # CPU cost of moving an RGBA overlay into a stream texture, no window.
+        let ut: i32 = gl_texture_new(w, h, GL_RGBA8, GL_TEX_SAMPLED + GL_TEX_STREAM)
+        let src: ptr<u8> = malloc((w * h * 4) as i64) as ptr<u8>
+        let mut k: i32 = 0
+        while k < w * h * 4 { src[k] = (k % 251) as u8; k = k + 1 }
+        let mut f: i32 = 0
+        let mut full: f64 = 0.0
+        let mut rect: f64 = 0.0
+        while f < 130 {
+            gl_begin_frame()
+            let a0: f64 = now()
+            gl_texture_upload(ut, src, w * 4)
+            let a1: f64 = now()
+            gl_texture_upload_rect(ut, 30, 30, 600, 200, src + (30 * w + 30) * 4, w * 4)
+            let a2: f64 = now()
+            gl_submit()
+            if f >= 30 { full = full + (a1 - a0); rect = rect + (a2 - a1) }
+            f = f + 1
+        }
+        println("BENCH upload " + w + "x" + h + " full_ms=" + (full / 100.0) + " rect600x200_ms=" + (rect / 100.0) + " bytes_full=" + (w * h * 4))
+        gl_wait_idle()
+        gl_shutdown()
+        return 0
+    }
+    if env_is("BENCH_MODE", "headless") {
+        # no window at all: the host's own cost and the GPU rate
+        let hp: i32 = gl_render_pipeline(metal_source(), "vs_main", "fs_main", GL_RGBA8, 0, GL_BLEND_NONE)
+        let ho: i32 = gl_texture_new(w, h, GL_RGBA8, GL_TEX_TARGET + GL_TEX_SAMPLED + GL_TEX_GPU_ONLY)
+        if hp < 0 or ho < 0 { println(gl_last_error()); return 3 }
+        report("headless offscreen " + w + "x" + h, run_variant(Gfx { ctx: null }, 4, hp, ho, w, h, frames))
+        gl_shutdown()
+        return 0
+    }
+    let g: Gfx = gfx_open_hidpi(w / 2, h / 2, "bench", 0)
+    gfx_poll(g)
+    if getenv("BENCH_NOATTACH") == null {
+        if gl_attach_window(g.ctx, false) != 0 { println(gl_last_error()); return 2 }
+    }
+    gfx_poll(g)
+    let mut win: GlWindow = gl_window()
+    if getenv("BENCH_NOATTACH") != null { win = GlWindow { width: w, height: h, scale: 2.0, attached: false } }
+    println("device " + gl_device_name() + ", drawable " + win.width + "x" + win.height + " (asked " + w + "x" + h + "), pass timing " + gl_stat(GL_STAT_PASS_TIMING))
+    let msl: string = metal_source()
+    let pw: i32 = gl_render_pipeline(msl, "vs_main", "fs_main", GL_BGRA8, 0, GL_BLEND_NONE)
+    let po: i32 = gl_render_pipeline(msl, "vs_main", "fs_main", GL_RGBA8, 0, GL_BLEND_NONE)
+    if pw < 0 or po < 0 { println(gl_last_error()); return 3 }
+    let off: i32 = gl_texture_new(win.width, win.height, GL_RGBA8, GL_TEX_TARGET + GL_TEX_SAMPLED + GL_TEX_GPU_ONLY)
+    if off < 0 { println(gl_last_error()); return 4 }
+    gl_set_vsync(false)
+    if env_is("BENCH_ONLY", "offscreen") {
+        report("new offscreen-only-no-present (window attached, first)", run_variant(g, 4, po, off, win.width, win.height, frames))
+        return 0
+    }
+    report("new direct-to-window vsync=off", run_variant(g, 0, pw, off, win.width, win.height, frames))
+    report("new offscreen+blit vsync=off", run_variant(g, 1, po, off, win.width, win.height, frames))
+    report("new offscreen+blit+overlay-full-upload vsync=off", run_variant(g, 2, po, off, win.width, win.height, frames))
+    report("new offscreen+blit+overlay-dirty-rect vsync=off", run_variant(g, 3, po, off, win.width, win.height, frames))
+    report("new offscreen-only-no-present", run_variant(g, 4, po, off, win.width, win.height, frames))
+    gl_set_vsync(true)
+    report("new direct-to-window vsync=on", run_variant(g, 0, pw, off, win.width, win.height, frames))
+    gl_detach_window()
+    gfx_close(g)
+    gl_shutdown()
+    return 0
+}

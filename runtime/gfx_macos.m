@@ -429,13 +429,20 @@ static void* flow_gfx_open_window(int32_t w, int32_t h, const char* title_utf8,
             flow_gfx_fit_framebuffer(ctx);
         }
         /* FLOW_GFX_HIDDEN=1: a window that never takes focus and is not drawn
-         * to the screen, for tests that run the real presentation path. */
+         * to the screen, for tests that run the real presentation path.
+         * FLOW_GFX_HIDDEN=2: the same without hiding it. It is shown but never
+         * becomes key and the app is not activated. A hidden window is not
+         * paced by the display, so frame rate measurements use mode 2. */
         const char* hidden_env = getenv("FLOW_GFX_HIDDEN");
-        if (hidden_env && hidden_env[0] == '1') {
+        if (hidden_env && (hidden_env[0] == '1' || hidden_env[0] == '2')) {
             [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
-            [ctx->window setAlphaValue:0.0];
             [ctx->window setIgnoresMouseEvents:YES];
-            [ctx->window orderBack:nil];
+            if (hidden_env[0] == '2') {
+                [ctx->window orderFrontRegardless];
+            } else {
+                [ctx->window setAlphaValue:0.0];
+                [ctx->window orderBack:nil];
+            }
         } else {
             [ctx->window makeKeyAndOrderFront:nil];
             [app activateIgnoringOtherApps:YES];
