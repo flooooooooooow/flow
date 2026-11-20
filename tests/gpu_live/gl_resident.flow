@@ -39,7 +39,7 @@ function main() -> i32 {
     let rp: i32 = gl_render_pipeline(msl(), "fs_vs", "fs_fs", GL_RGBA8, 0, GL_BLEND_NONE)
     if counter < 0 or stream < 0 or target < 0 or cp < 0 or rp < 0 { println(gl_last_error()); return 2 }
     let zero: array<u32, 4> = [0, 0, 0, 0]
-    gl_buffer_write(counter, 0, zero as ptr<u8>, 16)
+    gl_buffer_write(counter, 0, &zero[0] as ptr<u8>, 16)
 
     let mut f: i32 = 0
     let mut allocs0: i64 = 0
@@ -60,12 +60,12 @@ function main() -> i32 {
         let t: array<f32, 1> = [(f as f32) * 0.01]
         gl_bind_buffer(0, counter, 0)
         gl_bind_buffer(1, stream, 0)
-        gl_bind_bytes(2, t as ptr<u8>, 4)
+        gl_bind_bytes(2, &t[0] as ptr<u8>, 4)
         gl_pass_name("count")
         if gl_dispatch(cp, 64, 1, 1) != 0 { println(gl_last_error()); return 4 }
         gl_pass_name("scene")
         if gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 5 }
-        gl_bind_bytes(0, t as ptr<u8>, 4)
+        gl_bind_bytes(0, &t[0] as ptr<u8>, 4)
         if gl_draw(rp, GL_TRIANGLES, 0, 3, 1) != 0 { println(gl_last_error()); return 6 }
         gl_pass_end()
         if gl_present() != 0 { println(gl_last_error()); return 7 }
