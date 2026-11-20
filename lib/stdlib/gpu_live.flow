@@ -1,0 +1,428 @@
+# gpu_live: a resident Metal host for real-time frame loops.
+#
+# One device, one command queue and one shader cache live in the process.
+# Buffers, textures and pipelines are created once and named by integer
+# handles. Each frame the program binds resources, dispatches compute
+# kernels, runs render passes and presents in the gfx window. There is no
+# process launch and no file between the program and the GPU, and nothing is
+# read back unless the program calls gl_buffer_read or gl_texture_read.
+#
+# Backend: runtime/gpu_metal_host.m (macOS). Elsewhere a stub reports
+# gl_available() == false. Linked by ./flow run, ./flow gfx and ./flow debug.
+# Interface and threading rules: docs/gpu-host.md.
+#
+# Return values. A function that makes a resource returns a handle >= 1, or
+# -1 on failure. Other functions return 0 on success and -1 on failure.
+# gl_last_error() names the last failure. Nothing here aborts the program.
+#
+# Shaders are Metal Shading Language source strings. The text that
+# gx_emit_metal in stdlib/gpu_shader.flow returns works as is: entry points
+# vs_main and fs_main, uniforms in buffer(0) as struct U, vertex buffer slot k
+# at buffer(16 + k), texture slot s at texture(s) and sampler(s).
+
+extern {
+    function flow_gl_init(flags: i32) -> i32
+    function flow_gl_available() -> i32
+    function flow_gl_shutdown() -> void
+    function flow_gl_last_error() -> string
+    function flow_gl_device_name() -> string
+    function flow_gl_stat(which: i32) -> i64
+    function flow_gl_force_off(off: i32) -> void
+    function flow_gl_attach_window(gfx_ctx: ptr<void>, vsync: i32) -> i32
+    function flow_gl_detach_window() -> void
+    function flow_gl_window_info(out: ptr<i32>) -> i32
+    function flow_gl_set_vsync(on: i32) -> void
+    function flow_gl_buffer_new(bytes: i64, flags: i32) -> i32
+    function flow_gl_buffer_write(buf: i32, offset: i64, src: ptr<u8>, n: i64) -> i32
+    function flow_gl_buffer_ptr(buf: i32) -> ptr<u8>
+    function flow_gl_buffer_read(buf: i32, offset: i64, dst: ptr<u8>, n: i64) -> i32
+    function flow_gl_buffer_free(buf: i32) -> i32
+    function flow_gl_texture_new(w: i32, h: i32, format: i32, usage: i32) -> i32
+    function flow_gl_texture_upload(tex: i32, src: ptr<u8>, bytes_per_row: i32) -> i32
+    function flow_gl_texture_upload_rect(tex: i32, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>, bytes_per_row: i32) -> i32
+    function flow_gl_texture_read(tex: i32, dst: ptr<u8>, bytes_per_row: i32) -> i32
+    function flow_gl_texture_free(tex: i32) -> i32
+    function flow_gl_compute_pipeline(msl: string, entry: string) -> i32
+    function flow_gl_render_pipeline_begin(msl: string, vs_entry: string, fs_entry: string, color_format: i32, depth_format: i32, blend: i32) -> i32
+    function flow_gl_pipeline_vertex_layout(pipe: i32, slot: i32, stride: i32, per_instance: i32) -> i32
+    function flow_gl_pipeline_vertex_attr(pipe: i32, location: i32, slot: i32, format: i32, offset: i32) -> i32
+    function flow_gl_pipeline_state(pipe: i32, cull: i32, depth_mode: i32) -> i32
+    function flow_gl_pipeline_build(pipe: i32) -> i32
+    function flow_gl_pipeline_free(pipe: i32) -> i32
+    function flow_gl_begin_frame() -> i32
+    function flow_gl_bind_buffer(slot: i32, buf: i32, offset: i64) -> i32
+    function flow_gl_bind_texture(slot: i32, tex: i32) -> i32
+    function flow_gl_bind_sampler(slot: i32, linear: i32, repeat: i32) -> i32
+    function flow_gl_bind_bytes(slot: i32, src: ptr<u8>, n: i32) -> i32
+    function flow_gl_dispatch(pipe: i32, x: i32, y: i32, z: i32) -> i32
+    function flow_gl_dispatch_groups(pipe: i32, gx: i32, gy: i32, gz: i32, tx: i32, ty: i32, tz: i32) -> i32
+    function flow_gl_dispatch_indirect(pipe: i32, args_buf: i32, offset: i64, tx: i32, ty: i32, tz: i32) -> i32
+    function flow_gl_pass_begin(color: i32, depth: i32, load: i32, r: f32, g: f32, b: f32, a: f32, clear_depth: f32) -> i32
+    function flow_gl_draw(pipe: i32, topology: i32, first: i32, count: i32, instances: i32) -> i32
+    function flow_gl_draw_indexed(pipe: i32, topology: i32, index_buf: i32, index_u32: i32, first_index: i32, count: i32, instances: i32) -> i32
+    function flow_gl_draw_indirect(pipe: i32, topology: i32, args_buf: i32, offset: i64) -> i32
+    function flow_gl_pass_end() -> i32
+    function flow_gl_blit(src: i32, dst: i32, blend: i32) -> i32
+    function flow_gl_present() -> i32
+    function flow_gl_submit() -> i32
+    function flow_gl_wait_idle() -> i32
+    function flow_gl_gpu_time_ms() -> f64
+    function flow_gl_pass_count() -> i32
+    function flow_gl_pass_time_ms(index: i32) -> f64
+}
+
+# Texture formats
+export const GL_RGBA8: i32 = 1
+export const GL_BGRA8: i32 = 2
+export const GL_RGBA16F: i32 = 3
+export const GL_R32F: i32 = 4
+export const GL_RGBA32F: i32 = 5
+export const GL_R8: i32 = 6
+export const GL_DEPTH32F: i32 = 7
+
+# Texture usage flags, combined with +
+export const GL_TEX_SAMPLED: i32 = 1
+export const GL_TEX_STORAGE: i32 = 2
+export const GL_TEX_TARGET: i32 = 4
+# Keep one copy per frame slot so the CPU can upload while the GPU reads the last frame.
+export const GL_TEX_STREAM: i32 = 8
+
+# Buffer flags
+export const GL_BUF_STREAM: i32 = 1
+
+# Vertex attribute formats
+export const GL_V_FLOAT: i32 = 1
+export const GL_V_FLOAT2: i32 = 2
+export const GL_V_FLOAT3: i32 = 3
+export const GL_V_FLOAT4: i32 = 4
+export const GL_V_UCHAR4_NORM: i32 = 5
+export const GL_V_UINT: i32 = 6
+export const GL_V_INT: i32 = 7
+
+export const GL_BLEND_NONE: i32 = 0
+export const GL_BLEND_ALPHA: i32 = 1
+export const GL_BLEND_ADD: i32 = 2
+# Source colour already multiplied by alpha.
+export const GL_BLEND_PREMUL: i32 = 3
+
+export const GL_CULL_NONE: i32 = 0
+export const GL_CULL_BACK: i32 = 1
+export const GL_CULL_FRONT: i32 = 2
+
+export const GL_DEPTH_OFF: i32 = 0
+export const GL_DEPTH_TEST: i32 = 1
+export const GL_DEPTH_WRITE: i32 = 2
+
+export const GL_TRIANGLES: i32 = 0
+export const GL_LINES: i32 = 1
+export const GL_POINTS: i32 = 2
+export const GL_TRIANGLE_STRIP: i32 = 3
+
+export const GL_LOAD_CLEAR: i32 = 0
+export const GL_LOAD_KEEP: i32 = 1
+
+# Pass the window drawable as the colour target of gl_pass_begin or gl_blit.
+export const GL_WINDOW: i32 = 0
+
+# gl_init flag: never wait for a free frame slot. For benchmarks only.
+export const GL_INIT_NO_PACING: i32 = 1
+
+# gl_stat selectors
+export const GL_STAT_BUFFERS: i32 = 0
+export const GL_STAT_TEXTURES: i32 = 1
+export const GL_STAT_PIPELINES: i32 = 2
+export const GL_STAT_RESOURCE_BYTES: i32 = 3
+export const GL_STAT_ALLOCATIONS: i32 = 4
+export const GL_STAT_FRAMES_SUBMITTED: i32 = 5
+export const GL_STAT_FRAMES_COMPLETED: i32 = 6
+export const GL_STAT_DEVICE_BYTES: i32 = 7
+export const GL_STAT_PROCESS_RSS: i32 = 8
+export const GL_STAT_LIBRARY_COMPILES: i32 = 9
+export const GL_STAT_LIBRARY_HITS: i32 = 10
+export const GL_STAT_DRAWABLES: i32 = 11
+export const GL_STAT_FRAME_SLOTS: i32 = 12
+export const GL_STAT_PASS_TIMING: i32 = 13
+export const GL_STAT_UNIFIED_MEMORY: i32 = 14
+
+# Open the device. Returns true when the GPU path is ready. False when there is
+# no Metal device, the platform is not macOS, or FLOW_GL_FORCE_OFF=1 is set.
+export function gl_init(flags: i32) -> bool {
+    return flow_gl_init(flags) == 1
+}
+
+export function gl_available() -> bool {
+    return flow_gl_available() == 1
+}
+
+# Wait for the GPU, then release every resource and the device.
+export function gl_shutdown() -> void {
+    flow_gl_shutdown()
+}
+
+export function gl_last_error() -> string {
+    return flow_gl_last_error()
+}
+
+export function gl_device_name() -> string {
+    return flow_gl_device_name()
+}
+
+# Counters: see the GL_STAT_* selectors.
+export function gl_stat(which: i32) -> i64 {
+    return flow_gl_stat(which)
+}
+
+# Turn the GPU path off (true) or allow it (false) before gl_init.
+export function gl_force_off(off: bool) -> void {
+    if off {
+        flow_gl_force_off(1)
+    } else {
+        flow_gl_force_off(0)
+    }
+}
+
+# Present into a gfx window. `ctx` is the ctx field of a Gfx from gfx_open or
+# gfx_open_hidpi. Call it from the thread that opened the window. After it
+# succeeds the CPU framebuffer of that window is no longer drawn: composite CPU
+# pixels through a texture and gl_blit instead.
+export function gl_attach_window(ctx: ptr<void>, vsync: bool) -> i32 {
+    let mut v: i32 = 0
+    if vsync {
+        v = 1
+    }
+    return flow_gl_attach_window(ctx, v)
+}
+
+export function gl_detach_window() -> void {
+    flow_gl_detach_window()
+}
+
+struct GlWindow {
+    width: i32,
+    height: i32,
+    scale: f64,
+    attached: bool
+}
+
+# Drawable size in pixels, pixels per point, and whether a window is attached.
+export function gl_window() -> GlWindow {
+    let buf: array<i32, 4> = [0, 0, 100, 0]
+    let p: ptr<i32> = buf
+    flow_gl_window_info(p)
+    return GlWindow { width: p[0], height: p[1], scale: (p[2] as f64) / 100.0, attached: p[3] != 0 }
+}
+
+export function gl_set_vsync(on: bool) -> void {
+    if on {
+        flow_gl_set_vsync(1)
+    } else {
+        flow_gl_set_vsync(0)
+    }
+}
+
+# Resident buffers. Shared memory: the CPU writes and the GPU reads the same bytes.
+export function gl_buffer_new(bytes: i64, flags: i32) -> i32 {
+    return flow_gl_buffer_new(bytes, flags)
+}
+
+export function gl_buffer_write(buf: i32, offset: i64, src: ptr<u8>, n: i64) -> i32 {
+    return flow_gl_buffer_write(buf, offset, src, n)
+}
+
+# The CPU address of the buffer's current copy, for writes with no extra copy. Null on error.
+export function gl_buffer_ptr(buf: i32) -> ptr<u8> {
+    return flow_gl_buffer_ptr(buf)
+}
+
+# Slow path. Waits for the GPU to go idle, then copies the bytes out.
+export function gl_buffer_read(buf: i32, offset: i64, dst: ptr<u8>, n: i64) -> i32 {
+    return flow_gl_buffer_read(buf, offset, dst, n)
+}
+
+export function gl_buffer_free(buf: i32) -> i32 {
+    return flow_gl_buffer_free(buf)
+}
+
+# Resident textures. usage is a sum of GL_TEX_* flags.
+export function gl_texture_new(w: i32, h: i32, format: i32, usage: i32) -> i32 {
+    return flow_gl_texture_new(w, h, format, usage)
+}
+
+# Copy a whole image from `src` (bytes_per_row bytes per row).
+export function gl_texture_upload(tex: i32, src: ptr<u8>, bytes_per_row: i32) -> i32 {
+    return flow_gl_texture_upload(tex, src, bytes_per_row)
+}
+
+# Copy the rectangle (x, y, w, h). `src` points at the rectangle's first pixel.
+export function gl_texture_upload_rect(tex: i32, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>, bytes_per_row: i32) -> i32 {
+    return flow_gl_texture_upload_rect(tex, x, y, w, h, src, bytes_per_row)
+}
+
+# Slow path. Waits for the GPU to go idle, then copies the pixels out.
+export function gl_texture_read(tex: i32, dst: ptr<u8>, bytes_per_row: i32) -> i32 {
+    return flow_gl_texture_read(tex, dst, bytes_per_row)
+}
+
+export function gl_texture_free(tex: i32) -> i32 {
+    return flow_gl_texture_free(tex)
+}
+
+# Compile (once, cached by the hash of the source) and build a compute pipeline.
+export function gl_compute_pipeline(msl: string, entry: string) -> i32 {
+    return flow_gl_compute_pipeline(msl, entry)
+}
+
+# A render pipeline with no vertex buffers: vertices come from vertex_id.
+export function gl_render_pipeline(msl: string, vs_entry: string, fs_entry: string, color_format: i32, depth_format: i32, blend: i32) -> i32 {
+    let p: i32 = flow_gl_render_pipeline_begin(msl, vs_entry, fs_entry, color_format, depth_format, blend)
+    if p < 0 {
+        return p
+    }
+    if flow_gl_pipeline_build(p) != 0 {
+        flow_gl_pipeline_free(p)
+        return 0 - 1
+    }
+    return p
+}
+
+# Builder form for pipelines with vertex buffers: begin, then layouts and
+# attributes, then gl_render_pipeline_build. depth_format 0 means no depth.
+export function gl_render_pipeline_begin(msl: string, vs_entry: string, fs_entry: string, color_format: i32, depth_format: i32, blend: i32) -> i32 {
+    return flow_gl_render_pipeline_begin(msl, vs_entry, fs_entry, color_format, depth_format, blend)
+}
+
+export function gl_pipeline_vertex_layout(pipe: i32, slot: i32, stride: i32, per_instance: bool) -> i32 {
+    let mut s: i32 = 0
+    if per_instance {
+        s = 1
+    }
+    return flow_gl_pipeline_vertex_layout(pipe, slot, stride, s)
+}
+
+export function gl_pipeline_vertex_attr(pipe: i32, location: i32, slot: i32, format: i32, offset: i32) -> i32 {
+    return flow_gl_pipeline_vertex_attr(pipe, location, slot, format, offset)
+}
+
+# Cull mode and depth mode (GL_CULL_*, GL_DEPTH_*). Front faces wind counter-clockwise.
+export function gl_pipeline_state(pipe: i32, cull: i32, depth_mode: i32) -> i32 {
+    return flow_gl_pipeline_state(pipe, cull, depth_mode)
+}
+
+export function gl_render_pipeline_build(pipe: i32) -> i32 {
+    return flow_gl_pipeline_build(pipe)
+}
+
+export function gl_pipeline_free(pipe: i32) -> i32 {
+    return flow_gl_pipeline_free(pipe)
+}
+
+# Start a frame. Waits only when every frame slot is still in flight on the GPU.
+export function gl_begin_frame() -> i32 {
+    return flow_gl_begin_frame()
+}
+
+# Bindings stay set until replaced. Buffer slots and texture slots are the
+# Metal argument indices, shared by the vertex, fragment and compute stages.
+export function gl_bind_buffer(slot: i32, buf: i32, offset: i64) -> i32 {
+    return flow_gl_bind_buffer(slot, buf, offset)
+}
+
+export function gl_bind_texture(slot: i32, tex: i32) -> i32 {
+    return flow_gl_bind_texture(slot, tex)
+}
+
+export function gl_bind_sampler(slot: i32, linear: bool, repeat: bool) -> i32 {
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    if linear {
+        a = 1
+    }
+    if repeat {
+        b = 1
+    }
+    return flow_gl_bind_sampler(slot, a, b)
+}
+
+# Per-frame constants. The bytes go into a ring of uniform memory that is
+# reused every frame slot, and the slot is bound to that range. No allocation.
+export function gl_bind_bytes(slot: i32, src: ptr<u8>, n: i32) -> i32 {
+    return flow_gl_bind_bytes(slot, src, n)
+}
+
+# One thread per element: x * y * z threads, in groups the pipeline picks.
+export function gl_dispatch(pipe: i32, x: i32, y: i32, z: i32) -> i32 {
+    return flow_gl_dispatch(pipe, x, y, z)
+}
+
+# gx * gy * gz threadgroups of tx * ty * tz threads.
+export function gl_dispatch_groups(pipe: i32, gx: i32, gy: i32, gz: i32, tx: i32, ty: i32, tz: i32) -> i32 {
+    return flow_gl_dispatch_groups(pipe, gx, gy, gz, tx, ty, tz)
+}
+
+# Group counts from three u32 values in args_buf at offset.
+export function gl_dispatch_indirect(pipe: i32, args_buf: i32, offset: i64, tx: i32, ty: i32, tz: i32) -> i32 {
+    return flow_gl_dispatch_indirect(pipe, args_buf, offset, tx, ty, tz)
+}
+
+# Begin a render pass into texture `color` (GL_WINDOW for the window) and an
+# optional depth texture (0 for none).
+export function gl_pass_begin(color: i32, depth: i32, load: i32, r: f32, g: f32, b: f32, a: f32, clear_depth: f32) -> i32 {
+    return flow_gl_pass_begin(color, depth, load, r, g, b, a, clear_depth)
+}
+
+export function gl_draw(pipe: i32, topology: i32, first: i32, count: i32, instances: i32) -> i32 {
+    return flow_gl_draw(pipe, topology, first, count, instances)
+}
+
+export function gl_draw_indexed(pipe: i32, topology: i32, index_buf: i32, index_u32: bool, first_index: i32, count: i32, instances: i32) -> i32 {
+    let mut w: i32 = 0
+    if index_u32 {
+        w = 1
+    }
+    return flow_gl_draw_indexed(pipe, topology, index_buf, w, first_index, count, instances)
+}
+
+# Four u32 values in args_buf at offset: vertex count, instance count, first vertex, first instance.
+export function gl_draw_indirect(pipe: i32, topology: i32, args_buf: i32, offset: i64) -> i32 {
+    return flow_gl_draw_indirect(pipe, topology, args_buf, offset)
+}
+
+export function gl_pass_end() -> i32 {
+    return flow_gl_pass_end()
+}
+
+# Draw texture `src` over the whole of `dst` (GL_WINDOW for the window),
+# scaling with a linear filter. blend is GL_BLEND_NONE for a copy, or
+# GL_BLEND_PREMUL / GL_BLEND_ALPHA to composite, as for a CPU overlay.
+export function gl_blit(src: i32, dst: i32, blend: i32) -> i32 {
+    return flow_gl_blit(src, dst, blend)
+}
+
+# End the frame: commit it and show the window drawable if a pass drew into it.
+export function gl_present() -> i32 {
+    return flow_gl_present()
+}
+
+# End the frame without presenting. For offscreen and compute-only frames.
+export function gl_submit() -> i32 {
+    return flow_gl_submit()
+}
+
+# Block until every submitted frame has finished on the GPU.
+export function gl_wait_idle() -> i32 {
+    return flow_gl_wait_idle()
+}
+
+# GPU time of the last completed frame, from the command buffer timestamps.
+export function gl_gpu_time_ms() -> f64 {
+    return flow_gl_gpu_time_ms()
+}
+
+# Number of timed passes in the last completed frame, and the GPU time of one.
+export function gl_pass_count() -> i32 {
+    return flow_gl_pass_count()
+}
+
+export function gl_pass_time_ms(index: i32) -> f64 {
+    return flow_gl_pass_time_ms(index)
+}
