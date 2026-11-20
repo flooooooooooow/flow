@@ -9,7 +9,7 @@ const HEADER: string = "| Feature family | Primary implementation | Semantic/neg
 
 function tool_argv(mode: string, map: string) -> ptr<ProcStrs> {
     let a: ptr<ProcStrs> = sl_of3("./flow", "tool", "feature_evidence")
-    sl_push(a, mode)
+    if s_len(mode) > 0 { sl_push(a, mode) }
     if s_len(map) > 0 { sl_push2(a, "--map", map) }
     return a
 }
