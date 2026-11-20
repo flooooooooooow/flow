@@ -39,9 +39,9 @@ boundary V {
 }
 ```
 
-The golden normalizes the size and produces the following generated-source excerpt (not a standalone compilable program):
+The golden normalizes the size and produces the following generated-source excerpt (schematic, not a standalone compilable program; the emitted helper requires the imported PDE library and the fixture's `alpha` declaration):
 
-```text
+```flow-pseudocode
 const V_field_n: i32 = 8
 
 function V_field_step(
