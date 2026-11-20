@@ -1,0 +1,105 @@
+# gpu_live presentation test. Opens a hidden hidpi gfx window (no focus, not
+# drawn to the screen), attaches the Metal layer, presents six frames with a GPU
+# scene and a CPU HUD overlay, and checks:
+#   the drawable size equals the gfx framebuffer size (hidpi scale honoured),
+#   a drawable was acquired and presented for every frame,
+#   the overlay texture equals the CPU framebuffer after each frame, which
+#   exercises the dirty rectangle upload across the rotating frame slots,
+#   text keeps partial alpha (premultiplied coverage) on an alpha 0 background.
+# Run with: ./flow gfx tests/gpu_live/gl_present.flow
+# SKIP (exit 0) with no GPU unless FLOW_GL_REQUIRE=1.
+
+import "stdlib/gfx.flow"
+import "stdlib/gpu_live.flow"
+
+extern {
+    function getenv(name: string) -> string
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function strlen(s: string) -> i64
+    function malloc(n: i64) -> ptr<void>
+    function flow_gfx_pixels(ctx: ptr<void>, wh: ptr<i32>) -> ptr<u8>
+}
+
+function msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "struct VO { float4 p [[position]]; float2 uv; };\n" +
+        "vertex VO sc_vs(uint vid [[vertex_id]]) { float2 xy = float2(float((vid << 1) & 2u), float(vid & 2u)); VO o; o.p = float4(xy * 2.0 - 1.0, 0.0, 1.0); o.uv = xy; return o; }\n" +
+        "fragment float4 sc_fs(VO i [[stage_in]], constant float& t [[buffer(0)]]) { return float4(i.uv.x, i.uv.y * 0.5 + 0.25, 0.4 + 0.1 * sin(t), 1.0); }\n"
+}
+
+function main() -> i32 {
+    setenv("FLOW_GFX_HIDDEN", "1", 1)
+    if not gl_init(0) {
+        if strlen(getenv("FLOW_GL_REQUIRE")) > 0 {
+            println("FAIL gpu not available: " + gl_last_error())
+            return 1
+        }
+        println("SKIP gl_present: " + gl_last_error())
+        return 0
+    }
+    let g: Gfx = gfx_open_hidpi(480, 300, "gl_present_test", 0)
+    if g.ctx == null { println("no window"); return 2 }
+    gfx_poll(g)
+    gfx_poll(g)
+    if gl_attach_window(g.ctx, true) != 0 { println(gl_last_error()); return 3 }
+    gfx_poll(g)
+    let m: GfxMetrics = gfx_metrics(g)
+    let win: GlWindow = gl_window()
+    println("gfx framebuffer " + m.width + "x" + m.height + " scale " + m.scale + ", drawable " + win.width + "x" + win.height + " scale " + win.scale)
+    if win.width != m.width or win.height != m.height { println("drawable size differs from the framebuffer"); return 4 }
+    if not win.attached { return 5 }
+
+    let p: i32 = gl_render_pipeline(msl(), "sc_vs", "sc_fs", GL_BGRA8, 0, GL_BLEND_NONE)
+    if p < 0 { println(gl_last_error()); return 6 }
+    let wh: array<i32, 2> = [0, 0]
+    let mut f: i32 = 0
+    let mut partial: i64 = 0
+    while f < 6 {
+        gfx_poll(g)
+        if gl_begin_frame() != 0 { println(gl_last_error()); return 7 }
+        if gl_pass_begin(GL_WINDOW, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 8 }
+        let t: array<f32, 1> = [(f as f32) * 0.3]
+        gl_bind_bytes(0, t as ptr<u8>, 4)
+        gl_draw(p, GL_TRIANGLES, 0, 3, 1)
+        gl_pass_end()
+        if gl_overlay_begin(g.ctx) != 0 { println(gl_last_error()); return 9 }
+        let x0: i32 = 20 + f * 90
+        gfx_fill_rect(g, x0, 20, 60, 30, 200, 30, 30)
+        gfx_text(g, x0, 90, "FPS " + (60 + f), 28, 255, 255, 255)
+        if gl_overlay_present(x0 - 4, 10, 240, 120) != 0 { println(gl_last_error()); return 10 }
+        if gl_present() != 0 { println(gl_last_error()); return 11 }
+        gl_wait_idle()
+
+        # the overlay texture must equal the CPU framebuffer everywhere
+        let px: ptr<u8> = flow_gfx_pixels(g.ctx, wh as ptr<i32>)
+        let ow: i32 = wh[0]
+        let oh: i32 = wh[1]
+        let tex: i32 = gl_stat(GL_STAT_OVERLAY_TEXTURE) as i32
+        let back: ptr<u8> = malloc((ow * oh * 4) as i64) as ptr<u8>
+        if gl_texture_read(tex, back, ow * 4) != 0 { println(gl_last_error()); return 12 }
+        let mut bad: i64 = 0
+        let mut i: i32 = 0
+        while i < ow * oh * 4 {
+            if px[i] != back[i] { bad = bad + 1 }
+            i = i + 1
+        }
+        println("frame " + f + ": overlay texture differs from the framebuffer in " + bad + " bytes")
+        if bad != 0 { return 13 }
+        i = 3
+        while i < ow * oh * 4 {
+            if px[i] > 0 and px[i] < 255 { partial = partial + 1 }
+            i = i + 4
+        }
+        f = f + 1
+    }
+    println("pixels with partial alpha (text coverage): " + partial)
+    if partial < 50 { println("text lost its coverage"); return 14 }
+    println("drawables acquired: " + gl_stat(GL_STAT_DRAWABLES) + ", frames completed " + gl_stat(GL_STAT_FRAMES_COMPLETED))
+    if gl_stat(GL_STAT_DRAWABLES) != 6 { return 15 }
+    gl_detach_window()
+    gfx_present(g)
+    gfx_close(g)
+    gl_shutdown()
+    println("PASS gl_present")
+    return 0
+}

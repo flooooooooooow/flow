@@ -65,6 +65,7 @@ enum {
     FLOW_GL_STAT_DRAWABLES = 11, FLOW_GL_STAT_FRAME_SLOTS = 12,
     FLOW_GL_STAT_PASS_TIMING = 13, /* 1 when per-pass GPU timestamps work */
     FLOW_GL_STAT_UNIFIED_MEMORY = 14,
+    FLOW_GL_STAT_OVERLAY_TEXTURE = 15, /* handle of the overlay texture, for tests */
 };
 
 /* Lifecycle */

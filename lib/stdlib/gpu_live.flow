@@ -156,6 +156,8 @@ export const GL_STAT_DRAWABLES: i32 = 11
 export const GL_STAT_FRAME_SLOTS: i32 = 12
 export const GL_STAT_PASS_TIMING: i32 = 13
 export const GL_STAT_UNIFIED_MEMORY: i32 = 14
+# Handle of the texture gl_overlay_present uploads to. For tests.
+export const GL_STAT_OVERLAY_TEXTURE: i32 = 15
 
 # Open the device. Returns true when the GPU path is ready. False when there is
 # no Metal device, the platform is not macOS, or FLOW_GL_FORCE_OFF=1 is set.
@@ -274,6 +276,9 @@ export function gl_texture_upload(tex: i32, src: ptr<u8>, bytes_per_row: i32) ->
 }
 
 # Copy the rectangle (x, y, w, h). `src` points at the rectangle's first pixel.
+# On a GL_TEX_STREAM texture this writes only the copy for the current frame
+# slot, so a dirty rectangle must also cover what changed in the previous
+# frames. gl_overlay_present does that for a CPU overlay.
 export function gl_texture_upload_rect(tex: i32, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>, bytes_per_row: i32) -> i32 {
     return flow_gl_texture_upload_rect(tex, x, y, w, h, src, bytes_per_row)
 }

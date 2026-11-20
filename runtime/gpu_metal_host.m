@@ -144,6 +144,7 @@ static int g_frame_passes = 0;     /* timed passes encoded in the open frame */
 static double g_ts_scale = 1.0;    /* GPU timestamp ticks to nanoseconds */
 
 /* window */
+static int32_t g_ov_tex = 0;
 static CAMetalLayer *g_layer;
 static void *g_gfx_ctx;
 static id<CAMetalDrawable> g_drawable;
@@ -399,6 +400,7 @@ int64_t flow_gl_stat(int32_t which)
     case FLOW_GL_STAT_FRAME_SLOTS: return g_nslots;
     case FLOW_GL_STAT_PASS_TIMING: return g_timing_ok ? 1 : 0;
     case FLOW_GL_STAT_UNIFIED_MEMORY: return g_ready ? 1 : 0;
+    case FLOW_GL_STAT_OVERLAY_TEXTURE: return g_ov_tex;
     }
     return -1;
 }
@@ -1428,10 +1430,10 @@ int32_t flow_gl_blit(int32_t src, int32_t dst, int32_t blend)
 /* CPU overlay: the gfx framebuffer, drawn with alpha 0 as background, is
  * uploaded to a stream texture and composited with premultiplied blending. */
 typedef uint8_t *(*pixels_fn)(void *, int32_t *);
-static int32_t g_ov_tex = 0;
 static int g_ov_w, g_ov_h;
 static uint8_t *g_ov_px;
-static int g_ov_rect[MAX_FRAMES][4]; /* x0, y0, x1, y1 of the last presents */
+#define OV_HIST (MAX_FRAMES + 1)
+static int g_ov_rect[OV_HIST][4]; /* x0, y0, x1, y1 of the last presents */
 static int g_ov_n;                   /* rects recorded */
 static bool g_ov_dirty_all;
 
@@ -1459,7 +1461,7 @@ int32_t flow_gl_overlay_begin(void *gfx_ctx)
     if (g_ov_dirty_all) {
         memset(px, 0, (size_t)g_ov_w * (size_t)g_ov_h * 4u);
     } else if (g_ov_n > 0) {
-        int *r = g_ov_rect[(g_ov_n - 1) % MAX_FRAMES];
+        int *r = g_ov_rect[(g_ov_n - 1) % OV_HIST];
         for (int y = r[1]; y < r[3]; y++) memset(px + ((size_t)y * (size_t)g_ov_w + (size_t)r[0]) * 4u, 0, (size_t)(r[2] - r[0]) * 4u);
     }
     return 0;
@@ -1482,15 +1484,15 @@ int32_t flow_gl_overlay_present(int32_t x, int32_t y, int32_t w, int32_t h)
             if (g_ov_tex < 0) { g_ov_tex = 0; return -1; }
             g_ov_dirty_all = true;
         }
-        int slot = g_ov_n % MAX_FRAMES;
+        int slot = g_ov_n % OV_HIST;
         g_ov_rect[slot][0] = x; g_ov_rect[slot][1] = y; g_ov_rect[slot][2] = x + w; g_ov_rect[slot][3] = y + h;
         g_ov_n++;
         /* Each texture copy is stale by up to nslots frames: upload the union of the last nslots rectangles. */
         int ux0 = x, uy0 = y, ux1 = x + w, uy1 = y + h;
         if (g_ov_dirty_all) { ux0 = 0; uy0 = 0; ux1 = g_ov_w; uy1 = g_ov_h; }
         else {
-            for (int k = 1; k < g_nslots && k < g_ov_n; k++) {
-                int *r = g_ov_rect[(g_ov_n - 1 - k) % MAX_FRAMES];
+            for (int k = 1; k <= g_nslots && k < g_ov_n; k++) {
+                int *r = g_ov_rect[(g_ov_n - 1 - k) % OV_HIST];
                 if (r[2] <= r[0] || r[3] <= r[1]) continue;
                 if (ux1 <= ux0 || uy1 <= uy0) { ux0 = r[0]; uy0 = r[1]; ux1 = r[2]; uy1 = r[3]; continue; }
                 if (r[0] < ux0) ux0 = r[0];
