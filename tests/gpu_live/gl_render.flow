@@ -1,0 +1,248 @@
+# gpu_live render test: a triangle and a textured quad drawn into an offscreen
+# texture, checked against known pixels and against a CPU rasteriser. Also
+# covers instancing, an indirect draw, depth testing and pipeline errors.
+# Exit 0 passes, a nonzero number names the failed check. SKIP (exit 0) when
+# there is no GPU, unless FLOW_GL_REQUIRE=1.
+
+import "stdlib/gpu_live.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function strlen(s: string) -> i64
+}
+
+function msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "struct VO { float4 p [[position]]; float4 c; float2 uv; };\n" +
+        "constant float2 TRI[3] = { float2(-0.8, -0.8), float2(0.8, -0.8), float2(0.0, 0.8) };\n" +
+        "vertex VO tri_vs(uint vid [[vertex_id]], constant float4& k [[buffer(0)]]) { VO o; o.p = float4(TRI[vid], k.x, 1.0); o.c = float4(k.yzw, 1.0); o.uv = float2(0.0); return o; }\n" +
+        "fragment float4 col_fs(VO i [[stage_in]]) { return i.c; }\n" +
+        "vertex VO inst_vs(uint vid [[vertex_id]], uint iid [[instance_id]]) { VO o; float2 q = TRI[vid] * 0.4; q.x += iid == 0 ? -0.5 : 0.5; o.p = float4(q, 0.0, 1.0); o.c = iid == 0 ? float4(1, 0, 0, 1) : float4(0, 1, 0, 1); o.uv = float2(0.0); return o; }\n" +
+        "struct VIn { float2 pos [[attribute(0)]]; float2 uv [[attribute(1)]]; };\n" +
+        "vertex VO quad_vs(VIn v [[stage_in]]) { VO o; o.p = float4(v.pos, 0.0, 1.0); o.c = float4(0.0); o.uv = v.uv; return o; }\n" +
+        "fragment float4 tex_fs(VO i [[stage_in]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]]) { return t.sample(s, i.uv); }\n"
+}
+
+function getpx(img: ptr<u8>, w: i32, x: i32, y: i32, c: i32) -> i32 {
+    return img[(y * w + x) * 4 + c] as i32
+}
+
+function absi(v: i32) -> i32 {
+    if v < 0 { return 0 - v }
+    return v
+}
+
+# CPU rasteriser reference for the same frame. Pixel centres, edge functions.
+function cpu_frame(img: ptr<u8>, n: i32, chk: ptr<u8>) -> void {
+    let mut y: i32 = 0
+    while y < n {
+        let mut x: i32 = 0
+        while x < n {
+            let nx: f32 = ((x as f32) + 0.5) / (n as f32) * 2.0 - 1.0
+            let ny: f32 = 1.0 - ((y as f32) + 0.5) / (n as f32) * 2.0
+            let o: i32 = (y * n + x) * 4
+            img[o] = 0
+            img[o + 1] = 0
+            img[o + 2] = 0
+            img[o + 3] = 255
+            # triangle (-0.8,-0.8) (0.8,-0.8) (0,0.8), red
+            let half: f32 = (0.8 - ny) / 2.0
+            let inside: bool = ny >= 0.0 - 0.8 and ny <= 0.8 and nx <= half and nx >= 0.0 - half
+            if inside {
+                img[o] = 255
+                img[o + 1] = 0
+                img[o + 2] = 0
+            }
+            # textured quad: x 0.25..0.75, y -0.75..0.75, 4x4 nearest
+            if nx >= 0.25 and nx <= 0.75 and ny >= 0.0 - 0.75 and ny <= 0.75 {
+                let u: f32 = (nx - 0.25) / 0.5
+                let v: f32 = (0.75 - ny) / 1.5
+                let mut tx: i32 = (u * 4.0) as i32
+                let mut ty: i32 = (v * 4.0) as i32
+                if tx > 3 { tx = 3 }
+                if ty > 3 { ty = 3 }
+                let t: i32 = (ty * 4 + tx) * 4
+                img[o] = chk[t]
+                img[o + 1] = chk[t + 1]
+                img[o + 2] = chk[t + 2]
+            }
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+function main() -> i32 {
+    if not gl_init(0) {
+        let req: string = getenv("FLOW_GL_REQUIRE")
+        if strlen(req) > 0 {
+            println("FAIL gpu not available: " + gl_last_error())
+            return 1
+        }
+        println("SKIP gl_render: " + gl_last_error())
+        return 0
+    }
+    let n: i32 = 64
+    let target: i32 = gl_texture_new(n, n, GL_RGBA8, GL_TEX_TARGET + GL_TEX_SAMPLED)
+    if target < 0 { println(gl_last_error()); return 2 }
+
+    # 4x4 checker, uploaded once
+    let chk: ptr<u8> = malloc(64) as ptr<u8>
+    let mut ty: i32 = 0
+    while ty < 4 {
+        let mut tx: i32 = 0
+        while tx < 4 {
+            let o: i32 = (ty * 4 + tx) * 4
+            if (tx + ty) % 2 == 0 {
+                chk[o] = 255
+                chk[o + 1] = 255
+                chk[o + 2] = 0
+            } else {
+                chk[o] = 0
+                chk[o + 1] = 128
+                chk[o + 2] = 255
+            }
+            chk[o + 3] = 255
+            tx = tx + 1
+        }
+        ty = ty + 1
+    }
+    let tex: i32 = gl_texture_new(4, 4, GL_RGBA8, GL_TEX_SAMPLED)
+    if gl_texture_upload(tex, chk, 16) != 0 { println(gl_last_error()); return 3 }
+
+    # quad: position and uv, indexed
+    let vb: ptr<f32> = malloc(64) as ptr<f32>
+    vb[0] = 0.25
+    vb[1] = 0.75
+    vb[2] = 0.0
+    vb[3] = 0.0
+    vb[4] = 0.75
+    vb[5] = 0.75
+    vb[6] = 1.0
+    vb[7] = 0.0
+    vb[8] = 0.25
+    vb[9] = 0.0 - 0.75
+    vb[10] = 0.0
+    vb[11] = 1.0
+    vb[12] = 0.75
+    vb[13] = 0.0 - 0.75
+    vb[14] = 1.0
+    vb[15] = 1.0
+    let ib: ptr<u16> = malloc(12) as ptr<u16>
+    ib[0] = 0
+    ib[1] = 2
+    ib[2] = 1
+    ib[3] = 1
+    ib[4] = 2
+    ib[5] = 3
+    let qv: i32 = gl_buffer_new(64, 0)
+    let qi: i32 = gl_buffer_new(12, 0)
+    gl_buffer_write(qv, 0, vb as ptr<u8>, 64)
+    gl_buffer_write(qi, 0, ib as ptr<u8>, 12)
+
+    let ptri: i32 = gl_render_pipeline(msl(), "tri_vs", "col_fs", GL_RGBA8, 0, GL_BLEND_NONE)
+    if ptri < 0 { println(gl_last_error()); return 4 }
+    let pq: i32 = gl_render_pipeline_begin(msl(), "quad_vs", "tex_fs", GL_RGBA8, 0, GL_BLEND_NONE)
+    if pq < 0 { return 5 }
+    gl_pipeline_vertex_layout(pq, 0, 16, false)
+    gl_pipeline_vertex_attr(pq, 0, 0, GL_V_FLOAT2, 0)
+    gl_pipeline_vertex_attr(pq, 1, 0, GL_V_FLOAT2, 8)
+    if gl_render_pipeline_build(pq) != 0 { println(gl_last_error()); return 6 }
+
+    gl_begin_frame()
+    if gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 7 }
+    let k: array<f32, 4> = [0.5, 1.0, 0.0, 0.0]
+    gl_bind_bytes(0, k as ptr<u8>, 16)
+    if gl_draw(ptri, GL_TRIANGLES, 0, 3, 1) != 0 { println(gl_last_error()); return 8 }
+    gl_bind_buffer(GL_VERTEX_SLOT_BASE, qv, 0)
+    gl_bind_texture(0, tex)
+    gl_bind_sampler(0, false, false)
+    if gl_draw_indexed(pq, GL_TRIANGLES, qi, false, 0, 6, 1) != 0 { println(gl_last_error()); return 9 }
+    gl_pass_end()
+    gl_submit()
+    gl_wait_idle()
+    let gpu: ptr<u8> = malloc((n * n * 4) as i64) as ptr<u8>
+    if gl_texture_read(target, gpu, n * 4) != 0 { println(gl_last_error()); return 10 }
+
+    # known pixels
+    if getpx(gpu, n, 32, 40, 0) != 255 or getpx(gpu, n, 32, 40, 1) != 0 { println("triangle centre not red"); return 11 }
+    if getpx(gpu, n, 2, 2, 0) != 0 or getpx(gpu, n, 2, 2, 3) != 255 { println("corner not black"); return 12 }
+    # quad texel (0,0) is yellow, at pixel x 40..43, y 8..19
+    if getpx(gpu, n, 41, 10, 0) != 255 or getpx(gpu, n, 41, 10, 1) != 255 or getpx(gpu, n, 41, 10, 2) != 0 { println("quad texel 0,0 wrong"); return 13 }
+    # texel (1,0) is blue-ish, x 44..47
+    if getpx(gpu, n, 45, 10, 2) != 255 or getpx(gpu, n, 45, 10, 1) != 128 { println("quad texel 1,0 wrong"); return 14 }
+
+    # against the CPU rasteriser
+    let ref: ptr<u8> = malloc((n * n * 4) as i64) as ptr<u8>
+    cpu_frame(ref, n, chk)
+    let mut over: i32 = 0
+    let mut worst: i32 = 0
+    let mut i: i32 = 0
+    while i < n * n * 4 {
+        let d: i32 = absi((gpu[i] as i32) - (ref[i] as i32))
+        if d > 8 { over = over + 1 }
+        if d > worst { worst = d }
+        i = i + 1
+    }
+    println("cpu reference: " + over + " channel values off by more than 8, worst " + worst)
+    # Triangle edges differ in coverage rules; a clean frame is well under this.
+    if over > 120 { return 15 }
+
+    # instancing through an indirect draw
+    let target2: i32 = gl_texture_new(n, n, GL_RGBA8, GL_TEX_TARGET + GL_TEX_SAMPLED)
+    let pinst: i32 = gl_render_pipeline(msl(), "inst_vs", "col_fs", GL_RGBA8, 0, GL_BLEND_NONE)
+    let args: ptr<u32> = malloc(16) as ptr<u32>
+    args[0] = 3
+    args[1] = 2
+    args[2] = 0
+    args[3] = 0
+    let ab: i32 = gl_buffer_new(16, 0)
+    gl_buffer_write(ab, 0, args as ptr<u8>, 16)
+    gl_begin_frame()
+    gl_pass_begin(target2, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
+    if gl_draw_indirect(pinst, GL_TRIANGLES, ab, 0) != 0 { println(gl_last_error()); return 16 }
+    gl_pass_end()
+    gl_submit()
+    let g2: ptr<u8> = malloc((n * n * 4) as i64) as ptr<u8>
+    gl_texture_read(target2, g2, n * 4)
+    if getpx(g2, n, 16, 36, 0) != 255 or getpx(g2, n, 16, 36, 1) != 0 { println("instance 0 missing"); return 17 }
+    if getpx(g2, n, 48, 36, 1) != 255 or getpx(g2, n, 48, 36, 0) != 0 { println("instance 1 missing"); return 18 }
+    if getpx(g2, n, 32, 36, 0) != 0 or getpx(g2, n, 32, 36, 1) != 0 { println("gap between instances not black"); return 19 }
+
+    # depth: near blue (z 0.3) then far red (z 0.9) over it. Blue stays.
+    let target3: i32 = gl_texture_new(n, n, GL_RGBA8, GL_TEX_TARGET)
+    let depth: i32 = gl_texture_new(n, n, GL_DEPTH32F, GL_TEX_TARGET)
+    let pd: i32 = gl_render_pipeline_begin(msl(), "tri_vs", "col_fs", GL_RGBA8, GL_DEPTH32F, GL_BLEND_NONE)
+    gl_pipeline_state(pd, GL_CULL_NONE, GL_DEPTH_WRITE)
+    if gl_render_pipeline_build(pd) != 0 { println(gl_last_error()); return 20 }
+    gl_begin_frame()
+    if gl_pass_begin(target3, depth, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 21 }
+    let kb: array<f32, 4> = [0.3, 0.0, 0.0, 1.0]
+    gl_bind_bytes(0, kb as ptr<u8>, 16)
+    gl_draw(pd, GL_TRIANGLES, 0, 3, 1)
+    let kr: array<f32, 4> = [0.9, 1.0, 0.0, 0.0]
+    gl_bind_bytes(0, kr as ptr<u8>, 16)
+    gl_draw(pd, GL_TRIANGLES, 0, 3, 1)
+    gl_pass_end()
+    gl_submit()
+    let g3: ptr<u8> = malloc((n * n * 4) as i64) as ptr<u8>
+    gl_texture_read(target3, g3, n * 4)
+    if getpx(g3, n, 32, 40, 2) != 255 or getpx(g3, n, 32, 40, 0) != 0 { println("depth test let the far triangle through"); return 22 }
+
+    # misuse returns codes
+    if gl_draw(ptri, GL_TRIANGLES, 0, 3, 1) == 0 { println("draw outside a pass succeeded"); return 23 }
+    gl_begin_frame()
+    gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
+    if gl_draw(pd, GL_TRIANGLES, 0, 3, 1) == 0 { println("depth pipeline in a pass without depth succeeded"); return 24 }
+    if gl_pass_begin(target2 + 12345, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) == 0 { return 25 }
+    gl_pass_end()
+    gl_submit()
+    if gl_render_pipeline("garbage", "a", "b", GL_RGBA8, 0, 0) >= 0 { return 26 }
+    if gl_pass_begin(0, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) == 0 { println("window pass with no window succeeded"); return 27 }
+    gl_submit()
+    gl_wait_idle()
+    gl_shutdown()
+    println("PASS gl_render")
+    return 0
+}
