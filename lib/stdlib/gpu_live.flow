@@ -65,6 +65,7 @@ extern {
     function flow_gl_pass_begin_noattach(w: i32, h: i32) -> i32
     function flow_gl_pass_name(name: string) -> i32
     function flow_gl_pass_label(index: i32) -> string
+    function flow_gl_overlay_target(dst: i32) -> i32
     function flow_gl_overlay_begin(gfx_ctx: ptr<void>) -> i32
     function flow_gl_overlay_present(x: i32, y: i32, w: i32, h: i32) -> i32
     function flow_gl_pass_end() -> i32
@@ -435,6 +436,12 @@ export function gl_pass_label(index: i32) -> string {
 # calls. gl_overlay_present(x, y, w, h) uploads only that rectangle (plus what
 # older frame slots still need) and composites it with GL_BLEND_PREMUL.
 # Pixels drawn outside the rectangle you pass are not shown and not cleared.
+# Composite the overlay into texture `dst` (GL_TEX_TARGET) instead of the window.
+# GL_WINDOW (0) restores the default. Used for headless captures.
+export function gl_overlay_target(dst: i32) -> i32 {
+    return flow_gl_overlay_target(dst)
+}
+
 export function gl_overlay_begin(ctx: ptr<void>) -> i32 {
     return flow_gl_overlay_begin(ctx)
 }

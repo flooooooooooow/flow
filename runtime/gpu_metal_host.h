@@ -129,6 +129,7 @@ int32_t flow_gl_draw_indirect(int32_t pipe, int32_t topology, int32_t args_buf, 
 int32_t flow_gl_pass_begin_noattach(int32_t w, int32_t h);
 int32_t flow_gl_pass_name(const char* name);       /* names the next pass */
 int32_t flow_gl_pass_end(void);
+int32_t flow_gl_overlay_target(int32_t dst);       /* 0 = window (default) */
 int32_t flow_gl_overlay_begin(void* gfx_ctx);
 int32_t flow_gl_overlay_present(int32_t x, int32_t y, int32_t w, int32_t h);
 int32_t flow_gl_blit(int32_t src, int32_t dst, int32_t blend);

@@ -1430,6 +1430,7 @@ int32_t flow_gl_blit(int32_t src, int32_t dst, int32_t blend)
 /* CPU overlay: the gfx framebuffer, drawn with alpha 0 as background, is
  * uploaded to a stream texture and composited with premultiplied blending. */
 typedef uint8_t *(*pixels_fn)(void *, int32_t *);
+static int32_t g_ov_dst = 0;
 static int g_ov_w, g_ov_h;
 static uint8_t *g_ov_px;
 #define OV_HIST (MAX_FRAMES + 1)
@@ -1451,6 +1452,14 @@ static uint8_t *ov_pixels(void *ctx)
         if (g_ov_tex > 0) { flow_gl_texture_free(g_ov_tex); g_ov_tex = 0; }
     }
     return px;
+}
+
+int32_t flow_gl_overlay_target(int32_t dst)
+{
+    NEED_READY();
+    if (dst != 0 && !tab_get(dst, KIND_TEXTURE)) return fail("overlay_target: invalid texture handle %d", dst);
+    g_ov_dst = dst;
+    return 0;
 }
 
 int32_t flow_gl_overlay_begin(void *gfx_ctx)
@@ -1508,7 +1517,7 @@ int32_t flow_gl_overlay_present(int32_t x, int32_t y, int32_t w, int32_t h)
         }
         g_next_name[0] = 0;
         snprintf(g_next_name, sizeof g_next_name, "overlay");
-        return flow_gl_blit(g_ov_tex, 0, FLOW_GL_BLEND_PREMUL);
+        return flow_gl_blit(g_ov_tex, g_ov_dst, FLOW_GL_BLEND_PREMUL);
     }
 }
 

@@ -59,6 +59,7 @@ double flow_gl_pass_time_ms(int32_t i) { (void)i; return -1.0; }
 int32_t flow_gl_buffer_wrap(uint8_t *p, int64_t n) { (void)p; (void)n; return -1; }
 int32_t flow_gl_pass_begin_noattach(int32_t w, int32_t h) { (void)w; (void)h; return -1; }
 int32_t flow_gl_pass_name(const char *n) { (void)n; return -1; }
+int32_t flow_gl_overlay_target(int32_t d) { (void)d; return -1; }
 int32_t flow_gl_overlay_begin(void *c) { (void)c; return -1; }
 int32_t flow_gl_overlay_present(int32_t x, int32_t y, int32_t w, int32_t h) { (void)x; (void)y; (void)w; (void)h; return -1; }
 const char *flow_gl_pass_label(int32_t i) { (void)i; return ""; }
