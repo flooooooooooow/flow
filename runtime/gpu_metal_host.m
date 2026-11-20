@@ -938,9 +938,12 @@ int32_t flow_gl_pass_name(const char *name)
 
 const char *flow_gl_pass_label(int32_t i)
 {
-    static __thread char buf[32];
+    /* Rotating buffers, so several labels can be alive in one expression. */
+    static __thread char bufs[8][32];
+    static __thread int next;
+    char *buf = bufs[next++ & 7];
     pthread_mutex_lock(&g_done_lock);
-    if (i >= 0 && i < g_pass_n) snprintf(buf, sizeof buf, "%s", g_last_names[i]); else buf[0] = 0;
+    if (i >= 0 && i < g_pass_n) snprintf(buf, 32, "%s", g_last_names[i]); else buf[0] = 0;
     pthread_mutex_unlock(&g_done_lock);
     return buf;
 }

@@ -1,0 +1,101 @@
+# gpu_live resident-resource test: upload once, run 1000 frames of compute and
+# render work with per-frame constants and a stream buffer, and check that no
+# resource, pipeline, shader library or device memory is created after warm-up,
+# that process memory stays flat, and that every frame really ran on the GPU
+# (a counter kernel must read exactly 1000 at the end).
+
+import "stdlib/gpu_live.flow"
+
+extern {
+    function getenv(name: string) -> string
+    function strlen(s: string) -> i64
+}
+
+function msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "kernel void count(device atomic_uint* c [[buffer(0)]], device const float* s [[buffer(1)]], constant float& t [[buffer(2)]], uint i [[thread_position_in_grid]]) {\n" +
+        "  if (i == 0) atomic_fetch_add_explicit(c, 1u, memory_order_relaxed);\n" +
+        "  if (i == 1) atomic_fetch_add_explicit(c + 1, uint(s[0] + t * 0.0), memory_order_relaxed);\n}\n" +
+        "struct VO { float4 p [[position]]; };\n" +
+        "vertex VO fs_vs(uint vid [[vertex_id]]) { float2 xy = float2(float((vid << 1) & 2u), float(vid & 2u)); VO o; o.p = float4(xy * 2.0 - 1.0, 0.0, 1.0); return o; }\n" +
+        "fragment float4 fs_fs(VO i [[stage_in]], constant float& t [[buffer(0)]]) { return float4(fract(i.p.x / 64.0 + t), fract(i.p.y / 64.0), 0.5, 1.0); }\n"
+}
+
+function main() -> i32 {
+    if not gl_init(0) {
+        if strlen(getenv("FLOW_GL_REQUIRE")) > 0 {
+            println("FAIL gpu not available: " + gl_last_error())
+            return 1
+        }
+        println("SKIP gl_resident: " + gl_last_error())
+        return 0
+    }
+    let w: i32 = 640
+    let h: i32 = 360
+    let counter: i32 = gl_buffer_new(16, 0)
+    let stream: i32 = gl_buffer_new(64, GL_BUF_STREAM)
+    let target: i32 = gl_texture_new(w, h, GL_RGBA8, GL_TEX_TARGET + GL_TEX_SAMPLED)
+    let cp: i32 = gl_compute_pipeline(msl(), "count")
+    let rp: i32 = gl_render_pipeline(msl(), "fs_vs", "fs_fs", GL_RGBA8, 0, GL_BLEND_NONE)
+    if counter < 0 or stream < 0 or target < 0 or cp < 0 or rp < 0 { println(gl_last_error()); return 2 }
+    let zero: array<u32, 4> = [0, 0, 0, 0]
+    gl_buffer_write(counter, 0, zero as ptr<u8>, 16)
+
+    let mut f: i32 = 0
+    let mut allocs0: i64 = 0
+    let mut dev0: i64 = 0
+    let mut rss0: i64 = 0
+    let mut peak: i64 = 0
+    let mut one: i32 = 0
+    while f < 1020 {
+        if f == 20 {
+            gl_wait_idle()
+            allocs0 = gl_stat(GL_STAT_ALLOCATIONS)
+            dev0 = gl_stat(GL_STAT_DEVICE_BYTES)
+            rss0 = gl_stat(GL_STAT_PROCESS_RSS)
+        }
+        if gl_begin_frame() != 0 { println(gl_last_error()); return 3 }
+        let sp: ptr<f32> = gl_buffer_ptr(stream) as ptr<f32>
+        sp[0] = 1.0
+        let t: array<f32, 1> = [(f as f32) * 0.01]
+        gl_bind_buffer(0, counter, 0)
+        gl_bind_buffer(1, stream, 0)
+        gl_bind_bytes(2, t as ptr<u8>, 4)
+        gl_pass_name("count")
+        if gl_dispatch(cp, 64, 1, 1) != 0 { println(gl_last_error()); return 4 }
+        gl_pass_name("scene")
+        if gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 5 }
+        gl_bind_bytes(0, t as ptr<u8>, 4)
+        if gl_draw(rp, GL_TRIANGLES, 0, 3, 1) != 0 { println(gl_last_error()); return 6 }
+        gl_pass_end()
+        if gl_present() != 0 { println(gl_last_error()); return 7 }
+        if f >= 20 {
+            let r: i64 = gl_stat(GL_STAT_PROCESS_RSS)
+            if r - rss0 > peak { peak = r - rss0 }
+        }
+        f = f + 1
+    }
+    gl_wait_idle()
+    let allocs1: i64 = gl_stat(GL_STAT_ALLOCATIONS)
+    let dev1: i64 = gl_stat(GL_STAT_DEVICE_BYTES)
+    let rss1: i64 = gl_stat(GL_STAT_PROCESS_RSS)
+    println("allocations after warm-up: " + (allocs1 - allocs0))
+    println("device bytes: " + dev0 + " -> " + dev1)
+    println("process RSS: " + rss0 + " -> " + rss1 + " (peak growth " + peak + ")")
+    println("frames submitted " + gl_stat(GL_STAT_FRAMES_SUBMITTED) + " completed " + gl_stat(GL_STAT_FRAMES_COMPLETED))
+    if allocs1 != allocs0 { println("something allocated per frame"); return 8 }
+    if dev1 != dev0 { println("device memory changed"); return 9 }
+    if peak > 16 * 1024 * 1024 { println("process memory grew"); return 10 }
+    if gl_stat(GL_STAT_LIBRARY_COMPILES) != 1 { println("library compiled " + gl_stat(GL_STAT_LIBRARY_COMPILES) + " times"); return 11 }
+    if gl_stat(GL_STAT_BUFFERS) != 2 or gl_stat(GL_STAT_TEXTURES) != 1 or gl_stat(GL_STAT_PIPELINES) != 2 { return 12 }
+
+    let out: ptr<u32> = gl_buffer_ptr(counter) as ptr<u32>
+    println("counter " + (out[0] as i64) + " " + (out[1] as i64))
+    if out[0] != 1020 or out[1] != 1020 { println("GPU did not run every frame"); return 13 }
+    println("passes " + gl_pass_count() + ": " + gl_pass_label(0) + " " + gl_pass_time_ms(0) + " ms, " + gl_pass_label(1) + " " + gl_pass_time_ms(1) + " ms; frame " + gl_gpu_time_ms() + " ms")
+    if gl_gpu_time_ms() <= 0.0 { return 14 }
+    if gl_pass_count() != 2 { return 15 }
+    gl_shutdown()
+    println("PASS gl_resident")
+    return 0
+}
