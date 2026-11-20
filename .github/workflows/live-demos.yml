@@ -106,3 +106,5 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Exercise documentation routes and browser features
         run: node scripts/check_live_demos.mjs --docs-browser --wiki build/wiki
+      - name: Require a real terminating WASM demo to complete
+        run: node scripts/check_live_demos.mjs --browser --name hello_world --require-completion hello_world
