@@ -1,8 +1,7 @@
 # Resident GPU host (gpu_live)
 
-Status: interface frozen for the first release, extended on request of the
-driving simulator (see "Answers to the consumer requests"). Measured numbers
-are filled in below as they are taken.
+Status: first release, extended on request of the driving simulator (see
+"Answers to the consumer requests").
 
 `lib/stdlib/gpu_live.flow` gives a Flow program a Metal device that stays open
 for the life of the process. A game creates buffers, textures and pipelines
@@ -114,7 +113,7 @@ gl_draw_indexed(pipe, topology, index_buf, index_u32, first_index, count, instan
 gl_draw_indirect(pipe, topology, args_buf, offset)
 gl_pass_begin_noattach(w, h)    gl_pass_name(name)    gl_pass_label(i) -> string
 gl_pass_end()
-gl_overlay_begin(ctx: ptr<void>)   gl_overlay_present(x, y, w, h)
+gl_overlay_begin(ctx: ptr<void>)   gl_overlay_present(x, y, w, h)   gl_overlay_target(dst)
 gl_blit(src, dst, blend)
 gl_present()    gl_submit()    gl_wait_idle()
 gl_gpu_time_ms() -> f64   gl_pass_count() -> i32   gl_pass_time_ms(i) -> f64
@@ -200,15 +199,131 @@ written MSL may use any entry names and any buffer indices.
 
 ## Measured numbers
 
-To be filled from `tests/gpu_live/bench` runs.
+Machine: Apple M4 Max, macOS 26.2, a 3024x1964 display at 120 Hz. The Mac was
+shared and busy (load average above 100 at times), so read every figure as
+approximate. The workload is one full-screen fragment pass: eleven rounds of
+`sin` and `cos` on a warped coordinate, built once with the typed expressions of
+`stdlib/gpu_shader.flow`. The old path ran that same shader through a render job.
+
+Before and after, per frame:
+
+| Frame size | Old path (render job) | New path, no present | New path, presented in a window |
+|---|---|---|---|
+| 1440x900 | 51.8 ms, 19 fps | CPU 0.08 ms, GPU 0.14 ms, about 11,800 fps | 120 fps (display limit), GPU 0.32 ms |
+| 2880x1800 | 76.4 ms, 13 fps | CPU 0.24 ms, GPU 0.63 ms, about 4,000 fps | 120 fps (display limit), GPU 1.15 ms |
+
+How each column was measured:
+
+- Old path: `gpu_job_run` wall time per job with `FLOW_GPU_BACKENDS=metal`, mean of
+  the 5 jobs after the first. It covers writing the job directory, launching the
+  host, compiling the shader, rendering, writing and reading the RGBA file, and
+  the comparison. The first job of a process took 609 ms and 567 ms because it
+  also builds the host with `xcrun clang`. The old path never shows the frame.
+- New path, no present: the pass renders into an offscreen texture and the frame
+  is submitted without a drawable. CPU time is the time inside
+  `gl_begin_frame` through `gl_submit`. GPU time is the mean of
+  `gl_gpu_time_ms` over 300 frames. The frame rate is the achieved rate of
+  that loop with three frames in flight.
+- New path, presented: a visible window that is never key and never activated
+  (`FLOW_GFX_HIDDEN=2`), 240 timed frames. The compositor paces presentation to
+  the display even with vsync off, so every presented loop ran at 120 fps and the
+  CPU time inside the frame calls (8.3 ms) is time spent waiting for a drawable.
+  That wait is not CPU work. A hidden window (`FLOW_GFX_HIDDEN=1`) is not paced
+  and gave erratic rates, so no figure here comes from one.
+
+Variants at 2880x1800 in the paced run (the window path is the same render, blit
+and present):
+
+| Variant | GPU ms | Frame rate |
+|---|---|---|
+| direct to the window | 1.15 | 120 |
+| offscreen texture, then `gl_blit` to the window | 1.32 | 120 |
+| the above plus a CPU overlay, whole framebuffer uploaded | 1.53 | 81 (12.2 ms per frame) |
+| the above, 600x200 dirty rectangle uploaded | 1.44 | 120 |
+
+At 1440x900 all four ran at 120 fps.
+
+Cost of moving a CPU overlay to the GPU, measured without a window (mean of 100
+calls, `gl_texture_upload` against `gl_texture_upload_rect`):
+
+| Texture | Whole image | 600x200 rectangle |
+|---|---|---|
+| 1440x900 RGBA8 (5.2 MB) | 0.17 ms | 0.019 ms |
+| 2880x1800 RGBA8 (20.7 MB) | 1.05 ms | 0.033 ms |
+
+A whole-frame overlay at 2880x1800 also costs the CPU a clear of the previous
+overlay area and the drawing itself, which together with the 1 ms upload made
+some frames miss the 8.3 ms refresh in the run above. Use a dirty rectangle.
+
+Resident resources (`tests/gpu_live/gl_resident.flow`): 1020 frames of compute
+plus a render pass with per-frame constants and a stream buffer. After the first
+20 frames there were 0 new allocations, device memory stayed at 14,843,904
+bytes, process memory grew by at most 80 KB, the shader library compiled once,
+and an atomic counter read exactly 1020 at the end. Pass timestamps agreed with
+the command buffer time within 15 percent.
+
+Compute (`gl_compute.flow`): a vector add over 1,048,613 floats and a two-stage
+`u32` reduction matched the CPU result exactly. Render (`gl_render.flow`): a
+triangle and a textured quad in 64x64 matched a CPU rasteriser in every channel
+(largest difference 0), and the tolerance in the test is 8 per channel with up
+to 120 channel values allowed to exceed it.
 
 ## Limits
 
-To be completed with the implementation.
+- Apple silicon with unified memory. Other Macs and other platforms report
+  `gl_available() == false`; Linux and Windows link a stub.
+- One colour attachment per pass, no multisampling, no stencil, 2D textures with
+  one mip level, depth format `GL_DEPTH32F` only. A no-attachment pass is
+  supported.
+- At most 65,535 live handles, 31 buffer slots and 16 texture slots, a 4 MB
+  `gl_bind_bytes` ring per frame slot, 32 timed passes per frame, textures up to
+  16384 pixels a side.
+- `gl_texture_read` of a depth texture is not supported.
+- Pass timestamps depend on counter sampling at stage boundaries. The tick to
+  nanosecond factor is calibrated once at `gl_init` over 40 ms.
+- A resource written by the CPU while the GPU still reads it can tear unless it
+  is a stream resource or the program calls `gl_wait_idle` first.
+- The window must be created with `gfx_open` or `gfx_open_hidpi` on macOS.
+  `flow record` has no window, so under it `gl_attach_window` returns -1. Use
+  `gl_overlay_target` and `gl_texture_read` for captures.
+- The drawable is BGRA8 with no colour space set, so values reach the display
+  as the CPU path sends them. Pipelines that draw to `GL_WINDOW` use `GL_BGRA8`.
+- Tested on one machine, an M4 Max.
 
 ## Linking
 
-A program that imports `stdlib/gpu_live.flow` links the host automatically
-through the runtime archive. `./flow run`, `./flow gfx` and `./flow debug` all
-include it. On a platform without Metal the stub in `runtime/gpu_metal_host_stub.c`
-links and `gl_available()` is false.
+A program that imports `stdlib/gpu_live.flow` links the host through the Flow
+runtime archive, which compiles `runtime/gpu_metal_host.m` with `-fobjc-arc`
+and adds the Metal, Foundation and QuartzCore frameworks. `./flow run`,
+`./flow gfx`, `./flow debug` and `./flow record` all do this. On a platform
+without Metal, `runtime/gpu_metal_host_stub.c` links and `gl_available()` is
+false. Window presentation uses `flow_gfx_set_layer`, `flow_gfx_view_info` and
+`flow_gfx_pixels` from `runtime/gfx_macos.m`, found with `dlsym`, so a program
+without a window links without Cocoa.
+
+## Commands
+
+```text
+./flow run tests/gpu_live/gl_compute.flow          compute, exact against the CPU
+./flow run tests/gpu_live/gl_render.flow           triangle and textured quad against a CPU rasteriser
+./flow run tests/gpu_live/gl_resident.flow         1020 frames, nothing allocated, memory flat
+./flow run tests/gpu_live/gl_headless.flow         no window: compute and a no-attachment pass
+./flow run tests/gpu_live/gl_fallback.flow         GPU forced off
+./flow gfx tests/gpu_live/gl_present.flow          hidden window, presentation and overlay
+FLOW_GL_REQUIRE=1 ./flow run tests/gpu_live/gl_compute.flow     fail instead of skip without a GPU
+
+BENCH_W=2880 BENCH_H=1800 BENCH_MODE=new ./flow gfx tests/gpu_live/bench_frame.flow
+BENCH_VISIBLE=1 BENCH_FRAMES=240 BENCH_W=2880 BENCH_H=1800 BENCH_MODE=new ./flow gfx tests/gpu_live/bench_frame.flow
+BENCH_W=2880 BENCH_H=1800 BENCH_MODE=headless ./flow gfx tests/gpu_live/bench_frame.flow
+BENCH_W=2880 BENCH_H=1800 BENCH_MODE=upload ./flow gfx tests/gpu_live/bench_frame.flow
+FLOW_REPO_ROOT=$PWD FLOW_GPU_BACKENDS=metal BENCH_MODE=old BENCH_W=2880 BENCH_H=1800 ./flow gfx tests/gpu_live/bench_frame.flow
+
+./flow gfx examples/gpu/gpu_live_demo.flow
+GPU_LIVE_OUT=frames GPU_LIVE_FRAMES=60 ./flow gfx examples/gpu/gpu_live_demo.flow
+```
+
+The tests print `SKIP` and exit 0 when there is no GPU, unless `FLOW_GL_REQUIRE=1`.
+`FLOW_GL_FORCE_OFF=1` turns the GPU path off for any program. The demo output is
+`docs/images/gpu_live_demo.gif`.
+
+The `flow record` link fix is a build change in `tools/flow_cli/build.flow`.
