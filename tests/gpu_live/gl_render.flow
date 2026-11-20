@@ -152,7 +152,7 @@ function main() -> i32 {
     gl_begin_frame()
     if gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 7 }
     let k: array<f32, 4> = [0.5, 1.0, 0.0, 0.0]
-    gl_bind_bytes(0, k as ptr<u8>, 16)
+    gl_bind_bytes(0, &k[0] as ptr<u8>, 16)
     if gl_draw(ptri, GL_TRIANGLES, 0, 3, 1) != 0 { println(gl_last_error()); return 8 }
     gl_bind_buffer(GL_VERTEX_SLOT_BASE, qv, 0)
     gl_bind_texture(0, tex)
@@ -218,10 +218,10 @@ function main() -> i32 {
     gl_begin_frame()
     if gl_pass_begin(target3, depth, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 21 }
     let kb: array<f32, 4> = [0.3, 0.0, 0.0, 1.0]
-    gl_bind_bytes(0, kb as ptr<u8>, 16)
+    gl_bind_bytes(0, &kb[0] as ptr<u8>, 16)
     gl_draw(pd, GL_TRIANGLES, 0, 3, 1)
     let kr: array<f32, 4> = [0.9, 1.0, 0.0, 0.0]
-    gl_bind_bytes(0, kr as ptr<u8>, 16)
+    gl_bind_bytes(0, &kr[0] as ptr<u8>, 16)
     gl_draw(pd, GL_TRIANGLES, 0, 3, 1)
     gl_pass_end()
     gl_submit()
