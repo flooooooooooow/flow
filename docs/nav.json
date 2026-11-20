@@ -875,6 +875,10 @@
           "path": "gpu/lowering-pipeline.md"
         },
         {
+          "label": "Resident Metal GPU host",
+          "path": "gpu-host.md"
+        },
+        {
           "label": "Running Flow",
           "path": "language/flow-run.md"
         },
