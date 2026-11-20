@@ -275,7 +275,7 @@ async function verifyNonterminatingWasmCompletion(context, base) {
         try {
             await page.waitForFunction(() => {
                 const status = (document.getElementById('status')?.textContent || '').trim();
-                return /^(finished after|exit -?\\d+|failed to load)/.test(status);
+                return /^(finished after|exit -?\d+|failed to load)/.test(status);
             }, null, { timeout: 350 });
         } catch (error) {
             if (!/Timeout/i.test(error.message)) throw error;
