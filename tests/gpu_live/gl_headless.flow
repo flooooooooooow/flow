@@ -64,7 +64,7 @@ function main() -> i32 {
     gl_begin_frame()
     if gl_pass_begin_noattach(w, h) != 0 { println(gl_last_error()); return 10 }
     gl_bind_buffer(0, out2, 0)
-    gl_bind_bytes(1, wv as ptr<u8>, 4)
+    gl_bind_bytes(1, &wv[0] as ptr<u8>, 4)
     if gl_draw(pna, GL_TRIANGLES, 0, 3, 1) != 0 { println(gl_last_error()); return 11 }
     gl_pass_end()
     gl_submit()
