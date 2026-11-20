@@ -259,8 +259,8 @@ Resident resources (`tests/gpu_live/gl_resident.flow`): 1020 frames of compute
 plus a render pass with per-frame constants and a stream buffer. After the first
 20 frames there were 0 new allocations, device memory stayed at 14,843,904
 bytes, process memory grew by at most 80 KB, the shader library compiled once,
-and an atomic counter read exactly 1020 at the end. Pass timestamps agreed with
-the command buffer time within 15 percent.
+and an atomic counter read exactly 1020 at the end. Pass timestamps summed to within about 20 percent of
+the command buffer time in the runs I checked.
 
 Compute (`gl_compute.flow`): a vector add over 1,048,613 floats and a two-stage
 `u32` reduction matched the CPU result exactly. Render (`gl_render.flow`): a
