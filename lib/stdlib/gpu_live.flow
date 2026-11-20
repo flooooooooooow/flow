@@ -36,6 +36,7 @@ extern {
     function flow_gl_buffer_write(buf: i32, offset: i64, src: ptr<u8>, n: i64) -> i32
     function flow_gl_buffer_ptr(buf: i32) -> ptr<u8>
     function flow_gl_buffer_read(buf: i32, offset: i64, dst: ptr<u8>, n: i64) -> i32
+    function flow_gl_buffer_wrap(ptr: ptr<u8>, bytes: i64) -> i32
     function flow_gl_buffer_free(buf: i32) -> i32
     function flow_gl_texture_new(w: i32, h: i32, format: i32, usage: i32) -> i32
     function flow_gl_texture_upload(tex: i32, src: ptr<u8>, bytes_per_row: i32) -> i32
@@ -61,6 +62,11 @@ extern {
     function flow_gl_draw(pipe: i32, topology: i32, first: i32, count: i32, instances: i32) -> i32
     function flow_gl_draw_indexed(pipe: i32, topology: i32, index_buf: i32, index_u32: i32, first_index: i32, count: i32, instances: i32) -> i32
     function flow_gl_draw_indirect(pipe: i32, topology: i32, args_buf: i32, offset: i64) -> i32
+    function flow_gl_pass_begin_noattach(w: i32, h: i32) -> i32
+    function flow_gl_pass_name(name: string) -> i32
+    function flow_gl_pass_label(index: i32) -> string
+    function flow_gl_overlay_begin(gfx_ctx: ptr<void>) -> i32
+    function flow_gl_overlay_present(x: i32, y: i32, w: i32, h: i32) -> i32
     function flow_gl_pass_end() -> i32
     function flow_gl_blit(src: i32, dst: i32, blend: i32) -> i32
     function flow_gl_present() -> i32
@@ -71,7 +77,8 @@ extern {
     function flow_gl_pass_time_ms(index: i32) -> f64
 }
 
-# Texture formats
+# Texture formats. GL_FORMAT_NONE means no colour attachment.
+export const GL_FORMAT_NONE: i32 = 0
 export const GL_RGBA8: i32 = 1
 export const GL_BGRA8: i32 = 2
 export const GL_RGBA16F: i32 = 3
@@ -83,9 +90,16 @@ export const GL_DEPTH32F: i32 = 7
 # Texture usage flags, combined with +
 export const GL_TEX_SAMPLED: i32 = 1
 export const GL_TEX_STORAGE: i32 = 2
+# Same flag as GL_TEX_STORAGE: a compute kernel may write the texture.
+export const GL_USE_SHADER_WRITE: i32 = 2
 export const GL_TEX_TARGET: i32 = 4
 # Keep one copy per frame slot so the CPU can upload while the GPU reads the last frame.
 export const GL_TEX_STREAM: i32 = 8
+# Private GPU memory: faster as a render target, no CPU upload. gl_texture_read still works (it blits).
+export const GL_TEX_GPU_ONLY: i32 = 16
+
+# Vertex buffer slot k is bound with gl_bind_buffer(GL_VERTEX_SLOT_BASE + k, ...).
+export const GL_VERTEX_SLOT_BASE: i32 = 16
 
 # Buffer flags
 export const GL_BUF_STREAM: i32 = 1
@@ -124,8 +138,7 @@ export const GL_LOAD_KEEP: i32 = 1
 # Pass the window drawable as the colour target of gl_pass_begin or gl_blit.
 export const GL_WINDOW: i32 = 0
 
-# gl_init flag: never wait for a free frame slot. For benchmarks only.
-export const GL_INIT_NO_PACING: i32 = 1
+# gl_init(flags): the low two bits set the frames in flight (1 to 3, 0 means 3).
 
 # gl_stat selectors
 export const GL_STAT_BUFFERS: i32 = 0
@@ -237,6 +250,13 @@ export function gl_buffer_ptr(buf: i32) -> ptr<u8> {
 # Slow path. Waits for the GPU to go idle, then copies the bytes out.
 export function gl_buffer_read(buf: i32, offset: i64, dst: ptr<u8>, n: i64) -> i32 {
     return flow_gl_buffer_read(buf, offset, dst, n)
+}
+
+# Wrap page aligned memory without copying. The pointer and the size must both be
+# multiples of the page size (16384 on Apple silicon). The caller keeps the
+# memory alive until after gl_buffer_free and gl_wait_idle.
+export function gl_buffer_wrap(ptr: ptr<u8>, bytes: i64) -> i32 {
+    return flow_gl_buffer_wrap(ptr, bytes)
 }
 
 export function gl_buffer_free(buf: i32) -> i32 {
@@ -385,6 +405,37 @@ export function gl_draw_indexed(pipe: i32, topology: i32, index_buf: i32, index_
 # Four u32 values in args_buf at offset: vertex count, instance count, first vertex, first instance.
 export function gl_draw_indirect(pipe: i32, topology: i32, args_buf: i32, offset: i64) -> i32 {
     return flow_gl_draw_indirect(pipe, topology, args_buf, offset)
+}
+
+# A render pass with no attachments, for fragment shaders that write device
+# buffers. Pipelines for it use GL_FORMAT_NONE as the colour format.
+export function gl_pass_begin_noattach(w: i32, h: i32) -> i32 {
+    return flow_gl_pass_begin_noattach(w, h)
+}
+
+# Name the next pass (at most 31 bytes). A pending compute encoder ends, so the
+# next dispatch starts a new named pass.
+export function gl_pass_name(name: string) -> i32 {
+    return flow_gl_pass_name(name)
+}
+
+# Name of pass `index` in the last completed frame, "" when there is none.
+export function gl_pass_label(index: i32) -> string {
+    return flow_gl_pass_label(index)
+}
+
+# CPU overlay on a gfx window. Call gl_overlay_begin(ctx) after the program
+# has finished with the previous frame's HUD: it clears the area drawn last
+# frame to alpha 0. Then draw with gfx_text, gfx_fill_rect and the other gfx
+# calls. gl_overlay_present(x, y, w, h) uploads only that rectangle (plus what
+# older frame slots still need) and composites it with GL_BLEND_PREMUL.
+# Pixels drawn outside the rectangle you pass are not shown and not cleared.
+export function gl_overlay_begin(ctx: ptr<void>) -> i32 {
+    return flow_gl_overlay_begin(ctx)
+}
+
+export function gl_overlay_present(x: i32, y: i32, w: i32, h: i32) -> i32 {
+    return flow_gl_overlay_present(x, y, w, h)
 }
 
 export function gl_pass_end() -> i32 {

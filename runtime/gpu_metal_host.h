@@ -24,13 +24,11 @@
 extern "C" {
 #endif
 
-/* flow_gl_init flags */
-enum {
-    FLOW_GL_INIT_NO_PACING = 1,   /* do not wait for a free frame slot (benchmarks) */
-};
+/* flow_gl_init flags: the low two bits set the frames in flight (1 to 3, 0 means 3). */
 
-/* Texture formats */
+/* Texture formats. FLOW_GL_FORMAT_NONE is for pipelines and passes with no colour attachment. */
 enum {
+    FLOW_GL_FORMAT_NONE = 0,
     FLOW_GL_RGBA8 = 1, FLOW_GL_BGRA8 = 2, FLOW_GL_RGBA16F = 3, FLOW_GL_R32F = 4,
     FLOW_GL_RGBA32F = 5, FLOW_GL_R8 = 6, FLOW_GL_DEPTH32F = 7,
 };
@@ -38,7 +36,7 @@ enum {
 /* Texture usage flags */
 enum {
     FLOW_GL_TEX_SAMPLED = 1, FLOW_GL_TEX_STORAGE = 2, FLOW_GL_TEX_TARGET = 4,
-    FLOW_GL_TEX_STREAM = 8,
+    FLOW_GL_TEX_STREAM = 8, FLOW_GL_TEX_GPU_ONLY = 16,
 };
 
 /* Buffer flags */
@@ -89,6 +87,7 @@ int32_t flow_gl_buffer_new(int64_t bytes, int32_t flags);
 int32_t flow_gl_buffer_write(int32_t buf, int64_t offset, const uint8_t* src, int64_t n);
 uint8_t* flow_gl_buffer_ptr(int32_t buf);
 int32_t flow_gl_buffer_read(int32_t buf, int64_t offset, uint8_t* dst, int64_t n);
+int32_t flow_gl_buffer_wrap(uint8_t* ptr, int64_t bytes);  /* page aligned memory, no copy */
 int32_t flow_gl_buffer_free(int32_t buf);
 
 /* Textures */
@@ -126,7 +125,11 @@ int32_t flow_gl_draw(int32_t pipe, int32_t topology, int32_t first, int32_t coun
 int32_t flow_gl_draw_indexed(int32_t pipe, int32_t topology, int32_t index_buf, int32_t index_u32,
                              int32_t first_index, int32_t count, int32_t instances);
 int32_t flow_gl_draw_indirect(int32_t pipe, int32_t topology, int32_t args_buf, int64_t offset);
+int32_t flow_gl_pass_begin_noattach(int32_t w, int32_t h);
+int32_t flow_gl_pass_name(const char* name);       /* names the next pass */
 int32_t flow_gl_pass_end(void);
+int32_t flow_gl_overlay_begin(void* gfx_ctx);
+int32_t flow_gl_overlay_present(int32_t x, int32_t y, int32_t w, int32_t h);
 int32_t flow_gl_blit(int32_t src, int32_t dst, int32_t blend);
 int32_t flow_gl_present(void);
 int32_t flow_gl_submit(void);
@@ -136,6 +139,7 @@ int32_t flow_gl_wait_idle(void);
 double  flow_gl_gpu_time_ms(void);                /* last completed frame */
 int32_t flow_gl_pass_count(void);                 /* passes of the last completed frame */
 double  flow_gl_pass_time_ms(int32_t index);
+const char* flow_gl_pass_label(int32_t index);
 
 #ifdef __cplusplus
 }
