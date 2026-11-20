@@ -62,7 +62,7 @@ function main() -> i32 {
     gl_bind_buffer(0, ba, 0)
     gl_bind_buffer(1, bb, 0)
     gl_bind_buffer(2, bc, 0)
-    gl_bind_bytes(3, nn as ptr<u8>, 4)
+    gl_bind_bytes(3, &nn[0] as ptr<u8>, 4)
     if gl_dispatch(vadd, n, 1, 1) != 0 { println(gl_last_error()); return 8 }
     if gl_submit() != 0 { return 9 }
     gl_wait_idle()
@@ -101,12 +101,12 @@ function main() -> i32 {
     let mm: array<i32, 1> = [m]
     gl_bind_buffer(0, bx, 0)
     gl_bind_buffer(1, bp, 0)
-    gl_bind_bytes(2, mm as ptr<u8>, 4)
+    gl_bind_bytes(2, &mm[0] as ptr<u8>, 4)
     gl_dispatch_groups(red, groups, 1, 1, 256, 1, 1)
     let g2: array<i32, 1> = [groups]
     gl_bind_buffer(0, bp, 0)
     gl_bind_buffer(1, bo, 0)
-    gl_bind_bytes(2, g2 as ptr<u8>, 4)
+    gl_bind_bytes(2, &g2[0] as ptr<u8>, 4)
     let groups2: i32 = (groups + 255) / 256
     if groups2 != 2 { println("test sizing changed"); return 14 }
     # Two groups of partials need a third stage; fold them on the second dispatch
@@ -117,7 +117,7 @@ function main() -> i32 {
     gl_submit()
     gl_wait_idle()
     let outv: array<u32, 2> = [0, 0]
-    if gl_buffer_read(bo2, 0, outv as ptr<u8>, 8) != 0 { return 15 }
+    if gl_buffer_read(bo2, 0, &outv[0] as ptr<u8>, 8) != 0 { return 15 }
     let gpu: u32 = outv[0] + outv[1]
     println("reduce cpu=" + (cpu as i64) + " gpu=" + (gpu as i64))
     if gpu != cpu { return 16 }
