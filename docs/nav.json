@@ -1037,6 +1037,10 @@
           "path": "project/idiom-modernization/AGENT-EVAL.md"
         },
         {
+          "label": "Modernization: Evolution Syntax Inventory",
+          "path": "project/idiom-modernization/FM-012-flow-evolution-inventory.md"
+        },
+        {
           "label": "FIR-G",
           "path": "project/fir-g.md"
         },
