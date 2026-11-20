@@ -23,7 +23,7 @@ function frame(out: ptr<u32>, w: i32, h: i32) -> bool {
         let k: i32 = gl_compute_pipeline(msl(), "shade")
         let wv: array<u32, 1> = [w as u32]
         gl_bind_buffer(0, b, 0)
-        gl_bind_bytes(1, wv as ptr<u8>, 4)
+        gl_bind_bytes(1, &wv[0] as ptr<u8>, 4)
         if k >= 0 and gl_dispatch(k, w, h, 1) == 0 {
             gl_submit()
             gl_wait_idle()
