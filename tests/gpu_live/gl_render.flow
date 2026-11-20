@@ -8,7 +8,7 @@ import "stdlib/gpu_live.flow"
 
 extern {
     function malloc(n: i64) -> ptr<void>
-    function getenv(name: string) -> string
+    function getenv(name: string) -> ptr<u8>
     function strlen(s: string) -> i64
 }
 
@@ -75,8 +75,7 @@ function cpu_frame(img: ptr<u8>, n: i32, chk: ptr<u8>) -> void {
 
 function main() -> i32 {
     if not gl_init(0) {
-        let req: string = getenv("FLOW_GL_REQUIRE")
-        if strlen(req) > 0 {
+        if getenv("FLOW_GL_REQUIRE") != null {
             println("FAIL gpu not available: " + gl_last_error())
             return 1
         }
