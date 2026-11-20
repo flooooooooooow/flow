@@ -115,7 +115,7 @@ function run_variant(g: Gfx, variant: i32, pipe: i32, off: i32, w: i32, h: i32, 
     let total: i32 = frames + 30
     while f < total {
         if f == 30 { t_start = now() }
-        if g.ctx != null and getenv("BENCH_NOPOLL") == null { gfx_poll(g) }
+        if g.ctx != null and (getenv("BENCH_NOPOLL") as ptr<void>) == null { gfx_poll(g) }
         let t0: f64 = now()
         gl_begin_frame()
         if variant == 0 {
@@ -187,7 +187,7 @@ function main() -> i32 {
     }
     # Presentation pacing needs a window the display can see: BENCH_VISIBLE=1 shows
     # it (never key, never activated) for the few seconds the run takes.
-    if getenv("BENCH_VISIBLE") != null { setenv("FLOW_GFX_HIDDEN", "2", 1) } else { setenv("FLOW_GFX_HIDDEN", "1", 1) }
+    if (getenv("BENCH_VISIBLE") as ptr<void>) != null { setenv("FLOW_GFX_HIDDEN", "2", 1) } else { setenv("FLOW_GFX_HIDDEN", "1", 1) }
     if not gl_init(0) { println("no GPU: " + gl_last_error()); return 1 }
     if env_is("BENCH_MODE", "upload") {
         # CPU cost of moving an RGBA overlay into a stream texture, no window.
@@ -225,12 +225,12 @@ function main() -> i32 {
     }
     let g: Gfx = gfx_open_hidpi(w / 2, h / 2, "bench", 0)
     gfx_poll(g)
-    if getenv("BENCH_NOATTACH") == null {
+    if (getenv("BENCH_NOATTACH") as ptr<void>) == null {
         if gl_attach_window(g.ctx, false) != 0 { println(gl_last_error()); return 2 }
     }
     gfx_poll(g)
     let mut win: GlWindow = gl_window()
-    if getenv("BENCH_NOATTACH") != null { win = GlWindow { width: w, height: h, scale: 2.0, attached: false } }
+    if (getenv("BENCH_NOATTACH") as ptr<void>) != null { win = GlWindow { width: w, height: h, scale: 2.0, attached: false } }
     println("device " + gl_device_name() + ", drawable " + win.width + "x" + win.height + " (asked " + w + "x" + h + "), pass timing " + gl_stat(GL_STAT_PASS_TIMING))
     let msl: string = metal_source()
     let pw: i32 = gl_render_pipeline(msl, "vs_main", "fs_main", GL_BGRA8, 0, GL_BLEND_NONE)
