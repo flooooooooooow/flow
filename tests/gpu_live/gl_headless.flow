@@ -1,0 +1,100 @@
+# gpu_live headless test: no gfx window at all, as under `flow record`.
+# gl_init, a compute kernel and a no-attachment render pass run, and the output
+# is read through gl_buffer_ptr. Attaching a window must fail with a message.
+# Exit 0 passes. SKIP (exit 0) with no GPU unless FLOW_GL_REQUIRE=1.
+
+import "stdlib/gpu_live.flow"
+
+extern {
+    function getenv(name: string) -> string
+    function strlen(s: string) -> i64
+}
+
+function msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "kernel void fill(device uint* out [[buffer(0)]], uint2 gid [[thread_position_in_grid]], uint2 size [[threads_per_grid]]) { out[gid.y * size.x + gid.x] = gid.x * 100u + gid.y; }\n" +
+        "struct VO { float4 p [[position]]; };\n" +
+        "vertex VO na_vs(uint vid [[vertex_id]]) { float2 xy = float2(float((vid << 1) & 2u), float(vid & 2u)); VO o; o.p = float4(xy * 2.0 - 1.0, 0.0, 1.0); return o; }\n" +
+        "fragment void na_fs(VO i [[stage_in]], device uint* out [[buffer(0), raster_order_group(0)]], constant uint& w [[buffer(1)]]) { uint x = uint(i.p.x); uint y = uint(i.p.y); out[y * w + x] = x * 1000u + y; }\n"
+}
+
+function main() -> i32 {
+    if not gl_init(0) {
+        if strlen(getenv("FLOW_GL_REQUIRE")) > 0 {
+            println("FAIL gpu not available: " + gl_last_error())
+            return 1
+        }
+        println("SKIP gl_headless: " + gl_last_error())
+        return 0
+    }
+    if gl_window().attached { return 2 }
+    if gl_attach_window(null, true) == 0 { println("attach with no window succeeded"); return 3 }
+    if strlen(gl_last_error()) == 0 { return 4 }
+
+    let w: i32 = 37
+    let h: i32 = 19
+    let out: i32 = gl_buffer_new((w * h * 4) as i64, 0)
+    let fill: i32 = gl_compute_pipeline(msl(), "fill")
+    if fill < 0 { println(gl_last_error()); return 5 }
+    gl_bind_buffer(0, out, 0)
+    gl_pass_name("fill")
+    if gl_dispatch(fill, w, h, 1) != 0 { println(gl_last_error()); return 6 }
+    # present with no window is a plain submit
+    if gl_present() != 0 { println(gl_last_error()); return 7 }
+    gl_wait_idle()
+    let p: ptr<u32> = gl_buffer_ptr(out) as ptr<u32>
+    let mut bad: i32 = 0
+    let mut y: i32 = 0
+    while y < h {
+        let mut x: i32 = 0
+        while x < w {
+            if p[y * w + x] != ((x * 100 + y) as u32) { bad = bad + 1 }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    println("compute 2D grid mismatches: " + bad)
+    if bad != 0 { return 8 }
+
+    # no-attachment render pass writing a device buffer from the fragment stage
+    let pna: i32 = gl_render_pipeline(msl(), "na_vs", "na_fs", GL_FORMAT_NONE, GL_FORMAT_NONE, GL_BLEND_NONE)
+    if pna < 0 { println(gl_last_error()); return 9 }
+    let out2: i32 = gl_buffer_new((w * h * 4) as i64, 0)
+    let wv: array<u32, 1> = [w as u32]
+    gl_begin_frame()
+    if gl_pass_begin_noattach(w, h) != 0 { println(gl_last_error()); return 10 }
+    gl_bind_buffer(0, out2, 0)
+    gl_bind_bytes(1, wv as ptr<u8>, 4)
+    if gl_draw(pna, GL_TRIANGLES, 0, 3, 1) != 0 { println(gl_last_error()); return 11 }
+    gl_pass_end()
+    gl_submit()
+    gl_wait_idle()
+    let q: ptr<u32> = gl_buffer_ptr(out2) as ptr<u32>
+    bad = 0
+    y = 0
+    while y < h {
+        let mut x: i32 = 0
+        while x < w {
+            if q[y * w + x] != ((x * 1000 + y) as u32) { bad = bad + 1 }
+            x = x + 1
+        }
+        y = y + 1
+    }
+    println("no-attachment pass mismatches: " + bad)
+    if bad != 0 { return 12 }
+
+    # a colour pipeline cannot draw in a no-attachment pass
+    let pc: i32 = gl_render_pipeline(msl(), "na_vs", "na_fs", GL_RGBA8, GL_FORMAT_NONE, GL_BLEND_NONE)
+    gl_begin_frame()
+    gl_pass_begin_noattach(w, h)
+    if pc >= 0 and gl_draw(pc, GL_TRIANGLES, 0, 3, 1) == 0 { println("colour pipeline drew with no attachment"); return 13 }
+    gl_pass_end()
+    gl_submit()
+    gl_wait_idle()
+
+    # pass names and times
+    println("passes in last frame: " + gl_pass_count())
+    gl_shutdown()
+    println("PASS gl_headless")
+    return 0
+}
