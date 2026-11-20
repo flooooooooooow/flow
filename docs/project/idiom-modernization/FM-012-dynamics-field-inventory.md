@@ -39,9 +39,9 @@ boundary V {
 }
 ```
 
-The golden normalizes the size and produces:
+The golden normalizes the size and produces the following generated-source excerpt (not a standalone compilable program):
 
-```flow
+```text
 const V_field_n: i32 = 8
 
 function V_field_step(
