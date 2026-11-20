@@ -1,0 +1,209 @@
+# Every status claim in a readiness page, with the evidence it cites.
+#
+# `docs/project/maturity.md` declares itself the single source of truth for
+# readiness: each table row states DONE, PARTIAL or GAP. Rows cite the files
+# that back the claim in backticks, but nothing checked those citations, so a
+# claim could keep pointing at a path that was renamed or deleted. Three did
+# (the deleted Python compiler and two deleted Python test harnesses).
+#
+# This tool turns the page into a ledger at an exact revision:
+#
+#   CLAIM  <status>  <citations>  <ok|naked|stale>  <line>
+#   STALE  <path>  <line>
+#
+# The evidence comes before the line number so a reader can grep by path, and
+# so a citation keeps the same row when an edit above it shifts the lines.
+#
+# A citation is a repository path when it contains a slash, no whitespace and
+# no `*`, and its first segment is not a host (`code.forge/flow/`, which has a
+# dot). It resolves when `git ls-files` has that path or a file beneath it.
+# `naked` means the claim cited no path at all. That is a review item, so it
+# is reported and left ungated until someone adds the citation.
+#
+#   flow tool doc_claims             print the ledger, exit 0
+#   flow tool doc_claims --check     exit 1 when a citation no longer resolves
+#   flow tool doc_claims --doc PATH  read another page
+#
+# The ledger records what the page says and what it points at. It does not
+# decide whether DONE, PARTIAL or GAP is the right word, and it does not claim
+# that a cited file exercises the feature.
+import .text { ft_outln, ft_errln, ft_len, ft_itoa, ft_read_file, ft_exists, ft_starts, ft_find, ft_slice, ft_byte, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_set_new, ft_set_add, ft_set_has, StrList, StrSet }
+import .unicode { uc_strip }
+import .repo { rp_enter_root, rp_git_ls }
+
+const DOC: string = "docs/project/maturity.md"
+const CELL_PIPE: i32 = 124
+const CELL_TICK: i32 = 96
+
+# The status a table cell states, or "" when it states none.
+function cell_status(cell: string) -> string {
+    let mut t: string = uc_strip(cell)
+    while ft_starts(t, "*") {
+        t = uc_strip(ft_slice(t, 1, ft_len(t)))
+    }
+    if ft_starts(t, "DONE") { return "DONE" }
+    if ft_starts(t, "PARTIAL") { return "PARTIAL" }
+    if ft_starts(t, "GAP") { return "GAP" }
+    return ""
+}
+
+# The cells of a markdown table row, including the empty outer ones.
+function row_cells(row: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let n: i32 = ft_len(row)
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if ft_byte(row, i) == CELL_PIPE {
+            ft_list_push(out, ft_slice(row, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    ft_list_push(out, ft_slice(row, start, n))
+    return out
+}
+
+# The backticked spans of one line, in order.
+function cited_spans(line: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let n: i32 = ft_len(line)
+    let mut open: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < n {
+        if ft_byte(line, i) == CELL_TICK {
+            if open < 0 {
+                open = i
+            } else {
+                ft_list_push(out, ft_slice(line, open + 1, i))
+                open = 0 - 1
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# Whether a backticked span is meant as a repository path.
+function is_path_citation(t: string) -> bool {
+    if ft_len(t) == 0 { return false }
+    if ft_starts(t, "http") { return false }
+    let slash: i32 = ft_find(t, "/", 0)
+    if slash < 0 { return false }
+    if ft_find(t, "*", 0) >= 0 { return false }
+    if ft_find(t, " ", 0) >= 0 { return false }
+    if ft_find(t, "\\", 0) >= 0 { return false }
+    # A dot in the first segment is a host name, not a repository directory.
+    if ft_find(ft_slice(t, 0, slash), ".", 0) >= 0 { return false }
+    return true
+}
+
+# Whether `git ls-files` names the path, or a file beneath it.
+function resolves(tracked: ptr<StrSet>, files: ptr<StrList>, t: string) -> bool {
+    let mut p: string = t
+    while ft_len(p) > 1 and ft_byte(p, ft_len(p) - 1) == 47 {
+        p = ft_slice(p, 0, ft_len(p) - 1)
+    }
+    if ft_set_has(tracked, p) { return true }
+    let mut i: i32 = 0
+    while i < ft_list_len(files) {
+        if ft_starts(ft_list_get(files, i), p + "/") { return true }
+        i = i + 1
+    }
+    return false
+}
+
+function usage() {
+    ft_errln("usage: flow tool doc_claims [--check] [--doc PATH]")
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let _root: bool = rp_enter_root()
+    let mut doc: string = DOC
+    let mut check: bool = false
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i]
+        if a == "--check" {
+            check = true
+        } elif a == "--doc" {
+            if i + 1 >= argc {
+                usage()
+                return 2
+            }
+            doc = argv[i + 1]
+            i = i + 1
+        } elif a == "--help" {
+            usage()
+            return 0
+        } else {
+            ft_errln("doc_claims: unknown argument: " + a)
+            usage()
+            return 2
+        }
+        i = i + 1
+    }
+
+    if not ft_exists(doc) {
+        ft_errln("doc_claims: cannot read " + doc)
+        return 1
+    }
+
+    let files: ptr<StrList> = rp_git_ls(ft_list_new())
+    let tracked: ptr<StrSet> = ft_set_new()
+    let mut k: i32 = 0
+    while k < ft_list_len(files) {
+        ft_set_add(tracked, ft_list_get(files, k))
+        k = k + 1
+    }
+
+    let lines: ptr<StrList> = ft_split_lines(ft_read_file(doc))
+    let mut claims: i32 = 0
+    let mut naked: i32 = 0
+    let mut stale: i32 = 0
+    let mut row: i32 = 0
+    while row < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, row)
+        let line_no: i32 = row + 1
+        if ft_starts(line, "|") {
+            let cs: ptr<StrList> = row_cells(line)
+            # cs[0] is the empty span before the leading pipe, so the status
+            # cell is index 2.
+            if ft_list_len(cs) > 3 {
+                let status: string = cell_status(ft_list_get(cs, 2))
+                if ft_len(status) > 0 {
+                    claims = claims + 1
+                    let spans: ptr<StrList> = cited_spans(line)
+                    let mut cited: i32 = 0
+                    let mut bad: i32 = 0
+                    let mut j: i32 = 0
+                    while j < ft_list_len(spans) {
+                        let t: string = ft_list_get(spans, j)
+                        if is_path_citation(t) {
+                            cited = cited + 1
+                            if not resolves(tracked, files, t) {
+                                bad = bad + 1
+                                ft_outln("STALE\t" + t + "\t" + ft_itoa(line_no))
+                            }
+                        }
+                        j = j + 1
+                    }
+                    let mut verdict: string = "ok"
+                    if bad > 0 {
+                        verdict = "stale"
+                        stale = stale + bad
+                    } elif cited == 0 {
+                        verdict = "naked"
+                        naked = naked + 1
+                    }
+                    ft_outln("CLAIM\t" + status + "\t" + ft_itoa(cited) + "\t" + verdict + "\t" + ft_itoa(line_no))
+                }
+            }
+        }
+        row = row + 1
+    }
+
+    ft_errln("doc_claims: " + ft_itoa(claims) + " claims in " + doc + ", " + ft_itoa(naked) + " naked, " + ft_itoa(stale) + " stale citation(s)")
+    if check and stale > 0 { return 1 }
+    return 0
+}

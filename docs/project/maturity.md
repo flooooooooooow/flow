@@ -8,6 +8,11 @@ meant to be honest rather than promotional.
 Legend: **DONE** means implemented and exercised. **PARTIAL** means it exists
 but is not complete or not fully machine-tested. **GAP** means it is not done.
 
+Run `./flow tool doc_claims` to print this page as a ledger: one row per status
+claim with the paths it cites, and a `STALE` row for a citation that no longer
+exists (`--check` exits nonzero on one). The tool records what the page says
+and what it points at; it does not decide whether a status is right.
+
 ## The dividing line: 1.0
 
 The critical transition is showing FLOW 1.0. A language does not need ISO's

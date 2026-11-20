@@ -1,0 +1,98 @@
+# The readiness ledger: every status claim with the evidence it cites, and a
+# STALE row for a citation that no longer resolves. The tracked page pins the
+# known Python-era backlog; synthetic pages keep the gate independent of it.
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+const SYN_HEAD: string = "# Synthetic\n\n| Item | Status | Note |\n| --- | --- | --- |\n"
+
+function tool_argv(extra: string) -> ptr<ProcStrs> {
+    let a: ptr<ProcStrs> = sl_of3("./flow", "tool", "doc_claims")
+    if s_len(extra) > 0 { sl_push(a, extra) }
+    return a
+}
+
+function doc_argv(mode: string, path: string) -> ptr<ProcStrs> {
+    let a: ptr<ProcStrs> = sl_of3("./flow", "tool", "doc_claims")
+    if s_len(mode) > 0 { sl_push(a, mode) }
+    sl_push2(a, "--doc", path)
+    return a
+}
+
+function write_page(name: string, body: string) -> string {
+    let path: string = t_tmp() + "/" + name
+    if write_text(path, SYN_HEAD + body) { return path }
+    return ""
+}
+
+function reports_claims() -> i32 {
+    if not a_eq_int(t_run_argv(tool_argv("")), 0, "ledger exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("naked claim row", a_contains(out, "CLAIM\tDONE\t0\tnaked\t")) { return T_FAIL }
+    if not a_true("resolved claim row", a_contains(out, "CLAIM\tDONE\t2\tok\t")) { return T_FAIL }
+    return T_PASS
+}
+
+function flags_known_stale_citations() -> i32 {
+    if not a_eq_int(t_run_argv(tool_argv("--check")), 1, "check exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("python compiler citation", a_contains(out, "STALE\tsrc/flow\t")) { return T_FAIL }
+    if not a_true("python parity test citation", a_contains(out, "STALE\ttests/unit/test_backend_parity.py\t")) { return T_FAIL }
+    if not a_true("python fuzz harness citation", a_contains(out, "STALE\ttests/fuzz/harness.py\t")) { return T_FAIL }
+    return T_PASS
+}
+
+function gates_a_stale_citation() -> i32 {
+    let page: string = write_page("stale.md", "| Thing | DONE | `compiler/src/absent_today.flow` |\n")
+    if s_len(page) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(doc_argv("--check", page)), 1, "check exit") { return T_FAIL }
+    if not a_true("stale row", a_contains(read_text(t_out()), "STALE\tcompiler/src/absent_today.flow\t5")) { return T_FAIL }
+    return T_PASS
+}
+
+function passes_a_resolved_citation() -> i32 {
+    let page: string = write_page("ok.md", "| Thing | DONE | `compiler/src/parser.flow` |\n")
+    if s_len(page) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(doc_argv("--check", page)), 0, "check exit") { return T_FAIL }
+    if not a_true("no stale row", not a_contains(read_text(t_out()), "STALE")) { return T_FAIL }
+    return T_PASS
+}
+
+function reports_a_naked_claim_without_gating() -> i32 {
+    let page: string = write_page("naked.md", "| Thing | PARTIAL | no citation here |\n")
+    if s_len(page) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(doc_argv("--check", page)), 0, "check exit") { return T_FAIL }
+    if not a_true("naked row", a_contains(read_text(t_out()), "CLAIM\tPARTIAL\t0\tnaked\t5")) { return T_FAIL }
+    return T_PASS
+}
+
+function rejects_unknown_option() -> i32 {
+    if not a_eq_int(t_run_argv(tool_argv("--bogus")), 2, "unknown option exit") { return T_FAIL }
+    return T_PASS
+}
+
+function rejects_missing_page() -> i32 {
+    if not a_eq_int(t_run_argv(doc_argv("", t_tmp() + "/absent.md")), 1, "missing page exit") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("doc_claims")
+    t_start()
+    t_end("reports_claims", reports_claims())
+    t_start()
+    t_end("flags_known_stale_citations", flags_known_stale_citations())
+    t_start()
+    t_end("gates_a_stale_citation", gates_a_stale_citation())
+    t_start()
+    t_end("passes_a_resolved_citation", passes_a_resolved_citation())
+    t_start()
+    t_end("reports_a_naked_claim_without_gating", reports_a_naked_claim_without_gating())
+    t_start()
+    t_end("rejects_unknown_option", rejects_unknown_option())
+    t_start()
+    t_end("rejects_missing_page", rejects_missing_page())
+    t_done()
+    return 0
+}
