@@ -61,6 +61,15 @@ function rejects_missing_map() -> i32 {
     return T_PASS
 }
 
+function reports_selected_map_source() -> i32 {
+    let map: string = write_map("source.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/lang/test_field_dsl_core.flow` | `docs/grammar.ebnf` |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("", map)), 0, "json exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("selected map provenance", a_contains(out, "\"source\":\"" + map + "\"")) { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("feature_evidence_roles")
     t_start()
@@ -73,6 +82,8 @@ function main() -> i32 {
     t_end("passes_check_when_complete", passes_check_when_complete())
     t_start()
     t_end("rejects_missing_map", rejects_missing_map())
+    t_start()
+    t_end("reports_selected_map_source", reports_selected_map_source())
     t_done()
     return 0
 }
