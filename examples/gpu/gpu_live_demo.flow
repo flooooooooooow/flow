@@ -159,7 +159,7 @@ function main() -> i32 {
         gl_begin_frame()
         gl_pass_name("scene")
         gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
-        gl_bind_bytes(0, u as ptr<u8>, 16)
+        gl_bind_bytes(0, &u[0] as ptr<u8>, 16)
         gl_draw(pipe, GL_TRIANGLES, 0, 3, 1)
         gl_pass_end()
 
