@@ -59,7 +59,7 @@ function main() -> i32 {
         if gl_begin_frame() != 0 { println(gl_last_error()); return 7 }
         if gl_pass_begin(GL_WINDOW, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0) != 0 { println(gl_last_error()); return 8 }
         let t: array<f32, 1> = [(f as f32) * 0.3]
-        gl_bind_bytes(0, t as ptr<u8>, 4)
+        gl_bind_bytes(0, &t[0] as ptr<u8>, 4)
         gl_draw(p, GL_TRIANGLES, 0, 3, 1)
         gl_pass_end()
         if gl_overlay_begin(g.ctx) != 0 { println(gl_last_error()); return 9 }
