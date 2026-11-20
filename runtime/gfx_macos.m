@@ -428,8 +428,25 @@ static void* flow_gfx_open_window(int32_t w, int32_t h, const char* title_utf8,
             [ctx->window center];
             flow_gfx_fit_framebuffer(ctx);
         }
-        [ctx->window makeKeyAndOrderFront:nil];
-        [app activateIgnoringOtherApps:YES];
+        /* FLOW_GFX_HIDDEN=1: a window that never takes focus and is not drawn
+         * to the screen, for tests that run the real presentation path.
+         * FLOW_GFX_HIDDEN=2: the same without hiding it. It is shown but never
+         * becomes key and the app is not activated. A hidden window is not
+         * paced by the display, so frame rate measurements use mode 2. */
+        const char* hidden_env = getenv("FLOW_GFX_HIDDEN");
+        if (hidden_env && (hidden_env[0] == '1' || hidden_env[0] == '2')) {
+            [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
+            [ctx->window setIgnoresMouseEvents:YES];
+            if (hidden_env[0] == '2') {
+                [ctx->window orderFrontRegardless];
+            } else {
+                [ctx->window setAlphaValue:0.0];
+                [ctx->window orderBack:nil];
+            }
+        } else {
+            [ctx->window makeKeyAndOrderFront:nil];
+            [app activateIgnoringOtherApps:YES];
+        }
         if (hidpi) flow_gfx_fit_framebuffer(ctx);
 
         return (void*)ctx;
@@ -460,6 +477,45 @@ int32_t flow_gfx_metrics(void* handle, int32_t* out) {
     out[1] = ctx->height;
     out[2] = (int32_t)lround(ctx->scale * 100.0);
     out[3] = ctx->generation;
+    return 1;
+}
+
+/* Hooks for runtime/gpu_metal_host.m, looked up with dlsym.
+ *   flow_gfx_view_info: out[0] view width in points, out[1] height, out[2]
+ *                       backing scale factor.
+ *   flow_gfx_set_layer: make a CAMetalLayer the view's layer (layer-hosting),
+ *                       or restore the CPU framebuffer drawing with NULL. */
+int32_t flow_gfx_view_info(void* handle, double* out) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || !ctx->view || !out) return 0;
+    NSRect b = [ctx->view bounds];
+    out[0] = b.size.width;
+    out[1] = b.size.height;
+    out[2] = ctx->window ? [ctx->window backingScaleFactor] : 1.0;
+    return 1;
+}
+
+/* The CPU framebuffer (RGBA8, premultiplied alpha) and its size, for the overlay. */
+uint8_t* flow_gfx_pixels(void* handle, int32_t* wh) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || !ctx->pixels) return NULL;
+    if (wh) { wh[0] = ctx->width; wh[1] = ctx->height; }
+    return ctx->pixels;
+}
+
+int32_t flow_gfx_set_layer(void* handle, void* layer) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (!ctx || !ctx->view) return 0;
+    @autoreleasepool {
+        if (layer) {
+            [ctx->view setLayer:(__bridge CALayer*)layer];
+            [ctx->view setWantsLayer:YES];
+        } else {
+            [ctx->view setLayer:nil];
+            [ctx->view setWantsLayer:NO];
+            [ctx->view setNeedsDisplay:YES];
+        }
+    }
     return 1;
 }
 

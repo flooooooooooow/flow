@@ -1,0 +1,189 @@
+# gpu_live demo: a sky and terrain shader on the GPU with a HUD drawn by the CPU.
+#
+# The scene is one full-screen fragment pass in Metal Shading Language. The HUD
+# is drawn with gfx_text and gfx_fill_rect into the gfx CPU framebuffer, which
+# gl_overlay_present uploads (only the rectangle it covers) and composites on
+# top of the GPU frame with premultiplied alpha. No pixel goes back to the CPU.
+#
+#   ./flow gfx examples/gpu/gpu_live_demo.flow                 a window, Esc quits
+#   GPU_LIVE_FRAMES=240 ./flow gfx examples/gpu/gpu_live_demo.flow   stop after 240 frames
+#   GPU_LIVE_OUT=frames GPU_LIVE_FRAMES=72 ./flow gfx examples/gpu/gpu_live_demo.flow
+#                                                              headless: writes frames/NNNN.ppm
+#
+# Without a GPU the program says so and exits.
+
+import "stdlib/gfx.flow"
+import "stdlib/gpu_live.flow"
+import "stdlib/io.flow"
+
+extern {
+    function getenv(name: string) -> ptr<u8>
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function atoi(s: ptr<u8>) -> i32
+    function malloc(n: i64) -> ptr<void>
+    function mkdir(path: string, mode: i32) -> i32
+    function strlen(s: string) -> i64
+}
+
+function scene_msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "struct VO { float4 p [[position]]; float2 uv; };\n" +
+        "vertex VO vs(uint vid [[vertex_id]]) { float2 xy = float2(float((vid << 1) & 2u), float(vid & 2u)); VO o; o.p = float4(xy * 2.0 - 1.0, 0.0, 1.0); o.uv = float2(xy.x, xy.y); return o; }\n" +
+        "struct U { float time; float aspect; float2 pad; };\n" +
+        "float hash(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }\n" +
+        "float vnoise(float2 p) { float2 i = floor(p); float2 f = fract(p); f = f * f * (3.0 - 2.0 * f);\n" +
+        "  return mix(mix(hash(i), hash(i + float2(1, 0)), f.x), mix(hash(i + float2(0, 1)), hash(i + float2(1, 1)), f.x), f.y); }\n" +
+        "float fbm(float2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }\n" +
+        "float height(float2 p) { return fbm(p * 0.18) * 7.0 - 1.5; }\n" +
+        "float3 sky(float3 rd, float3 sun, float t) {\n" +
+        "  float h = clamp(rd.y, 0.0, 1.0);\n" +
+        "  float3 col = mix(float3(0.78, 0.84, 0.93), float3(0.17, 0.38, 0.75), pow(h, 0.5));\n" +
+        "  float s = max(dot(rd, sun), 0.0);\n" +
+        "  col += float3(1.0, 0.8, 0.5) * (pow(s, 12.0) * 0.35 + pow(s, 800.0) * 2.0);\n" +
+        "  if (rd.y > 0.0) { float2 cp = rd.xz / (rd.y + 0.25) * 1.6 + float2(t * 0.05, 0.0); float c = smoothstep(0.52, 0.85, fbm(cp * 1.4)); col = mix(col, float3(1.0), c * 0.75 * smoothstep(0.0, 0.2, rd.y)); }\n" +
+        "  return col; }\n" +
+        "fragment float4 fs(VO i [[stage_in]], constant U& u [[buffer(0)]]) {\n" +
+        "  float2 q = (i.uv - 0.5) * float2(u.aspect, 1.0);\n" +
+        "  float t = u.time;\n" +
+        "  float3 ro = float3(sin(t * 0.15) * 6.0, 6.0 + sin(t * 0.3) * 0.8, t * 5.0);\n" +
+        "  float3 fw = normalize(float3(sin(t * 0.15 + 0.6) * 0.25, -0.12, 1.0));\n" +
+        "  float3 rt = normalize(cross(float3(0, 1, 0), fw)); float3 up = cross(fw, rt);\n" +
+        "  float3 rd = normalize(fw + rt * q.x * 1.1 + up * q.y * 1.1);\n" +
+        "  float3 sun = normalize(float3(0.55, 0.38, 0.7));\n" +
+        "  float3 col = sky(rd, sun, t);\n" +
+        "  float d = 0.5; bool hit = false; float3 p = ro;\n" +
+        "  for (int k = 0; k < 110; k++) { p = ro + rd * d; float h = p.y - height(p.xz); if (h < 0.02 * d) { hit = true; break; } d += max(0.05, h * 0.55); if (d > 140.0) break; }\n" +
+        "  if (hit) {\n" +
+        "    float e = 0.05 * d;\n" +
+        "    float3 n = normalize(float3(height(p.xz - float2(e, 0)) - height(p.xz + float2(e, 0)), 2.0 * e, height(p.xz - float2(0, e)) - height(p.xz + float2(0, e))));\n" +
+        "    float hh = height(p.xz);\n" +
+        "    float3 base = mix(float3(0.16, 0.30, 0.10), float3(0.42, 0.37, 0.30), smoothstep(2.0, 4.0, hh));\n" +
+        "    base = mix(base, float3(0.95), smoothstep(4.6, 5.6, hh + n.y * 0.6));\n" +
+        "    base = mix(base, float3(0.35, 0.33, 0.30), smoothstep(0.75, 0.45, n.y));\n" +
+        "    float dif = clamp(dot(n, sun), 0.0, 1.0);\n" +
+        "    float3 lit = base * (dif * float3(1.0, 0.9, 0.75) * 1.3 + float3(0.18, 0.24, 0.35) * (0.6 + 0.4 * n.y));\n" +
+        "    float fog = 1.0 - exp(-d * 0.011);\n" +
+        "    col = mix(lit, sky(rd, sun, t) * 0.95 + float3(0.04), fog);\n" +
+        "  }\n" +
+        "  col = pow(col, float3(0.4545));\n" +
+        "  return float4(col, 1.0); }\n"
+}
+
+function env_int(name: string, dflt: i32) -> i32 {
+    let v: ptr<u8> = getenv(name)
+    if v == null { return dflt }
+    return atoi(v)
+}
+
+function pad4(n: i32) -> string {
+    let mut s: string = "" + n
+    if n < 10 { s = "000" + n } elif n < 100 { s = "00" + n } elif n < 1000 { s = "0" + n }
+    return s
+}
+
+function write_ppm(path: string, rgba: ptr<u8>, w: i32, h: i32, scratch: ptr<u8>) -> bool {
+    let header: string = "P6\n" + w + " " + h + "\n255\n"
+    let hp: ptr<u8> = header as ptr<u8>
+    let hl: i32 = strlen(header) as i32
+    let mut n: i32 = 0
+    while n < hl {
+        scratch[n] = hp[n]
+        n = n + 1
+    }
+    let mut i: i32 = 0
+    while i < w * h {
+        scratch[n] = rgba[i * 4]
+        scratch[n + 1] = rgba[i * 4 + 1]
+        scratch[n + 2] = rgba[i * 4 + 2]
+        n = n + 3
+        i = i + 1
+    }
+    return io_write_bytes(path, scratch, n as i64)
+}
+
+function main() -> i32 {
+    let out_dir_ptr: ptr<u8> = getenv("GPU_LIVE_OUT")
+    let headless: bool = out_dir_ptr != null
+    let max_frames: i32 = env_int("GPU_LIVE_FRAMES", 0)
+    if headless { setenv("FLOW_GFX_HIDDEN", "1", 1) }
+    if not gl_init(0) {
+        println("gpu_live_demo needs the GPU path: " + gl_last_error())
+        return 1
+    }
+    let w: i32 = 480
+    let h: i32 = 270
+    let g: Gfx = gfx_open_hidpi(w / 2, h / 2, "gpu_live demo", 0)
+    if g.ctx == null { println("no window"); return 2 }
+    gfx_poll(g)
+    let mut target: i32 = 0
+    let mut sw: i32 = w
+    let mut sh: i32 = h
+    let mut pipe: i32 = 0
+    if headless {
+        # Render into a texture that can be read back. The window is hidden.
+        let m: GfxMetrics = gfx_metrics(g)
+        sw = m.width
+        sh = m.height
+        target = gl_texture_new(sw, sh, GL_RGBA8, GL_TEX_TARGET + GL_TEX_SAMPLED)
+        gl_overlay_target(target)
+        pipe = gl_render_pipeline(scene_msl(), "vs", "fs", GL_RGBA8, 0, GL_BLEND_NONE)
+    } else {
+        if gl_attach_window(g.ctx, true) != 0 { println(gl_last_error()); return 3 }
+        pipe = gl_render_pipeline(scene_msl(), "vs", "fs", GL_BGRA8, 0, GL_BLEND_NONE)
+    }
+    if pipe < 0 { println(gl_last_error()); return 4 }
+    let rgba: ptr<u8> = malloc((sw * sh * 4) as i64) as ptr<u8>
+    let scratch: ptr<u8> = malloc((sw * sh * 3 + 64) as i64) as ptr<u8>
+    if headless { mkdir(out_dir_ptr as string, 493) }
+    let t_open: f64 = gfx_time_ms(g)
+    let mut last: f64 = t_open
+    let mut fps: f64 = 0.0
+    let mut frame: i32 = 0
+    while true {
+        if max_frames > 0 and frame >= max_frames { break }
+        gfx_poll(g)
+        if gfx_should_close(g) or gfx_key_down(g, KEY_ESC) { break }
+        let now: f64 = gfx_time_ms(g)
+        let mut t: f64 = (now - t_open) / 1000.0
+        if headless { t = (frame as f64) / 20.0 }
+        let dt: f64 = now - last
+        last = now
+        if dt > 0.0 { fps = fps * 0.9 + (1000.0 / dt) * 0.1 }
+        let win: GlWindow = gl_window()
+        let mut fw: i32 = win.width
+        let mut fh: i32 = win.height
+        if headless { fw = sw
+            fh = sh }
+        let u: array<f32, 4> = [t as f32, (fw as f32) / (fh as f32), 0.0, 0.0]
+
+        gl_begin_frame()
+        gl_pass_name("scene")
+        gl_pass_begin(target, 0, GL_LOAD_CLEAR, 0.0, 0.0, 0.0, 1.0, 1.0)
+        gl_bind_bytes(0, &u[0] as ptr<u8>, 16)
+        gl_draw(pipe, GL_TRIANGLES, 0, 3, 1)
+        gl_pass_end()
+
+        # The HUD: drawn by the CPU into the gfx framebuffer, composited by the GPU.
+        gl_overlay_begin(g.ctx)
+        let mut s: i32 = sh / 270
+        if s < 1 { s = 1 }
+        let gms: i32 = (gl_gpu_time_ms() * 100.0) as i32
+        gfx_fill_rect(g, 8 * s, 8 * s, 150 * s, 64 * s, 10, 14, 24)
+        gfx_text(g, 14 * s, 30 * s, "FPS " + (fps as i32), 16 * s, 255, 255, 255)
+        gfx_text(g, 14 * s, 50 * s, "GPU " + (gms / 100) + "." + ((gms % 100) / 10) + ((gms % 100) % 10) + " ms", 12 * s, 150, 220, 255)
+        gl_overlay_present(8 * s, 8 * s, 150 * s, 64 * s)
+        gl_present()
+        if headless {
+            gl_wait_idle()
+            gl_texture_read(target, rgba, sw * 4)
+            write_ppm(out_dir_ptr as string + "/" + pad4(frame) + ".ppm", rgba, sw, sh, scratch)
+        }
+        frame = frame + 1
+    }
+    let secs: f64 = (gfx_time_ms(g) - t_open) / 1000.0
+    println("frames " + frame + " in " + secs + " s, device " + gl_device_name())
+    if not headless { gl_detach_window() }
+    gfx_close(g)
+    gl_shutdown()
+    return 0
+}

@@ -1,5 +1,9 @@
 # GPU render jobs
 
+Render jobs run once per process launch and read the frame back through a file.
+A program that draws every frame uses the resident host in
+[GPU host](../gpu-host.md) (`stdlib/gpu_live.flow`) instead.
+
 Four modules take a Flow program from typed GPU descriptors to pixels on
 Metal and WebGPU (#811):
 

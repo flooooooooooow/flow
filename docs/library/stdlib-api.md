@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**139** modules scanned.
+**140** modules scanned.
 
 ## Modules
 
@@ -1934,6 +1934,114 @@ CPU reference for the built-in GPU graph kernels (#812).  gpu_graph_reference_ru
 GPU kernels for ML workloads (Metal/CUDA codegen via @gpu) Mojo-style: annotate kernels, compile with `flow gpu <file>`
 
 *No `export` items found (internal / extern-only module).*
+
+### `gpu_live.flow`
+
+gpu_live: a resident Metal host for real-time frame loops.  One device, one command queue and one shader cache live in the process.
+
+**Constants:**
+
+- `GL_FORMAT_NONE: i32`
+- `GL_RGBA8: i32`
+- `GL_BGRA8: i32`
+- `GL_RGBA16F: i32`
+- `GL_R32F: i32`
+- `GL_RGBA32F: i32`
+- `GL_R8: i32`
+- `GL_DEPTH32F: i32`
+- `GL_TEX_SAMPLED: i32`
+- `GL_TEX_STORAGE: i32`
+- `GL_USE_SHADER_WRITE: i32`
+- `GL_TEX_TARGET: i32`
+- `GL_TEX_STREAM: i32`
+- `GL_TEX_GPU_ONLY: i32`
+- `GL_VERTEX_SLOT_BASE: i32`
+- `GL_BUF_STREAM: i32`
+- `GL_V_FLOAT: i32`
+- `GL_V_FLOAT2: i32`
+- `GL_V_FLOAT3: i32`
+- `GL_V_FLOAT4: i32`
+- `GL_V_UCHAR4_NORM: i32`
+- `GL_V_UINT: i32`
+- `GL_V_INT: i32`
+- `GL_BLEND_NONE: i32`
+- `GL_BLEND_ALPHA: i32`
+- `GL_BLEND_ADD: i32`
+- `GL_BLEND_PREMUL: i32`
+- `GL_CULL_NONE: i32`
+- `GL_CULL_BACK: i32`
+- `GL_CULL_FRONT: i32`
+- `GL_DEPTH_OFF: i32`
+- `GL_DEPTH_TEST: i32`
+- `GL_DEPTH_WRITE: i32`
+- `GL_TRIANGLES: i32`
+- `GL_LINES: i32`
+- `GL_POINTS: i32`
+- `GL_TRIANGLE_STRIP: i32`
+- `GL_LOAD_CLEAR: i32`
+- `GL_LOAD_KEEP: i32`
+- `GL_WINDOW: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gl_init` | `(flags: i32) -> bool` | Open the device. Returns true when the GPU path is ready. False when there is no Metal device, the platform is not macOS, or FLOW_GL_FORCE_OFF=1 is set. |
+| `gl_available` | `() -> bool` | - |
+| `gl_shutdown` | `() -> void` | Wait for the GPU, then release every resource and the device. |
+| `gl_last_error` | `() -> string` | - |
+| `gl_device_name` | `() -> string` | - |
+| `gl_stat` | `(which: i32) -> i64` | Counters: see the GL_STAT_* selectors. |
+| `gl_force_off` | `(off: bool) -> void` | Turn the GPU path off (true) or allow it (false) before gl_init. |
+| `gl_attach_window` | `(ctx: ptr<void>, vsync: bool) -> i32` | Present into a gfx window. `ctx` is the ctx field of a Gfx from gfx_open or gfx_open_hidpi. Call it from the thread that opened the window. After it succeeds the CPU framebuffer of that window is no longer drawn: composite CPU pixels through a texture and gl_blit instead. |
+| `gl_detach_window` | `() -> void` | - |
+| `gl_window` | `() -> GlWindow` | Drawable size in pixels, pixels per point, and whether a window is attached. |
+| `gl_set_vsync` | `(on: bool) -> void` | - |
+| `gl_buffer_new` | `(bytes: i64, flags: i32) -> i32` | Resident buffers. Shared memory: the CPU writes and the GPU reads the same bytes. |
+| `gl_buffer_write` | `(buf: i32, offset: i64, src: ptr<u8>, n: i64) -> i32` | - |
+| `gl_buffer_ptr` | `(buf: i32) -> ptr<u8>` | The CPU address of the buffer's current copy, for writes with no extra copy. Null on error. |
+| `gl_buffer_read` | `(buf: i32, offset: i64, dst: ptr<u8>, n: i64) -> i32` | Slow path. Waits for the GPU to go idle, then copies the bytes out. |
+| `gl_buffer_wrap` | `(ptr: ptr<u8>, bytes: i64) -> i32` | Wrap page aligned memory without copying. The pointer and the size must both be multiples of the page size (16384 on Apple silicon). The caller keeps the memory alive until after gl_buffer_free and gl_wait_idle. |
+| `gl_buffer_free` | `(buf: i32) -> i32` | - |
+| `gl_texture_new` | `(w: i32, h: i32, format: i32, usage: i32) -> i32` | Resident textures. usage is a sum of GL_TEX_* flags. |
+| `gl_texture_upload` | `(tex: i32, src: ptr<u8>, bytes_per_row: i32) -> i32` | Copy a whole image from `src` (bytes_per_row bytes per row). |
+| `gl_texture_upload_rect` | `(tex: i32, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>, bytes_per_row: i32) -> i32` | Copy the rectangle (x, y, w, h). `src` points at the rectangle's first pixel. On a GL_TEX_STREAM texture this writes only the copy for the current frame slot, so a dirty rectangle must also cover what changed in the previous frames. gl_overlay_present does that for a CPU overlay. |
+| `gl_texture_read` | `(tex: i32, dst: ptr<u8>, bytes_per_row: i32) -> i32` | Slow path. Waits for the GPU to go idle, then copies the pixels out. |
+| `gl_texture_free` | `(tex: i32) -> i32` | - |
+| `gl_compute_pipeline` | `(msl: string, entry: string) -> i32` | Compile (once, cached by the hash of the source) and build a compute pipeline. |
+| `gl_render_pipeline` | `(msl: string, vs_entry: string, fs_entry: string, color_format: i32, depth_format: i32, blend: i32) -> i32` | A render pipeline with no vertex buffers: vertices come from vertex_id. |
+| `gl_render_pipeline_begin` | `(msl: string, vs_entry: string, fs_entry: string, color_format: i32, depth_format: i32, blend: i32) -> i32` | Builder form for pipelines with vertex buffers: begin, then layouts and attributes, then gl_render_pipeline_build. depth_format 0 means no depth. |
+| `gl_pipeline_vertex_layout` | `(pipe: i32, slot: i32, stride: i32, per_instance: bool) -> i32` | - |
+| `gl_pipeline_vertex_attr` | `(pipe: i32, location: i32, slot: i32, format: i32, offset: i32) -> i32` | - |
+| `gl_pipeline_state` | `(pipe: i32, cull: i32, depth_mode: i32) -> i32` | Cull mode and depth mode (GL_CULL_*, GL_DEPTH_*). Front faces wind counter-clockwise. |
+| `gl_render_pipeline_build` | `(pipe: i32) -> i32` | - |
+| `gl_pipeline_free` | `(pipe: i32) -> i32` | - |
+| `gl_begin_frame` | `() -> i32` | Start a frame. Waits only when every frame slot is still in flight on the GPU. |
+| `gl_bind_buffer` | `(slot: i32, buf: i32, offset: i64) -> i32` | Bindings stay set until replaced. Buffer slots and texture slots are the Metal argument indices, shared by the vertex, fragment and compute stages. |
+| `gl_bind_texture` | `(slot: i32, tex: i32) -> i32` | - |
+| `gl_bind_sampler` | `(slot: i32, linear: bool, repeat: bool) -> i32` | - |
+| `gl_bind_bytes` | `(slot: i32, src: ptr<u8>, n: i32) -> i32` | Per-frame constants. The bytes go into a ring of uniform memory that is reused every frame slot, and the slot is bound to that range. No allocation. |
+| `gl_dispatch` | `(pipe: i32, x: i32, y: i32, z: i32) -> i32` | One thread per element: x * y * z threads, in groups the pipeline picks. |
+| `gl_dispatch_groups` | `(pipe: i32, gx: i32, gy: i32, gz: i32, tx: i32, ty: i32, tz: i32) -> i32` | gx * gy * gz threadgroups of tx * ty * tz threads. |
+| `gl_dispatch_indirect` | `(pipe: i32, args_buf: i32, offset: i64, tx: i32, ty: i32, tz: i32) -> i32` | Group counts from three u32 values in args_buf at offset. |
+| `gl_pass_begin` | `(color: i32, depth: i32, load: i32, r: f32, g: f32, b: f32, a: f32, clear_depth: f32) -> i32` | Begin a render pass into texture `color` (GL_WINDOW for the window) and an optional depth texture (0 for none). |
+| `gl_draw` | `(pipe: i32, topology: i32, first: i32, count: i32, instances: i32) -> i32` | - |
+| `gl_draw_indexed` | `(pipe: i32, topology: i32, index_buf: i32, index_u32: bool, first_index: i32, count: i32, instances: i32) -> i32` | - |
+| `gl_draw_indirect` | `(pipe: i32, topology: i32, args_buf: i32, offset: i64) -> i32` | Four u32 values in args_buf at offset: vertex count, instance count, first vertex, first instance. |
+| `gl_pass_begin_noattach` | `(w: i32, h: i32) -> i32` | A render pass with no attachments, for fragment shaders that write device buffers. Pipelines for it use GL_FORMAT_NONE as the colour format. |
+| `gl_pass_name` | `(name: string) -> i32` | Name the next pass (at most 31 bytes). A pending compute encoder ends, so the next dispatch starts a new named pass. |
+| `gl_pass_label` | `(index: i32) -> string` | Name of pass `index` in the last completed frame, "" when there is none. |
+| `gl_overlay_target` | `(dst: i32) -> i32` | CPU overlay on a gfx window. Call gl_overlay_begin(ctx) after the program has finished with the previous frame's HUD: it clears the area drawn last frame to alpha 0. Then draw with gfx_text, gfx_fill_rect and the other gfx calls. gl_overlay_present(x, y, w, h) uploads only that rectangle (plus what |
+| `gl_overlay_begin` | `(ctx: ptr<void>) -> i32` | - |
+| `gl_overlay_present` | `(x: i32, y: i32, w: i32, h: i32) -> i32` | - |
+| `gl_pass_end` | `() -> i32` | - |
+| `gl_blit` | `(src: i32, dst: i32, blend: i32) -> i32` | Draw texture `src` over the whole of `dst` (GL_WINDOW for the window), scaling with a linear filter. blend is GL_BLEND_NONE for a copy, or GL_BLEND_PREMUL / GL_BLEND_ALPHA to composite, as for a CPU overlay. |
+| `gl_present` | `() -> i32` | End the frame: commit it and show the window drawable if a pass drew into it. |
+| `gl_submit` | `() -> i32` | End the frame without presenting. For offscreen and compute-only frames. |
+| `gl_wait_idle` | `() -> i32` | Block until every submitted frame has finished on the GPU. |
+| `gl_gpu_time_ms` | `() -> f64` | GPU time of the last completed frame, from the command buffer timestamps. |
+| `gl_pass_count` | `() -> i32` | Number of timed passes in the last completed frame, and the GPU time of one. |
+| `gl_pass_time_ms` | `(index: i32) -> f64` | - |
 
 ### `gpu_memory.flow`
 
