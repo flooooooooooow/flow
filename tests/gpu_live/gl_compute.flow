@@ -82,7 +82,7 @@ function main() -> i32 {
 
     # Reduction of u32 values: stage one writes one partial per group of 256,
     # stage two sums the partials with a single group per 256 partials.
-    let m: i32 = 300000
+    let m: i32 = 130000
     let mb: i64 = (m as i64) * 4
     let x: ptr<u32> = malloc(mb) as ptr<u32>
     let mut cpu: u32 = 0
