@@ -61,6 +61,23 @@ function rejects_missing_map() -> i32 {
     return T_PASS
 }
 
+function reports_directory_anchor_as_prefix() -> i32 {
+    let map: string = write_map("dir_anchor.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/lang/` | `docs/grammar.ebnf` |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--roles", map)), 0, "roles exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("directory anchor stays a prefix", a_contains(out, "ROLE\tSynthetic family\tsemantics_or_negative\ttests/lang/\n")) { return T_FAIL }
+    if not a_true("populated directory is not a gap", not a_contains(out, "GAP\tSynthetic family\tsemantics_or_negative")) { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("", map)), 0, "json exit") { return T_FAIL }
+    let js: string = read_text(t_out())
+    if not a_true("json reports the prefix", a_contains(js, "\"path\":\"tests/lang/\",\"resolved_path\":\"tests/lang/\"")) { return T_FAIL }
+    let empty: string = write_map("dir_empty.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/absent_dir_xyz/` | `docs/grammar.ebnf` |\n")
+    if s_len(empty) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--roles", empty)), 0, "roles exit") { return T_FAIL }
+    if not a_true("empty directory is a gap", a_contains(read_text(t_out()), "GAP\tSynthetic family\tsemantics_or_negative")) { return T_FAIL }
+    return T_PASS
+}
+
 function reports_selected_map_source() -> i32 {
     let map: string = write_map("source.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/lang/test_field_dsl_core.flow` | `docs/grammar.ebnf` |\n")
     if s_len(map) == 0 { return T_FAIL }
@@ -82,6 +99,8 @@ function main() -> i32 {
     t_end("passes_check_when_complete", passes_check_when_complete())
     t_start()
     t_end("rejects_missing_map", rejects_missing_map())
+    t_start()
+    t_end("reports_directory_anchor_as_prefix", reports_directory_anchor_as_prefix())
     t_start()
     t_end("reports_selected_map_source", reports_selected_map_source())
     t_done()
