@@ -875,6 +875,10 @@
           "path": "gpu/lowering-pipeline.md"
         },
         {
+          "label": "GPU audio voice batching (experimental)",
+          "path": "gpu/audio-voice-batching.md"
+        },
+        {
           "label": "Resident Metal GPU host",
           "path": "gpu-host.md"
         },
