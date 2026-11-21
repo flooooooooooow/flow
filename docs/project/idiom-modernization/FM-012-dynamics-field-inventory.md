@@ -17,7 +17,7 @@ Both of these DSLs expand to ordinary Flow source before parsing. They do not es
 
 ## Matrix dynamics is not symbolic differentiation
 
-The pre-parser `dy_expand:4370–4385` calls `dy_parse` and `dy_compile`, with the module header at lines 1–10 identifying the historical Python reference. A `dsys` declaration describes explicit numeric state-space matrices, not equations from which the compiler infers matrices. The mode defaults to discrete, dt to 0.1, and n/m/p to 2/1/1 (2993–3004). These defaults are source observations, not recommendations.
+The pre-parser `dy_expand:4370–4385` calls `dy_parse` and `dy_compile`, with the module header at lines 1–10 identifying the historical Python reference. A `dsys` declaration describes explicit numeric state-space matrices, not equations from which the compiler infers matrices. The mode defaults to discrete, dt to 0.1, and n/m/p to 2/1/1 (2993–3004). These defaults record what the source does. They carry no recommendation.
 
 The discrete example contains a state transition matrix A, input matrix B and observation matrix C. Its corresponding expansion constructs `DynamicalSystem` via `dsys_discrete(2,1,1,0.1, ...)`. The continuous mode produces a separate continuous object and immediately calls the Euler discretization routine; the exact stdlib numerical implementation is not audited here.
 
@@ -55,7 +55,7 @@ function V_field_step(
 
 The companion Q example places the coefficient before the Laplacian and forwards `r * (2)`. For V the fixture checks endpoints 0.5 and 1.5, and interior values 0.94 and 1.06 after a step with r=0.4. For Q it checks 0.2, 0.6, 0.2 around an impulse at r=0.1. This distinguishes actual coefficient lowering from merely accepting the spelling.
 
-The generated API requires caller-controlled buffers and r. It does not infer physical spacing, timestep, stability, boundary type or a general PDE solution from the surface notation. A source-level `field` declaration here is an explicit 1D heat-step convenience, not a symbolic PDE engine.
+The generated API requires caller-controlled buffers and r. It does not infer physical spacing, timestep, stability, boundary type or a general PDE solution from the surface notation. A source-level `field` declaration here is an explicit 1D heat-step convenience. It does not provide a symbolic PDE engine.
 
 ## Verification surfaces
 
@@ -66,7 +66,7 @@ The generated API requires caller-controlled buffers and r. It does not infer ph
 | `./flow tool doc_links` | Documentation link integrity | Pending PR CI |
 | `./flow tool script_refs` | Script reference integrity | Pending PR CI |
 
-The dynamics gate's end-to-end build explicitly sets `FLOWC_TYPECHECK=0` (script lines 251–256, rationale #988). Do not claim that this proves fully typechecked native bundle support. The field gate intentionally differs from the historical Python expander on corrected multiplier fixtures (script lines 20–22); its independent coefficient runtime gate is at 244–277. The language test `tests/lang/test_dynamics_dsl.flow` evaluates comment and namespace helpers, not numerical state-space semantics.
+The dynamics gate's end-to-end build explicitly sets `FLOWC_TYPECHECK=0` (script lines 251–256, rationale #988). Do not claim that this proves fully typechecked native bundle support. The field gate intentionally differs from the historical Python expander on corrected multiplier fixtures (script lines 20–22); its independent coefficient runtime gate is at 244–277. The language test `tests/lang/test_dynamics_dsl.flow` evaluates comment and namespace helpers. It does not evaluate numerical state-space semantics.
 
 All cited source and fixture paths were fetched at the pinned base. Local execution was unavailable in this review workspace; no passing current-revision gate is asserted. No compiler, generated files, tests or fixtures changed.
 

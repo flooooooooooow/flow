@@ -1,5 +1,6 @@
 # Flow-native incompressible velocity projection on a uniform periodic 3D grid.
-# This is a pressure-Poisson component, not a complete wall-modelled LES solver.
+# This is the pressure-Poisson stage of a projection method. It does not model a
+# complete wall-modelled LES.
 # Cell-centred arrays, compatible backward divergence / forward gradient;
 # the composed operator is the standard seven-point Laplacian.
 # Jacobi solve is intended for correctness baselines, not high-Re production CFD.
@@ -43,7 +44,8 @@ export function sofia_inc_divergence_rms(
 # Projects input velocity onto a numerically divergence-free subspace.
 # Inputs and outputs must not alias. p and scratch and rhs are scratch arrays,
 # each at least nx*ny*nz long. nx,ny,nz>=3, dx>0, dt>0.
-# Jacobi iterations control remaining divergence, not a residual tolerance.
+# Jacobi iterations control remaining divergence. They do not set a residual
+# tolerance.
 export function sofia_inc_project_periodic(
     ux: ptr<f64>, uy: ptr<f64>, uz: ptr<f64>,
     ux_next: ptr<f64>, uy_next: ptr<f64>, uz_next: ptr<f64>,

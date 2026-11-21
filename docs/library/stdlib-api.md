@@ -3390,7 +3390,7 @@ Flow-native PDE/simulation framework Domain API.
 
 ### `science/sofia_incompressible.flow`
 
-Flow-native incompressible velocity projection on a uniform periodic 3D grid. This is a pressure-Poisson component, not a complete wall-modelled LES solver. Cell-centred arrays, compatible backward divergence / forward gradient;
+Flow-native incompressible velocity projection on a uniform periodic 3D grid. This is the pressure-Poisson stage of a projection method. It does not model a complete wall-modelled LES.
 
 **Functions:**
 
@@ -3406,7 +3406,7 @@ Flow-native incompressible velocity projection on a uniform periodic 3D grid. Th
     ux_next: ptr<f64>, uy_next: ptr<f64>, uz_next: ptr<f64>,
     p: ptr<f64>, scratch: ptr<f64>, rhs: ptr<f64>,
     nx: i32, ny: i32, nz: i32, dx: f64, dt: f64, iterations: i32
-) -> void` | Projects input velocity onto a numerically divergence-free subspace. Inputs and outputs must not alias. p and scratch and rhs are scratch arrays, each at least nx*ny*nz long. nx,ny,nz>=3, dx>0, dt>0. Jacobi iterations control remaining divergence, not a residual tolerance. |
+) -> void` | Projects input velocity onto a numerically divergence-free subspace. Inputs and outputs must not alias. p and scratch and rhs are scratch arrays, each at least nx*ny*nz long. nx,ny,nz>=3, dx>0, dt>0. Jacobi iterations control remaining divergence. They do not set a residual |
 | `sofia_inc_momentum_step_periodic` | `(
     ux: ptr<f64>, uy: ptr<f64>, uz: ptr<f64>,
     ux_next: ptr<f64>, uy_next: ptr<f64>, uz_next: ptr<f64>,
