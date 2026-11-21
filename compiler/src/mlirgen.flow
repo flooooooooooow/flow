@@ -1678,12 +1678,19 @@ function mlg_emit_cplx_binop(m: ptr<Mlg>, e: i32, op: i32, lv: i32, lt: i32, rv:
         return mlg_cplx_make(m, re, im, t)
     }
     if op == TOK_STAR {
+        # Each branch evaluates its parts in separate statements: two emitting
+        # calls in one call expression would let the C compiler pick the order
+        # the MLIR lines are written in.
         if b == V_NONE {
             # real * complex
-            return mlg_cplx_make(m, mlg_cplx_op(m, "arith.mulf", a, c, el), mlg_cplx_op(m, "arith.mulf", a, d, el), t)
+            re = mlg_cplx_op(m, "arith.mulf", a, c, el)
+            im = mlg_cplx_op(m, "arith.mulf", a, d, el)
+            return mlg_cplx_make(m, re, im, t)
         }
         if d == V_NONE {
-            return mlg_cplx_make(m, mlg_cplx_op(m, "arith.mulf", a, c, el), mlg_cplx_op(m, "arith.mulf", b, c, el), t)
+            re = mlg_cplx_op(m, "arith.mulf", a, c, el)
+            im = mlg_cplx_op(m, "arith.mulf", b, c, el)
+            return mlg_cplx_make(m, re, im, t)
         }
         # (a + bi)(c + di) = (ac - bd) + (ad + bc)i
         let ac: i32 = mlg_cplx_op(m, "arith.mulf", a, c, el)
@@ -1696,7 +1703,9 @@ function mlg_emit_cplx_binop(m: ptr<Mlg>, e: i32, op: i32, lv: i32, lt: i32, rv:
     }
     if op == TOK_SLASH {
         if d == V_NONE {
-            return mlg_cplx_make(m, mlg_cplx_op(m, "arith.divf", a, c, el), mlg_cplx_op(m, "arith.divf", b, c, el), t)
+            re = mlg_cplx_op(m, "arith.divf", a, c, el)
+            im = mlg_cplx_op(m, "arith.divf", b, c, el)
+            return mlg_cplx_make(m, re, im, t)
         }
         if b == V_NONE {
             # a real dividend is a + 0i
