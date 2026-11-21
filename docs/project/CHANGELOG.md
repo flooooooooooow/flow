@@ -4,6 +4,7 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- Runtime: the #740 memory profiler attributes user `malloc`/`memcpy` calls to Flow `file:line` in a capped source-site map (`src:` / `src_map_overflow`). Record-update, struct-literal array fields, and proven span copies go through `flow_mem_memcpy_site`. SIMD type-pun copies stay unrouted. Covered by `tests/scripts/mem_profile.flow` and `tests/cgen/mem_profile.expect`.
 - Compiler: semantic analysis reserved its module tables for 64 modules while the resolver bundles up to 128, so a program whose import chain passed the 64th module wrote past the end of four tables and killed flowc with SIGBUS. Both now use the same capacity; covered by `tests/scripts/sem_module_capacity.flow`.
 - CLI: `flow run <program> -- <args>` passes the arguments to the program; a word after
   the program path is passed the same way, where it used to be an "Unexpected argument"

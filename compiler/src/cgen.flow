@@ -377,6 +377,8 @@ function flowc_cgen_emit_int_literal(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, 
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+function flowc_cgen_emit_mem_name(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32
+function flowc_cgen_emit_mem_loc(w: ptr<CgenBuf>, src: ptr<u8>, pos: i32)
 function flowc_cgen_mp_arm_cond(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, pats: i32, path: ptr<i32>, tagsel: i32)
 function flowc_cgen_emit_defers_to(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, base: i32)
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
@@ -1815,9 +1817,7 @@ function flowc_cgen_emit_rupdate_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     } elif flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
         # As for a struct literal: a pointer field takes the decayed
         # array, an array field its elements.
-        flowc_cgen_puts(w, "flow_mem_note_copy(sizeof(")
-        flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-        flowc_cgen_puts(w, ")); memcpy(&")
+        flowc_cgen_puts(w, "flow_mem_memcpy_site(&")
         flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
         flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
         flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
@@ -1831,7 +1831,7 @@ function flowc_cgen_emit_rupdate_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
         flowc_cgen_emit_expr(w, arena, src, uv)
         flowc_cgen_puts(w, ")), sizeof(")
         flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
-        flowc_cgen_puts(w, "))")
+        flowc_cgen_puts(w, "), FLOW_MEM_SITE_ARRAY)")
     } else {
         flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
         flowc_cgen_puts(w, " = ")
@@ -8897,6 +8897,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     }
     if kind == AST_CALL {
         # E.op(args) performs an effect operation (#675).
+        let mut mem_loc: i32 = 0
         let espan: array<i32, 2> = []
         if flowc_cgen_eff_call_effect(w, arena, src, id, &espan[0]) == 1 {
             flowc_cgen_emit_eff_call(w, arena, src, id, espan[0], espan[1])
@@ -9467,8 +9468,11 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     # __flowc_libc_ prefix already written above.
                     if user_libc == 1 {
                         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-                    } elif flowc_cgen_emit_mem_name(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 0 {
-                        flowc_cgen_put_callee_name(w, arena, src, id)
+                    } else {
+                        mem_loc = flowc_cgen_emit_mem_name(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                        if mem_loc == 0 {
+                            flowc_cgen_put_callee_name(w, arena, src, id)
+                        }
                     }
                 }
             } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
@@ -9653,6 +9657,12 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         if fn_id != AST_NONE {
             flowc_cgen_emit_implicit_caps(w, arena, src, fn_id, param_idx, first)
         }
+        if mem_loc == 2 {
+            if first == 0 {
+                flowc_cgen_puts(w, ", ")
+            }
+            flowc_cgen_emit_mem_loc(w, src, arena.nodes[id].start)
+        }
         flowc_cgen_putc(w, 41)
         # A returned sized array arrives wrapped; expose the array.
         if fn_id != AST_NONE {
@@ -9783,7 +9793,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     # decides: a pointer field (typeof(f) == typeof(&f[0]))
                     # takes the decayed array, an array field its elements.
                     let fv: i32 = arena.nodes[field].a
-                    flowc_cgen_puts(w, "memcpy(&")
+                    flowc_cgen_puts(w, "flow_mem_memcpy_site(&")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
                     flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
@@ -9797,7 +9807,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     flowc_cgen_emit_expr(w, arena, src, fv)
                     flowc_cgen_puts(w, ")), sizeof(")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
-                    flowc_cgen_puts(w, ")); ")
+                    flowc_cgen_puts(w, "), FLOW_MEM_SITE_ARRAY); ")
                 }
                 field = arena.nodes[field].next
             }
@@ -11192,7 +11202,7 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
             flowc_cgen_puts(w, ").len) { fprintf(stderr, \"span copy out of bounds\\n\"); flow_fault_handler(\"span copy out of bounds\"); }\n")
         }
     }
-    flowc_cgen_puts(w, "    memcpy((void*)")
+    flowc_cgen_puts(w, "    flow_mem_memcpy_site((void*)")
     flowc_cgen_emit_elem_ptr(w, arena, src, dst, arena.nodes[id].a)
     flowc_cgen_puts(w, ", (void*)")
     flowc_cgen_emit_elem_ptr(w, arena, src, srcb, arena.nodes[id].a)
@@ -11202,7 +11212,7 @@ function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, s
     flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
     flowc_cgen_puts(w, ")) * sizeof(*")
     flowc_cgen_emit_elem_ptr(w, arena, src, dst, arena.nodes[id].a)
-    flowc_cgen_puts(w, "));\n  }\n")
+    flowc_cgen_puts(w, "), FLOW_MEM_SITE_COPY);\n  }\n")
     return 1
 }
 
@@ -15184,6 +15194,14 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "static unsigned char flow_mem_st[FLOW_MEM_MAP];\n")
     flowc_cgen_puts(w, "static unsigned long long flow_mem_map_used = 0ULL;\n")
     flowc_cgen_puts(w, "static unsigned long long flow_mem_map_overflow = 0ULL;\n")
+    flowc_cgen_puts(w, "#define FLOW_MEM_SRC 128\n")
+    flowc_cgen_puts(w, "static const char* flow_mem_src_file[FLOW_MEM_SRC];\n")
+    flowc_cgen_puts(w, "static int flow_mem_src_line[FLOW_MEM_SRC];\n")
+    flowc_cgen_puts(w, "static unsigned char flow_mem_src_st[FLOW_MEM_SRC];\n")
+    flowc_cgen_puts(w, "static unsigned long long flow_mem_src_bytes[FLOW_MEM_SRC];\n")
+    flowc_cgen_puts(w, "static unsigned long long flow_mem_src_count[FLOW_MEM_SRC];\n")
+    flowc_cgen_puts(w, "static unsigned long long flow_mem_src_used = 0ULL;\n")
+    flowc_cgen_puts(w, "static unsigned long long flow_mem_src_overflow = 0ULL;\n")
     flowc_cgen_puts(w, "static inline unsigned flow_mem_hash(void* p) {\n")
     flowc_cgen_puts(w, "  unsigned long long x = (unsigned long long)(uintptr_t)p;\n")
     flowc_cgen_puts(w, "  x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;\n")
@@ -15209,6 +15227,26 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "      if (flow_mem_map_used) flow_mem_map_used--; return n;\n")
     flowc_cgen_puts(w, "    }\n  }\n")
     flowc_cgen_puts(w, "  return 0;\n}\n")
+    flowc_cgen_puts(w, "static inline unsigned flow_mem_src_hash(const char* f, int line) {\n")
+    flowc_cgen_puts(w, "  unsigned long long x = (unsigned long long)(unsigned)line + 1ULL;\n")
+    flowc_cgen_puts(w, "  const unsigned char* p = (const unsigned char*)f;\n")
+    flowc_cgen_puts(w, "  while (p && p[0]) { x = x * 131ULL + (unsigned long long)p[0]; p++; }\n")
+    flowc_cgen_puts(w, "  x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33;\n")
+    flowc_cgen_puts(w, "  return (unsigned)x & (FLOW_MEM_SRC - 1);\n}\n")
+    flowc_cgen_puts(w, "static inline void flow_mem_note_src(const char* file, int line, size_t n) {\n")
+    flowc_cgen_puts(w, "  unsigned h, i; if (!flow_mem_profile_on || file == 0 || file[0] == 0 || line <= 0) return;\n")
+    flowc_cgen_puts(w, "  h = flow_mem_src_hash(file, line);\n")
+    flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_SRC; i++) {\n")
+    flowc_cgen_puts(w, "    unsigned k = (h + i) & (FLOW_MEM_SRC - 1);\n")
+    flowc_cgen_puts(w, "    if (flow_mem_src_st[k] == 0) {\n")
+    flowc_cgen_puts(w, "      flow_mem_src_file[k] = file; flow_mem_src_line[k] = line; flow_mem_src_st[k] = 1;\n")
+    flowc_cgen_puts(w, "      flow_mem_src_count[k] = 1ULL; flow_mem_src_bytes[k] = (unsigned long long)n;\n")
+    flowc_cgen_puts(w, "      flow_mem_src_used++; return;\n")
+    flowc_cgen_puts(w, "    }\n")
+    flowc_cgen_puts(w, "    if (flow_mem_src_line[k] == line && strcmp(flow_mem_src_file[k], file) == 0) {\n")
+    flowc_cgen_puts(w, "      flow_mem_src_count[k]++; flow_mem_src_bytes[k] += (unsigned long long)n; return;\n")
+    flowc_cgen_puts(w, "    }\n  }\n")
+    flowc_cgen_puts(w, "  flow_mem_src_overflow++;\n}\n")
     flowc_cgen_puts(w, "static void flow_mem_profile_init(void);\n")
     flowc_cgen_puts(w, "static inline void flow_mem_note_site(int site, size_t n) {\n")
     flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n")
@@ -15249,23 +15287,32 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n")
     flowc_cgen_puts(w, "  flow_mem_arena_bytes += (unsigned long long)n;\n")
     flowc_cgen_puts(w, "  flow_mem_note_site(FLOW_MEM_SITE_ARENA, n);\n}\n")
+    flowc_cgen_puts(w, "static inline void* flow_mem_malloc_at(size_t n, const char* file, int line) {\n")
+    flowc_cgen_puts(w, "  void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); flow_mem_note_src(file, line, n); } return p;\n}\n")
     flowc_cgen_puts(w, "static inline void* flow_mem_malloc(size_t n) {\n")
-    flowc_cgen_puts(w, "  void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;\n}\n")
+    flowc_cgen_puts(w, "  return flow_mem_malloc_at(n, 0, 0);\n}\n")
+    flowc_cgen_puts(w, "static inline void* flow_mem_calloc_at(size_t c, size_t s, const char* file, int line) {\n")
+    flowc_cgen_puts(w, "  void* p = calloc(c, s); if (p) { size_t n = c * s; flow_mem_note_alloc(n); flow_mem_map_put(p, n); flow_mem_note_src(file, line, n); } return p;\n}\n")
     flowc_cgen_puts(w, "static inline void* flow_mem_calloc(size_t c, size_t s) {\n")
-    flowc_cgen_puts(w, "  void* p = calloc(c, s); if (p) { size_t n = c * s; flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;\n}\n")
-    flowc_cgen_puts(w, "static inline void* flow_mem_realloc(void* p, size_t n) {\n")
+    flowc_cgen_puts(w, "  return flow_mem_calloc_at(c, s, 0, 0);\n}\n")
+    flowc_cgen_puts(w, "static inline void* flow_mem_realloc_at(void* p, size_t n, const char* file, int line) {\n")
     flowc_cgen_puts(w, "  size_t old = flow_mem_map_take(p); void* q = realloc(p, n);\n")
-    flowc_cgen_puts(w, "  if (q) { if (old) flow_mem_note_free(old); flow_mem_note_alloc(n); flow_mem_map_put(q, n); }\n")
+    flowc_cgen_puts(w, "  if (q) { if (old) flow_mem_note_free(old); flow_mem_note_alloc(n); flow_mem_map_put(q, n); flow_mem_note_src(file, line, n); }\n")
     flowc_cgen_puts(w, "  else if (old) flow_mem_map_put(p, old); return q;\n}\n")
+    flowc_cgen_puts(w, "static inline void* flow_mem_realloc(void* p, size_t n) {\n")
+    flowc_cgen_puts(w, "  return flow_mem_realloc_at(p, n, 0, 0);\n}\n")
     flowc_cgen_puts(w, "static inline void flow_mem_free(void* p) {\n")
     flowc_cgen_puts(w, "  size_t n; if (p == 0) return; n = flow_mem_map_take(p); if (n) flow_mem_note_free(n); free(p);\n}\n")
     flowc_cgen_puts(w, "static inline void* flow_mem_memcpy_site(void* d, const void* s, size_t n, int site) {\n")
     flowc_cgen_puts(w, "  flow_mem_note_copy_site(site, n); return memcpy(d, s, n);\n}\n")
+    flowc_cgen_puts(w, "static inline void* flow_mem_memcpy_at(void* d, const void* s, size_t n, const char* file, int line) {\n")
+    flowc_cgen_puts(w, "  flow_mem_note_copy_site(FLOW_MEM_SITE_COPY, n); flow_mem_note_src(file, line, n); return memcpy(d, s, n);\n}\n")
     flowc_cgen_puts(w, "static inline void* flow_mem_memcpy(void* d, const void* s, size_t n) {\n")
     flowc_cgen_puts(w, "  return flow_mem_memcpy_site(d, s, n, FLOW_MEM_SITE_COPY);\n}\n")
     flowc_cgen_puts(w, "static void flow_mem_report(void) {\n")
     flowc_cgen_puts(w, "  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb; int si;\n")
     flowc_cgen_puts(w, "  unsigned long long promo;\n")
+    flowc_cgen_puts(w, "  int sj;\n")
     flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n")
     flowc_cgen_puts(w, "  peak_rss_kb = 0; if (getrusage(0, &ru) == 0) {\n")
     flowc_cgen_puts(w, "#if defined(__APPLE__)\n")
@@ -15289,6 +15336,12 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  fprintf(fp, \"  arena bytes         : %llu\\n\", flow_mem_arena_bytes);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"live map used         : %llu / %d\\n\", flow_mem_map_used, FLOW_MEM_MAP);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"live map overflow     : %llu\\n\", flow_mem_map_overflow);\n")
+    flowc_cgen_puts(w, "  fprintf(fp, \"source sites          : %llu / %d\\n\", flow_mem_src_used, FLOW_MEM_SRC);\n")
+    flowc_cgen_puts(w, "  fprintf(fp, \"source map overflow   : %llu\\n\", flow_mem_src_overflow);\n")
+    flowc_cgen_puts(w, "  for (sj = 0; sj < FLOW_MEM_SRC; sj++) {\n")
+    flowc_cgen_puts(w, "    if (flow_mem_src_st[sj] == 1) {\n")
+    flowc_cgen_puts(w, "      fprintf(fp, \"  %s:%d : %llu bytes in %llu events\\n\", flow_mem_src_file[sj], flow_mem_src_line[sj], flow_mem_src_bytes[sj], flow_mem_src_count[sj]);\n")
+    flowc_cgen_puts(w, "    }\n  }\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"copy volume by site   :\\n\");\n")
     flowc_cgen_puts(w, "  for (si = 0; si < FLOW_MEM_NSITE; si++) {\n")
     flowc_cgen_puts(w, "    fprintf(fp, \"  %-6s : %llu bytes in %llu events\\n\", flow_mem_site_nm[si], flow_mem_site_bytes[si], flow_mem_site_count[si]);\n")
@@ -15314,6 +15367,12 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  fprintf(fp, \"site_copy: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_COPY]);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"site_stack: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_STACK]);\n")
     flowc_cgen_puts(w, "  fprintf(fp, \"site_arena: %llu\\n\", flow_mem_site_bytes[FLOW_MEM_SITE_ARENA]);\n")
+    flowc_cgen_puts(w, "  fprintf(fp, \"src_map_used: %llu\\n\", flow_mem_src_used);\n")
+    flowc_cgen_puts(w, "  fprintf(fp, \"src_map_overflow: %llu\\n\", flow_mem_src_overflow);\n")
+    flowc_cgen_puts(w, "  for (sj = 0; sj < FLOW_MEM_SRC; sj++) {\n")
+    flowc_cgen_puts(w, "    if (flow_mem_src_st[sj] == 1) {\n")
+    flowc_cgen_puts(w, "      fprintf(fp, \"src: %s:%d:%llu\\n\", flow_mem_src_file[sj], flow_mem_src_line[sj], flow_mem_src_bytes[sj]);\n")
+    flowc_cgen_puts(w, "    }\n  }\n")
     flowc_cgen_puts(w, "  if (fp != stderr) fclose(fp);\n}\n")
     flowc_cgen_puts(w, "static void flow_mem_profile_init(void) {\n")
     flowc_cgen_puts(w, "  const char* e; if (flow_mem_inited) return; flow_mem_inited = 1;\n")
@@ -15324,29 +15383,54 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
 }
 
 # Rewrite libc malloc/calloc/realloc/free/memcpy to the counting wrappers.
-# Returns 1 when the name was rewritten.
+# Returns 2 when the call also takes Flow file:line, 1 when rewritten
+# without a location (free), 0 when the name is not a wrapper.
 function flowc_cgen_emit_mem_name(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "malloc") == 1 {
-        flowc_cgen_puts(w, "flow_mem_malloc")
-        return 1
+        flowc_cgen_puts(w, "flow_mem_malloc_at")
+        return 2
     }
     if flowc_cgen_span_is(src, ns, ne, "calloc") == 1 {
-        flowc_cgen_puts(w, "flow_mem_calloc")
-        return 1
+        flowc_cgen_puts(w, "flow_mem_calloc_at")
+        return 2
     }
     if flowc_cgen_span_is(src, ns, ne, "realloc") == 1 {
-        flowc_cgen_puts(w, "flow_mem_realloc")
-        return 1
+        flowc_cgen_puts(w, "flow_mem_realloc_at")
+        return 2
     }
     if flowc_cgen_span_is(src, ns, ne, "free") == 1 {
         flowc_cgen_puts(w, "flow_mem_free")
         return 1
     }
     if flowc_cgen_span_is(src, ns, ne, "memcpy") == 1 {
-        flowc_cgen_puts(w, "flow_mem_memcpy")
-        return 1
+        flowc_cgen_puts(w, "flow_mem_memcpy_at")
+        return 2
     }
     return 0
+}
+
+# `"path", line` for a user malloc/memcpy call. FLOWC_CGEN_FILE is the
+# bundle module; FLOWC_IN is a single-file emit.
+function flowc_cgen_emit_mem_loc(w: ptr<CgenBuf>, src: ptr<u8>, pos: i32) {
+    let mut path: ptr<u8> = getenv("FLOWC_CGEN_FILE") as ptr<u8>
+    if path == null {
+        path = getenv("FLOWC_IN") as ptr<u8>
+    }
+    flowc_cgen_puts(w, "\"")
+    if path == null or path[0] == 0 {
+        flowc_cgen_puts(w, "<src>")
+    } else {
+        let mut i: i32 = 0
+        while path[i] != 0 {
+            if path[i] == 92 or path[i] == 34 {
+                flowc_cgen_putc(w, 92)
+            }
+            flowc_cgen_putc(w, path[i])
+            i = i + 1
+        }
+    }
+    flowc_cgen_puts(w, "\", ")
+    flowc_cgen_put_i32(w, flowc_cgen_line_of(src, pos))
 }
 
 # Compiler-emitted stack storage the profiler attributes as promotion.

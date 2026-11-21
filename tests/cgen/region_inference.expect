@@ -7,7 +7,7 @@ env FLOWC_REGION_REPORT=1
 + /* region[local]: `pb` */
 # Proven disjoint: one memcpy.
 + /* region: disjoint */
-+ memcpy((void*)(&(
++ flow_mem_memcpy_site((void*)(&(
 # Parameters may alias: keep the ordered element loop (#1417).
 + dst[i] = src[i];
 - memmove((void*)(&(

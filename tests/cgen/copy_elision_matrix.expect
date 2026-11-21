@@ -1,5 +1,5 @@
 # Matrix / array-field let constructs into the declared variable.
-+ memcpy(&n.a,
++ flow_mem_memcpy_site(&n.a,
 + n.tag = 7;
 # Sret for the matrix-returning helper: no extra `__flowc_sl` on that return.
 + void scale(Mat2* __flowc_sret
