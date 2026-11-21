@@ -1,10 +1,11 @@
 # `flow gpu-lower` parity cases: PROGRAM ULP. ULP is the f32 tolerance
 # against the CPU build (0 is bit for bit). Run by tests/gpu_lower/run.flow.
 #
-# Every case is bit for bit on Apple M4 Max through MoltenVK, Metal and
-# MLX: the CPU build fuses a * b + c within an expression as the Metal
-# compiler does, adds in source order, and the Metal library is built
-# with fast math off. See docs/gpu/lowering-pipeline.md.
+# The original five cases were bit for bit on Apple M4 Max through
+# MoltenVK, Metal and MLX. New cases must earn this claim independently.
+# The CPU build fuses a * b + c within an expression as Metal does and
+# adds in source order; Metal is built with fast math off.
+# See docs/gpu/lowering-pipeline.md.
 tests/gpu_lower/kernels/saxpy.flow 0
 tests/gpu_lower/kernels/reduce.flow 0
 tests/gpu_lower/kernels/stencil2d.flow 0
