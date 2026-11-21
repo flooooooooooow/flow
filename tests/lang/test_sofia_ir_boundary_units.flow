@@ -49,6 +49,15 @@ function main() -> i32 {
         return 6
     }
 
+    # NaN compares false to both <= and >; reject unordered grid/time inputs.
+    let zero: f64 = state[0] - state[0]
+    let nan: f64 = zero / zero
+    if sofia_ir_rhs_1d(&p, state, k1, 32, nan,
+        SOFIA_BC_DIRICHLET, 0.0, 1.0) != 15 { return 18 }
+    if sofia_ir_step_1d(&p, state, next, k1, k2, k3, k4, tmp,
+        32, 1.0, nan, SOFIA_BC_DIRICHLET, 0.0, 1.0,
+        SOFIA_RK_EULER) != 17 { return 19 }
+
     # The caller owns the DAG buffer: validate must detect corrupted
     # intermediate dimensions even when the final RHS dimensions still match.
     nodes[lap].length_dim = -3
