@@ -284,7 +284,7 @@ export function sofia_ir_rhs_1d(
 ) -> i32 {
     let status: i32 = sofia_ir_validate(p)
     if status != 0 { return status }
-    if u == null or out == null or u == out or n < 3 or dx <= 0.0 { return 15 }
+    if u == null or out == null or u == out or n < 3 or not (dx > 0.0) { return 15 }
     if bc != SOFIA_BC_PERIODIC and bc != SOFIA_BC_DIRICHLET { return 16 }
     for i in 0 to n {
         if bc == SOFIA_BC_DIRICHLET and (i == 0 or i == n - 1) {
@@ -313,7 +313,7 @@ export function sofia_ir_step_1d(
     k1: ptr<f64>, k2: ptr<f64>, k3: ptr<f64>, k4: ptr<f64>, tmp: ptr<f64>,
     n: i32, dx: f64, dt: f64, bc: i32, left: f64, right: f64, method: i32
 ) -> i32 {
-    if dt <= 0.0 or u == null or out == null or k1 == null
+    if not (dt > 0.0) or u == null or out == null or k1 == null
         or k2 == null or k3 == null or k4 == null or tmp == null { return 17 }
     if u == out or u == k1 or u == k2 or u == k3 or u == k4 or u == tmp
         or out == k1 or out == k2 or out == k3 or out == k4 or out == tmp
