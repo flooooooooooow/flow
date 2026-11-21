@@ -25,6 +25,7 @@ extern {
     function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
     function getenv(name: string) -> string
+    function setenv(name: string, value: string, overwrite: i32) -> i32
 }
 
 # Non-null and non-empty getenv result → 1, else 0.
@@ -68,7 +69,9 @@ function flowc_driver_want_typecheck() -> i32 {
 }
 
 function flowc_driver_run(in_path: string, out_path: string) -> i32 {
-    # 4 MiB, as in main.flow: the self-hosted bundle passed 1 MiB of C.
+    # Match host/stage_a_driver.c: argv paths become FLOWC_IN so cgen
+    # source-site strings name this file, not a leftover parent env.
+    let _in: i32 = setenv("FLOWC_IN", in_path, 1)
     let out_cap: i32 = 4194304
     let out: ptr<u8> = malloc(out_cap as i64)
     if out == null {

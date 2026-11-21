@@ -9,5 +9,5 @@
 # Call result is destination-passed into the binding, then listed fields are written.
 + make(&s
 # An array field update copies into the declared variable.
-~ memcpy\(&b\.v,
+~ flow_mem_memcpy_site\(&b\.v,
 exit 0
