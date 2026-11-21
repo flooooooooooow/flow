@@ -1,16 +1,16 @@
 {
   "areas": {
     "applications": {
-      "files": 8,
-      "lines": 1537
+      "files": 9,
+      "lines": 1667
     },
     "documentation": {
-      "files": 245,
-      "lines": 49389
+      "files": 262,
+      "lines": 52566
     },
     "examples": {
-      "files": 463,
-      "lines": 117143
+      "files": 486,
+      "lines": 120143
     },
     "python_compiler": {
       "files": 0,
@@ -21,20 +21,20 @@
       "lines": 231
     },
     "runtime": {
-      "files": 49,
-      "lines": 10175
+      "files": 52,
+      "lines": 12545
     },
     "self_hosted_compiler": {
       "files": 112,
-      "lines": 119294
+      "lines": 120832
     },
     "standard_library": {
-      "files": 131,
-      "lines": 44588
+      "files": 140,
+      "lines": 46813
     },
     "tests": {
-      "files": 852,
-      "lines": 58995
+      "files": 909,
+      "lines": 63455
     },
     "verify_corpus": {
       "files": 1078,
@@ -42,47 +42,47 @@
     }
   },
   "badges": {
-    "examples": "463 examples",
-    "flow": "494k Flow LOC",
-    "loc": "694k LOC",
+    "examples": "486 examples",
+    "flow": "509k Flow LOC",
+    "loc": "714k LOC",
     "proofs": "1078 verify files",
-    "stdlib": "131 modules",
-    "tests": "852 tests"
+    "stdlib": "140 modules",
+    "tests": "909 tests"
   },
-  "commit": "c7040155f89c",
-  "generated_at": "2026-10-13T00:13:20Z",
+  "commit": "483c5e80684b",
+  "generated_at": "2026-11-21T15:34:58Z",
   "languages": {
     "C": {
-      "files": 122,
-      "lines": 116895
+      "files": 124,
+      "lines": 119322
     },
     "C++": {
       "files": 22,
       "lines": 9379
     },
     "C/C++ headers": {
-      "files": 55,
-      "lines": 11456
+      "files": 56,
+      "lines": 11605
     },
     "CSS": {
       "files": 16,
       "lines": 4259
     },
     "Flow": {
-      "files": 3754,
-      "lines": 493704
+      "files": 3868,
+      "lines": 508638
     },
     "HTML": {
       "files": 223,
-      "lines": 39957
+      "lines": 40070
     },
     "JavaScript": {
       "files": 201,
       "lines": 11048
     },
     "Objective-C": {
-      "files": 44,
-      "lines": 4988
+      "files": 46,
+      "lines": 7139
     },
     "Objective-C++": {
       "files": 1,
@@ -105,8 +105,8 @@
   "proof_documents": 1080,
   "schema_version": 1,
   "totals": {
-    "source_files": 4487,
-    "source_lines": 694103,
-    "tracked_files": 10993
+    "source_files": 4606,
+    "source_lines": 713877,
+    "tracked_files": 11384
   }
 }
