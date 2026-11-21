@@ -47,7 +47,7 @@ Human lines and parseable `key: value` lines are both written:
 | `site_arena` | Arena bump events |
 | `src_map_used` | Occupied slots in the capped source-site map |
 | `src_map_overflow` | Source sites that did not fit |
-| `src` | One line per Flow `file:line:bytes` (user `malloc`/`memcpy` and friends) |
+| `src` | One line per Flow file (`file:bytes`) for user `malloc`/`memcpy` and friends |
 
 ## Live-block map
 
@@ -60,12 +60,13 @@ the size. `live_map_overflow` makes that under-count visible.
 ## Source sites
 
 User `malloc` / `calloc` / `realloc` / `memcpy` calls in generated C pass
-the Flow path (`FLOWC_CGEN_FILE` in a bundle, else `FLOWC_IN`) and the
-1-based source line. A second capped map (128 slots, hashed, `strcmp` on
-the path) aggregates bytes per `file:line`. Compiler helpers that allocate
-without a Flow call site still count toward the compiler-site totals and
-leave the source map empty for that event. SIMD type-pun `memcpy` in
-vector loops stays unrouted so the inner loop has no profiler branch.
+the Flow path (`FLOWC_CGEN_FILE` in a bundle, else `FLOWC_IN`). A second
+capped map (128 slots, hashed, `strcmp` on the path) aggregates bytes per
+file. Line numbers stay out of the C so formatting a source file does not
+change the emit. Compiler helpers that allocate without a Flow call site
+still count toward the compiler-site totals and leave the source map empty
+for that event. SIMD type-pun `memcpy` in vector loops stays unrouted so
+the inner loop has no profiler branch.
 
 ## Backends
 

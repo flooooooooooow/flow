@@ -178,7 +178,7 @@ function check_report_when_set() -> i32 {
     if not a_contains(report, "src:") {
         return T_FAIL
     }
-    if not a_contains(report, "prog.flow:4:64") {
+    if not a_contains(report, "prog.flow:64") {
         return T_FAIL
     }
     if a_contains(report, "(deferred, needs #669)") {
