@@ -11,6 +11,40 @@ Format:
 
 ## Open Questions
 
+### 2026-11-18: Should MLIR emission be byte-identical across build hosts?
+
+**Context:** `parity_mlir` fails on macOS at `origin/main` for four goldens
+(`compiler/fixtures/mlir/complex.mlir` and the recorded digests of
+`tests/cgen/complex_real_scale.flow`, `tests/cgen/complex_types_arith.flow`
+and `tests/lang/test_complex_scaling.flow`) while the same commit passes on
+the Linux CI runner, and both runs report `flowc = compiler/build/flowc_bootstrap`
+built from the same checked-in bootstrap C. The only difference is the order
+in which the two components of a complex multiply or divide are evaluated:
+the golden computes the imaginary part first and hands it to `insertvalue [1]`
+last, macOS computes the real part first. Both IRs compute the same functions,
+and both hosts are deterministic run to run, so the goldens are recording a
+host-specific valuation order rather than a semantic one. Re-recording them on
+macOS would turn the Linux job red, so the four are left as they are on `main`.
+
+**Options:**
+1. Make the ordering host-independent in the emitter, then re-record once and
+   require the gate to pass on both hosts.
+2. Normalize the gate so that a pure reordering of independent SSA ops does not
+   change the digest.
+3. Treat the Linux runner as the only recorder and document that the gate is
+   Linux-only, failing `--check` on macOS by design.
+
+**Answer:** Option 1, implemented in `f52088b42`. `mlg_emit_cplx_binop` built
+  the complex value from two emitting calls inside the `mlg_cplx_make`
+  argument list, and C leaves the evaluation order of arguments unspecified,
+  so each host picked its own order for the independent `arith.mulf` /
+  `arith.divf` pair. Each part is now emitted into a local first, which fixes
+  the SSA order everywhere. `./flow tool compiler/scripts/parity_mlir.flow`
+  passes on macOS arm64 at that commit (2736 corpus programs, 0 fail) with the
+  four goldens re-recorded once. Option 2 is still open as a follow-up: a pure
+  reordering of independent SSA ops, from any other cause, still changes a
+  digest.
+
 ### 2026-11-02: Sofia solver IR: DSL extension vs library builder API?
 
 **Context:** The Sofia-class engine (Issue #1650) requires a serializable high-level solver IR (Inputs, Outputs, Assignment, For, CodeBlock, staged RK1-RK4, time-dependent boundary updates and source terms). Should this IR be implemented as an extension to the `@physics` or `field` DSL in the language parser, or strictly as a library builder API via structs and functions in the standard library?
