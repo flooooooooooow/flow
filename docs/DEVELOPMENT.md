@@ -246,14 +246,12 @@ FIDIOM002, a return that rebuilds one value field by field), and
 ## Performance Considerations
 
 ### Parser Performance
-- Regex compilation is cached
-- Linear tokenization time
-- Recursive parsing depth limited by Python stack
+- The lexer (`compiler/src/lexer.flow`) tokenizes in a single pass
+- Parsing is recursive descent (`compiler/src/parser.flow`), bounded by the C stack
 
 ### Generation Performance
-- String building with lists
-- Minimal type inference overhead
-- Linear traversal of AST
+- Emitted C is assembled in a `ByteBuf` (`compiler/src/bytebuf.flow`)
+- Each lowering pass walks the AST once
 
 ## Future Extensions
 
@@ -290,8 +288,10 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 | Fuzz | `tests/fuzz/` | `./flow tool tests/fuzz/run.flow` |
 | Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
 
-Pytest only collects **git-tracked** files under `tests/` unless
-`FLOW_PYTEST_ALL=1`. `git add` new modules so CI sees them.
+New compiler tests are `.flow` programs: `tests/lang/*.flow` return a nonzero
+check number on failure, and `tests/cgen/*.flow` pair with `.expect` goldens.
+There is no pytest collector left; `./flow test-lang` and
+`./flow tool tests/cgen/run.flow` are the entry points.
 
 ### Strict vs lenient (wired 2026-08-04)
 
@@ -311,7 +311,7 @@ corpus keeps compiling while unit tests pin strict behavior.
 
 - MLIR now dispatches `MatchStatement` (was a no-op comment); returning arms
   skip the trailing `cf.br`; exhaustive matches end with `llvm.unreachable`.
-- `tests/unit/test_backend_parity.py` includes bool + i32 match parity.
+- Bool and i32 match parity is pinned in `compiler/fixtures/mlir/` (`./flow tool compiler/scripts/parity_mlir.flow`).
 - 25 tracked `tests/**/*.flow` files were rewritten `let` → `let mut` for
   reassigned locals (strict imm-only failures on the test corpus → 0).
   Remaining strict failures are mostly missing imports under standalone
@@ -348,9 +348,10 @@ corpus keeps compiling while unit tests pin strict behavior.
   `return &g` or `return g` for a module-scope `g` is substituted at its call
   sites, turning call+load pairs in hot loops into plain loads. The definition
   is still emitted, so external linkage is unchanged.
-- Pins live in `tests/unit/test_mlir_canonicalize.py`;
-  `tests/integration/test_counted_loop_rotation.py` compiles each loop shape
-  before and after rotation through the C backend and compares what it returns.
+- Pins live in `compiler/fixtures/mlir/`;
+  `tests/lang/test_counted_loop_rotation.flow` compiles each loop shape and
+  returns a nonzero check number on failure, and
+  `./flow tool compiler/scripts/parity_mlir.flow` holds its MLIR to the golden.
 
 ## References
 
