@@ -4,7 +4,7 @@ Chapter 7 introduced continuous state. Flow also supports solver settings,
 inputs and outputs, sampled actions, hybrid events, invariants, composed
 models, state-space analysis, controller synthesis, and field equations.
 
-All forms below use the Python compiler host.
+All forms below are handled by `flowc`, the self-hosted compiler.
 
 ## 13.1 Generated flow interface
 
