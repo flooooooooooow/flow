@@ -128,7 +128,7 @@ pipeline:
 
 ```bash
 ./flow tool shader_record --group photoreal
-python3 scripts/build_shader_gallery.py --check --check-assets
+./flow tool shader_gallery --check --check-assets
 ```
 
 The unit tests enforce exactly 64 unique photoreal entries across the two source
@@ -137,11 +137,11 @@ a GIF for every entry.
 
 ## Pipeline
 
-1. `src/flow/shader_dsl.py`: lex/parse FSL  
-2. `src/flow/shader_codegen.py`: emit MSL (+ hash/noise prelude)  
+1. `compiler/src/shader_dsl.flow`: lex/parse FSL and generate MSL and WGSL  
+2. `compiler/src/shader_emit.flow`: `FLOWC_SHADER=metal|wgsl` writes the gallery and per-fill sources  
 3. `runtime/shader_view_metal.m`: Cocoa + `CAMetalLayer` live gallery viewer  
 4. `runtime/shader_record_metal.m`: deterministic offscreen Metal recorder for published GIFs  
-5. `scripts/build_shader_gallery.py`: source-derived visual gallery page + asset contract
+5. `scripts/tools/shader_gallery` (`./flow tool shader_gallery`): source-derived visual gallery page + asset contract
 
 macOS for the live window and recorded Metal output; `--emit-only` works anywhere.
 

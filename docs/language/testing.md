@@ -53,7 +53,7 @@ Or pass paths directly:
 
 ```bash
 flow test tests/dsp.flow
-flow test tests/unit tests/integration
+flow test tests/lang tests/cgen
 ```
 
 A test file may contain any number of named test blocks. Each block is compiled and executed as an isolated case, so one abort or crash does not hide the identity of another case.

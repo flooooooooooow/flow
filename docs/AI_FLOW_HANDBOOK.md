@@ -235,9 +235,10 @@ The compiler sources are under `compiler/src/`:
 | C output | `cgen.flow` | Portable C generation |
 | MLIR output | `mlirgen.flow` | MLIR text (`FLOWC_EMIT=mlir`) |
 
-The Python modules under `src/flow/` still hold the MLIR generator fallback
+The retired Python modules under `src/flow/` held the MLIR generator
 (`mlir_generator.py`), `flow check` (`type_checker.py`) and the GPU and WGSL
-generators. `flow python` is the Flow tool `tools/pywheel`.
+generators. That tree is deleted; `compiler/src/` generates C and MLIR today.
+`flow python` is the Flow tool `tools/pywheel`.
 
 ### 2.5 Higher-level forms use two implementation channels
 
@@ -308,6 +309,8 @@ The generated repository snapshot dated 10 August 2026 reports:
 These numbers show where evidence is likely to exist. They do not prove
 quality. The AI SHOULD use the current
 `docs/generated/repository-stats.json` when exact current counts matter.
+The Python compiler row belongs to that dated snapshot. Its `src/flow/` tree
+has since been deleted, and `flowc` is the only compiler.
 
 ---
 
@@ -1676,15 +1679,12 @@ point. It does not replace the executable help.
 |---|---|
 | `flow` | Main command driver |
 | `flow.toml` | Root project and path configuration |
-| `src/flow/` | Full Python compiler and tooling |
 | `compiler/src/` | flowc, the self-hosted compiler in Flow |
 | `compiler/bootstrap/` | Checked-in C bootstrap |
 | `runtime/` | Native runtime support |
 | `lib/stdlib/` | Standard library modules |
 | `examples/` | Domain examples and canonical demonstrations |
-| `tests/unit/` | Python-level compiler tests |
 | `tests/runtime/` | Compile-and-run Flow tests |
-| `tests/integration/` | Cross-component checks |
 | `tests/benchmarks/` | Benchmark sources and results |
 | `docs/language/` | Focused language documents |
 | `docs/library/` | Standard-library documents |
@@ -2840,7 +2840,7 @@ Before saying that this handbook covers a new repository state, run this audit:
 4. Diff focused language/library page names against the contents and matrix.
 5. Diff example top-level domains against chapter 59.7.
 6. Diff test command families and directories against chapter 58.
-7. Diff `src/flow/*optimizer*`, `*plans*`, `fir_*`, routing, and fusion modules
+7. Diff the optimizer, plan, routing and fusion modules under `compiler/src/`
    against chapter 57.
 8. Diff roadmap unchecked/partial entries and open questions against chapter
    60.

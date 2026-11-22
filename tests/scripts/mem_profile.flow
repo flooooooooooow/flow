@@ -63,6 +63,9 @@ function check_emitted_prelude() -> i32 {
     if not a_contains(ctext, "flow_mem_malloc") {
         return T_FAIL
     }
+    if not a_contains(ctext, "flow_mem_malloc_at(") {
+        return T_FAIL
+    }
     if not a_contains(ctext, "flow_mem_hash") {
         return T_FAIL
     }
@@ -76,6 +79,12 @@ function check_emitted_prelude() -> i32 {
         return T_FAIL
     }
     if not a_contains(ctext, "live_map_overflow") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "flow_mem_malloc_at") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "FLOW_MEM_SRC") {
         return T_FAIL
     }
     if a_contains(ctext, "(deferred, needs #669)") {
@@ -161,6 +170,15 @@ function check_report_when_set() -> i32 {
         return T_FAIL
     }
     if not a_contains(report, "live_map_overflow: 0") {
+        return T_FAIL
+    }
+    if not a_contains(report, "src_map_overflow: 0") {
+        return T_FAIL
+    }
+    if not a_contains(report, "src:") {
+        return T_FAIL
+    }
+    if not a_contains(report, "prog.flow:64") {
         return T_FAIL
     }
     if a_contains(report, "(deferred, needs #669)") {
