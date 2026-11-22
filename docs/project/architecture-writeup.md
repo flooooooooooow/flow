@@ -1,6 +1,6 @@
 # Flow: How the Language Works (and Why MLIR)
 
-Flow is a statically typed, compiled language that sits at the intersection of systems programming, ML workloads, audio, and graphics. It is implemented primarily in Python and targets multiple backends. MLIR is one of the targets, not the whole story: Flow also has a portable C backend and a Metal shader pipeline. The approach is intentionally pragmatic: keep the language semantics small, expressible, and easy to lower, while still providing powerful capabilities like algebraic effects and automatic differentiation.
+Flow is a statically typed, compiled language that sits at the intersection of systems programming, ML workloads, audio, and graphics. It is implemented in Flow: `flowc` is self-hosted from `compiler/src/` and targets multiple backends. MLIR is one of the targets, not the whole story: Flow also has a portable C backend and a Metal shader pipeline. The approach is intentionally pragmatic: keep the language semantics small, expressible, and easy to lower, while still providing powerful capabilities like algebraic effects and automatic differentiation.
 
 This writeup explains the structure and the design choices as they exist in this codebase.
 
@@ -8,13 +8,13 @@ This writeup explains the structure and the design choices as they exist in this
 
 Flow is a classic front end with multiple back ends:
 
-1. **Parser** (`src/flow/parser.py`) lexes and parses `.flow` source into an AST.
-2. **Type checking** (`src/flow/type_checker.py`) performs semantic checks and type inference in a mostly conventional static type system.
+1. **Parser** (`compiler/src/lexer.flow`, `compiler/src/parser.flow`) lexes and parses `.flow` source into an AST.
+2. **Type checking** (`compiler/src/typecheck.flow`) performs semantic checks and type inference in a mostly conventional static type system.
 3. **Lowering** chooses a backend:
    - **C generator**: flowc (`compiler/src/cgen.flow`), the only C compiler and the default CPU path (`./flow run`, portable Clang/GCC). The Python `c_generator.py` is retired.
-   - **MLIR generator** (`src/flow/mlir_generator.py`): co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
+   - **MLIR generator** (`compiler/src/mlirgen.flow`): co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
    - **Metal and WGSL codegen** (`tools/gpu/main.flow`, `flow gpu [--wgsl]`): the `@gpu` kernel path; fill shaders go through flowc (`compiler/src/shader_dsl.flow`).
-   - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`): parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
+   - **MLIR GPU + SPIR-V** (`compiler/src/mlirgen.flow`, `compiler/src/sem_gpu.flow`, `tools/flow_cli/gpu_passes.flow`): parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
 
 The CLI (`flow`, the Flow program in `tools/flow_cli`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
 
@@ -32,7 +32,7 @@ The language is deliberately small and readable:
 - **Distinct types**: `distinct type UserId = i64` for nominal safety over primitives
 - **Generics**: functions may be parameterized by type variables
 
-The parser and type checker are typical for a small language: parse to AST, infer and check types, then lower. Generics are handled by a monomorphization pass (`src/flow/monomorphize.py`).
+The parser and type checker are typical for a small language: parse to AST, infer and check types, then lower. Generics are handled by a monomorphization pass (`compiler/src/monomorphize.flow`).
 
 ## 2.1 Monomorphization Safety
 

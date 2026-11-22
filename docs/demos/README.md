@@ -37,7 +37,7 @@ Numerical clips live at `docs/demos/numerical/<name>.gif`.
 
 FSL gallery entries use the shader-fill name directly:
 `shader fill photoreal_gold` → `docs/demos/shaders/photoreal_gold.gif`.
-`scripts/build_shader_gallery.py` derives the page from the two photoreal FSL
+`./flow tool shader_gallery` derives the page from the two photoreal FSL
 source files and enforces the current **64 unique shader** contract.
 
 The three original demos also keep their GIFs directly in this folder
@@ -90,8 +90,8 @@ time, so scheduling jitter cannot change the captured animation.
 ./flow tool shader_record --name photoreal_gold
 
 # Rebuild and validate the generated Wiki page
-python3 scripts/build_shader_gallery.py
-python3 scripts/build_shader_gallery.py --check --check-assets
+./flow tool shader_gallery
+./flow tool shader_gallery --check --check-assets
 ```
 
 This path requires macOS with an exposed Metal device. The repository's shader
