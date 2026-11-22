@@ -1,0 +1,25 @@
+# The harness must reject a check that is opened twice. A second t_start nests
+# a second log sink, so every later line, the summary included, lands in the
+# sink that is never popped: the program prints nothing and exits 0, which is
+# indistinguishable from a passing file.
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+const FIXTURE: string = "tests/scripts/fixtures/harness_duplicate_t_start.flow"
+
+function rejects_duplicate_t_start() -> i32 {
+    let a: ptr<ProcStrs> = sl_of3("./flow", "tool", FIXTURE)
+    if not a_eq_int(t_run_argv(a), 1, "duplicate t_start exit") { return T_FAIL }
+    if not a_file_contains(t_err(), "t_start while a check is already open") { return T_FAIL }
+    if not a_true("no stray PASS line", not a_contains(read_text(t_out()), "PASS")) { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("harness_guard")
+    t_start()
+    t_end("rejects_duplicate_t_start", rejects_duplicate_t_start())
+    t_done()
+    return 0
+}
