@@ -56,6 +56,44 @@ function resolves_wildcard_anchors() -> i32 {
     return T_FAIL
 }
 
+# The first reference object whose path is `want`, or -1.
+function find_ref(j: ptr<Json>, want: string) -> i32 {
+    let features: i32 = json_get(j, 0, "features")
+    let mut f: i32 = json_first(j, features)
+    while f >= 0 {
+        let refs: i32 = json_get(j, f, "references")
+        let mut r: i32 = json_first(j, refs)
+        while r >= 0 {
+            if json_str(j, json_get(j, r, "path")) == want { return r }
+            r = json_next(j, r)
+        }
+        f = json_next(j, f)
+    }
+    return -1
+}
+
+# A pattern names every file it matches. Reporting one of them as the
+# resolution hides the others and makes the anchor look more precise than it is.
+function reports_pattern_match_counts() -> i32 {
+    if t_run_argv(sl_of3("./flow", "tool", "feature_evidence")) != 0 { return T_FAIL }
+    let parsed: ptr<Json> = json_parse(read_text(t_out()))
+    let wildcard: i32 = find_ref(parsed, "overload*.flow")
+    let exact: i32 = find_ref(parsed, "compiler/src/sem_check.flow")
+    if wildcard < 0 or exact < 0 {
+        outln("pattern or exact anchor was absent")
+        json_free(parsed)
+        return T_FAIL
+    }
+    let count: string = tj_compact(parsed, json_get(parsed, wildcard, "matches"))
+    let mut ok: bool = a_eq(tj_compact(parsed, json_get(parsed, wildcard, "resolved_path")), "null", "pattern has no single resolution")
+    if not a_true("pattern reports several matches", count != "0" and count != "1" and count != "null") { ok = false }
+    if not a_eq(tj_compact(parsed, json_get(parsed, exact, "resolved_path")), "\"compiler/src/sem_check.flow\"", "exact path resolution") { ok = false }
+    if not a_eq(tj_compact(parsed, json_get(parsed, exact, "matches")), "1", "exact path names one file") { ok = false }
+    json_free(parsed)
+    if not ok { return T_FAIL }
+    return T_PASS
+}
+
 function rejects_arguments() -> i32 {
     let args: ptr<ProcStrs> = sl_of3("./flow", "tool", "feature_evidence")
     sl_push(args, "--bad")
@@ -70,6 +108,8 @@ function main() -> i32 {
     t_end("report_is_valid_json", report_is_valid_json())
     t_start()
     t_end("resolves_wildcard_anchors", resolves_wildcard_anchors())
+    t_start()
+    t_end("reports_pattern_match_counts", reports_pattern_match_counts())
     t_start()
     t_end("rejects_arguments", rejects_arguments())
     t_done()
