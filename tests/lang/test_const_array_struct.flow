@@ -1,0 +1,15 @@
+struct Point {
+    x: i32
+    y: i32
+}
+
+const POINTS: [Point; 2] = [Point { x: 10, y: 20 }, Point { x: 30, y: 40 }]
+
+function main() -> i32 {
+    if POINTS[0].x == 10 and POINTS[0].y == 20 {
+        if POINTS[1].x == 30 and POINTS[1].y == 40 {
+            return 0
+        }
+    }
+    return 1
+}

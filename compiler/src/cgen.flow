@@ -14220,19 +14220,38 @@ function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
     }
     # Use the declared type if available, otherwise default to int32_t.
     let ty: i32 = arena.nodes[id].a
+    let mut arr_n: i32 = 0
+    let mut arr_inner: i32 = AST_NONE
+    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
+        if arena.nodes[ty].a != AST_NONE and arena.nodes[ty].ival > 0 {
+            if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
+                arr_n = arena.nodes[ty].ival
+                arr_inner = arena.nodes[ty].a
+            }
+        }
+    }
     if flowc_cgen_type_is_string(arena, src, ty) == 1 {
         # `string` is already `const char*`: the binding's const goes on
         # the pointer, not on the chars a second time (#990).
         flowc_cgen_puts(w, "char* const")
     } else {
-        if ty != AST_NONE {
-            flowc_cgen_emit_type(w, arena, src, ty)
+        if arr_n > 0 {
+            flowc_cgen_emit_type(w, arena, src, arr_inner)
         } else {
-            flowc_cgen_puts(w, "int32_t")
+            if ty != AST_NONE {
+                flowc_cgen_emit_type(w, arena, src, ty)
+            } else {
+                flowc_cgen_puts(w, "int32_t")
+            }
         }
     }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    if arr_n > 0 {
+        flowc_cgen_putc(w, 91)
+        flowc_cgen_put_i32(w, arr_n)
+        flowc_cgen_putc(w, 93)
+    }
     flowc_cgen_puts(w, " = ")
     let expr: i32 = arena.nodes[id].b
     if ty != AST_NONE and flowc_cgen_type_is_string(arena, src, ty) == 1 and

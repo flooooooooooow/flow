@@ -1,0 +1,6 @@
+const NOTES: [i32; 4] = [36, 38, 42, 46]
+
+function main() -> i32 {
+    if NOTES[2] == 42 { return 0 }
+    return 1
+}

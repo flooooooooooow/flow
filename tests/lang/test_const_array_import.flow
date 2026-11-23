@@ -1,0 +1,10 @@
+import tests.fixtures.modules.testlib.array_data as ad
+
+function main() -> i32 {
+    if ad.PRIMES[0] == 2 and ad.PRIMES[4] == 11 {
+        if ad.SQUARES[0] == 1 and ad.SQUARES[3] == 16 {
+            return 0
+        }
+    }
+    return 1
+}
