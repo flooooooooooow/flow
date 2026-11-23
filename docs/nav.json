@@ -1053,6 +1053,10 @@
           "path": "project/idiom-modernization/FM-012-symbolic-derivative-inventory.md"
         },
         {
+          "label": "Modernization: Algebraic DAE and MNA Inventory",
+          "path": "project/idiom-modernization/FM-012-algebraic-dae-mna-inventory.md"
+        },
+        {
           "label": "FIR-G",
           "path": "project/fir-g.md"
         },
