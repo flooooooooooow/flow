@@ -1,0 +1,55 @@
+# Symbolic Flow-native PDE example, independent of Sofia's Python API.
+# Compose d_t u = alpha*d_xx u with unit-checked nodes, then integrate
+# with classical RK4. Periodic 1D domain, 64 cells, no external runtime.
+# Run: ./flow run examples/science/sofia/symbolic_diffusion.flow
+import "stdlib/science/sofia_ir.flow"
+import "stdlib/math.flow"
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+function main() -> i32 {
+    let nodes: array<SofiaIrNode, 16> = [
+        SofiaIrNode {
+            kind: 0, a: -1, b: -1, value: 0.0,
+            length_dim: 0, time_dim: 0, quantity_dim: 0
+        }
+    ]
+    let mut equation: SofiaIrProgram = sofia_ir_new(nodes, 16)
+    let u: i32 = sofia_ir_field(&equation, 0, 0, 1)
+    let dxx: i32 = sofia_ir_laplacian_x(&equation, u)
+    let alpha: i32 = sofia_ir_constant(&equation, 0.025, 2, -1, 0)
+    let rhs: i32 = sofia_ir_mul(&equation, alpha, dxx)
+    if sofia_ir_set_rhs(&equation, rhs) != 0 { return 1 }
+
+    let state: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let next: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k1: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k2: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k3: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k4: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let tmp: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let dx: f64 = 1.0 / 64.0
+    for i in 0 to 64 {
+        state[i] = 1.0 + 0.25 * cos(2.0 * PI * (i as f64) * dx)
+    }
+    let mass0: f64 = sofia_ir_integral_1d(state, 64, dx)
+    for step in 0 to 50 {
+        let status: i32 = sofia_ir_step_1d(
+            &equation, state, next, k1, k2, k3, k4, tmp,
+            64, dx, 0.002, SOFIA_BC_PERIODIC, 0.0, 0.0, SOFIA_RK_CLASSIC_4
+        )
+        if status != 0 { return status }
+        for i in 0 to 64 { state[i] = next[i] }
+    }
+    let mass: f64 = sofia_ir_integral_1d(state, 64, dx)
+    println("Flow PDE IR: d_t u = alpha * d_xx u")
+    print("initial mass = ")
+    printf("%.12f\n", mass0)
+    print("final mass   = ")
+    printf("%.12f\n", mass)
+    print("final peak   = ")
+    printf("%.12f\n", state[0])
+    return 0
+}
