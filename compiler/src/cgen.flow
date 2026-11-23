@@ -3875,6 +3875,52 @@ function flowc_cgen_scoped_decl(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     return flowc_cgen_scoped_decl_of(w, arena, src, id, AST_IDENT)
 }
 
+# Find the type of a variable in scope at a given position within a function body.
+# Used for lambda environment capture type lookup. Searches backwards from use_pos
+# to find the most recent binding that matches the name.
+function flowc_cgen_var_type_in_scope(arena: AstArena, src: ptr<u8>, body: i32, ns: i32, ne: i32, use_pos: i32, best_in: i32) -> i32 {
+    if body == AST_NONE or body < 0 or body >= arena.len {
+        return best_in
+    }
+    let mut best: i32 = best_in
+    let k: i32 = arena.nodes[body].kind
+    # Don't search inside nested lambdas or types.
+    if k == AST_FN or k == AST_TYPE {
+        return best
+    }
+    # A LET binding that ends before use_pos and matches the name.
+    if k == AST_LET and arena.nodes[body].end <= use_pos {
+        if flowc_cgen_span_eq(src, ns, ne, arena.nodes[body].name_start, arena.nodes[body].name_end) == 1 {
+            # Pick the latest binding (closest to use_pos).
+            if best == AST_NONE or arena.nodes[body].start > arena.nodes[best].start {
+                let ty: i32 = arena.nodes[body].a
+                if ty != AST_NONE {
+                    return ty
+                }
+                best = body
+            }
+        }
+    }
+    # Recurse into children.
+    let b1: i32 = flowc_cgen_var_type_in_scope(arena, src, arena.nodes[body].a, ns, ne, use_pos, best)
+    if b1 != AST_NONE and b1 != best {
+        best = b1
+    }
+    let b2: i32 = flowc_cgen_var_type_in_scope(arena, src, arena.nodes[body].b, ns, ne, use_pos, best)
+    if b2 != AST_NONE and b2 != best {
+        best = b2
+    }
+    let b3: i32 = flowc_cgen_var_type_in_scope(arena, src, arena.nodes[body].c, ns, ne, use_pos, best)
+    if b3 != AST_NONE and b3 != best {
+        best = b3
+    }
+    let bn: i32 = flowc_cgen_var_type_in_scope(arena, src, arena.nodes[body].next, ns, ne, use_pos, best)
+    if bn != AST_NONE and bn != best {
+        return bn
+    }
+    return best
+}
+
 # Module-level `const` with this identifier's name, else AST_NONE.
 function flowc_cgen_find_const(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let ns: i32 = arena.nodes[id].name_start
@@ -5770,7 +5816,7 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams)
         return
     }
-    if kind == AST_IDENT {
+    if kind == AST_IDENT or kind == AST_CALL {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         # Check if it's a parameter by comparing source text.
@@ -5787,7 +5833,11 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         if flowc_cgen_is_effect_name(w, src, ns, ne) == 1 {
             is_param = 1
         }
-        # Skip builtins and function names (they resolve to C functions).
+        # Skip builtins and module-level function names (they resolve to C functions).
+        # But capture function-typed parameters and locals, as they may be closures.
+        if is_param == 0 and flowc_cgen_find_fn(arena, src, ns, ne) != AST_NONE {
+            is_param = 1
+        }
         if is_param == 0 {
             # Check if already in captured list (by text comparison).
             let mut found: i32 = 0
@@ -5803,6 +5853,13 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
                 w[0].cap_ends[w[0].cap_count] = ne
                 w[0].cap_count = w[0].cap_count + 1
             }
+        }
+        # For AST_CALL, still recurse into arguments.
+        if kind == AST_CALL {
+            flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].a, param_spans, nparams)
+            flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
+            flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams)
+            flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams)
         }
         return
     }
@@ -5856,7 +5913,7 @@ function flowc_cgen_scan_lambda_caps(
         c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, c2, param_spans, nparams + 1)
         return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c2, param_spans, nparams)
     }
-    if kind == AST_IDENT {
+    if kind == AST_IDENT or kind == AST_CALL {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         let mut is_param: i32 = 0
@@ -5866,6 +5923,10 @@ function flowc_cgen_scan_lambda_caps(
                 is_param = 1
             }
             i = i + 2
+        }
+        # Skip module-level function names, but capture function-typed parameters and locals.
+        if is_param == 0 and flowc_cgen_find_fn(arena, src, ns, ne) != AST_NONE {
+            is_param = 1
         }
         if is_param == 0 {
             # Check if already in this buffer.
@@ -5880,8 +5941,23 @@ function flowc_cgen_scan_lambda_caps(
             if found == 0 and count < 16 {
                 buf[count * 2] = ns
                 buf[count * 2 + 1] = ne
-                return count + 1
+                let mut c3: i32 = count + 1
+                # For AST_CALL, still recurse into arguments.
+                if kind == AST_CALL {
+                    c3 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, c3, param_spans, nparams)
+                    c3 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, c3, param_spans, nparams)
+                    c3 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, c3, param_spans, nparams)
+                    c3 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c3, param_spans, nparams)
+                }
+                return c3
             }
+        }
+        # For AST_CALL, recurse even if the callee was already captured.
+        if kind == AST_CALL {
+            let mut c4: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, count, param_spans, nparams)
+            c4 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, c4, param_spans, nparams)
+            c4 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, c4, param_spans, nparams)
+            return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c4, param_spans, nparams)
         }
         return count
     }
@@ -7107,6 +7183,60 @@ function flowc_cgen_put_fat_fn_cast(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
 function flowc_cgen_fat_decl_ty(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let decl: i32 = flowc_cgen_scoped_decl_of(w, arena, src, id, arena.nodes[id].kind)
     if decl == AST_NONE {
+        # Inside a lambda, check if this is a captured variable with fat type.
+        # Use the type stored in the lambda environment struct, which was
+        # determined when the lambda was scanned in pass 0.4.
+        if w[0].in_lambda != 0 {
+            let ns: i32 = arena.nodes[id].name_start
+            let ne: i32 = arena.nodes[id].name_end
+            # Find which lambda we're currently emitting by checking cur_fn.
+            let lam_fn: i32 = w[0].cur_fn
+            if lam_fn != AST_NONE and arena.nodes[lam_fn].kind == AST_FN and arena.nodes[lam_fn].name_start < 0 {
+                let lam_id: i32 = 0 - arena.nodes[lam_fn].name_start
+                # Look for this variable in the per-lambda capture list.
+                let mut ci: i32 = 0
+                while ci < w[0].lambda_cap_count {
+                    if w[0].lambda_cap_lambda[ci] == lam_id {
+                        if flowc_cgen_span_eq(src, ns, ne, w[0].lambda_cap_start[ci], w[0].lambda_cap_end[ci]) == 1 {
+                            # Found it - now find its type from the parent function.
+                            let lam_pos: i32 = arena.nodes[lam_fn].start
+                            # Find the enclosing function.
+                            let mut parent_fn: i32 = AST_NONE
+                            let mut fi: i32 = 0
+                            while fi < arena.len {
+                                if arena.nodes[fi].kind == AST_FN and arena.nodes[fi].name_start >= 0 {
+                                    if lam_pos >= arena.nodes[fi].start and lam_pos < arena.nodes[fi].end {
+                                        if parent_fn == AST_NONE or arena.nodes[fi].start > arena.nodes[parent_fn].start {
+                                            parent_fn = fi
+                                        }
+                                    }
+                                }
+                                fi = fi + 1
+                            }
+                            # Look up the type in the parent function's parameters.
+                            if parent_fn != AST_NONE {
+                                let mut prm: i32 = arena.nodes[parent_fn].a
+                                while prm != AST_NONE {
+                                    if arena.nodes[prm].kind == AST_PARAM {
+                                        if flowc_cgen_span_eq(src, ns, ne, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                                            let mut vty: i32 = arena.nodes[prm].a
+                                            if vty == AST_NONE {
+                                                vty = arena.nodes[prm].b
+                                            }
+                                            if flowc_cgen_is_fat_ty(arena, vty) == 1 {
+                                                return vty
+                                            }
+                                        }
+                                    }
+                                    prm = arena.nodes[prm].next
+                                }
+                            }
+                        }
+                    }
+                    ci = ci + 1
+                }
+            }
+        }
         return AST_NONE
     }
     let ty: i32 = arena.nodes[decl].a
@@ -16517,17 +16647,56 @@ while item != AST_NONE {
                         let mut vty: i32 = AST_NONE
                         let vns: i32 = w.lambda_cap_start[ci2]
                         let vne: i32 = w.lambda_cap_end[ci2]
-                        let mut vi: i32 = 0
-                        while vi < arena.len {
-                            if (arena.nodes[vi].kind == AST_LET or arena.nodes[vi].kind == AST_PARAM) {
-                                if flowc_cgen_span_eq(src, vns, vne, arena.nodes[vi].name_start, arena.nodes[vi].name_end) == 1 {
-                                    vty = arena.nodes[vi].a
-                                    if arena.nodes[vi].kind == AST_PARAM and vty == AST_NONE {
-                                        vty = arena.nodes[vi].b
+                        # Find the enclosing function of this lambda to search for
+                        # declarations in scope. Without this, we find the first
+                        # name match in arena order, which may be from the wrong scope.
+                        let lam_pos: i32 = arena.nodes[li2].start
+                        let mut parent_fn: i32 = AST_NONE
+                        let mut fi: i32 = 0
+                        while fi < arena.len {
+                            if arena.nodes[fi].kind == AST_FN and arena.nodes[fi].name_start >= 0 {
+                                if lam_pos >= arena.nodes[fi].start and lam_pos < arena.nodes[fi].end {
+                                    if parent_fn == AST_NONE or arena.nodes[fi].start > arena.nodes[parent_fn].start {
+                                        parent_fn = fi
                                     }
                                 }
                             }
-                            vi = vi + 1
+                            fi = fi + 1
+                        }
+                        # Look up the captured variable's type in the parent function's scope.
+                        # Check parameters first, then local bindings in scope.
+                        if parent_fn != AST_NONE {
+                            let mut prm: i32 = arena.nodes[parent_fn].a
+                            while prm != AST_NONE {
+                                if arena.nodes[prm].kind == AST_PARAM {
+                                    if flowc_cgen_span_eq(src, vns, vne, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                                        vty = arena.nodes[prm].a
+                                        if vty == AST_NONE {
+                                            vty = arena.nodes[prm].b
+                                        }
+                                    }
+                                }
+                                prm = arena.nodes[prm].next
+                            }
+                            # If not a parameter, search for local bindings in scope.
+                            if vty == AST_NONE {
+                                vty = flowc_cgen_var_type_in_scope(arena, src, arena.nodes[parent_fn].c, vns, vne, lam_pos, AST_NONE)
+                            }
+                        }
+                        # Fallback: if we still didn't find it, search globally (the old behavior).
+                        if vty == AST_NONE {
+                            let mut vi: i32 = 0
+                            while vi < arena.len {
+                                if (arena.nodes[vi].kind == AST_LET or arena.nodes[vi].kind == AST_PARAM) {
+                                    if flowc_cgen_span_eq(src, vns, vne, arena.nodes[vi].name_start, arena.nodes[vi].name_end) == 1 {
+                                        vty = arena.nodes[vi].a
+                                        if arena.nodes[vi].kind == AST_PARAM and vty == AST_NONE {
+                                            vty = arena.nodes[vi].b
+                                        }
+                                    }
+                                }
+                                vi = vi + 1
+                            }
                         }
                         flowc_cgen_puts(&w, "  ")
                         if vty != AST_NONE {
