@@ -1,0 +1,26 @@
+# Same-spelling names must resolve by binding, not by a global arena search.
+# - A module function `f` must not steal calls to a captured closure parameter `f`.
+# - A captured i32 named `f` must not be emitted as a fat `.fn`/`.env` call just
+#   because another function has a closure parameter also named `f`.
+
+function f(x: i32) -> i32 {
+    return x + 100
+}
+
+function wrap(f: (i32) -> i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return f(x) }
+}
+
+function mul(f: i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return f * x }
+}
+
+function main() -> i32 {
+    let inc: (i32) -> i32 = |x: i32| -> i32 { return x + 1 }
+    let g: (i32) -> i32 = wrap(inc)
+    let h: (i32) -> i32 = mul(3)
+    if g(10) != 11 { return 1 }
+    if h(4) != 12 { return 2 }
+    if f(1) != 101 { return 3 }
+    return 0
+}
