@@ -134,8 +134,9 @@ with you.
 
 ### Working with an AI assistant
 
-Flow is not in any model's training data, so an assistant does much better with
-the current facts in front of it. Two things help:
+AI assistants may have outdated or incomplete knowledge of Flow's current
+syntax and compiler behavior. Give them the versioned language reference and
+verify generated examples with the actual compiler. Two resources help:
 
 - [Working with AI on Flow](docs/AI_FLOW_HANDBOOK.md), the operating handbook.
 - [flow-skills](https://github.com/flooooooooooow/flow-skills), a pack of

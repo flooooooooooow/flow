@@ -22,8 +22,8 @@ they were classified before the retirement.
 - (b) OUTPUT-SHAPE. Assert on generated C or MLIR text. These stay
   host-side until goldens move into the self-hosted compiler.
 - (c) COMPILER-INTERNAL. Unit tests of Python classes (parser AST,
-  type checker diagnostics, LSP, proof tooling, package manager). These
-  stay until flowc self-hosting replaces the Python compiler.
+  type checker diagnostics, LSP, proof tooling, package manager). They
+  stayed until flowc self-hosting replaced the Python compiler.
 
 Mixed files are classified by the part that decides where they live next.
 A file marked (a) keeps its host-side asserts until a later batch retires

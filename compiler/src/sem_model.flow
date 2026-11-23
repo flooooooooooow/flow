@@ -268,6 +268,10 @@ export struct Sem {
     gpu_reported: ptr<SemStrMap>
 }
 
+# Keep this in step with FLOWC_RESOLVE_MAX_MODS. The resolver can bundle up
+# to 128 modules, and semantic analysis must reserve room for each one.
+const SEM_MAX_MODULES: i32 = 128
+
 export function sem_new(strict: bool) -> ptr<Sem> {
     # 8 KiB covers struct Sem (about 190 fields of at most 8 bytes);
     # sizeof<T>() is flowc-only, and this module keeps to the checker's rules.
@@ -299,10 +303,10 @@ export function sem_new(strict: bool) -> ptr<Sem> {
         c.check_effect_rows = false
     }
     c.nm = 0
-    c.m_ar = malloc(64 * 24) as ptr<AstArena>
-    c.m_root = malloc(64 * 4) as ptr<i32>
-    c.m_src = malloc(64 * 8) as ptr<ptr<u8>>
-    c.m_path = malloc(64 * 8) as ptr<string>
+    c.m_ar = malloc(SEM_MAX_MODULES * 24) as ptr<AstArena>
+    c.m_root = malloc(SEM_MAX_MODULES * 4) as ptr<i32>
+    c.m_src = malloc(SEM_MAX_MODULES * 8) as ptr<ptr<u8>>
+    c.m_path = malloc(SEM_MAX_MODULES * 8) as ptr<string>
     c.m_lines = sem_pv_new()
     c.m_rows = sem_pv_new()
     c.cm = 0 - 1

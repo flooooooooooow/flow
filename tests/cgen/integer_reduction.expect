@@ -1,0 +1,6 @@
+flags --library --strict
++ #pragma omp simd reduction(+:s)
++ #pragma clang loop vectorize(enable) interleave(enable)
++ #pragma GCC ivdep
++ reduction(+:s)
+exit 0

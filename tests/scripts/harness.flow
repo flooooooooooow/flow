@@ -54,6 +54,13 @@ struct Harness {
 
 let mut TH: ptr<Harness> = null
 
+# True while a t_start is waiting to be popped. t_start captures output for a
+# group of results, so several t_end calls may follow one t_start; a second
+# t_start would nest a sink, and every line after it, the summary included,
+# would be discarded into the sink that t_end never pops. One t_start, no
+# output, exit 0 reads as a passing file, so the guard fails loudly instead.
+let mut SINK_OPEN: bool = false
+
 # Start the file: cd to the repository root and make the scratch area.
 export function t_begin(name: string) {
     let h: ptr<Harness> = malloc(96) as ptr<Harness>
@@ -112,6 +119,12 @@ export function t_err() -> string {
 
 # Begin a check: a fresh scratch directory, and output into its log.
 export function t_start() {
+    if SINK_OPEN {
+        let _stray: string = sink_pop()
+        errln("harness: t_start while a check is already open; call t_end first")
+        cli_exit(1)
+    }
+    SINK_OPEN = true
     let h: ptr<Harness> = TH
     h.seq = h.seq + 1
     h.tmp = h.work + "/check" + s_itoa(h.seq)
@@ -131,6 +144,7 @@ function tail_lines(text: string, n: i32) -> ptr<ProcStrs> {
 
 # End a check with the status its function returned.
 export function t_end(name: string, rc: i32) {
+    SINK_OPEN = false
     let log: string = sink_pop()
     let h: ptr<Harness> = TH
     let id: string = h.name + "/" + name

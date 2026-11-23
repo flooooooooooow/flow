@@ -1,0 +1,136 @@
+# gpu_live compute test: vector add and a two-stage reduction, compared
+# exactly with a CPU reference. Exit 0 passes, a nonzero number names the failed
+# check. When there is no GPU the test prints SKIP and exits 0, unless
+# FLOW_GL_REQUIRE=1 is set.
+
+import "stdlib/gpu_live.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function getenv(name: string) -> ptr<u8>
+    function strlen(s: string) -> i64
+}
+
+function msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "kernel void vadd(device const float* a [[buffer(0)]], device const float* b [[buffer(1)]], device float* c [[buffer(2)]], constant uint& n [[buffer(3)]], uint i [[thread_position_in_grid]]) {\n" +
+        "  if (i < n) c[i] = a[i] + b[i];\n}\n" +
+        "kernel void reduce_stage(device const uint* x [[buffer(0)]], device uint* out [[buffer(1)]], constant uint& n [[buffer(2)]], uint gid [[thread_position_in_grid]], uint lid [[thread_position_in_threadgroup]], uint grp [[threadgroup_position_in_grid]]) {\n" +
+        "  threadgroup uint sh[256];\n" +
+        "  sh[lid] = gid < n ? x[gid] : 0u;\n" +
+        "  threadgroup_barrier(mem_flags::mem_threadgroup);\n" +
+        "  for (uint s = 128; s > 0; s >>= 1) { if (lid < s) sh[lid] += sh[lid + s]; threadgroup_barrier(mem_flags::mem_threadgroup); }\n" +
+        "  if (lid == 0) out[grp] = sh[0];\n}\n"
+}
+
+function main() -> i32 {
+    if not gl_init(0) {
+        if getenv("FLOW_GL_REQUIRE") != null {
+            println("FAIL gpu not available: " + gl_last_error())
+            return 1
+        }
+        println("SKIP gl_compute: " + gl_last_error())
+        return 0
+    }
+    println("device: " + gl_device_name())
+    let n: i32 = 1048576 + 37
+    let nb: i64 = (n as i64) * 4
+    let a: ptr<f32> = malloc(nb) as ptr<f32>
+    let b: ptr<f32> = malloc(nb) as ptr<f32>
+    let mut i: i32 = 0
+    while i < n {
+        a[i] = (i as f32) * 0.5
+        b[i] = 1000.0 - (i as f32) * 0.25
+        i = i + 1
+    }
+    let ba: i32 = gl_buffer_new(nb, 0)
+    let bb: i32 = gl_buffer_new(nb, 0)
+    let bc: i32 = gl_buffer_new(nb, 0)
+    if ba < 0 or bb < 0 or bc < 0 { println(gl_last_error()); return 2 }
+    if gl_buffer_write(ba, 0, a as ptr<u8>, nb) != 0 { return 3 }
+    if gl_buffer_write(bb, 0, b as ptr<u8>, nb) != 0 { return 4 }
+
+    let vadd: i32 = gl_compute_pipeline(msl(), "vadd")
+    if vadd < 0 { println(gl_last_error()); return 5 }
+    # Same source again: served from the library cache.
+    let compiles: i64 = gl_stat(GL_STAT_LIBRARY_COMPILES)
+    let vadd2: i32 = gl_compute_pipeline(msl(), "vadd")
+    if vadd2 < 0 { return 6 }
+    if gl_stat(GL_STAT_LIBRARY_COMPILES) != compiles { println("library cache missed"); return 7 }
+
+    let nn: array<i32, 1> = [n]
+    gl_bind_buffer(0, ba, 0)
+    gl_bind_buffer(1, bb, 0)
+    gl_bind_buffer(2, bc, 0)
+    gl_bind_bytes(3, &nn[0] as ptr<u8>, 4)
+    if gl_dispatch(vadd, n, 1, 1) != 0 { println(gl_last_error()); return 8 }
+    if gl_submit() != 0 { return 9 }
+    gl_wait_idle()
+    let c: ptr<f32> = malloc(nb) as ptr<f32>
+    if gl_buffer_read(bc, 0, c as ptr<u8>, nb) != 0 { return 10 }
+    let mut bad: i32 = 0
+    i = 0
+    while i < n {
+        let want: f32 = a[i] + b[i]
+        if c[i] != want { bad = bad + 1 }
+        i = i + 1
+    }
+    println("vadd mismatches: " + bad)
+    if bad != 0 { return 11 }
+    if gl_gpu_time_ms() <= 0.0 { println("no GPU time recorded"); return 12 }
+
+    # Reduction of u32 values: stage one writes one partial per group of 256,
+    # stage two sums the partials with a single group per 256 partials.
+    let m: i32 = 130000
+    let mb: i64 = (m as i64) * 4
+    let x: ptr<u32> = malloc(mb) as ptr<u32>
+    let mut cpu: u32 = 0
+    i = 0
+    while i < m {
+        x[i] = ((i * 7 + 3) % 1000) as u32
+        cpu = cpu + x[i]
+        i = i + 1
+    }
+    let groups: i32 = (m + 255) / 256
+    let bx: i32 = gl_buffer_new(mb, 0)
+    let bp: i32 = gl_buffer_new((groups as i64) * 4, 0)
+    let bo: i32 = gl_buffer_new(4, 0)
+    gl_buffer_write(bx, 0, x as ptr<u8>, mb)
+    let red: i32 = gl_compute_pipeline(msl(), "reduce_stage")
+    if red < 0 { println(gl_last_error()); return 13 }
+    let mm: array<i32, 1> = [m]
+    gl_bind_buffer(0, bx, 0)
+    gl_bind_buffer(1, bp, 0)
+    gl_bind_bytes(2, &mm[0] as ptr<u8>, 4)
+    gl_dispatch_groups(red, groups, 1, 1, 256, 1, 1)
+    let g2: array<i32, 1> = [groups]
+    gl_bind_buffer(0, bp, 0)
+    gl_bind_buffer(1, bo, 0)
+    gl_bind_bytes(2, &g2[0] as ptr<u8>, 4)
+    let groups2: i32 = (groups + 255) / 256
+    if groups2 != 2 { println("test sizing changed"); return 14 }
+    # Two groups of partials need a third stage; fold them on the second dispatch
+    # by running it per 256 partials into bo (2 entries).
+    let bo2: i32 = gl_buffer_new(8, 0)
+    gl_bind_buffer(1, bo2, 0)
+    gl_dispatch_groups(red, groups2, 1, 1, 256, 1, 1)
+    gl_submit()
+    gl_wait_idle()
+    let outv: array<u32, 2> = [0, 0]
+    if gl_buffer_read(bo2, 0, &outv[0] as ptr<u8>, 8) != 0 { return 15 }
+    let gpu: u32 = outv[0] + outv[1]
+    println("reduce cpu=" + (cpu as i64) + " gpu=" + (gpu as i64))
+    if gpu != cpu { return 16 }
+
+    # Errors come back as codes and text, never as a crash.
+    if gl_dispatch(999999, 1, 1, 1) == 0 { return 17 }
+    if strlen(gl_last_error()) == 0 { return 18 }
+    if gl_compute_pipeline("not metal", "x") >= 0 { return 19 }
+    if gl_buffer_write(ba, nb, a as ptr<u8>, 4) == 0 { return 20 }
+    if gl_buffer_free(ba) != 0 { return 21 }
+    if gl_buffer_free(ba) == 0 { return 22 }
+    if gl_buffer_write(ba, 0, a as ptr<u8>, 4) == 0 { return 23 }
+    gl_shutdown()
+    println("PASS gl_compute")
+    return 0
+}

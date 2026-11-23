@@ -3,6 +3,10 @@
 > **Status:** `module X { ... }` is parsed and flattened. It is not a namespace.
 > This note records exactly what happens today, what breaks, and what a real
 > implementation would cost. Nothing here is implemented yet.
+>
+> **Implementation note:** the Python module paths below (`src/flow/...`) refer to
+> the retired compiler. Parsing and semantic analysis now live in
+> `compiler/src/parser.flow` and `compiler/src/sem_check.flow`.
 
 Related: [modules.md](modules.md) for the file-level module system, which does
 work and is where the `import` / `export` / `export import` story lives.

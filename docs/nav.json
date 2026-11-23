@@ -875,6 +875,10 @@
           "path": "gpu/lowering-pipeline.md"
         },
         {
+          "label": "Resident Metal GPU host",
+          "path": "gpu-host.md"
+        },
+        {
           "label": "Running Flow",
           "path": "language/flow-run.md"
         },
@@ -1015,6 +1019,42 @@
         {
           "label": "Pattern Adoption",
           "path": "project/pattern-adoption.md"
+        },
+        {
+          "label": "Semantic Modernization Programme",
+          "path": "project/idiom-modernization-program.md"
+        },
+        {
+          "label": "Modernization: Start Here",
+          "path": "project/idiom-modernization/START-HERE.md"
+        },
+        {
+          "label": "Modernization: Feature Surfaces",
+          "path": "project/idiom-modernization/FEATURE-SURFACES.md"
+        },
+        {
+          "label": "Modernization: Verification",
+          "path": "project/idiom-modernization/VERIFICATION.md"
+        },
+        {
+          "label": "Modernization: Agent Evaluation",
+          "path": "project/idiom-modernization/AGENT-EVAL.md"
+        },
+        {
+          "label": "Modernization: Evolution Syntax Inventory",
+          "path": "project/idiom-modernization/FM-012-flow-evolution-inventory.md"
+        },
+        {
+          "label": "Modernization: Dynamics and Field Inventory",
+          "path": "project/idiom-modernization/FM-012-dynamics-field-inventory.md"
+        },
+        {
+          "label": "Modernization: Symbolic Derivative Inventory",
+          "path": "project/idiom-modernization/FM-012-symbolic-derivative-inventory.md"
+        },
+        {
+          "label": "Modernization: Algebraic DAE and MNA Inventory",
+          "path": "project/idiom-modernization/FM-012-algebraic-dae-mna-inventory.md"
         },
         {
           "label": "FIR-G",
@@ -1209,7 +1249,7 @@
     }
   ],
   "unlisted": {
-    "coverage_plan.md": "internal test-coverage plan for src/flow, not reader documentation",
+    "coverage_plan.md": "internal test-coverage plan, not reader documentation",
     "discord-webhooks.md": "operations runbook for the project's Discord integration",
     "project/ci-runners.md": "operations runbook for the self-hosted CI runners",
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",

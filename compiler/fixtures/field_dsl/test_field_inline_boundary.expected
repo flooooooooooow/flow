@@ -1,0 +1,44 @@
+import "stdlib/dynamics/pde.flow"
+# A one-line boundary ends on its own line. Following field declarations
+# and the main function remain available to the parser.
+
+# generated from field A : f64[8] on Line
+const A_field_n: i32 = 8
+
+function A_field_step(
+    u: ptr<f64>,
+    next: ptr<f64>,
+    r: f64
+) -> void {
+    heat_euler_step_1d(u, next, 8, r, 0.5, 1.5)
+}
+
+# generated from field B : f64[8] on Line
+const B_field_n: i32 = 8
+
+function B_field_step(
+    u: ptr<f64>,
+    next: ptr<f64>,
+    r: f64
+) -> void {
+    heat_euler_step_1d(u, next, 8, r, 0.0, 0.0)
+}
+
+function main() -> i32 {
+    let a: array<f64, 8> = [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.5]
+    let an: array<f64, 8> = [0.0]
+    A_field_step(a, an, 0.1)
+    if an[0] != 0.5 or an[7] != 1.5 { return 1 }
+    if an[1] < 0.949999999999 or an[1] > 0.950000000001 { return 2 }
+    if an[6] < 1.049999999999 or an[6] > 1.050000000001 { return 3 }
+    let b: array<f64, 8> = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    let bn: array<f64, 8> = [0.0]
+    B_field_step(b, bn, 0.1)
+    if bn[0] != 0.0 or bn[7] != 0.0 { return 4 }
+    if bn[2] < 0.099999999999 or bn[2] > 0.100000000001 { return 5 }
+    if bn[3] < 0.799999999999 or bn[3] > 0.800000000001 { return 6 }
+    if bn[4] < 0.099999999999 or bn[4] > 0.100000000001 { return 7 }
+    if bn[1] != 0.0 or bn[5] != 0.0 or bn[6] != 0.0 { return 8 }
+    println("field-inline-boundary-ok")
+    return 0
+}

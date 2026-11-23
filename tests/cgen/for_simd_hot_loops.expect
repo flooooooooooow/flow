@@ -3,7 +3,6 @@
 # Recognized f32 reductions also get GCC/clang vector_size loops (#739).
 + #if defined(_OPENMP)
 + #pragma omp simd
-+ #pragma omp simd reduction(+:
 + reduction(*:
 + reduction(-:
 + #pragma clang loop vectorize(enable) interleave(enable)

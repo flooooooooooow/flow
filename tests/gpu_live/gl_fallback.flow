@@ -1,0 +1,99 @@
+# gpu_live fallback test: with the GPU path forced off, gl_init reports
+# unavailable, every gl_* call fails with a message instead of crashing, and a
+# program that picks its path with gl_available() gets the same frame from the
+# CPU loop as from the GPU kernel. Exit 0 passes. With no GPU at all the GPU half
+# is skipped and the CPU half still runs.
+
+import "stdlib/gpu_live.flow"
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+function msl() -> string {
+    return "#include <metal_stdlib>\nusing namespace metal;\n" +
+        "kernel void shade(device uint* out [[buffer(0)]], constant uint& w [[buffer(1)]], uint2 g [[thread_position_in_grid]]) { out[g.y * w + g.x] = (g.x * 3u + g.y * 5u) ^ (g.x * g.y); }\n"
+}
+
+# One frame, by whichever path is available. Returns true when the GPU ran it.
+function frame(out: ptr<u32>, w: i32, h: i32) -> bool {
+    if gl_available() {
+        let b: i32 = gl_buffer_new((w * h * 4) as i64, 0)
+        let k: i32 = gl_compute_pipeline(msl(), "shade")
+        let wv: array<u32, 1> = [w as u32]
+        gl_bind_buffer(0, b, 0)
+        gl_bind_bytes(1, &wv[0] as ptr<u8>, 4)
+        if k >= 0 and gl_dispatch(k, w, h, 1) == 0 {
+            gl_submit()
+            gl_wait_idle()
+            let src: ptr<u32> = gl_buffer_ptr(b) as ptr<u32>
+            let mut i: i32 = 0
+            while i < w * h {
+                out[i] = src[i]
+                i = i + 1
+            }
+            gl_buffer_free(b)
+            return true
+        }
+    }
+    let mut y: i32 = 0
+    while y < h {
+        let mut x: i32 = 0
+        while x < w {
+            out[y * w + x] = ((x * 3 + y * 5) as u32) ^ ((x * y) as u32)
+            x = x + 1
+        }
+        y = y + 1
+    }
+    return false
+}
+
+function main() -> i32 {
+    let w: i32 = 211
+    let h: i32 = 97
+    let a: ptr<u32> = malloc((w * h * 4) as i64) as ptr<u32>
+    let b: ptr<u32> = malloc((w * h * 4) as i64) as ptr<u32>
+    let mut gpu_ran: bool = false
+    if gl_init(0) {
+        gpu_ran = frame(a, w, h)
+        gl_shutdown()
+    }
+    println("first frame on the GPU: " + gpu_ran)
+
+    gl_force_off(true)
+    if gl_init(0) { println("gl_init succeeded while forced off"); return 1 }
+    if gl_available() { return 2 }
+    if strlen(gl_last_error()) == 0 { return 3 }
+    println("forced off: " + gl_last_error())
+    # every entry point refuses without crashing
+    if gl_buffer_new(64, 0) >= 0 { return 4 }
+    if gl_texture_new(8, 8, GL_RGBA8, GL_TEX_SAMPLED) >= 0 { return 5 }
+    if gl_compute_pipeline(msl(), "shade") >= 0 { return 6 }
+    if gl_render_pipeline(msl(), "a", "b", GL_RGBA8, 0, 0) >= 0 { return 7 }
+    if gl_begin_frame() == 0 { return 8 }
+    if gl_dispatch(1, 1, 1, 1) == 0 { return 9 }
+    if gl_pass_begin(GL_WINDOW, 0, 0, 0.0, 0.0, 0.0, 1.0, 1.0) == 0 { return 10 }
+    if gl_present() == 0 { return 11 }
+    if gl_blit(1, GL_WINDOW, 0) == 0 { return 12 }
+    if gl_buffer_ptr(1) != null { return 13 }
+    if gl_attach_window(null, true) == 0 { return 14 }
+    if gl_overlay_begin(null) == 0 { return 15 }
+    gl_wait_idle()
+    gl_detach_window()
+    let used: bool = frame(b, w, h)
+    if used { println("the GPU ran a frame while forced off"); return 16 }
+    if gpu_ran {
+        let mut bad: i32 = 0
+        let mut i: i32 = 0
+        while i < w * h {
+            if a[i] != b[i] { bad = bad + 1 }
+            i = i + 1
+        }
+        println("GPU and CPU frames differ in " + bad + " pixels")
+        if bad != 0 { return 17 }
+    }
+    gl_force_off(false)
+    println("PASS gl_fallback")
+    return 0
+}

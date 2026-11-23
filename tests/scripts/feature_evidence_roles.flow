@@ -1,0 +1,108 @@
+# FM-001 role coverage: each map column becomes a ROLE row, backend emitters
+# are named, and a column that resolves to no tracked path is a GAP. Synthetic
+# maps keep the positive and negative controls independent of the proposal text.
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+const HEADER: string = "| Feature family | Primary implementation | Semantic/negative evidence | Canonical teaching and consumers |\n| --- | --- | --- | --- |\n"
+
+function tool_argv(mode: string, map: string) -> ptr<ProcStrs> {
+    let a: ptr<ProcStrs> = sl_of3("./flow", "tool", "feature_evidence")
+    if s_len(mode) > 0 { sl_push(a, mode) }
+    if s_len(map) > 0 { sl_push2(a, "--map", map) }
+    return a
+}
+
+function write_map(name: string, body: string) -> string {
+    let path: string = t_tmp() + "/" + name
+    if write_text(path, HEADER + body) { return path }
+    return ""
+}
+
+function reports_roles() -> i32 {
+    if not a_eq_int(t_run_argv(tool_argv("--roles", "")), 0, "roles exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    let family: string = "Lexer, grammar, operators, contextual keywords"
+    if not a_true("implementation role", a_contains(out, "ROLE\t" + family + "\timplementation\tcompiler/src/parser.flow")) { return T_FAIL }
+    if not a_true("semantics role", a_contains(out, "ROLE\t" + family + "\tsemantics_or_negative\tcompiler/fixtures/")) { return T_FAIL }
+    if not a_true("teaching role", a_contains(out, "ROLE\t" + family + "\tteaching\tdocs/grammar.ebnf")) { return T_FAIL }
+    if not a_true("backend role", a_contains(out, "BACKEND\tC/MLIR/WASM/JS/GPU codegen and parity\tmlir")) { return T_FAIL }
+    return T_PASS
+}
+
+function reports_gaps() -> i32 {
+    let map: string = write_map("gaps.md", "| Synthetic family | `compiler/src/parser.flow` | nothing here | nothing here |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--roles", map)), 0, "roles exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("resolved implementation", a_contains(out, "ROLE\tSynthetic family\timplementation\tcompiler/src/parser.flow")) { return T_FAIL }
+    if not a_true("gap for semantics", a_contains(out, "GAP\tSynthetic family\tsemantics_or_negative")) { return T_FAIL }
+    if not a_true("gap for teaching", a_contains(out, "GAP\tSynthetic family\tteaching")) { return T_FAIL }
+    return T_PASS
+}
+
+function fails_check_on_gap() -> i32 {
+    let map: string = write_map("check_gap.md", "| Synthetic family | `compiler/src/parser.flow` | nothing here | nothing here |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--check", map)), 1, "check exit") { return T_FAIL }
+    return T_PASS
+}
+
+function passes_check_when_complete() -> i32 {
+    let map: string = write_map("check_ok.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/lang/test_field_dsl_core.flow` | `docs/grammar.ebnf` |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--check", map)), 0, "check exit") { return T_FAIL }
+    return T_PASS
+}
+
+function rejects_missing_map() -> i32 {
+    if not a_eq_int(t_run_argv(tool_argv("--roles", t_tmp() + "/absent.md")), 1, "missing map exit") { return T_FAIL }
+    return T_PASS
+}
+
+function reports_directory_anchor_as_prefix() -> i32 {
+    let map: string = write_map("dir_anchor.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/lang/` | `docs/grammar.ebnf` |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--roles", map)), 0, "roles exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("directory anchor stays a prefix", a_contains(out, "ROLE\tSynthetic family\tsemantics_or_negative\ttests/lang/\n")) { return T_FAIL }
+    if not a_true("populated directory is not a gap", not a_contains(out, "GAP\tSynthetic family\tsemantics_or_negative")) { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("", map)), 0, "json exit") { return T_FAIL }
+    let js: string = read_text(t_out())
+    if not a_true("json reports the prefix", a_contains(js, "\"path\":\"tests/lang/\",\"resolved_path\":\"tests/lang/\"")) { return T_FAIL }
+    let empty: string = write_map("dir_empty.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/absent_dir_xyz/` | `docs/grammar.ebnf` |\n")
+    if s_len(empty) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("--roles", empty)), 0, "roles exit") { return T_FAIL }
+    if not a_true("empty directory is a gap", a_contains(read_text(t_out()), "GAP\tSynthetic family\tsemantics_or_negative")) { return T_FAIL }
+    return T_PASS
+}
+
+function reports_selected_map_source() -> i32 {
+    let map: string = write_map("source.md", "| Synthetic family | `compiler/src/parser.flow` | `tests/lang/test_field_dsl_core.flow` | `docs/grammar.ebnf` |\n")
+    if s_len(map) == 0 { return T_FAIL }
+    if not a_eq_int(t_run_argv(tool_argv("", map)), 0, "json exit") { return T_FAIL }
+    let out: string = read_text(t_out())
+    if not a_true("selected map provenance", a_contains(out, "\"source\":\"" + map + "\"")) { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("feature_evidence_roles")
+    t_start()
+    t_end("reports_roles", reports_roles())
+    t_start()
+    t_end("reports_gaps", reports_gaps())
+    t_start()
+    t_end("fails_check_on_gap", fails_check_on_gap())
+    t_start()
+    t_end("passes_check_when_complete", passes_check_when_complete())
+    t_start()
+    t_end("rejects_missing_map", rejects_missing_map())
+    t_start()
+    t_end("reports_directory_anchor_as_prefix", reports_directory_anchor_as_prefix())
+    t_start()
+    t_end("reports_selected_map_source", reports_selected_map_source())
+    t_done()
+    return 0
+}

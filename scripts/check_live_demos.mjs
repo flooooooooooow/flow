@@ -167,6 +167,144 @@ function serveSite(contentRoot = site) {
     return server;
 }
 
+function observeDemoStatusHistory() {
+    window.__flowStatusHistory = [];
+    const observeStatus = () => {
+        const element = document.getElementById('status');
+        if (!element) return false;
+        const record = () => {
+            const status = (element.textContent || '').trim();
+            const history = window.__flowStatusHistory;
+            if (history.length && history[history.length - 1].status === status) return;
+            if (history.length < 32) history.push({ ms: Math.round(performance.now()), status });
+        };
+        record();
+        new MutationObserver(record).observe(element, { childList: true, characterData: true, subtree: true });
+        return true;
+    };
+    if (!observeStatus()) {
+        new MutationObserver((_mutations, observer) => {
+            if (observeStatus()) observer.disconnect();
+        }).observe(document, { childList: true, subtree: true });
+    }
+}
+
+// Negative control: a running demo which never completes must time out and
+// retain both its initial and subsequent status transitions for diagnosis.
+// The positive control preserves Flow's legitimate nonzero return values.
+async function verifyStatusHistoryDiagnostics(context, base) {
+    const page = await context.newPage();
+    try {
+        await page.route('**/__flow_status_diagnostics__', route => route.fulfill({
+            contentType: 'text/html',
+            body: '<!doctype html><html><body><div id="status">starting</div>' +
+                '<script>setTimeout(() => { document.getElementById("status").textContent = "running"; }, 10);</script>' +
+                '</body></html>',
+        }));
+        await page.addInitScript(observeDemoStatusHistory);
+        await page.goto(base + '/__flow_status_diagnostics__', { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.getElementById('status')?.textContent === 'running',
+            null, { timeout: 1500 });
+        const start = Date.now();
+        let timedOut = false;
+        try {
+            await page.waitForFunction(() => /^exit -?\d+$/.test(
+                document.getElementById('status')?.textContent || ''), null, { timeout: 250 });
+        } catch (error) {
+            if (!/Timeout/i.test(error.message)) throw error;
+            timedOut = true;
+        }
+        const history = await page.evaluate(() => window.__flowStatusHistory);
+        if (!timedOut || Date.now() - start < 200 ||
+            !Array.isArray(history) || history.length < 2 ||
+            history[0].status !== 'starting' ||
+            history[history.length - 1].status !== 'running' ||
+            history.some(record => !Number.isFinite(record.ms))) {
+            throw new Error('WASM status timeout diagnostic negative control failed: ' +
+                JSON.stringify({ timedOut, history }));
+        }
+        await page.evaluate(() => { document.getElementById('status').textContent = 'exit 55'; });
+        await page.waitForFunction(() => /^exit -?\d+$/.test(
+            document.getElementById('status')?.textContent || ''), null, { timeout: 1500 });
+        await page.waitForFunction(() => window.__flowStatusHistory?.at(-1)?.status === 'exit 55',
+            null, { timeout: 1500 });
+        const positive = await page.evaluate(() => window.__flowStatusHistory);
+        if (positive[positive.length - 1]?.status !== 'exit 55') {
+            throw new Error('WASM nonzero Flow return control failed: ' + JSON.stringify(positive));
+        }
+        console.log('PASS WASM diagnostic negative timeout and nonzero return controls');
+    } finally {
+        await page.close();
+    }
+}
+
+// Run a genuinely nonterminating WebAssembly function in a worker. Unlike a
+// synthetic status-only fixture, this exercises a live WASM execution that
+// cannot return, while keeping Chromium's main thread responsive to the
+// completion watchdog. The 127-byte WASM module exports hang(), an infinite
+// volatile-increment loop compiled from C; it is not a Flow runtime fixture.
+async function verifyNonterminatingWasmCompletion(context, base) {
+    const page = await context.newPage();
+    try {
+        const wasm = 'AGFzbQEAAAABBAFgAAADAgEABAUBcAEBAQUDAQACBggBfwFBgIgECwcRAgZtZW1vcnkCAARoYW5nAAAKQgFAAQd/I4CAgIAAIQBBECEBIAAgAWshAkEAIQMgAiADNgIMA0AgAigCDCEEQQEhBSAEIAVqIQYgAiAGNgIMDAALCw==';
+        const workerScript = `const bytes = Uint8Array.from(atob('${wasm}'), c => c.charCodeAt(0));
+            WebAssembly.instantiate(bytes).then(({ instance }) => {
+                postMessage('running');
+                instance.exports.hang();
+            }).catch(error => postMessage('error: ' + error.message));`;
+        const html = `<!doctype html><html><body><div id="status">starting</div>
+            <script>
+                const script = ${JSON.stringify(workerScript)};
+                const worker = new Worker(URL.createObjectURL(new Blob([script], { type: 'text/javascript' })));
+                worker.onmessage = event => {
+                    document.getElementById('status').textContent = event.data;
+                };
+                worker.onerror = event => {
+                    document.getElementById('status').textContent = 'error: ' + event.message;
+                };
+            </script></body></html>`;
+        await page.route('**/__flow_nonterminating_wasm__', route => route.fulfill({
+            contentType: 'text/html',
+            body: html,
+        }));
+        await page.addInitScript(observeDemoStatusHistory);
+        await page.goto(base + '/__flow_nonterminating_wasm__', { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.getElementById('status')?.textContent === 'running',
+            null, { timeout: 2000 });
+        let timedOut = false;
+        try {
+            await page.waitForFunction(() => {
+                const status = (document.getElementById('status')?.textContent || '').trim();
+                return /^(finished after|exit -?\d+|failed to load)/.test(status);
+            }, null, { timeout: 350 });
+        } catch (error) {
+            if (!/Timeout/i.test(error.message)) throw error;
+            timedOut = true;
+        }
+        const result = await page.evaluate(() => ({
+            status: document.getElementById('status')?.textContent,
+            history: window.__flowStatusHistory,
+        }));
+        if (!timedOut || result.status !== 'running' ||
+            !Array.isArray(result.history) ||
+            result.history[0]?.status !== 'starting' ||
+            result.history.at(-1)?.status !== 'running') {
+            throw new Error('Nonterminating WASM completion watchdog failed: ' +
+                JSON.stringify({ timedOut, ...result }));
+        }
+        console.log('PASS nonterminating WASM worker completion timeout');
+    } finally {
+        await page.close();
+    }
+}
+
+// flowlm_charlm took 33.7s to reach exit 0 on the 20 November 2026
+// Chromium runner (issue #1725). Give only this model a bounded 60s
+// startup/completion budget; other demos retain the 25s default.
+function demoReadinessTimeout(entry, defaultTimeout) {
+    return entry.name === 'flowlm_charlm' ? Math.max(defaultTimeout, 60000) : defaultTimeout;
+}
+
 async function browserCheck(entries, opts) {
     let chromium;
     try {
@@ -176,6 +314,11 @@ async function browserCheck(entries, opts) {
     }
     const selected = entries.filter((entry, index) => index % opts.shardCount === opts.shardIndex &&
         (!opts.names.size || opts.names.has(entry.name)));
+    for (const name of opts.requireCompletion) {
+        if (!selected.some(entry => entry.name === name)) {
+            throw new Error('Completion-required demo is not in this shard: ' + name);
+        }
+    }
     if (!selected.length) throw new Error('No demos matched this browser shard');
     const server = serveSite();
     await new Promise((resolveListen, reject) => {
@@ -192,6 +335,8 @@ async function browserCheck(entries, opts) {
             args: ['--no-sandbox', '--disable-dev-shm-usage'],
         });
         const context = await browser.newContext();
+        await verifyStatusHistoryDiagnostics(context, base);
+        await verifyNonterminatingWasmCompletion(context, base);
         const gallery = await context.newPage();
         try {
             await gallery.goto(base + '/wasm/index.html#' + encodeURIComponent(selected[0].name), {
@@ -220,22 +365,46 @@ async function browserCheck(entries, opts) {
         for (const entry of selected) {
             const page = await context.newPage();
             const missing = [];
+            const browserErrors = [];
+            const pageErrors = [];
+            const consoleErrors = [];
+            page.on('pageerror', error => {
+                pageErrors.push(error.message);
+                browserErrors.push(error.message);
+            });
+            page.on('console', message => {
+                if (message.type() === 'error') consoleErrors.push(message.text());
+            });
+            page.on('requestfailed', request => {
+                browserErrors.push('request failed: ' + request.url() + ' (' +
+                    (request.failure()?.errorText || 'unknown') + ')');
+            });
             page.on('response', response => {
                 if (response.status() >= 400 && /\.(wasm|js)(\?|$)/.test(response.url())) {
                     missing.push(response.url());
                 }
             });
+            const startedAt = Date.now();
+            const readinessTimeout = demoReadinessTimeout(entry, opts.timeout);
+            const requireCompletion = opts.requireCompletion.has(entry.name) || entry.name === 'flowlm_charlm';
+            await page.addInitScript(observeDemoStatusHistory);
             try {
                 await page.goto(base + '/wasm/' + entry.page + '?autostart=1', {
                     waitUntil: 'domcontentloaded',
-                    timeout: opts.timeout,
+                    timeout: readinessTimeout,
                 });
                 await page.waitForFunction(() => {
                     const status = (document.getElementById('status')?.textContent || '').trim();
                     return /^(running|finished after|exit -?\d+|failed to load)/.test(status);
-                }, null, { timeout: opts.timeout });
+                }, null, { timeout: readinessTimeout });
+                if (requireCompletion) {
+                    await page.waitForFunction(() => {
+                        const status = (document.getElementById('status')?.textContent || '').trim();
+                        return /^(finished after|exit -?\d+|failed to load)/.test(status);
+                    }, null, { timeout: readinessTimeout });
+                }
                 const status = (await page.locator('#status').innerText()).trim();
-                if (status.startsWith('failed') || missing.length) {
+                if (status.startsWith('failed') || missing.length || pageErrors.length) {
                     throw new Error('status=' + status + ', missing=' + missing.join(','));
                 }
                 if (entry.gfx) {
@@ -247,8 +416,21 @@ async function browserCheck(entries, opts) {
                 console.log('PASS ' + entry.name + ': ' + status);
             } catch (error) {
                 const why = error.message.split('\n')[0];
-                failures.push(entry.name + ': ' + why);
-                console.error('FAIL ' + entry.name + ': ' + why);
+                const diagnostics = await page.evaluate(() => ({
+                    status: document.getElementById('status')?.textContent?.trim() || '',
+                    readyState: document.readyState,
+                    statusHistory: window.__flowStatusHistory || [],
+                })).catch(e => ({ inspectionError: e.message }));
+                const detail = entry.name + ': ' + why + '; diagnostics=' +
+                    JSON.stringify({
+                        ...diagnostics,
+                        elapsedMs: Date.now() - startedAt,
+                        pageErrors: browserErrors.slice(0, 10),
+                        consoleErrors: consoleErrors.slice(0, 10),
+                        missingAssets: missing.slice(0, 10),
+                    });
+                failures.push(detail);
+                console.error('FAIL ' + detail);
             } finally {
                 await page.close();
             }
@@ -370,6 +552,19 @@ async function docsBrowserCheck(wikiRoot, opts) {
         });
 
         await check('playground keyboard and screen-reader accessibility', async page => {
+            await page.addInitScript(() => {
+                const originalFocus = HTMLElement.prototype.focus;
+                HTMLElement.prototype.focus = function (...args) {
+                    originalFocus.apply(this, args);
+                    const calls = window.__flowFocusCalls || (window.__flowFocusCalls = []);
+                    if (calls.length < 32) {
+                        calls.push({
+                            target: this.outerHTML.slice(0, 130),
+                            after: document.activeElement?.outerHTML.slice(0, 130),
+                        });
+                    }
+                };
+            });
             await page.goto(base + '/playground/index.html', {
                 waitUntil: 'domcontentloaded', timeout: opts.timeout,
             });
@@ -397,10 +592,30 @@ async function docsBrowserCheck(wikiRoot, opts) {
             async function expectFocus(target, action) {
                 if (action) await page.keyboard.press(action);
                 if (!(await target.evaluate(element => document.activeElement === element))) {
+                    const element = await target.elementHandle();
+                    if (element) {
+                        try {
+                            await page.waitForFunction(
+                                candidate => document.activeElement === candidate,
+                                element, { timeout: 500 });
+                        } catch {
+                            // The final assertion below still reports the
+                            // focus failure with browser state and call trace.
+                        }
+                    }
+                }
+                if (!(await target.evaluate(element => document.activeElement === element))) {
                     const state = await page.evaluate(() => ({
                         active: document.activeElement?.outerHTML.slice(0, 220),
                         controls: Array.from(document.querySelectorAll('#shareModal input, #shareModal button'))
-                            .map(element => element.outerHTML.slice(0, 90)),
+                            .map(element => ({
+                                html: element.outerHTML.slice(0, 110),
+                                rects: element.getClientRects().length,
+                                hidden: getComputedStyle(element).visibility,
+                                display: getComputedStyle(element).display,
+                                tabIndex: element.tabIndex,
+                            })),
+                        focusCalls: window.__flowFocusCalls || [],
                         tabTrace: window.__flowTabTrace || [],
                     }));
                     throw new Error('Dialog keyboard focus lost at ' + (action || 'open') +
@@ -433,8 +648,10 @@ async function docsBrowserCheck(wikiRoot, opts) {
                 });
             });
             await expectFocus(url);
-            await expectFocus(copy, 'Shift+Tab');
-            await expectFocus(url, 'Tab');
+            for (let cycle = 0; cycle < 32; cycle++) {
+                await expectFocus(copy, 'Shift+Tab');
+                await expectFocus(url, 'Tab');
+            }
             await expectFocus(close, 'Tab');
             await expectFocus(copy, 'Tab');
             await expectFocus(url, 'Tab');
@@ -517,12 +734,12 @@ async function docsBrowserCheck(wikiRoot, opts) {
         if (browser) await browser.close();
         await new Promise(resolveClose => server.close(resolveClose));
     }
-    console.log('Docs browser: ' + (5 - failures.length) + '/5 scenarios passed');
+    console.log('Docs browser: ' + (6 - failures.length) + '/6 scenarios passed');
     if (failures.length) throw new Error(failures.join('\n'));
 }
 
 async function main() {
-    const opts = { browser: false, docsBrowser: false, wiki: null, shardIndex: 0, shardCount: 1, names: new Set(), timeout: 25000 };
+    const opts = { browser: false, docsBrowser: false, wiki: null, shardIndex: 0, shardCount: 1, names: new Set(), requireCompletion: new Set(), timeout: 25000 };
     const args = process.argv.slice(2);
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -532,6 +749,7 @@ async function main() {
         else if (arg === '--shard-index') opts.shardIndex = Number(args[++i]);
         else if (arg === '--shard-count') opts.shardCount = Number(args[++i]);
         else if (arg === '--name') opts.names.add(args[++i]);
+        else if (arg === '--require-completion') opts.requireCompletion.add(args[++i]);
         else if (arg === '--timeout-ms') opts.timeout = Number(args[++i]);
         else throw new Error('Unknown argument ' + arg);
     }

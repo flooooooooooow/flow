@@ -734,7 +734,7 @@ export function link_gfx_program(c_file: string, exe_file: string, opt: string, 
         sl_extend(a, conc_sources())
         sl_extend(a, rtf)
         sl_extend(a, audio_sources)
-        sl_extend(a, s_words("-framework Cocoa -framework CoreGraphics -framework QuartzCore -framework CoreText -framework CoreAudio -framework AudioToolbox -framework AudioUnit"))
+        sl_extend(a, s_words("-framework Cocoa -framework CoreGraphics -framework QuartzCore -framework CoreText -framework Metal -framework CoreAudio -framework AudioToolbox -framework AudioUnit"))
         sl_extend(a, py_ldflags())
         sl_extend(a, conc_ldflags())
         sl_push2(a, "-o", exe_file)
@@ -978,6 +978,8 @@ export function record_gfx_program(args: ptr<ProcStrs>) -> i32 {
     sl_extend(a, conc_ldflags())
     if s_eq(uname_s(), "Darwin") {
         sl_push2(a, "-framework", "CoreFoundation")
+        # The runtime archive carries the resident GPU host (stdlib/gpu_live.flow).
+        sl_extend(a, s_words("-framework Metal -framework Foundation -framework QuartzCore"))
     }
     sl_push2(a, "-o", exe_file)
     sl_push(a, "-lm")

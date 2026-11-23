@@ -1,0 +1,15 @@
+# Integer reduction kernels keep their vectorization hints (#1694).
+
+function sum_i32(x: ptr<i32>, n: i32) -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to n {
+        s = s + x[i]
+    }
+    return s
+}
+
+function main() -> i32 {
+    let values: [i32; 4] = [1, 2, 3, 4]
+    if sum_i32(&values[0], 4) != 10 { return 1 }
+    return 0
+}

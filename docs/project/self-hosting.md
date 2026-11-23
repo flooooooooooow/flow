@@ -280,7 +280,7 @@ from the Python version it replaced.
 1. Three consecutive generation fixed-points: ✅ `self_host_full.flow`, in roundtrip and CI.
 2. Default `./flow` host is `flowc` for ≥90% of `examples/STATUS.md` pass set: ✅ flowc is the only C host, and on the corpus it matches the retired Python backend on 98.5% of programs with `main()`.
 3. No Python import on the hot path of `flow build`: ✅ proven with `python`/`python3` shimmed to exit 127.
-4. Contributors edit `compiler/src/*.flow` for language bugs as well as `src/flow/*.py`: ongoing.
+4. Contributors edit `compiler/src/*.flow` for language bugs: ongoing (the Python compiler under `src/flow/` is deleted).
 
 ---
 

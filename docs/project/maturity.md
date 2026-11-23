@@ -8,6 +8,11 @@ meant to be honest rather than promotional.
 Legend: **DONE** means implemented and exercised. **PARTIAL** means it exists
 but is not complete or not fully machine-tested. **GAP** means it is not done.
 
+Run `./flow tool doc_claims` to print this page as a ledger: one row per status
+claim with the paths it cites, and a `STALE` row for a citation that no longer
+exists (`--check` exits nonzero on one). The tool records what the page says
+and what it points at; it does not decide whether a status is right.
+
 ## The dividing line: 1.0
 
 The critical transition is showing FLOW 1.0. A language does not need ISO's
@@ -87,7 +92,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 4. Reference implementation
 | Item | Status | Note |
 | --- | --- | --- |
-| Compiler | DONE | Self-hosted `flowc` in `compiler/` is the only C compiler; `src/flow` (Python) keeps the MLIR generator fallback and some tools. |
+| Compiler | DONE | Self-hosted `flowc` in `compiler/` is the only C and MLIR compiler; the Python compiler under `src/flow` is deleted. |
 | Bootstrap | DONE | Three-generation fixed-point proof builds `flowc` from a single-C bootstrap. |
 | Targets | PARTIAL | C primary; Wasm, JIT, SPIR-V partial; architecture matrix above. |
 | Diagnostics | PARTIAL | Strict / lenient diagnostics and LSP intellisense exist. |

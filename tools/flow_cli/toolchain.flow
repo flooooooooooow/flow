@@ -783,8 +783,13 @@ export function gpu_link_flags() {
     if s_eq(uname_s(), "Darwin") {
         sl_push(GPU_SOURCES, TC_ROOT + "/runtime/gpu_metal.m")
         sl_push(GPU_SOURCES, TC_ROOT + "/runtime/gpu_metal_graph.m")
+        sl_push(GPU_SOURCES, TC_ROOT + "/runtime/gpu_metal_host.m")
         sl_push2(GPU_LDFLAGS, "-framework", "Metal")
         sl_push2(GPU_LDFLAGS, "-framework", "Foundation")
+        sl_push2(GPU_LDFLAGS, "-framework", "QuartzCore")
+    } else {
+        # gl_available() is false and every gl_* call fails with a message.
+        sl_push(GPU_SOURCES, TC_ROOT + "/runtime/gpu_metal_host_stub.c")
     }
 }
 
@@ -941,6 +946,9 @@ export function flowc_runtime_archive(driver: string, cc_bin: string) -> bool {
         sl_push2(a, "-w", "-O2")
         sl_extend(a, CONC_CFLAGS)
         sl_push(a, "-I" + TC_ROOT + "/runtime")
+        if s_ends(f, "gpu_metal_host.m") {
+            sl_push(a, "-fobjc-arc")
+        }
         sl_push2(a, "-c", "-o")
         sl_push(a, tmp + "/c_" + base + ".o")
         sl_push(a, f)

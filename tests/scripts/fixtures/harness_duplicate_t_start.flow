@@ -1,0 +1,13 @@
+# A check opened twice. The second t_start nests a second log sink, normally
+# swallowing every later line including the summary and leaving exit status 0.
+# tests/scripts/harness_guard.flow requires this program to exit nonzero.
+import "tests/scripts/harness.flow"
+
+function main() -> i32 {
+    t_begin("harness_duplicate_t_start")
+    t_start()
+    t_start()
+    t_end("unreachable", T_PASS)
+    t_done()
+    return 0
+}
