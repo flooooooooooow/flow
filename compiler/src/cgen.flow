@@ -5850,8 +5850,25 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     if kind == AST_IDENT or kind == AST_CALL {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
+        # Method/effect calls (`recv.method(...)`) store the method name on
+        # the CALL and prepend the receiver as the first argument. The
+        # method name is not a free variable; only bare callees (`f(x)`)
+        # may be captures.
+        let mut method_call: i32 = 0
+        if kind == AST_CALL {
+            let recv: i32 = arena.nodes[id].a
+            if recv != AST_NONE and arena.nodes[recv].kind == AST_IDENT {
+                let re: i32 = arena.nodes[recv].name_end
+                if re >= 0 and src[re] == 46 {
+                    method_call = 1
+                }
+            }
+        }
         # Check if it's a parameter by comparing source text.
         let mut is_param: i32 = 0
+        if method_call == 1 {
+            is_param = 1
+        }
         let mut i: i32 = 0
         while i < nparams * 2 {
             if flowc_cgen_span_eq(src, ns, ne, param_spans[i], param_spans[i + 1]) == 1 {
@@ -5888,7 +5905,7 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
                 w[0].cap_count = w[0].cap_count + 1
             }
         }
-        # For AST_CALL, still recurse into arguments.
+        # For AST_CALL, still recurse into arguments (including the receiver).
         if kind == AST_CALL {
             flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].a, param_spans, nparams)
             flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
@@ -5950,7 +5967,20 @@ function flowc_cgen_scan_lambda_caps(
     if kind == AST_IDENT or kind == AST_CALL {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
+        let mut method_call: i32 = 0
+        if kind == AST_CALL {
+            let recv: i32 = arena.nodes[id].a
+            if recv != AST_NONE and arena.nodes[recv].kind == AST_IDENT {
+                let re: i32 = arena.nodes[recv].name_end
+                if re >= 0 and src[re] == 46 {
+                    method_call = 1
+                }
+            }
+        }
         let mut is_param: i32 = 0
+        if method_call == 1 {
+            is_param = 1
+        }
         let mut i: i32 = 0
         while i < nparams * 2 {
             if flowc_cgen_span_eq(src, ns, ne, param_spans[i], param_spans[i + 1]) == 1 {
