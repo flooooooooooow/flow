@@ -1,0 +1,8 @@
+const MASKS: [u64; 3] = [0xFFFF, 0xFF00FF00, 0xDEADBEEF]
+
+function main() -> i32 {
+    if MASKS[0] == 0xFFFF and MASKS[2] == 0xDEADBEEF {
+        return 0
+    }
+    return 1
+}

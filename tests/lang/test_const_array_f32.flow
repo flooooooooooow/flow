@@ -1,0 +1,8 @@
+const WEIGHTS: [f32; 3] = [0.5, 1.0, 1.5]
+
+function main() -> i32 {
+    if WEIGHTS[0] == 0.5 and WEIGHTS[1] == 1.0 and WEIGHTS[2] == 1.5 {
+        return 0
+    }
+    return 1
+}
