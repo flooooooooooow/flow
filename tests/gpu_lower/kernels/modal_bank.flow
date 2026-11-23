@@ -140,21 +140,44 @@ function main() -> i32 {
         mix_modes(partial1, mix1, voices, frames)
     }
 
-    # Independent unsplit recurrence for voice 0. A reset at the block
-    # boundary must fail even if the GPU mirrors the same incorrect code.
+    # Independent unsplit recurrence for voice 0. Check the mid-block
+    # boundary and the final state so a reset (or a silent no-op) fails
+    # even when the GPU mirrors the same incorrect CPU code.
     let mut reference_prev: f32 = init_prev[0]
     let mut reference_older: f32 = init_older[0]
+    let mut mid_ref_prev: f32 = 0.0
+    let mut mid_ref_older: f32 = 0.0
     for sample in 0 to frames * 2 {
         let next: f32 = a[0] * reference_prev + b[0] * reference_older
         reference_older = reference_prev
         reference_prev = next
+        if sample == frames - 1 {
+            mid_ref_prev = reference_prev
+            mid_ref_older = reference_older
+        }
     }
+    let mut err_mid0: f32 = mid_prev[0] - mid_ref_prev
+    let mut err_mid1: f32 = mid_older[0] - mid_ref_older
     let mut err0: f32 = last_prev[0] - reference_prev
     let mut err1: f32 = last_older[0] - reference_older
+    if err_mid0 < 0.0 { err_mid0 = 0.0 - err_mid0 }
+    if err_mid1 < 0.0 { err_mid1 = 0.0 - err_mid1 }
     if err0 < 0.0 { err0 = 0.0 - err0 }
     if err1 < 0.0 { err1 = 0.0 - err1 }
+    if err_mid0 > 0.000001 or err_mid1 > 0.000001 { return 6 }
     if err0 > 0.000001 or err1 > 0.000001 { return 7 }
     if mix0[0] <= 0.0 { return 8 }
+
+    # Block 0 must mutate state, and block 1 must continue from that
+    # mutated state rather than replaying block 0 from the initial
+    # excitation. Different coefficients must keep voices independent.
+    if mid_prev[0] == init_prev[0] { return 9 }
+    if last_prev[0] == mid_prev[0] { return 10 }
+    if last_prev[0] == last_prev[1] { return 11 }
+    let first_block1: f32 = a[0] * mid_prev[0] + b[0] * mid_older[0]
+    let mut err_cont: f32 = partial1[0] - first_block1 * gain[0]
+    if err_cont < 0.0 { err_cont = 0.0 - err_cont }
+    if err_cont > 0.000001 { return 12 }
 
     dump(dir, "out_5.bin", mid_prev as ptr<void>, voice_bytes)
     dump(dir, "out_6.bin", mid_older as ptr<void>, voice_bytes)

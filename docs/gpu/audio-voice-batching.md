@@ -15,12 +15,24 @@ and persistent state across consecutive blocks.
 
 The Flow source is
 [`tests/gpu_lower/kernels/modal_bank.flow`](../../tests/gpu_lower/kernels/modal_bank.flow).
-The CPU reference and GPU version use the same `@gpu` kernels, with a
-second, unsplit CPU recurrence checking that the second block continues
-rather than restarting the oscillation. The `gpu-lower` harness checks the
-device's intermediate state and both blocks of per-voice and mixed samples
-against that reference. In environments without a GPU/toolchain, targets
-are SKIP, not evidence of GPU parity.
+The CPU reference and GPU version use the same `@gpu` kernels. The CPU
+harness independently proves cross-block behaviour before any device
+comparison:
+
+- an unsplit 128-sample recurrence for voice 0 must match both the
+  mid-block state (after 64 samples) and the final state (after 128);
+- block 0 must mutate state away from the initial excitation, and block 1
+  must mutate it further rather than replaying block 0;
+- distinct coefficients must leave voice 0 and voice 1 in different final
+  states;
+- the first sample of block 1 must equal the recurrence step from the
+  mid-block SoA state (continuity across the dispatch boundary).
+
+The `gpu-lower` harness then checks the device's intermediate state and
+both blocks of per-voice and mixed samples against that reference. In
+environments without a GPU/toolchain, runnable targets are SKIP; PTX and
+HSACO generation still exercise lowering. SKIP is not evidence of device
+parity.
 
 A voice is a second-order resonator with coefficients prepared on the CPU:
 
