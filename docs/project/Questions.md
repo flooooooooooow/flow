@@ -54,6 +54,8 @@ macOS would turn the Linux job red, so the four are left as they are on `main`.
 2. Library builder API: Use standard Flow structs, arrays, and functions (e.g., `Builder::add_assignment(...)`) to construct the IR without changing the language.
 3. Hybrid: Build the core IR structure in the standard library first, then add lightweight syntactic sugar later if needed.
 
+Option 2, the library builder API, ships in #1703 as experimental (`sofia_ir`); the final syntax and DSL decision remains open.
+
 **Answer:** (Pending)
 
 ### 2026-10-08: Float literals in f32 arithmetic: f32 or f64?
