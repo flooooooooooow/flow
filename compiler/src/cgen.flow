@@ -9433,7 +9433,49 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             # A call through a closure value: f.fn(f.env, args...).
             let mut fat_callee: i32 = AST_NONE
             if fn_id == AST_NONE {
-                fat_callee = flowc_cgen_fat_decl_ty(w, arena, src, id)
+                # Check if this is a captured closure variable (inside a lambda).
+                # Captured closure parameters need the .fn(..., .env) calling convention.
+                if w[0].in_lambda != 0 and flowc_cgen_is_captured(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                    # It's captured - look up its type to see if it's a fat function type.
+                    # Search the parent function's parameters for a matching fat-typed one.
+                    let lam_fn: i32 = w[0].cur_fn
+                    if lam_fn != AST_NONE and arena.nodes[lam_fn].kind == AST_FN and arena.nodes[lam_fn].name_start < 0 {
+                        let lam_pos: i32 = arena.nodes[lam_fn].start
+                        let mut parent_fn: i32 = AST_NONE
+                        let mut pfi: i32 = 0
+                        while pfi < arena.len {
+                            if arena.nodes[pfi].kind == AST_FN and arena.nodes[pfi].name_start >= 0 {
+                                if lam_pos >= arena.nodes[pfi].start and lam_pos < arena.nodes[pfi].end {
+                                    if parent_fn == AST_NONE or arena.nodes[pfi].start > arena.nodes[parent_fn].start {
+                                        parent_fn = pfi
+                                    }
+                                }
+                            }
+                            pfi = pfi + 1
+                        }
+                        if parent_fn != AST_NONE {
+                            let mut prm: i32 = arena.nodes[parent_fn].a
+                            while prm != AST_NONE {
+                                if arena.nodes[prm].kind == AST_PARAM {
+                                    if flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                                        let mut pty: i32 = arena.nodes[prm].a
+                                        if pty == AST_NONE {
+                                            pty = arena.nodes[prm].b
+                                        }
+                                        if flowc_cgen_is_fat_ty(arena, pty) == 1 {
+                                            fat_callee = pty
+                                        }
+                                    }
+                                }
+                                prm = arena.nodes[prm].next
+                            }
+                        }
+                    }
+                }
+                # Fall back to the general fat declaration lookup.
+                if fat_callee == AST_NONE {
+                    fat_callee = flowc_cgen_fat_decl_ty(w, arena, src, id)
+                }
             }
             if fat_callee != AST_NONE {
                 let fns: i32 = arena.nodes[id].name_start
