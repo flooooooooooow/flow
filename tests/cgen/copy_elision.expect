@@ -22,7 +22,7 @@
 # parameter mutates the dead base and passes it (#696).
 + take_vec(({ p.a = 1; p; }))
 # Array-field update memcpys into the declared variable, not a temporary.
-+ memcpy(&h.cells,
++ flow_mem_memcpy_site(&h.cells,
 + h.tag = 7;
 # Call sites pass the destination: `let m = move_return(p)` → `move_return(&m, p)`.
 + move_return(&m

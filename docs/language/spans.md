@@ -332,7 +332,7 @@ parse time with a message saying they are not implemented in this compiler
 version.
 
 Example: [examples/basics/spans.flow](../../examples/basics/spans.flow) ·
-Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`
+Tests: `tests/lang/test_spans.flow`
 
 A span is already a `{pointer, length}` view. Crossing into C with that
 shape uses the [zero-copy FFI buffer ABI](ffi-buffer.md); do not pack the

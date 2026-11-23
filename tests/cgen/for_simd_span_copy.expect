@@ -1,6 +1,6 @@
 # Disjoint local spans: one memcpy through `.data`.
 + /* region: disjoint */
-+ memcpy((void*)((da).data + (
++ flow_mem_memcpy_site((void*)((da).data + (
 # Span parameters may alias: no memmove, the ordered loop stays.
 - memmove(
 + for (int32_t i = 0; i < (n); i = i + 1) {

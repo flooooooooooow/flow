@@ -1,6 +1,6 @@
 flags --no-checks
 # A real region-disjointness proof preserves memcpy bulk lowering.
 + /* region: disjoint */
-+ memcpy((void*)(&(
++ flow_mem_memcpy_site((void*)(&(
 - memmove((void*)(&(
 exit 0
