@@ -97,6 +97,50 @@ To reproduce: implement wall-modelled LES, cut cells or immersed boundaries, sca
 multigrid, near-body mesh grading, traction/pressure drag integration,
 and convergence studies with the AhmedML geometry and reference conditions.
 
+## Experimental typed equation IR (Flow-only)
+
+`lib/stdlib/science/sofia_ir.flow` is the first self-contained **library
+builder API** for expressing PDEs as a typed, ordered operation DAG. It does
+not add language syntax or resolve the open parser/API design decision in
+`docs/project/Questions.md`. The experimental API is intentionally kept
+separate from `sofia_domain.flow` and should not be frozen until its
+staggered-grid and solver-IR semantics are reviewed.
+
+Supported nodes are a scalar field, explicitly dimensioned constants,
+addition/subtraction/multiplication, centered first derivative, and a
+three-point second derivative on a uniform 1D grid. The builder rejects
+dimensionally inconsistent addition and any RHS whose units do not match
+`field / time`. Each operation references earlier nodes only; all buffers
+are caller-owned, and execution requires no Python or symbolic CAS.
+
+The interpreter supports periodic and fixed Dirichlet ends, and explicit
+Euler, midpoint (RK2), and classical RK4. Both the scheme and boundary
+conditions are arguments to the simulation step. The builder permits a
+single evolved scalar field; derivatives currently accept a direct field
+node only. It does not yet implement field-to-field interpolation, mixed
+derivatives, generic boundary stencils, spatially varying coefficients
+inside derivative operators, implicit integrators, or GPU code generation.
+
+Run the prototype and its physically meaningful tests:
+
+```text
+./flow run examples/science/sofia/symbolic_diffusion.flow
+./flow run tests/lang/test_sofia_ir_diffusion.flow
+./flow run tests/lang/test_sofia_ir_boundary_units.flow
+```
+
+The Fourier-mode regression compares both Euler and RK4 against the **exact
+semi-discrete Fourier eigenvalue** of the central-difference Laplacian, not
+just against a visually plausible animation. Separate tests reject
+dimensionally invalid PDEs and check a linear steady Dirichlet solution.
+All numerical methods still require a caller-selected stable timestep.
+
+The intended next slice separates this high-level expression graph from
+a typed lowering plan that records grid locations, units, ghost layers,
+the chosen discretization order and backend. Only then should execution
+be lowered to Flow's MLIR/GPU infrastructure. CPU interpreter correctness
+is not evidence of the reference Sofia GPU performance.
+
 ## From this numerical core to a full Flow-native Sofia equivalent
 
 The intended public library should own the **entire** computational path
