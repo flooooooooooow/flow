@@ -1,0 +1,216 @@
+# A two-block, stateful modal synthesis bank for GPU lowering parity.
+#
+# One GPU thread owns one damped resonator. Samples advance in temporal
+# order inside that thread; voices run in parallel. SoA coefficient/state
+# arrays make accesses across neighbouring threads contiguous. A separate
+# reduction mixes the sample-major partials.
+#
+# The output state of block 0 becomes the input state of block 1. This
+# exercises cross-dispatch state persistence, not merely a stateless oscillator.
+# main() is the CPU reference and gpu-lower --run tests its output against
+# the generated GPU kernels on supported backends.
+#
+# All input/output buffers are separate: in-place updates are not supported
+# by all gpu-lower execution targets (notably MLX).
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+@gpu
+function render_modes(
+    a: ptr<f32>, b: ptr<f32>, gain: ptr<f32>,
+    prev_in: ptr<f32>, older_in: ptr<f32>,
+    prev_out: ptr<f32>, older_out: ptr<f32>,
+    partials: ptr<f32>, voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let c0: f32 = a[voice]
+        let c1: f32 = b[voice]
+        let level: f32 = gain[voice]
+        let mut prev: f32 = prev_in[voice]
+        let mut older: f32 = older_in[voice]
+        for frame in 0 to frames {
+            let sample: f32 = c0 * prev + c1 * older
+            partials[frame * voices + voice] = sample * level
+            older = prev
+            prev = sample
+        }
+        prev_out[voice] = prev
+        older_out[voice] = older
+    }
+}
+
+@gpu
+function mix_modes(partials: ptr<f32>, mix: ptr<f32>, voices: i32, frames: i32) {
+    let frame: i32 = gpu_thread_id()
+    if frame < frames {
+        let mut sample: f32 = 0.0
+        for voice in 0 to voices {
+            sample = sample + partials[frame * voices + voice]
+        }
+        mix[frame] = sample
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let voices: i32 = 128
+    let frames: i32 = 64
+    let voice_bytes: i64 = (voices * 4) as i64
+    let partial_bytes: i64 = (voices * frames * 4) as i64
+    let mix_bytes: i64 = (frames * 4) as i64
+
+    let a: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let b: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let gain: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let init_prev: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let init_older: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let mid_prev: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let mid_older: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let last_prev: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let last_older: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let partial0: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let partial1: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let mix0: ptr<f32> = calloc(frames as i64, 4) as ptr<f32>
+    let mix1: ptr<f32> = calloc(frames as i64, 4) as ptr<f32>
+    let voice_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frame_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    voice_arg[0] = voices
+    frame_arg[0] = frames
+
+    # Stable second-order resonators: poles have radius 0.99.
+    # The first state is excited; no transcendentals are needed on the GPU.
+    for voice in 0 to voices {
+        a[voice] = 1.85 - ((voice % 48) as f32) * 0.015
+        b[voice] = 0.0 - 0.9801
+        gain[voice] = 0.005 + ((voice % 8) as f32) * 0.0002
+        init_prev[voice] = 0.1
+        init_older[voice] = 0.0
+    }
+
+    dump(dir, "in_0.bin", a as ptr<void>, voice_bytes)
+    dump(dir, "in_1.bin", b as ptr<void>, voice_bytes)
+    dump(dir, "in_2.bin", gain as ptr<void>, voice_bytes)
+    dump(dir, "in_3.bin", init_prev as ptr<void>, voice_bytes)
+    dump(dir, "in_4.bin", init_older as ptr<void>, voice_bytes)
+    dump(dir, "in_5.bin", mid_prev as ptr<void>, voice_bytes)
+    dump(dir, "in_6.bin", mid_older as ptr<void>, voice_bytes)
+    dump(dir, "in_7.bin", last_prev as ptr<void>, voice_bytes)
+    dump(dir, "in_8.bin", last_older as ptr<void>, voice_bytes)
+    dump(dir, "in_9.bin", partial0 as ptr<void>, partial_bytes)
+    dump(dir, "in_10.bin", partial1 as ptr<void>, partial_bytes)
+    dump(dir, "in_11.bin", mix0 as ptr<void>, mix_bytes)
+    dump(dir, "in_12.bin", mix1 as ptr<void>, mix_bytes)
+    dump(dir, "in_13.bin", voice_arg as ptr<void>, 4)
+    dump(dir, "in_14.bin", frame_arg as ptr<void>, 4)
+
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_modes(a, b, gain, init_prev, init_older, mid_prev, mid_older, partial0, voices, frames)
+    }
+    for t in 0 to frames {
+        cpu_tid_x = t
+        mix_modes(partial0, mix0, voices, frames)
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_modes(a, b, gain, mid_prev, mid_older, last_prev, last_older, partial1, voices, frames)
+    }
+    for t in 0 to frames {
+        cpu_tid_x = t
+        mix_modes(partial1, mix1, voices, frames)
+    }
+
+    # Independent unsplit recurrence for voice 0. Check the mid-block
+    # boundary and the final state so a reset (or a silent no-op) fails
+    # even when the GPU mirrors the same incorrect CPU code.
+    let mut reference_prev: f32 = init_prev[0]
+    let mut reference_older: f32 = init_older[0]
+    let mut mid_ref_prev: f32 = 0.0
+    let mut mid_ref_older: f32 = 0.0
+    for sample in 0 to frames * 2 {
+        let next: f32 = a[0] * reference_prev + b[0] * reference_older
+        reference_older = reference_prev
+        reference_prev = next
+        if sample == frames - 1 {
+            mid_ref_prev = reference_prev
+            mid_ref_older = reference_older
+        }
+    }
+    let mut err_mid0: f32 = mid_prev[0] - mid_ref_prev
+    let mut err_mid1: f32 = mid_older[0] - mid_ref_older
+    let mut err0: f32 = last_prev[0] - reference_prev
+    let mut err1: f32 = last_older[0] - reference_older
+    if err_mid0 < 0.0 { err_mid0 = 0.0 - err_mid0 }
+    if err_mid1 < 0.0 { err_mid1 = 0.0 - err_mid1 }
+    if err0 < 0.0 { err0 = 0.0 - err0 }
+    if err1 < 0.0 { err1 = 0.0 - err1 }
+    if err_mid0 > 0.000001 or err_mid1 > 0.000001 { return 6 }
+    if err0 > 0.000001 or err1 > 0.000001 { return 7 }
+    if mix0[0] <= 0.0 { return 8 }
+
+    # Block 0 must mutate state, and block 1 must continue from that
+    # mutated state rather than replaying block 0 from the initial
+    # excitation. Different coefficients must keep voices independent.
+    if mid_prev[0] == init_prev[0] { return 9 }
+    if last_prev[0] == mid_prev[0] { return 10 }
+    if last_prev[0] == last_prev[1] { return 11 }
+    let first_block1: f32 = a[0] * mid_prev[0] + b[0] * mid_older[0]
+    let mut err_cont: f32 = partial1[0] - first_block1 * gain[0]
+    if err_cont < 0.0 { err_cont = 0.0 - err_cont }
+    if err_cont > 0.000001 { return 12 }
+
+    dump(dir, "out_5.bin", mid_prev as ptr<void>, voice_bytes)
+    dump(dir, "out_6.bin", mid_older as ptr<void>, voice_bytes)
+    dump(dir, "out_7.bin", last_prev as ptr<void>, voice_bytes)
+    dump(dir, "out_8.bin", last_older as ptr<void>, voice_bytes)
+    dump(dir, "out_9.bin", partial0 as ptr<void>, partial_bytes)
+    dump(dir, "out_10.bin", partial1 as ptr<void>, partial_bytes)
+    dump(dir, "out_11.bin", mix0 as ptr<void>, mix_bytes)
+    dump(dir, "out_12.bin", mix1 as ptr<void>, mix_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 128 in\n" +
+        "buffer 1 f32 128 in\n" +
+        "buffer 2 f32 128 in\n" +
+        "buffer 3 f32 128 in\n" +
+        "buffer 4 f32 128 in\n" +
+        "buffer 5 f32 128 out\n" +
+        "buffer 6 f32 128 out\n" +
+        "buffer 7 f32 128 out\n" +
+        "buffer 8 f32 128 out\n" +
+        "buffer 9 f32 8192 out\n" +
+        "buffer 10 f32 8192 out\n" +
+        "buffer 11 f32 64 out\n" +
+        "buffer 12 f32 64 out\n" +
+        "buffer 13 i32 1 scalar\n" +
+        "buffer 14 i32 1 scalar\n" +
+        "dispatch render_modes 2 1 1 0 1 2 3 4 5 6 9 13 14\n" +
+        "dispatch mix_modes 1 1 1 9 11 13 14\n" +
+        "dispatch render_modes 2 1 1 0 1 2 5 6 7 8 10 13 14\n" +
+        "dispatch mix_modes 1 1 1 10 12 13 14\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}
