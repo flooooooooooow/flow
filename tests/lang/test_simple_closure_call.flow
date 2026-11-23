@@ -1,0 +1,14 @@
+function apply(f: (i32) -> i32, x: i32) -> i32 {
+    return f(x)
+}
+
+function double(x: i32) -> i32 {
+    return x * 2
+}
+
+function main() -> i32 {
+    let f: (i32) -> i32 = double
+    let result: i32 = apply(f, 5)
+    if result == 10 { return 0 }
+    return 1
+}
