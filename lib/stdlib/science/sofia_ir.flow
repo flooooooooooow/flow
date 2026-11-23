@@ -1,0 +1,361 @@
+# Experimental Flow-native scalar PDE expression IR and time integrators.
+# This is a typed, allocation-free interpreter, not a compiler backend.
+# 1D uniform cell centres, one scalar field, finite-difference derivatives.
+# Callers own all node and state buffers. No host/device transfer is implied.
+# No implicit interpolation, unit conversion, geometry or stencil inference.
+#
+# Unit exponents are integers (length, time, dependent quantity).
+# A right-hand side must have units of the field divided by time.
+# Derivatives only accept a direct field node: this keeps boundary semantics
+# explicit until a complete staggered-field discretisation IR exists.
+
+export const SOFIA_IR_FIELD: i32 = 1
+export const SOFIA_IR_CONSTANT: i32 = 2
+export const SOFIA_IR_ADD: i32 = 3
+export const SOFIA_IR_SUB: i32 = 4
+export const SOFIA_IR_MUL: i32 = 5
+export const SOFIA_IR_GRAD_X: i32 = 6
+export const SOFIA_IR_LAPLACIAN_X: i32 = 7
+
+export const SOFIA_BC_PERIODIC: i32 = 1
+export const SOFIA_BC_DIRICHLET: i32 = 2
+
+export const SOFIA_RK_EULER: i32 = 1
+export const SOFIA_RK_MIDPOINT: i32 = 2
+export const SOFIA_RK_CLASSIC_4: i32 = 4
+
+export struct SofiaIrNode {
+    kind: i32,
+    a: i32,
+    b: i32,
+    value: f64,
+    length_dim: i32,
+    time_dim: i32,
+    quantity_dim: i32
+}
+
+export struct SofiaIrProgram {
+    nodes: ptr<SofiaIrNode>,
+    capacity: i32,
+    count: i32,
+    field: i32,
+    rhs: i32,
+    error: i32
+}
+
+# Construct an empty program. Nodes are supplied by the caller.
+export function sofia_ir_new(nodes: ptr<SofiaIrNode>, capacity: i32) -> SofiaIrProgram {
+    return SofiaIrProgram {
+        nodes: nodes, capacity: capacity, count: 0, field: -1, rhs: -1, error: 0
+    }
+}
+
+function sofia_ir_push(p: ptr<SofiaIrProgram>, node: SofiaIrNode) -> i32 {
+    if p[0].nodes == null or p[0].count >= p[0].capacity or p[0].capacity <= 0 {
+        p[0].error = 1
+        return -1
+    }
+    if p[0].error != 0 { return -1 }
+    let index: i32 = p[0].count
+    p[0].nodes[index] = node
+    p[0].count = index + 1
+    return index
+}
+
+function sofia_ir_operand_ok(p: ptr<SofiaIrProgram>, index: i32) -> bool {
+    return index >= 0 and index < p[0].count
+}
+
+# Declare the single evolved field and its physical units.
+export function sofia_ir_field(
+    p: ptr<SofiaIrProgram>, length_dim: i32, time_dim: i32, quantity_dim: i32
+) -> i32 {
+    if p[0].field >= 0 {
+        p[0].error = 2
+        return -1
+    }
+    let n: SofiaIrNode = SofiaIrNode {
+        kind: SOFIA_IR_FIELD, a: -1, b: -1, value: 0.0,
+        length_dim: length_dim, time_dim: time_dim, quantity_dim: quantity_dim
+    }
+    let index: i32 = sofia_ir_push(p, n)
+    if index >= 0 { p[0].field = index }
+    return index
+}
+
+# Declare a literal coefficient with explicit physical units.
+export function sofia_ir_constant(
+    p: ptr<SofiaIrProgram>, value: f64,
+    length_dim: i32, time_dim: i32, quantity_dim: i32
+) -> i32 {
+    let n: SofiaIrNode = SofiaIrNode {
+        kind: SOFIA_IR_CONSTANT, a: -1, b: -1, value: value,
+        length_dim: length_dim, time_dim: time_dim, quantity_dim: quantity_dim
+    }
+    return sofia_ir_push(p, n)
+}
+
+function sofia_ir_binary(
+    p: ptr<SofiaIrProgram>, kind: i32, a: i32, b: i32
+) -> i32 {
+    if not sofia_ir_operand_ok(p, a) or not sofia_ir_operand_ok(p, b) {
+        p[0].error = 3
+        return -1
+    }
+    let left: SofiaIrNode = p[0].nodes[a]
+    let right: SofiaIrNode = p[0].nodes[b]
+    if kind == SOFIA_IR_ADD or kind == SOFIA_IR_SUB {
+        if left.length_dim != right.length_dim
+            or left.time_dim != right.time_dim
+            or left.quantity_dim != right.quantity_dim {
+            p[0].error = 4
+            return -1
+        }
+    }
+    let mut length_dim: i32 = left.length_dim
+    let mut time_dim: i32 = left.time_dim
+    let mut quantity_dim: i32 = left.quantity_dim
+    if kind == SOFIA_IR_MUL {
+        length_dim = length_dim + right.length_dim
+        time_dim = time_dim + right.time_dim
+        quantity_dim = quantity_dim + right.quantity_dim
+    }
+    let n: SofiaIrNode = SofiaIrNode {
+        kind: kind, a: a, b: b, value: 0.0,
+        length_dim: length_dim, time_dim: time_dim, quantity_dim: quantity_dim
+    }
+    return sofia_ir_push(p, n)
+}
+
+export function sofia_ir_add(p: ptr<SofiaIrProgram>, a: i32, b: i32) -> i32 {
+    return sofia_ir_binary(p, SOFIA_IR_ADD, a, b)
+}
+
+export function sofia_ir_sub(p: ptr<SofiaIrProgram>, a: i32, b: i32) -> i32 {
+    return sofia_ir_binary(p, SOFIA_IR_SUB, a, b)
+}
+
+export function sofia_ir_mul(p: ptr<SofiaIrProgram>, a: i32, b: i32) -> i32 {
+    return sofia_ir_binary(p, SOFIA_IR_MUL, a, b)
+}
+
+# Second-order centered first derivative; only a direct field is accepted.
+export function sofia_ir_gradient_x(p: ptr<SofiaIrProgram>, field: i32) -> i32 {
+    if field != p[0].field or not sofia_ir_operand_ok(p, field) {
+        p[0].error = 5
+        return -1
+    }
+    let child: SofiaIrNode = p[0].nodes[field]
+    let n: SofiaIrNode = SofiaIrNode {
+        kind: SOFIA_IR_GRAD_X, a: field, b: -1, value: 0.0,
+        length_dim: child.length_dim - 1,
+        time_dim: child.time_dim, quantity_dim: child.quantity_dim
+    }
+    return sofia_ir_push(p, n)
+}
+
+# Second-order three-point Laplacian; only a direct field is accepted.
+export function sofia_ir_laplacian_x(p: ptr<SofiaIrProgram>, field: i32) -> i32 {
+    if field != p[0].field or not sofia_ir_operand_ok(p, field) {
+        p[0].error = 5
+        return -1
+    }
+    let child: SofiaIrNode = p[0].nodes[field]
+    let n: SofiaIrNode = SofiaIrNode {
+        kind: SOFIA_IR_LAPLACIAN_X, a: field, b: -1, value: 0.0,
+        length_dim: child.length_dim - 2,
+        time_dim: child.time_dim, quantity_dim: child.quantity_dim
+    }
+    return sofia_ir_push(p, n)
+}
+
+# A PDE right-hand side must have field units / time.
+export function sofia_ir_set_rhs(p: ptr<SofiaIrProgram>, rhs: i32) -> i32 {
+    if p[0].field < 0 or not sofia_ir_operand_ok(p, rhs) {
+        p[0].error = 6
+        return 6
+    }
+    let f: SofiaIrNode = p[0].nodes[p[0].field]
+    let r: SofiaIrNode = p[0].nodes[rhs]
+    if f.length_dim != r.length_dim
+        or f.time_dim - 1 != r.time_dim
+        or f.quantity_dim != r.quantity_dim {
+        p[0].error = 7
+        return 7
+    }
+    p[0].rhs = rhs
+    return 0
+}
+
+# Validate the ordered expression DAG without executing it.
+export function sofia_ir_validate(p: ptr<SofiaIrProgram>) -> i32 {
+    if p[0].error != 0 { return p[0].error }
+    if p[0].nodes == null or p[0].capacity <= 0
+        or p[0].count <= 0 or p[0].count > p[0].capacity { return 8 }
+    if not sofia_ir_operand_ok(p, p[0].field)
+        or not sofia_ir_operand_ok(p, p[0].rhs) { return 9 }
+    if p[0].nodes[p[0].field].kind != SOFIA_IR_FIELD { return 10 }
+    for i in 0 to p[0].count {
+        let n: SofiaIrNode = p[0].nodes[i]
+        if n.kind == SOFIA_IR_ADD or n.kind == SOFIA_IR_SUB or n.kind == SOFIA_IR_MUL {
+            if n.a < 0 or n.a >= i or n.b < 0 or n.b >= i { return 11 }
+            let a: SofiaIrNode = p[0].nodes[n.a]
+            let b: SofiaIrNode = p[0].nodes[n.b]
+            if n.kind == SOFIA_IR_MUL {
+                if n.length_dim != a.length_dim + b.length_dim
+                    or n.time_dim != a.time_dim + b.time_dim
+                    or n.quantity_dim != a.quantity_dim + b.quantity_dim { return 20 }
+            } else {
+                if a.length_dim != b.length_dim or a.time_dim != b.time_dim
+                    or a.quantity_dim != b.quantity_dim
+                    or n.length_dim != a.length_dim or n.time_dim != a.time_dim
+                    or n.quantity_dim != a.quantity_dim { return 20 }
+            }
+        } elif n.kind == SOFIA_IR_GRAD_X or n.kind == SOFIA_IR_LAPLACIAN_X {
+            if n.a != p[0].field or n.a >= i { return 12 }
+            let child: SofiaIrNode = p[0].nodes[n.a]
+            let mut order: i32 = 1
+            if n.kind == SOFIA_IR_LAPLACIAN_X { order = 2 }
+            if n.length_dim != child.length_dim - order
+                or n.time_dim != child.time_dim
+                or n.quantity_dim != child.quantity_dim { return 20 }
+        } elif n.kind == SOFIA_IR_FIELD {
+            if i != p[0].field { return 21 }
+        } elif n.kind != SOFIA_IR_CONSTANT {
+            return 13
+        }
+    }
+    let f: SofiaIrNode = p[0].nodes[p[0].field]
+    let r: SofiaIrNode = p[0].nodes[p[0].rhs]
+    if f.length_dim != r.length_dim or f.time_dim - 1 != r.time_dim
+        or f.quantity_dim != r.quantity_dim { return 14 }
+    return 0
+}
+
+function sofia_ir_sample(
+    u: ptr<f64>, i: i32, n: i32,
+    bc: i32, left: f64, right: f64
+) -> f64 {
+    if i < 0 {
+        if bc == SOFIA_BC_PERIODIC { return u[n - 1] }
+        return left
+    }
+    if i >= n {
+        if bc == SOFIA_BC_PERIODIC { return u[0] }
+        return right
+    }
+    if bc == SOFIA_BC_DIRICHLET {
+        if i == 0 { return left }
+        if i == n - 1 { return right }
+    }
+    return u[i]
+}
+
+# Interpret a validated expression at one cell.
+function sofia_ir_eval(
+    p: ptr<SofiaIrProgram>, node_index: i32, u: ptr<f64>, i: i32,
+    n: i32, dx: f64, bc: i32, left: f64, right: f64
+) -> f64 {
+    let node: SofiaIrNode = p[0].nodes[node_index]
+    if node.kind == SOFIA_IR_FIELD {
+        return sofia_ir_sample(u, i, n, bc, left, right)
+    }
+    if node.kind == SOFIA_IR_CONSTANT { return node.value }
+    if node.kind == SOFIA_IR_GRAD_X {
+        return (sofia_ir_sample(u, i + 1, n, bc, left, right)
+              - sofia_ir_sample(u, i - 1, n, bc, left, right)) / (2.0 * dx)
+    }
+    if node.kind == SOFIA_IR_LAPLACIAN_X {
+        return (sofia_ir_sample(u, i - 1, n, bc, left, right)
+                - 2.0 * sofia_ir_sample(u, i, n, bc, left, right)
+                + sofia_ir_sample(u, i + 1, n, bc, left, right)) / (dx * dx)
+    }
+    let a: f64 = sofia_ir_eval(p, node.a, u, i, n, dx, bc, left, right)
+    let b: f64 = sofia_ir_eval(p, node.b, u, i, n, dx, bc, left, right)
+    if node.kind == SOFIA_IR_ADD { return a + b }
+    if node.kind == SOFIA_IR_SUB { return a - b }
+    return a * b
+}
+
+# Evaluate all RHS values without mutating the source field.
+export function sofia_ir_rhs_1d(
+    p: ptr<SofiaIrProgram>, u: ptr<f64>, out: ptr<f64>,
+    n: i32, dx: f64, bc: i32, left: f64, right: f64
+) -> i32 {
+    let status: i32 = sofia_ir_validate(p)
+    if status != 0 { return status }
+    if u == null or out == null or u == out or n < 3 or not (dx > 0.0) { return 15 }
+    if bc != SOFIA_BC_PERIODIC and bc != SOFIA_BC_DIRICHLET { return 16 }
+    for i in 0 to n {
+        if bc == SOFIA_BC_DIRICHLET and (i == 0 or i == n - 1) {
+            out[i] = 0.0
+        } else {
+            out[i] = sofia_ir_eval(p, p[0].rhs, u, i, n, dx, bc, left, right)
+        }
+    }
+    return 0
+}
+
+function sofia_ir_enforce_boundary(
+    u: ptr<f64>, n: i32, bc: i32, left: f64, right: f64
+) -> void {
+    if bc == SOFIA_BC_DIRICHLET {
+        u[0] = left
+        u[n - 1] = right
+    }
+}
+
+# Euler, midpoint (RK2) or classic RK4 on a scalar PDE. The buffers
+# u,out,k1,k2,k3,k4,tmp must all be mutually distinct and have n elements.
+# No allocation. Caller is responsible for the method's CFL/stability limit.
+export function sofia_ir_step_1d(
+    p: ptr<SofiaIrProgram>, u: ptr<f64>, out: ptr<f64>,
+    k1: ptr<f64>, k2: ptr<f64>, k3: ptr<f64>, k4: ptr<f64>, tmp: ptr<f64>,
+    n: i32, dx: f64, dt: f64, bc: i32, left: f64, right: f64, method: i32
+) -> i32 {
+    if not (dt > 0.0) or u == null or out == null or k1 == null
+        or k2 == null or k3 == null or k4 == null or tmp == null { return 17 }
+    if u == out or u == k1 or u == k2 or u == k3 or u == k4 or u == tmp
+        or out == k1 or out == k2 or out == k3 or out == k4 or out == tmp
+        or k1 == k2 or k1 == k3 or k1 == k4 or k1 == tmp
+        or k2 == k3 or k2 == k4 or k2 == tmp
+        or k3 == k4 or k3 == tmp or k4 == tmp { return 18 }
+    if method != SOFIA_RK_EULER and method != SOFIA_RK_MIDPOINT
+        and method != SOFIA_RK_CLASSIC_4 { return 19 }
+    let status: i32 = sofia_ir_rhs_1d(p, u, k1, n, dx, bc, left, right)
+    if status != 0 { return status }
+    if method == SOFIA_RK_EULER {
+        for i in 0 to n { out[i] = u[i] + dt * k1[i] }
+        sofia_ir_enforce_boundary(out, n, bc, left, right)
+        return 0
+    }
+    for i in 0 to n { tmp[i] = u[i] + 0.5 * dt * k1[i] }
+    sofia_ir_enforce_boundary(tmp, n, bc, left, right)
+    let s2: i32 = sofia_ir_rhs_1d(p, tmp, k2, n, dx, bc, left, right)
+    if s2 != 0 { return s2 }
+    if method == SOFIA_RK_MIDPOINT {
+        for i in 0 to n { out[i] = u[i] + dt * k2[i] }
+        sofia_ir_enforce_boundary(out, n, bc, left, right)
+        return 0
+    }
+    for i in 0 to n { tmp[i] = u[i] + 0.5 * dt * k2[i] }
+    sofia_ir_enforce_boundary(tmp, n, bc, left, right)
+    let s3: i32 = sofia_ir_rhs_1d(p, tmp, k3, n, dx, bc, left, right)
+    if s3 != 0 { return s3 }
+    for i in 0 to n { tmp[i] = u[i] + dt * k3[i] }
+    sofia_ir_enforce_boundary(tmp, n, bc, left, right)
+    let s4: i32 = sofia_ir_rhs_1d(p, tmp, k4, n, dx, bc, left, right)
+    if s4 != 0 { return s4 }
+    for i in 0 to n {
+        out[i] = u[i] + (dt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i])
+    }
+    sofia_ir_enforce_boundary(out, n, bc, left, right)
+    return 0
+}
+
+# Sum the samples times the uniform cell spacing, useful for conservation.
+export function sofia_ir_integral_1d(u: ptr<f64>, n: i32, dx: f64) -> f64 {
+    let mut sum: f64 = 0.0
+    for i in 0 to n { sum = sum + u[i] }
+    return sum * dx
+}

@@ -1,0 +1,78 @@
+# Flow-native typed symbolic equation d_t u = alpha * d_xx u.
+# Compare Euler against RK4 on the exact discrete Fourier eigenmode.
+import "stdlib/science/sofia_ir.flow"
+import "stdlib/math.flow"
+
+function ir_abs(x: f64) -> f64 {
+    if x < 0.0 { return 0.0 - x }
+    return x
+}
+
+function main() -> i32 {
+    let nodes: array<SofiaIrNode, 16> = [
+        SofiaIrNode {
+            kind: 0, a: -1, b: -1, value: 0.0,
+            length_dim: 0, time_dim: 0, quantity_dim: 0
+        }
+    ]
+    let mut p: SofiaIrProgram = sofia_ir_new(nodes, 16)
+    let u: i32 = sofia_ir_field(&p, 0, 0, 1)
+    let lap: i32 = sofia_ir_laplacian_x(&p, u)
+    let alpha: i32 = sofia_ir_constant(&p, 0.025, 2, -1, 0)
+    let rhs: i32 = sofia_ir_mul(&p, alpha, lap)
+    if sofia_ir_set_rhs(&p, rhs) != 0 or sofia_ir_validate(&p) != 0 { return 1 }
+
+    let ue: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let ur: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let ne: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let nr: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k1: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k2: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k3: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let k4: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let tmp: array<f64, 64> = [0.0, 0.0, 0.0, 0.0]
+    let dx: f64 = 1.0 / 64.0
+    let dt: f64 = 0.002
+    for i in 0 to 64 {
+        let x: f64 = (i as f64) * dx
+        let initial: f64 = 1.0 + 0.25 * cos(2.0 * PI * x)
+        ue[i] = initial
+        ur[i] = initial
+    }
+
+    let mass0: f64 = sofia_ir_integral_1d(ur, 64, dx)
+    for step in 0 to 50 {
+        if sofia_ir_step_1d(&p, ue, ne, k1, k2, k3, k4, tmp,
+                            64, dx, dt, SOFIA_BC_PERIODIC, 0.0, 0.0,
+                            SOFIA_RK_EULER) != 0 { return 2 }
+        for i in 0 to 64 { ue[i] = ne[i] }
+        if sofia_ir_step_1d(&p, ur, nr, k1, k2, k3, k4, tmp,
+                            64, dx, dt, SOFIA_BC_PERIODIC, 0.0, 0.0,
+                            SOFIA_RK_CLASSIC_4) != 0 { return 3 }
+        for i in 0 to 64 { ur[i] = nr[i] }
+    }
+
+    let lambda: f64 = 2.0 * 0.025 * (cos(2.0 * PI / 64.0) - 1.0) / (dx * dx)
+    let expected: f64 = 1.0 + 0.25 * exp(lambda * 0.1)
+    let err_e: f64 = ir_abs(ue[0] - expected)
+    let err_r: f64 = ir_abs(ur[0] - expected)
+    if err_r > 1e-7 { return 4 }
+    if err_e < err_r * 10.0 { return 5 }
+    if ir_abs(sofia_ir_integral_1d(ur, 64, dx) - mass0) > 1e-9 { return 6 }
+    if ir_abs(sofia_ir_integral_1d(ue, 64, dx) - mass0) > 1e-9 { return 7 }
+
+    # New higher-level equation: d_t u = alpha*d_xx u - v*d_x u.
+    # The two terms must have identical physical units.
+    let mut q: SofiaIrProgram = sofia_ir_new(nodes, 16)
+    let f: i32 = sofia_ir_field(&q, 0, 0, 1)
+    let d: i32 = sofia_ir_laplacian_x(&q, f)
+    let g: i32 = sofia_ir_gradient_x(&q, f)
+    let a: i32 = sofia_ir_constant(&q, 0.025, 2, -1, 0)
+    let v: i32 = sofia_ir_constant(&q, 0.25, 1, -1, 0)
+    let diffusion: i32 = sofia_ir_mul(&q, a, d)
+    let transport: i32 = sofia_ir_mul(&q, v, g)
+    let combined: i32 = sofia_ir_sub(&q, diffusion, transport)
+    if sofia_ir_set_rhs(&q, combined) != 0 { return 8 }
+    if sofia_ir_validate(&q) != 0 { return 9 }
+    return 0
+}
