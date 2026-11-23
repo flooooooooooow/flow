@@ -498,7 +498,7 @@ in `compiler/src/field_dsl.flow` supporting `field T : f64[N] on Line` and
 ### 2026-08-05: Self-hosting cutover: when does `./flow` drop Python?
 
 **Context:** Plan in `docs/project/self-hosting.md`. Stage-A `flowc` exists
-as a bootstrap; production is still `src/flow/*.py`.
+as a bootstrap; production is now `flowc` (`src/flow/` is deleted).
 
 **Options:**
 1. Hard cutover after Phase C parity suite green (recommended).
