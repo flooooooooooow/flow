@@ -612,10 +612,18 @@ Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are 
 3. `!` `-` (unary) Unary operators
 4. `*` `/` `%` Multiplicative
 5. `+` `-` Additive
-6. `<` `>` `<=` `>=` Relational
-7. `==` `!=` Equality
-8. `&&` Logical AND
-9. `||` Logical OR
+6. `<<` `>>` Shifts
+7. `<` `>` `<=` `>=` `in` Relational / membership
+8. `==` `!=` Equality
+9. `&` Bitwise AND
+10. `^` Bitwise XOR
+11. `|` Bitwise OR
+12. `&&` Logical AND
+13. `||` Logical OR
+
+The ordering matches `tests/lang/test_operator_precedence.flow` (whose header
+comment lists the same levels loosest-to-tightest). `in` shares the relational
+level; shifts bind tighter than additive operators.
 
 ### 4.3 Built-in Functions
 
