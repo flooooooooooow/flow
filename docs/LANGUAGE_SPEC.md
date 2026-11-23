@@ -612,10 +612,18 @@ Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are 
 3. `!` `-` (unary) Unary operators
 4. `*` `/` `%` Multiplicative
 5. `+` `-` Additive
-6. `<` `>` `<=` `>=` Relational
-7. `==` `!=` Equality
-8. `&&` Logical AND
-9. `||` Logical OR
+6. `<<` `>>` Shifts
+7. `<` `>` `<=` `>=` `in` Relational / membership
+8. `==` `!=` Equality
+9. `&` Bitwise AND
+10. `^` Bitwise XOR
+11. `|` Bitwise OR
+12. `&&` Logical AND
+13. `||` Logical OR
+
+The ordering matches `tests/lang/test_operator_precedence.flow` (whose header
+comment lists the same levels loosest-to-tightest). `in` shares the relational
+level; shifts bind tighter than additive operators.
 
 ### 4.3 Built-in Functions
 
@@ -1413,7 +1421,7 @@ function main() -> i32 {
 
 ## Appendix A: AST Node Reference
 
-Complete list of AST nodes defined in `src/flow/parser.py`:
+Complete list of AST nodes defined by the retired Python parser (`src/flow/parser.py`, deleted). The parser today is `compiler/src/parser.flow`, whose nodes are Flow values rather than these Python classes:
 
 | Node | Purpose | Fields |
 |------|---------|--------|
@@ -1458,7 +1466,7 @@ Complete list of AST nodes defined in `src/flow/parser.py`:
 
 ## Appendix B: C Generator Capabilities
 
-Methods in `src/flow/c_generator.py` and their coverage:
+Methods in the retired Python C generator (`src/flow/c_generator.py`, deleted), kept for reference. The C emitter today is `compiler/src/cgen.flow`:
 
 | Generator Method | Handles |
 |------------------|---------|

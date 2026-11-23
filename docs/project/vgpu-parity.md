@@ -177,7 +177,7 @@ checked together.
 
 ## Initial implementation landed by this track
 
-The first slice adds `src/flow/shader_codegen_wgsl.py`, which consumes the existing
+The first slice added `src/flow/shader_codegen_wgsl.py` (now `compiler/src/wgsl_codegen.flow`), which consumes the existing
 FSL AST and emits a WebGPU-compatible fullscreen vertex/fragment module, including
 FSL helper functions and standard noise/palette functions. `gradient.flow` is the
 first vgpu compatibility fixture, and unit tests cover WGSL generation, helper

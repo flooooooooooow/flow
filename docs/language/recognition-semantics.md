@@ -68,7 +68,7 @@ describe which distinctions are observable to a semantic regime.
 
 ## Compiler API
 
-`src/flow/recognition.py` exposes:
+`compiler/src/recognition.flow` implements this contract. The retired Python module (`src/flow/recognition.py`, deleted) exposed it as:
 
 ```python
 denotation(flow)
