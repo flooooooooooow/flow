@@ -335,8 +335,7 @@ corpus keeps compiling while unit tests pin strict behavior.
 
 ### Phase 5 notes
 
-- The MLIR emitter (`compiler/src/mlirgen.flow`, once
-  `src/flow/mlir_canonicalize.py`) runs two AST rewrites ahead of MLIR
+- The MLIR emitter (`compiler/src/mlirgen.flow`) runs two AST rewrites ahead of MLIR
   generation. Both came out of compiling Doom through the MLIR backend.
 - Counted-loop rotation (#473): `while true { P; if c == 0 { break }; S }`
   becomes `P; while c != 0 { S; P }`. The exit test moves to the loop latch, so
