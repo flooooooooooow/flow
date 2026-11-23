@@ -364,7 +364,8 @@ checked. None of it is partially checked.
 ## Interaction with spans
 
 Spans and domains check the same underlying fact from two directions, and the
-domain checker is built directly on the span machinery(`_span_origin` and `_function_local_storage` in `compiler/src/sem_check.flow`).
+domain checker is built directly on the span machinery (`_span_origin` and
+`_function_local_storage` in `compiler/src/sem_check.flow`).
 
 - The **span** escape check is always on and needs no annotation. It knows one
   domain boundary: "this function's frame". Its diagnostic is `span outlives
