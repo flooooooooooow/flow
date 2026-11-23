@@ -92,7 +92,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 4. Reference implementation
 | Item | Status | Note |
 | --- | --- | --- |
-| Compiler | DONE | Self-hosted `flowc` in `compiler/` is the only C compiler; `src/flow` (Python) keeps the MLIR generator fallback and some tools. |
+| Compiler | DONE | Self-hosted `flowc` in `compiler/` is the only C and MLIR compiler; the Python compiler under `src/flow` is deleted. |
 | Bootstrap | DONE | Three-generation fixed-point proof builds `flowc` from a single-C bootstrap. |
 | Targets | PARTIAL | C primary; Wasm, JIT, SPIR-V partial; architecture matrix above. |
 | Diagnostics | PARTIAL | Strict / lenient diagnostics and LSP intellisense exist. |
