@@ -1,0 +1,339 @@
+# A two-block, stateful one-pole and biquad voice bank for GPU lowering parity.
+#
+# One GPU thread owns one voice. Each voice advances its filter in temporal
+# order across a whole block, so the loop-carried recurrence stays inside one
+# thread while voices run in parallel. Each voice has its own excitation
+# signal, stored voice-major so a voice walks its input with a steady stride.
+# One-pole state is one float per voice; biquad state is two floats per voice
+# in transposed direct form II. Both state banks are structures of arrays. A
+# separate reduction mixes the per-voice partials in sample-major order.
+#
+# Block 0's output state is block 1's input state, so the case exercises
+# cross-dispatch state persistence for both state widths rather than a
+# stateless per-sample kernel. main() is the CPU reference and
+# `flow gpu-lower --run` tests its output against the generated GPU kernels on
+# supported backends.
+#
+# All input/output buffers are separate: in-place updates are not supported by
+# all gpu-lower execution targets (notably MLX).
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+# y[n] = pole * y[n-1] + x[n], then scale for the voice's contribution.
+@gpu
+function one_pole(
+    pole: ptr<f32>, gain: ptr<f32>, x: ptr<f32>,
+    prev_in: ptr<f32>, prev_out: ptr<f32>, lp: ptr<f32>,
+    voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let p: f32 = pole[voice]
+        let g: f32 = gain[voice]
+        let mut prev: f32 = prev_in[voice]
+        for frame in 0 to frames {
+            prev = p * prev + x[voice * frames + frame]
+            lp[frame * voices + voice] = prev * g
+        }
+        prev_out[voice] = prev
+    }
+}
+
+# Transposed direct form II, so each voice keeps two state floats:
+#   y    = b0 * x + z1
+#   z2'  = b2 * x - a2 * y
+#   z1'  = b1 * x - a1 * y + z2
+@gpu
+function biquad(
+    b0: ptr<f32>, b1: ptr<f32>, b2: ptr<f32>, a1: ptr<f32>, a2: ptr<f32>,
+    x: ptr<f32>, z1_in: ptr<f32>, z2_in: ptr<f32>,
+    z1_out: ptr<f32>, z2_out: ptr<f32>, bq: ptr<f32>,
+    voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let c0: f32 = b0[voice]
+        let c1: f32 = b1[voice]
+        let c2: f32 = b2[voice]
+        let c3: f32 = a1[voice]
+        let c4: f32 = a2[voice]
+        let mut z1: f32 = z1_in[voice]
+        let mut z2: f32 = z2_in[voice]
+        for frame in 0 to frames {
+            let sample: f32 = x[voice * frames + frame]
+            let y: f32 = c0 * sample + z1
+            let next_z2: f32 = c2 * sample - c4 * y
+            z1 = c1 * sample - c3 * y + z2
+            z2 = next_z2
+            bq[frame * voices + voice] = y
+        }
+        z1_out[voice] = z1
+        z2_out[voice] = z2
+    }
+}
+
+# One thread per frame, both banks added in a fixed order so the GPU result can
+# match the CPU build bit for bit.
+@gpu
+function mix_bank(lp: ptr<f32>, bq: ptr<f32>, mix: ptr<f32>, voices: i32, frames: i32) {
+    let frame: i32 = gpu_thread_id()
+    if frame < frames {
+        let mut sample: f32 = 0.0
+        for voice in 0 to voices {
+            sample = sample + lp[frame * voices + voice]
+        }
+        for voice in 0 to voices {
+            sample = sample + bq[frame * voices + voice]
+        }
+        mix[frame] = sample
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let voices: i32 = 128
+    let frames: i32 = 64
+    let voice_bytes: i64 = (voices * 4) as i64
+    let signal_bytes: i64 = (voices * frames * 4) as i64
+    let mix_bytes: i64 = (frames * 4) as i64
+
+    let exc0: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let exc1: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let pole: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let gain: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let b0: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let b1: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let b2: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let a1: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let a2: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let lp_prev: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let z1_start: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let z2_start: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let lp_mid: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let z1_mid: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let z2_mid: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let lp_end: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let z1_end: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let z2_end: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let lp0: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let bq0: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let lp1: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let bq1: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let mix0: ptr<f32> = calloc(frames as i64, 4) as ptr<f32>
+    let mix1: ptr<f32> = calloc(frames as i64, 4) as ptr<f32>
+    let voice_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frame_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    voice_arg[0] = voices
+    frame_arg[0] = frames
+
+    # Stable voices: one-pole |pole| < 1, biquad poles at radius sqrt(a2) < 1.
+    # b0 is 1 so both filters see the same excitation per voice.
+    for voice in 0 to voices {
+        pole[voice] = 0.95 - ((voice % 40) as f32) * 0.012
+        gain[voice] = 0.01 + ((voice % 8) as f32) * 0.0005
+        b0[voice] = 1.0
+        b1[voice] = 0.12 - ((voice % 16) as f32) * 0.004
+        b2[voice] = 0.05
+        a1[voice] = -1.4 + ((voice % 24) as f32) * 0.02
+        a2[voice] = 0.81
+        lp_prev[voice] = 0.25
+        z1_start[voice] = 0.1
+        z2_start[voice] = 0.0
+    }
+
+    # Per-voice excitation: deterministic, bounded, and different per voice, so
+    # voice independence is tested without a transcendental or shared signal.
+    let mut seed: i32 = 7919
+    for voice in 0 to voices {
+        for i in 0 to frames {
+            seed = (seed * 1103 + 12345) % 65536
+            exc0[voice * frames + i] = (seed as f32) / 32768.0 - 1.0
+            seed = (seed * 1103 + 12345) % 65536
+            exc1[voice * frames + i] = (seed as f32) / 32768.0 - 1.0
+        }
+    }
+
+    dump(dir, "in_0.bin", exc0 as ptr<void>, signal_bytes)
+    dump(dir, "in_1.bin", exc1 as ptr<void>, signal_bytes)
+    dump(dir, "in_2.bin", pole as ptr<void>, voice_bytes)
+    dump(dir, "in_3.bin", gain as ptr<void>, voice_bytes)
+    dump(dir, "in_4.bin", b0 as ptr<void>, voice_bytes)
+    dump(dir, "in_5.bin", b1 as ptr<void>, voice_bytes)
+    dump(dir, "in_6.bin", b2 as ptr<void>, voice_bytes)
+    dump(dir, "in_7.bin", a1 as ptr<void>, voice_bytes)
+    dump(dir, "in_8.bin", a2 as ptr<void>, voice_bytes)
+    dump(dir, "in_9.bin", lp_prev as ptr<void>, voice_bytes)
+    dump(dir, "in_10.bin", z1_start as ptr<void>, voice_bytes)
+    dump(dir, "in_11.bin", z2_start as ptr<void>, voice_bytes)
+    dump(dir, "in_12.bin", lp_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_13.bin", z1_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_14.bin", z2_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_15.bin", lp0 as ptr<void>, signal_bytes)
+    dump(dir, "in_16.bin", bq0 as ptr<void>, signal_bytes)
+    dump(dir, "in_17.bin", mix0 as ptr<void>, mix_bytes)
+    dump(dir, "in_18.bin", lp_end as ptr<void>, voice_bytes)
+    dump(dir, "in_19.bin", z1_end as ptr<void>, voice_bytes)
+    dump(dir, "in_20.bin", z2_end as ptr<void>, voice_bytes)
+    dump(dir, "in_21.bin", lp1 as ptr<void>, signal_bytes)
+    dump(dir, "in_22.bin", bq1 as ptr<void>, signal_bytes)
+    dump(dir, "in_23.bin", mix1 as ptr<void>, mix_bytes)
+    dump(dir, "in_24.bin", voice_arg as ptr<void>, 4)
+    dump(dir, "in_25.bin", frame_arg as ptr<void>, 4)
+
+    for t in 0 to voices {
+        cpu_tid_x = t
+        one_pole(pole, gain, exc0, lp_prev, lp_mid, lp0, voices, frames)
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        biquad(b0, b1, b2, a1, a2, exc0, z1_start, z2_start, z1_mid, z2_mid, bq0, voices, frames)
+    }
+    for t in 0 to frames {
+        cpu_tid_x = t
+        mix_bank(lp0, bq0, mix0, voices, frames)
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        one_pole(pole, gain, exc1, lp_mid, lp_end, lp1, voices, frames)
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        biquad(b0, b1, b2, a1, a2, exc1, z1_mid, z2_mid, z1_end, z2_end, bq1, voices, frames)
+    }
+    for t in 0 to frames {
+        cpu_tid_x = t
+        mix_bank(lp1, bq1, mix1, voices, frames)
+    }
+
+    # Independent unsplit recurrences for voice 0, across both blocks. A reset
+    # between dispatches (or a silent no-op) fails these even when the GPU
+    # mirrors the same incorrect CPU code.
+    let mut ref_prev: f32 = lp_prev[0]
+    for sample in 0 to frames {
+        ref_prev = pole[0] * ref_prev + exc0[sample]
+    }
+    let mut err_mid: f32 = lp_mid[0] - ref_prev
+    if err_mid < 0.0 { err_mid = 0.0 - err_mid }
+    if err_mid > 0.000001 { return 1 }
+    for sample in 0 to frames {
+        ref_prev = pole[0] * ref_prev + exc1[sample]
+    }
+    let mut err_end: f32 = lp_end[0] - ref_prev
+    if err_end < 0.0 { err_end = 0.0 - err_end }
+    if err_end > 0.000001 { return 2 }
+
+    let mut ref_z1: f32 = z1_start[0]
+    let mut ref_z2: f32 = z2_start[0]
+    let mut mid_z1: f32 = 0.0
+    let mut mid_z2: f32 = 0.0
+    for sample in 0 to frames * 2 {
+        let mut sample_in: f32 = exc1[sample - frames]
+        if sample < frames { sample_in = exc0[sample] }
+        let y: f32 = b0[0] * sample_in + ref_z1
+        let next_z2: f32 = b2[0] * sample_in - a2[0] * y
+        ref_z1 = b1[0] * sample_in - a1[0] * y + ref_z2
+        ref_z2 = next_z2
+        if sample == frames - 1 {
+            mid_z1 = ref_z1
+            mid_z2 = ref_z2
+        }
+    }
+    let mut err_z1_mid: f32 = z1_mid[0] - mid_z1
+    let mut err_z2_mid: f32 = z2_mid[0] - mid_z2
+    let mut err_z1_end: f32 = z1_end[0] - ref_z1
+    let mut err_z2_end: f32 = z2_end[0] - ref_z2
+    if err_z1_mid < 0.0 { err_z1_mid = 0.0 - err_z1_mid }
+    if err_z2_mid < 0.0 { err_z2_mid = 0.0 - err_z2_mid }
+    if err_z1_end < 0.0 { err_z1_end = 0.0 - err_z1_end }
+    if err_z2_end < 0.0 { err_z2_end = 0.0 - err_z2_end }
+    if err_z1_mid > 0.000001 or err_z2_mid > 0.000001 { return 3 }
+    if err_z1_end > 0.000001 or err_z2_end > 0.000001 { return 4 }
+
+    # Block 0 must mutate state, block 1 must continue from that mutated
+    # state, and different coefficients must leave voices independent.
+    if lp_mid[0] == lp_prev[0] { return 5 }
+    if lp_end[0] == lp_mid[0] { return 6 }
+    if lp_end[0] == lp_end[1] { return 7 }
+    if z1_mid[0] == z1_start[0] or z1_end[0] == z1_mid[0] { return 8 }
+
+    # First sample of block 1 continues from the mid-block SoA state.
+    let first_one_pole: f32 = (pole[0] * lp_mid[0] + exc1[0]) * gain[0]
+    let first_biquad: f32 = b0[0] * exc1[0] + z1_mid[0]
+    let mut err_cont: f32 = lp1[0] - first_one_pole
+    let mut err_bq: f32 = bq1[0] - first_biquad
+    if err_cont < 0.0 { err_cont = 0.0 - err_cont }
+    if err_bq < 0.0 { err_bq = 0.0 - err_bq }
+    if err_cont > 0.000001 or err_bq > 0.000001 { return 9 }
+    if mix0[0] == 0.0 { return 10 }
+
+    dump(dir, "out_12.bin", lp_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_13.bin", z1_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_14.bin", z2_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_15.bin", lp0 as ptr<void>, signal_bytes)
+    dump(dir, "out_16.bin", bq0 as ptr<void>, signal_bytes)
+    dump(dir, "out_17.bin", mix0 as ptr<void>, mix_bytes)
+    dump(dir, "out_18.bin", lp_end as ptr<void>, voice_bytes)
+    dump(dir, "out_19.bin", z1_end as ptr<void>, voice_bytes)
+    dump(dir, "out_20.bin", z2_end as ptr<void>, voice_bytes)
+    dump(dir, "out_21.bin", lp1 as ptr<void>, signal_bytes)
+    dump(dir, "out_22.bin", bq1 as ptr<void>, signal_bytes)
+    dump(dir, "out_23.bin", mix1 as ptr<void>, mix_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 8192 in\n" +
+        "buffer 1 f32 8192 in\n" +
+        "buffer 2 f32 128 in\n" +
+        "buffer 3 f32 128 in\n" +
+        "buffer 4 f32 128 in\n" +
+        "buffer 5 f32 128 in\n" +
+        "buffer 6 f32 128 in\n" +
+        "buffer 7 f32 128 in\n" +
+        "buffer 8 f32 128 in\n" +
+        "buffer 9 f32 128 in\n" +
+        "buffer 10 f32 128 in\n" +
+        "buffer 11 f32 128 in\n" +
+        "buffer 12 f32 128 out\n" +
+        "buffer 13 f32 128 out\n" +
+        "buffer 14 f32 128 out\n" +
+        "buffer 15 f32 8192 out\n" +
+        "buffer 16 f32 8192 out\n" +
+        "buffer 17 f32 64 out\n" +
+        "buffer 18 f32 128 out\n" +
+        "buffer 19 f32 128 out\n" +
+        "buffer 20 f32 128 out\n" +
+        "buffer 21 f32 8192 out\n" +
+        "buffer 22 f32 8192 out\n" +
+        "buffer 23 f32 64 out\n" +
+        "buffer 24 i32 1 scalar\n" +
+        "buffer 25 i32 1 scalar\n" +
+        "dispatch one_pole 2 1 1 2 3 0 9 12 15 24 25\n" +
+        "dispatch biquad 2 1 1 4 5 6 7 8 0 10 11 13 14 16 24 25\n" +
+        "dispatch mix_bank 1 1 1 15 16 17 24 25\n" +
+        "dispatch one_pole 2 1 1 2 3 1 12 18 21 24 25\n" +
+        "dispatch biquad 2 1 1 4 5 6 7 8 1 13 14 19 20 22 24 25\n" +
+        "dispatch mix_bank 1 1 1 21 22 23 24 25\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}
