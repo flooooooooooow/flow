@@ -1,0 +1,15 @@
+function wrapper(f: (i32) -> i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return f(x) }
+}
+
+function double(x: i32) -> i32 {
+    return x * 2
+}
+
+function main() -> i32 {
+    let f: (i32) -> i32 = double
+    let g: (i32) -> i32 = wrapper(f)
+    let result: i32 = g(5)
+    if result == 10 { return 0 }
+    return 1
+}
