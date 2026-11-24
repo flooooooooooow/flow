@@ -1,0 +1,16 @@
+function compose(outer: (i32) -> i32, inner: (i32) -> i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return outer(inner(x)) }
+}
+
+function affine(scale: i32, bias: i32) -> (i32) -> i32 {
+    return |x: i32| -> i32 { return scale * x + bias }
+}
+
+function main() -> i32 {
+    let shift: (i32) -> i32 = affine(1, 2)
+    let scale: (i32) -> i32 = affine(3, 0)
+    let program: (i32) -> i32 = compose(scale, shift)
+    let result: i32 = program(4)
+    if result == 18 { return 0 }
+    return 1
+}
