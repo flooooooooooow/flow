@@ -102,11 +102,36 @@ Compare against a **well-optimised CPU structure-of-voices** baseline,
 not just a CPU interpreter of GPU-oriented storage. Add offline modal
 fitting and differentiable DSP only after the synthesis path is correct.
 
+## Gate 1a: other voices, variable blocks, parameter updates
+
+[`tests/gpu_lower/kernels/voice_osc_varblocks.flow`](../../tests/gpu_lower/kernels/voice_osc_varblocks.flow)
+covers the next correctness slice after the modal bank:
+
+```sh
+./flow tool tests/gpu_lower/run.flow --only voice_osc_varblocks
+```
+
+- **Other voice program:** 64 independent phase-accumulator oscillators
+  (SoA phase, frequency and gain), not resonators.
+- **Variable block sizes:** block 0 is 48 frames; block 1 is 80 frames,
+  with separate frame scalars and differently sized partial/mix buffers.
+- **Mid-stream parameter updates:** block 1 binds new frequency and gain
+  buffers while continuing from the mid-block phase.
+- **Negative checks in `main()`:** returns nonzero if phase is reset to
+  the initial excitation between dispatches, if block 1 is replayed with
+  the old length and coefficients, or if the first sample of block 1
+  matches a reset-from-init formula under the new parameters.
+
+Phase wrap and delay-line topologies remain separate follow-ups (they need
+`if`-assigned locals inside GPU loops). One-pole / biquad banks and
+Karplus-Strong are covered by companion PRs under the same epic.
+
 ## Current constraints
 
-This is a fixed two-block, mono test with 128 modes and 64 frames/block.
-The kernel contains no file I/O, allocations, transcendentals or effects.
-The source is compiled through the existing `gpu-lower` harness; it is
-not yet a dispatchable callback-based audio library. Native `audio/gpu.flow`
-contains other experimental Metal routines and should not be conflated
-with this execution model.
+The modal bank remains a fixed two-block, mono test with 128 modes and
+64 frames/block. The oscillator case above varies block length and
+parameters but still has no file I/O, allocations, transcendentals or
+effects. Both compile through the existing `gpu-lower` harness; neither
+is yet a dispatchable callback-based audio library. Native
+`audio/gpu.flow` contains other experimental Metal routines and should
+not be conflated with this execution model.

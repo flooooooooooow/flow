@@ -219,12 +219,22 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `lj_forces.flow` | Lennard-Jones forces, 200 particles in 3D, all pairs | 600/600 | 600/600 | 600/600 |
 | `zero_trip.flow` | prefix sums, thread 0's loop runs zero times | 64/64 | 64/64 | 64/64 |
 | `modal_bank.flow` | 128 stateful resonators, two 64-sample blocks, SoA state + mix | pending device re-measure | pending | pending |
+| `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | pending device re-measure | pending | pending |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
 Its device bit-identical cells above stay pending until re-measured on the
 same Apple Silicon host as the original five; do not treat generation PASS
 or SKIP as a substitute for those cells.
+
+`voice_osc_varblocks.flow` extends the audio correctness gate beyond the
+fixed-length modal bank: a different voice program (phase accumulator),
+unequal block lengths (48 then 80), and new SoA frequency/gain buffers on
+the second dispatch. Its CPU harness fails if phase is reset between
+blocks, if block 1 is replayed at the old length or coefficients, or if
+the first sample of block 1 matches a reset-from-init formula. Registered
+at 0 ulp in `tests/gpu_lower/cases.txt`; device cells above stay pending
+until re-measured on the reference host.
 
 Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
 sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as

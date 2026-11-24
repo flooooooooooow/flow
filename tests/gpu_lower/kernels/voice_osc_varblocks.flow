@@ -1,0 +1,226 @@
+# Gate 1a: stateful oscillator voices across variable-length GPU blocks
+# with a mid-stream parameter update.
+#
+# One GPU thread owns one phase-accumulator oscillator. Samples advance in
+# temporal order inside that thread; voices run in parallel. Phase is SoA.
+# Block 0 is 48 frames; block 1 is 80 frames. Between the blocks the host
+# swaps in new per-voice frequency and gain buffers, so block 1 continues
+# from the mid-block phase under updated coefficients.
+#
+# No phase wrap and no transcendentals: short blocks keep phase in (0, 1)
+# so the kernel stays inside the current @gpu subset (wrap-around `if`
+# assignment is covered separately). main() is the CPU reference; the
+# harness fails if phase is reset between dispatches, if the wrong block
+# length is used, or if block 1 ignores the updated parameters.
+#
+# All input/output buffers are separate: in-place updates are not supported
+# by all gpu-lower execution targets (notably MLX).
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+# y = (phase + freq) * gain; phase advances once per sample.
+@gpu
+function render_osc(
+    freq: ptr<f32>, gain: ptr<f32>,
+    phase_in: ptr<f32>, phase_out: ptr<f32>,
+    partials: ptr<f32>, voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let f: f32 = freq[voice]
+        let g: f32 = gain[voice]
+        let mut phase: f32 = phase_in[voice]
+        for frame in 0 to frames {
+            phase = phase + f
+            partials[frame * voices + voice] = phase * g
+        }
+        phase_out[voice] = phase
+    }
+}
+
+@gpu
+function mix_osc(partials: ptr<f32>, mix: ptr<f32>, voices: i32, frames: i32) {
+    let frame: i32 = gpu_thread_id()
+    if frame < frames {
+        let mut sample: f32 = 0.0
+        for voice in 0 to voices {
+            sample = sample + partials[frame * voices + voice]
+        }
+        mix[frame] = sample
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function abs_err(a: f32, b: f32) -> f32 {
+    let mut d: f32 = a - b
+    if d < 0.0 { d = 0.0 - d }
+    return d
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let voices: i32 = 64
+    let frames0: i32 = 48
+    let frames1: i32 = 80
+    let voice_bytes: i64 = (voices * 4) as i64
+    let partial0_bytes: i64 = (voices * frames0 * 4) as i64
+    let partial1_bytes: i64 = (voices * frames1 * 4) as i64
+    let mix0_bytes: i64 = (frames0 * 4) as i64
+    let mix1_bytes: i64 = (frames1 * 4) as i64
+
+    let freq0: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let gain0: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let freq1: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let gain1: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_init: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_mid: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_end: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let partial0: ptr<f32> = calloc((voices * frames0) as i64, 4) as ptr<f32>
+    let partial1: ptr<f32> = calloc((voices * frames1) as i64, 4) as ptr<f32>
+    let mix0: ptr<f32> = calloc(frames0 as i64, 4) as ptr<f32>
+    let mix1: ptr<f32> = calloc(frames1 as i64, 4) as ptr<f32>
+    let voice_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames0_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames1_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    voice_arg[0] = voices
+    frames0_arg[0] = frames0
+    frames1_arg[0] = frames1
+
+    # Distinct per-voice rates; block 1 uses a different freq and gain so a
+    # mid-stream parameter update is observable. Totals stay below 1.0 so
+    # no wrap is required for these short blocks.
+    for voice in 0 to voices {
+        freq0[voice] = 0.003 + ((voice % 16) as f32) * 0.0001
+        gain0[voice] = 0.01 + ((voice % 8) as f32) * 0.0005
+        freq1[voice] = 0.005 + ((voice % 16) as f32) * 0.00015
+        gain1[voice] = 0.02 + ((voice % 8) as f32) * 0.0007
+        phase_init[voice] = 0.1 + ((voice % 10) as f32) * 0.01
+    }
+
+    dump(dir, "in_0.bin", freq0 as ptr<void>, voice_bytes)
+    dump(dir, "in_1.bin", gain0 as ptr<void>, voice_bytes)
+    dump(dir, "in_2.bin", freq1 as ptr<void>, voice_bytes)
+    dump(dir, "in_3.bin", gain1 as ptr<void>, voice_bytes)
+    dump(dir, "in_4.bin", phase_init as ptr<void>, voice_bytes)
+    dump(dir, "in_5.bin", phase_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_6.bin", phase_end as ptr<void>, voice_bytes)
+    dump(dir, "in_7.bin", partial0 as ptr<void>, partial0_bytes)
+    dump(dir, "in_8.bin", partial1 as ptr<void>, partial1_bytes)
+    dump(dir, "in_9.bin", mix0 as ptr<void>, mix0_bytes)
+    dump(dir, "in_10.bin", mix1 as ptr<void>, mix1_bytes)
+    dump(dir, "in_11.bin", voice_arg as ptr<void>, 4)
+    dump(dir, "in_12.bin", frames0_arg as ptr<void>, 4)
+    dump(dir, "in_13.bin", frames1_arg as ptr<void>, 4)
+
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_osc(freq0, gain0, phase_init, phase_mid, partial0, voices, frames0)
+    }
+    for t in 0 to frames0 {
+        cpu_tid_x = t
+        mix_osc(partial0, mix0, voices, frames0)
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_osc(freq1, gain1, phase_mid, phase_end, partial1, voices, frames1)
+    }
+    for t in 0 to frames1 {
+        cpu_tid_x = t
+        mix_osc(partial1, mix1, voices, frames1)
+    }
+
+    # Independent unsplit recurrence for voice 0 across both unequal blocks,
+    # switching to the updated coefficients after frames0 samples.
+    let mut ref_phase: f32 = phase_init[0]
+    let mut mid_ref: f32 = 0.0
+    for sample in 0 to frames0 {
+        ref_phase = ref_phase + freq0[0]
+    }
+    mid_ref = ref_phase
+    for sample in 0 to frames1 {
+        ref_phase = ref_phase + freq1[0]
+    }
+    if abs_err(phase_mid[0], mid_ref) > 0.000001 { return 1 }
+    if abs_err(phase_end[0], ref_phase) > 0.000001 { return 2 }
+
+    # Block 0 must mutate phase; block 1 must mutate it further.
+    if phase_mid[0] == phase_init[0] { return 3 }
+    if phase_end[0] == phase_mid[0] { return 4 }
+    if phase_end[0] == phase_end[1] { return 5 }
+
+    # Continuity across the dispatch boundary under the *updated* params.
+    let cont: f32 = (phase_mid[0] + freq1[0]) * gain1[0]
+    if abs_err(partial1[0], cont) > 0.000001 { return 6 }
+
+    # Negative: a wrong reset to the initial phase (even with the new
+    # freq/gain) must not match the first sample of block 1.
+    let reset_sample: f32 = (phase_init[0] + freq1[0]) * gain1[0]
+    if abs_err(partial1[0], reset_sample) < 0.000001 { return 7 }
+    if cont == reset_sample { return 8 }
+
+    # Negative: replaying block 0's length and old params from mid-state
+    # must not equal the unsplit end state (variable length + param update).
+    let mut wrong_len: f32 = phase_mid[0]
+    for sample in 0 to frames0 {
+        wrong_len = wrong_len + freq0[0]
+    }
+    if abs_err(phase_end[0], wrong_len) < 0.000001 { return 9 }
+
+    # Last sample of block 0 used the old gain; first of block 1 uses the new.
+    let last0: f32 = phase_mid[0] * gain0[0]
+    if abs_err(partial0[(frames0 - 1) * voices], last0) > 0.000001 { return 10 }
+    if abs_err(partial1[0], last0) < 0.000001 { return 11 }
+
+    if mix0[0] == 0.0 { return 12 }
+    if mix1[0] == 0.0 { return 13 }
+
+    dump(dir, "out_5.bin", phase_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_6.bin", phase_end as ptr<void>, voice_bytes)
+    dump(dir, "out_7.bin", partial0 as ptr<void>, partial0_bytes)
+    dump(dir, "out_8.bin", partial1 as ptr<void>, partial1_bytes)
+    dump(dir, "out_9.bin", mix0 as ptr<void>, mix0_bytes)
+    dump(dir, "out_10.bin", mix1 as ptr<void>, mix1_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 64 in\n" +
+        "buffer 1 f32 64 in\n" +
+        "buffer 2 f32 64 in\n" +
+        "buffer 3 f32 64 in\n" +
+        "buffer 4 f32 64 in\n" +
+        "buffer 5 f32 64 out\n" +
+        "buffer 6 f32 64 out\n" +
+        "buffer 7 f32 3072 out\n" +
+        "buffer 8 f32 5120 out\n" +
+        "buffer 9 f32 48 out\n" +
+        "buffer 10 f32 80 out\n" +
+        "buffer 11 i32 1 scalar\n" +
+        "buffer 12 i32 1 scalar\n" +
+        "buffer 13 i32 1 scalar\n" +
+        "dispatch render_osc 1 1 1 0 1 4 5 7 11 12\n" +
+        "dispatch mix_osc 1 1 1 7 9 11 12\n" +
+        "dispatch render_osc 1 1 1 2 3 5 6 8 11 13\n" +
+        "dispatch mix_osc 2 1 1 8 10 11 13\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}
