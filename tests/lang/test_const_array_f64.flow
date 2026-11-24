@@ -1,0 +1,10 @@
+const RATIOS: [f64; 2] = [3.14159, 2.71828]
+
+function main() -> i32 {
+    if RATIOS[0] > 3.14 and RATIOS[0] < 3.15 {
+        if RATIOS[1] > 2.71 and RATIOS[1] < 2.72 {
+            return 0
+        }
+    }
+    return 1
+}

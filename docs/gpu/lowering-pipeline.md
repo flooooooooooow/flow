@@ -218,11 +218,18 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `stencil2d.flow` | one heat-equation step on 96 x 40, 2D launch | 3840/3840 | 3840/3840 | 3840/3840 |
 | `lj_forces.flow` | Lennard-Jones forces, 200 particles in 3D, all pairs | 600/600 | 600/600 | 600/600 |
 | `zero_trip.flow` | prefix sums, thread 0's loop runs zero times | 64/64 | 64/64 | 64/64 |
+| `modal_bank.flow` | 128 stateful resonators, two 64-sample blocks, SoA state + mix | pending device re-measure | pending | pending |
 
-Every case is bit for bit, so `tests/gpu_lower/cases.txt` sets a tolerance
-of 0 ulp for all of them. `msl` runs the same MSL as `metal` and gives the
-same results. PTX, the cubin and the code object were not run: there is
-no NVIDIA or AMD GPU here.
+`modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
+is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
+Its device bit-identical cells above stay pending until re-measured on the
+same Apple Silicon host as the original five; do not treat generation PASS
+or SKIP as a substitute for those cells.
+
+Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
+sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as
+`metal` and gives the same results. PTX, the cubin and the code object were
+not run: there is no NVIDIA or AMD GPU here.
 
 ### Tests
 
