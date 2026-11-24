@@ -229,7 +229,7 @@ function get_weight(m: ModelFile, name: string) -> ptr<f32> {
 
 function model_linear(m: ModelFile, x: ptr<f32>, y: ptr<f32>, rows: i32, din: i32, dout: i32, stem: string, with_bias: bool) -> bool {
     let w: ptr<f32> = get_weight(m, stem + ".weight")
-    let b: ptr<f32> = null
+    let mut b: ptr<f32> = null
     if with_bias { b = get_weight(m, stem + ".bias") }
     if w == null or (with_bias and b == null) { return false }
     linear(x, y, rows, din, dout, w, b)
@@ -276,7 +276,7 @@ function csv_load(path: string, names: ptr<ptr<ptr<u8>>>, values: ptr<ptr<ptr<f3
         ch = ch + 1
     }
     if ch != n { println("Could not parse CSV electrode header"); return false }
-    let data_start: i32 = i
+    let mut data_start: i32 = i
     while data_start < f.len as i32 and (p[data_start] == 10 or p[data_start] == 13) { data_start = data_start + 1 }
     let mut row_count: i32 = 0
     i = data_start
