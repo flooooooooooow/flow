@@ -12,3 +12,4 @@ tests/gpu_lower/kernels/stencil2d.flow 0
 tests/gpu_lower/kernels/lj_forces.flow 0
 tests/gpu_lower/kernels/zero_trip.flow 0
 tests/gpu_lower/kernels/modal_bank.flow 0
+tests/gpu_lower/kernels/voice_filters.flow 0
