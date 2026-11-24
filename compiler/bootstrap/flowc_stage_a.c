@@ -66840,6 +66840,7 @@ void mlg_gpu_stmts(Mlg* m, int32_t b);
 int32_t mlg_gpu_assigned(Mlg* m, int32_t b, int32_t* buf, int32_t n0);
 int32_t mlg_gpu_declares(Mlg* m, int32_t b, int32_t ns, int32_t ne);
 void mlg_gpu_for(Mlg* m, int32_t st);
+void mlg_gpu_yield(Mlg* m, int32_t* locs, int32_t n);
 void mlg_gpu_stmt(Mlg* m, int32_t st);
 void mlg_emit_gpu_module(Mlg* m);
 int32_t mlg_want_gpu();
@@ -87775,6 +87776,9 @@ int32_t mlg_gpu_assigned(Mlg* m, int32_t b, int32_t* buf, int32_t n0) {
   n = mlg_gpu_assigned(m, (((m[0]).arena).nodes[s]).b, buf, n);
   n = mlg_gpu_assigned(m, (((m[0]).arena).nodes[s]).c, buf, n);
 }
+  if (k == AST_FOR) {
+  n = mlg_gpu_assigned(m, (((m[0]).arena).nodes[s]).c, buf, n);
+}
   s = (((m[0]).arena).nodes[s]).next;
 }
   return n;
@@ -87850,11 +87854,11 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(its[i]) __flowc_st100757 = mlg_gpu_new(m); its[i] = __flowc_st100757; }
+  { __typeof__(its[i]) __flowc_st100776 = mlg_gpu_new(m); its[i] = __flowc_st100776; }
 }
   i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st100778 = mlg_gpu_new(m); res[i] = __flowc_st100778; }
+  { __typeof__(res[i]) __flowc_st100797 = mlg_gpu_new(m); res[i] = __flowc_st100797; }
 }
   mlg_line(m);
   if (nc > 0) {
@@ -87951,6 +87955,27 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   mlg_free_i32(locs);
 }
 
+void mlg_gpu_yield(Mlg* m, int32_t* locs, int32_t n) {
+  mlg_line(m);
+  mlg_s(m, "scf.yield ");
+  int32_t i = 0;
+  for (; i < (n); i = i + 1) {
+  if (i > 0) {
+  mlg_s(m, ", ");
+}
+  mlg_gpu_v(m, (m[0]).l_ssa[locs[i]]);
+}
+  mlg_s(m, " : ");
+  i = 0;
+  for (; i < (n); i = i + 1) {
+  if (i > 0) {
+  mlg_s(m, ", ");
+}
+  mlg_gpu_put_type(m, (m[0]).l_mt[locs[i]]);
+}
+  mlg_nl(m);
+}
+
 void mlg_gpu_stmt(Mlg* m, int32_t st) {
   int32_t k = mlg_kind(m, st);
   if (k == AST_LET) {
@@ -87997,28 +88022,95 @@ void mlg_gpu_stmt(Mlg* m, int32_t st) {
   return;
 }
   if (k == AST_IF) {
+  int32_t* names = (int32_t*)(mlg_names_new());
+  int32_t nn = mlg_gpu_assigned(m, (((m[0]).arena).nodes[st]).b, names, 0);
+  nn = mlg_gpu_assigned(m, (((m[0]).arena).nodes[st]).c, names, nn);
+  int32_t* locs = (int32_t*)(mlg_alloc_i32(MLG_MAX_MERGE));
+  int32_t nc = 0;
+  int32_t q = 0;
+  for (; q < (nn); q = q + 1) {
+  int32_t l = mlg_find_local(m, names[(2 * q)], names[((2 * q) + 1)]);
+  if (l >= 0 && nc < MLG_MAX_MERGE) {
+  locs[nc] = l;
+  nc = (nc + 1);
+}
+}
+  mlg_free_i32(names);
+  int32_t* old = (int32_t*)(mlg_alloc_i32((nc + 1)));
+  int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
+  int32_t i = 0;
+  for (; i < (nc); i = i + 1) {
+  old[i] = (m[0]).l_ssa[locs[i]];
+  { __typeof__(res[i]) __flowc_st101674 = mlg_gpu_new(m); res[i] = __flowc_st101674; }
+}
   int32_t ct = 0;
   int32_t cv = mlg_gpu_expr(m, (((m[0]).arena).nodes[st]).a, (&ct));
   mlg_line(m);
+  if (nc > 0) {
+  i = 0;
+  for (; i < (nc); i = i + 1) {
+  if (i > 0) {
+  mlg_s(m, ", ");
+}
+  mlg_gpu_v(m, res[i]);
+}
+  mlg_s(m, " = ");
+}
   mlg_s(m, "scf.if ");
   mlg_gpu_v(m, cv);
+  if (nc > 0) {
+  mlg_s(m, " -> (");
+  i = 0;
+  for (; i < (nc); i = i + 1) {
+  if (i > 0) {
+  mlg_s(m, ", ");
+}
+  mlg_gpu_put_type(m, (m[0]).l_mt[locs[i]]);
+}
+  mlg_s(m, ")");
+}
   mlg_s(m, " {");
   mlg_nl(m);
   (m[0]).ind = ((m[0]).ind + 1);
   mlg_gpu_stmts(m, (((m[0]).arena).nodes[st]).b);
+  if (nc > 0) {
+  mlg_gpu_yield(m, locs, nc);
+}
   (m[0]).ind = ((m[0]).ind - 1);
+  i = 0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+  for (; i < (nc); i = i + 1) {
+  (m[0]).l_ssa[locs[i]] = old[i];
+}
   int32_t eb = (((m[0]).arena).nodes[st]).c;
-  if (eb != AST_NONE) {
+  if (eb != AST_NONE || nc > 0) {
   mlg_line(m);
   mlg_s(m, "} else {");
   mlg_nl(m);
   (m[0]).ind = ((m[0]).ind + 1);
+  if (eb != AST_NONE) {
   mlg_gpu_stmts(m, eb);
+}
+  if (nc > 0) {
+  mlg_gpu_yield(m, locs, nc);
+}
   (m[0]).ind = ((m[0]).ind - 1);
 }
   mlg_line(m);
   mlg_s(m, "}");
   mlg_nl(m);
+  i = 0;
+#if defined(__clang__)
+#pragma clang loop vectorize(enable) interleave(enable)
+#endif
+  for (; i < (nc); i = i + 1) {
+  (m[0]).l_ssa[locs[i]] = res[i];
+}
+  mlg_free_i32(res);
+  mlg_free_i32(old);
+  mlg_free_i32(locs);
   return;
 }
   if (k == AST_RETURN) {
