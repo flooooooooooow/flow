@@ -21504,6 +21504,9 @@ function mlg_gpu_assigned(m: ptr<Mlg>, b: i32, buf: ptr<i32>, n0: i32) -> i32 {
             n = mlg_gpu_assigned(m, m[0].arena.nodes[s].b, buf, n)
             n = mlg_gpu_assigned(m, m[0].arena.nodes[s].c, buf, n)
         }
+        if k == AST_FOR {
+            n = mlg_gpu_assigned(m, m[0].arena.nodes[s].c, buf, n)
+        }
         s = m[0].arena.nodes[s].next
     }
     return n
@@ -21686,6 +21689,30 @@ function mlg_gpu_for(m: ptr<Mlg>, st: i32) {
     mlg_free_i32(locs)
 }
 
+# `scf.yield v0, v1 : T0, T1` for the locals an if arm carries out.
+function mlg_gpu_yield(m: ptr<Mlg>, locs: ptr<i32>, n: i32) {
+    mlg_line(m)
+    mlg_s(m, "scf.yield ")
+    let mut i: i32 = 0
+    while i < n {
+        if i > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_gpu_v(m, m[0].l_ssa[locs[i]])
+        i = i + 1
+    }
+    mlg_s(m, " : ")
+    i = 0
+    while i < n {
+        if i > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_gpu_put_type(m, m[0].l_mt[locs[i]])
+        i = i + 1
+    }
+    mlg_nl(m)
+}
+
 # MLIRGpuGenerator.generate_statement. Locals are not scoped: a name bound
 # in a branch stays bound, as in Python's flat symbol table.
 function mlg_gpu_stmt(m: ptr<Mlg>, st: i32) {
@@ -21734,29 +21761,99 @@ function mlg_gpu_stmt(m: ptr<Mlg>, st: i32) {
         return
     }
     if k == AST_IF {
+        # A branch that reassigns an enclosing local carries it out of the
+        # scf.if: an SSA value defined inside a region is not visible after
+        # it, so yielding it keeps the name defined in the parent block.
+        let names: ptr<i32> = mlg_names_new()
+        let mut nn: i32 = mlg_gpu_assigned(m, m[0].arena.nodes[st].b, names, 0)
+        nn = mlg_gpu_assigned(m, m[0].arena.nodes[st].c, names, nn)
+        let locs: ptr<i32> = mlg_alloc_i32(MLG_MAX_MERGE)
+        let mut nc: i32 = 0
+        let mut q: i32 = 0
+        while q < nn {
+            let l: i32 = mlg_find_local(m, names[2 * q], names[2 * q + 1])
+            if l >= 0 and nc < MLG_MAX_MERGE {
+                locs[nc] = l
+                nc = nc + 1
+            }
+            q = q + 1
+        }
+        mlg_free_i32(names)
+        let old: ptr<i32> = mlg_alloc_i32(nc + 1)
+        let res: ptr<i32> = mlg_alloc_i32(nc + 1)
+        let mut i: i32 = 0
+        while i < nc {
+            old[i] = m[0].l_ssa[locs[i]]
+            res[i] = mlg_gpu_new(m)
+            i = i + 1
+        }
         let mut ct: i32 = 0
         let cv: i32 = mlg_gpu_expr(m, m[0].arena.nodes[st].a, &ct)
         mlg_line(m)
+        if nc > 0 {
+            i = 0
+            while i < nc {
+                if i > 0 {
+                    mlg_s(m, ", ")
+                }
+                mlg_gpu_v(m, res[i])
+                i = i + 1
+            }
+            mlg_s(m, " = ")
+        }
         mlg_s(m, "scf.if ")
         mlg_gpu_v(m, cv)
+        if nc > 0 {
+            mlg_s(m, " -> (")
+            i = 0
+            while i < nc {
+                if i > 0 {
+                    mlg_s(m, ", ")
+                }
+                mlg_gpu_put_type(m, m[0].l_mt[locs[i]])
+                i = i + 1
+            }
+            mlg_s(m, ")")
+        }
         mlg_s(m, " {")
         mlg_nl(m)
         m[0].ind = m[0].ind + 1
         mlg_gpu_stmts(m, m[0].arena.nodes[st].b)
+        if nc > 0 {
+            mlg_gpu_yield(m, locs, nc)
+        }
         m[0].ind = m[0].ind - 1
+        i = 0
+        while i < nc {
+            m[0].l_ssa[locs[i]] = old[i]
+            i = i + 1
+        }
         # An elif is an else block holding one if: a nested scf.if (#1061).
         let eb: i32 = m[0].arena.nodes[st].c
-        if eb != AST_NONE {
+        if eb != AST_NONE or nc > 0 {
             mlg_line(m)
             mlg_s(m, "} else {")
             mlg_nl(m)
             m[0].ind = m[0].ind + 1
-            mlg_gpu_stmts(m, eb)
+            if eb != AST_NONE {
+                mlg_gpu_stmts(m, eb)
+            }
+            if nc > 0 {
+                mlg_gpu_yield(m, locs, nc)
+            }
             m[0].ind = m[0].ind - 1
         }
         mlg_line(m)
         mlg_s(m, "}")
         mlg_nl(m)
+        i = 0
+        while i < nc {
+            m[0].l_ssa[locs[i]] = res[i]
+            i = i + 1
+        }
+        mlg_free_i32(res)
+        mlg_free_i32(old)
+        mlg_free_i32(locs)
         return
     }
     if k == AST_RETURN {
