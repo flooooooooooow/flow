@@ -1,0 +1,553 @@
+# Native Flow inference for MannasAI/pratibha-2.
+#
+# Input is a CSV with electrode labels in the first row and one sample per
+# row at 200 Hz. Set PRATIBHA_MODEL_DIR to a directory containing the upstream
+# model.safetensors and config.json files, plus input and output paths below.
+#
+# The encoder expects preprocessed EEG, so each channel is z-scored over the
+# whole input before patching, and the 512-wide token features are averaged
+# over every channel-patch token into one output row. On a four-channel,
+# 260-sample recording the row matches the upstream PyTorch encoder, using
+# the same preprocessing, at cosine 0.9999999 (max abs difference 1e-6).
+#
+#   PRATIBHA_MODEL_DIR=assets/pratibha-2 \
+#   PRATIBHA_INPUT=eeg.csv PRATIBHA_OUTPUT=embedding.csv \
+#     ./flow run examples/neuro/pratibha2.flow
+
+import "stdlib/io.flow"
+import std.bytebuf { ByteBuf, bb_new, bb_puts, bb_putc, bb_cstr, bb_str, bb_free, bb_put_i32 }
+import std.process { proc_getenv }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strtod(s: string, end: ptr<string>) -> f64
+    function sqrt(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function tanh(x: f64) -> f64
+    function snprintf(dst: ptr<u8>, cap: i64, fmt: string, x: f64) -> i32
+}
+
+const HIDDEN: i32 = 512
+const HEADS: i32 = 8
+const HEAD_DIM: i32 = 64
+const LAYERS: i32 = 22
+const PATCH: i32 = 200
+const STRIDE: i32 = 180
+
+struct ModelFile {
+    bytes: ptr<u8>,
+    header_len: i32,
+    data_start: i32,
+    total_len: i64
+}
+
+function ws(c: i32) -> bool {
+    return c == 32 or c == 9 or c == 10 or c == 13
+}
+
+function skip_ws(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut j: i32 = i
+    while j < n and ws(p[j] as i32) { j = j + 1 }
+    return j
+}
+
+function number_at(p: ptr<u8>, i: i32) -> i32 {
+    let mut j: i32 = i
+    while j < 2147483640 and p[j] >= 48 and p[j] <= 57 { j = j + 1 }
+    return j
+}
+
+# Safetensors stores an eight-byte little-endian JSON header length, followed
+# by JSON metadata and a packed tensor byte region.
+function model_file(path: string) -> ModelFile {
+    let f: FileRead = io_read_file(path)
+    if not f.ok or f.len < 8 { return ModelFile { bytes: null, header_len: 0, data_start: 0, total_len: 0 } }
+    let b: ptr<u8> = f.data as ptr<u8>
+    let mut length: i64 = 0
+    let mut scale: i64 = 1
+    let mut i: i32 = 0
+    while i < 8 {
+        length = length + (b[i] as i64) * scale
+        scale = scale * 256
+        i = i + 1
+    }
+    if length <= 0 or length > 16777216 or length + 8 > f.len {
+        return ModelFile { bytes: null, header_len: 0, data_start: 0, total_len: f.len }
+    }
+    return ModelFile { bytes: b, header_len: length as i32, data_start: (8 + length) as i32, total_len: f.len }
+}
+
+# Look up one tensor by its exact safetensors key. The returned pointer aliases
+# the model file's F32 data. This release's encoder uses F32 tensors.
+function tensor_ptr(m: ModelFile, name: string) -> ptr<f32> {
+    if m.bytes == null { return null }
+    let p: ptr<u8> = m.bytes + 8
+    let n: i32 = m.header_len
+    let want: ptr<u8> = name as ptr<u8>
+    let want_n: i32 = strlen(name) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 34 {
+            let start: i32 = i + 1
+            let mut end: i32 = start
+            while end < n and p[end] != 34 { end = end + 1 }
+            if end >= n { return null }
+            let mut same: bool = end - start == want_n
+            let mut k: i32 = 0
+            while same and k < want_n {
+                if p[start + k] != want[k] { same = false }
+                k = k + 1
+            }
+            if same {
+                let mut q: i32 = skip_ws(p, end + 1, n)
+                if q >= n or p[q] != 58 { return null }
+                q = skip_ws(p, q + 1, n)
+                if q >= n or p[q] != 123 { return null }
+                while q < n and p[q] != 125 {
+                    if p[q] == 34 {
+                        let ks: i32 = q + 1
+                        let mut ke: i32 = ks
+                        while ke < n and p[ke] != 34 { ke = ke + 1 }
+                        if ke >= n { return null }
+                        let is_offsets: bool = ke - ks == 12 and p[ks] == 100 and p[ks+1] == 97 and p[ks+2] == 116 and p[ks+3] == 97 and p[ks+4] == 95 and p[ks+5] == 111 and p[ks+6] == 102 and p[ks+7] == 102 and p[ks+8] == 115 and p[ks+9] == 101 and p[ks+10] == 116 and p[ks+11] == 115
+                        q = skip_ws(p, ke + 1, n)
+                        if q >= n or p[q] != 58 { return null }
+                        q = skip_ws(p, q + 1, n)
+                        if is_offsets {
+                            if p[q] != 91 { return null }
+                            q = skip_ws(p, q + 1, n)
+                            let a0: i32 = q
+                            q = number_at(p, q)
+                            if q == a0 { return null }
+                            let mut offset: i64 = 0
+                            let mut z: i32 = a0
+                            while z < q { offset = offset * 10 + (p[z] - 48) as i64; z = z + 1 }
+                            q = skip_ws(p, q, n)
+                            if p[q] != 44 { return null }
+                            q = skip_ws(p, q + 1, n)
+                            let b0: i32 = q
+                            q = number_at(p, q)
+                            if q == b0 { return null }
+                            let mut end_offset: i64 = 0
+                            z = b0
+                            while z < q { end_offset = end_offset * 10 + (p[z] - 48) as i64; z = z + 1 }
+                            if offset < 0 or end_offset < offset or m.data_start as i64 + end_offset > m.total_len { return null }
+                            return (m.bytes + m.data_start + offset as i32) as ptr<f32>
+                        }
+                        # Skip the current JSON value, which is a string here.
+                        q = ke + 1
+                        while q < n and p[q] != 44 and p[q] != 125 { q = q + 1 }
+                    } else {
+                        q = q + 1
+                    }
+                }
+                return null
+            }
+            i = end + 1
+        } else {
+            i = i + 1
+        }
+    }
+    return null
+}
+
+function alloc_f32(n: i32) -> ptr<f32> {
+    if n <= 0 { return null }
+    return malloc((n as i64) * 4) as ptr<f32>
+}
+
+function number_string(value: i32) -> string {
+    let b: ptr<ByteBuf> = bb_new(16)
+    bb_put_i32(b, value)
+    let s: string = bb_str(b)
+    bb_free(b)
+    return s
+}
+
+function copy_f32(dst: ptr<f32>, src: ptr<f32>, n: i32) {
+    let mut i: i32 = 0
+    while i < n { dst[i] = src[i]; i = i + 1 }
+}
+
+function linear(x: ptr<f32>, y: ptr<f32>, rows: i32, din: i32, dout: i32, w: ptr<f32>, bias: ptr<f32>) {
+    let mut r: i32 = 0
+    while r < rows {
+        let mut o: i32 = 0
+        while o < dout {
+            let mut sum: f64 = 0.0
+            if bias != null { sum = bias[o] as f64 }
+            let mut k: i32 = 0
+            while k < din {
+                sum = sum + (x[r * din + k] as f64) * (w[o * din + k] as f64)
+                k = k + 1
+            }
+            y[r * dout + o] = sum as f32
+            o = o + 1
+        }
+        r = r + 1
+    }
+}
+
+function rmsnorm(x: ptr<f32>, rows: i32, width: i32, weight: ptr<f32>) {
+    let mut r: i32 = 0
+    while r < rows {
+        let mut sum: f64 = 0.0
+        let mut k: i32 = 0
+        while k < width { let v: f64 = x[r*width+k] as f64; sum = sum + v*v; k = k + 1 }
+        let inv: f64 = 1.0 / sqrt(sum / (width as f64) + 1e-8)
+        k = 0
+        while k < width { x[r*width+k] = (x[r*width+k] as f64 * inv * weight[k] as f64) as f32; k = k + 1 }
+        r = r + 1
+    }
+}
+
+function geglu(x: ptr<f32>, rows: i32, half: i32) {
+    let mut r: i32 = 0
+    while r < rows {
+        let mut j: i32 = 0
+        while j < half {
+            let value: f64 = x[r * half * 2 + j] as f64
+            let gate: f64 = x[r * half * 2 + half + j] as f64
+            let sigmoid: f64 = 1.0 / (1.0 + exp(0.0 - gate))
+            let gelu: f64 = 0.5 * (1.0 + tanh(0.7978845608028654 * (gate + 0.044715 * gate * gate * gate)))
+            x[r * half + j] = (value * gate * (sigmoid + gelu)) as f32
+            j = j + 1
+        }
+        r = r + 1
+    }
+}
+
+function get_weight(m: ModelFile, name: string) -> ptr<f32> {
+    let p: ptr<f32> = tensor_ptr(m, name)
+    if p == null { println("Missing tensor: " + name) }
+    return p
+}
+
+function model_linear(m: ModelFile, x: ptr<f32>, y: ptr<f32>, rows: i32, din: i32, dout: i32, stem: string, with_bias: bool) -> bool {
+    let w: ptr<f32> = get_weight(m, stem + ".weight")
+    let mut b: ptr<f32> = null
+    if with_bias { b = get_weight(m, stem + ".bias") }
+    if w == null or (with_bias and b == null) { return false }
+    linear(x, y, rows, din, dout, w, b)
+    return true
+}
+
+function csv_load(path: string, names: ptr<ptr<ptr<u8>>>, values: ptr<ptr<ptr<f32>>>, channels: ptr<i32>, samples: ptr<i32>) -> bool {
+    let f: FileRead = io_read_text(path)
+    if not f.ok { println("Cannot read EEG CSV"); return false }
+    let p: ptr<u8> = f.data as ptr<u8>
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < f.len as i32 and p[i] != 10 and p[i] != 13 {
+        if p[i] == 44 { n = n + 1 }
+        i = i + 1
+    }
+    n = n + 1
+    if n < 1 or n > 256 { println("CSV must contain 1 to 256 channels"); return false }
+    let ns: ptr<ptr<u8>> = malloc((n as i64) * 8) as ptr<ptr<u8>>
+    let mut ch: i32 = 0
+    let mut start: i32 = 0
+    i = 0
+    while i <= f.len as i32 and p[i] != 10 and p[i] != 13 {
+        if i == f.len as i32 or p[i] == 44 {
+            let len: i32 = i - start
+            if len <= 0 { println("CSV header contains an empty electrode name"); return false }
+            let s: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+            let mut k: i32 = 0
+            while k < len { s[k] = p[start+k]; k = k + 1 }
+            s[len] = 0
+            ns[ch] = s
+            ch = ch + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if i > start {
+        let len: i32 = i - start
+        let s: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+        let mut k: i32 = 0
+        while k < len { s[k] = p[start+k]; k = k + 1 }
+        s[len] = 0
+        ns[ch] = s
+        ch = ch + 1
+    }
+    if ch != n { println("Could not parse CSV electrode header"); return false }
+    let mut data_start: i32 = i
+    while data_start < f.len as i32 and (p[data_start] == 10 or p[data_start] == 13) { data_start = data_start + 1 }
+    let mut row_count: i32 = 0
+    i = data_start
+    while i < f.len as i32 { if p[i] == 10 { row_count = row_count + 1 }; i = i + 1 }
+    if f.len as i32 > data_start and p[f.len as i32 - 1] != 10 { row_count = row_count + 1 }
+    if row_count < 200 { println("At least 200 EEG samples are required"); return false }
+    if row_count > 20000000 / n { println("CSV is too large for one inference window"); return false }
+    let x: ptr<f32> = alloc_f32(n * row_count)
+    if x == null { println("Could not allocate EEG input"); return false }
+    let mut row: i32 = 0
+    let mut col: i32 = 0
+    start = data_start
+    i = data_start
+    while i <= f.len as i32 {
+        if i == f.len as i32 or p[i] == 44 or p[i] == 10 or p[i] == 13 {
+            if i > start {
+                let tmp: ptr<u8> = malloc((i-start+1) as i64) as ptr<u8>
+                let mut k: i32 = 0
+                while k < i-start { tmp[k] = p[start+k]; k = k + 1 }
+                tmp[i-start] = 0
+                let v: f64 = strtod(tmp as string, null)
+                free(tmp as ptr<void>)
+                if col >= n or row >= row_count { println("CSV has inconsistent rows"); return false }
+                x[col * row_count + row] = v as f32
+                col = col + 1
+            }
+            if i < f.len as i32 and (p[i] == 10 or p[i] == 13) {
+                if col != n { println("CSV rows must match header width"); return false }
+                row = row + 1
+                col = 0
+                while i < f.len as i32 and (p[i] == 10 or p[i] == 13) { i = i + 1 }
+                start = i
+                continue
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if row < 1 { println("CSV contains no sample rows"); return false }
+    let mut c: i32 = 0
+    while c < n {
+        let mut mean: f64 = 0.0
+        let mut t: i32 = 0
+        while t < row { mean = mean + x[c * row_count + t] as f64; t = t + 1 }
+        mean = mean / row as f64
+        let mut variance: f64 = 0.0
+        t = 0
+        while t < row { let d: f64 = x[c*row_count+t] as f64 - mean; variance = variance + d*d; t = t + 1 }
+        let scale: f64 = 1.0 / (sqrt(variance / ((row - 1) as f64)) + 1e-6)
+        t = 0
+        while t < row { x[c * row_count + t] = ((x[c*row_count+t] as f64 - mean) * scale) as f32; t = t + 1 }
+        c = c + 1
+    }
+    names[0] = ns
+    values[0] = malloc(8) as ptr<ptr<f32>>
+    values[0][0] = x
+    channels[0] = n
+    samples[0] = row
+    return true
+}
+
+function electrode_position(config: string, name: string, out: ptr<f32>) -> bool {
+    let p: ptr<u8> = config as ptr<u8>
+    let q: ptr<u8> = name as ptr<u8>
+    let n: i32 = strlen(config) as i32
+    let m: i32 = strlen(name) as i32
+    let mut i: i32 = 0
+    while i + m + 2 < n {
+        if p[i] == 34 {
+            let mut same: bool = true
+            let mut k: i32 = 0
+            while k < m { if p[i+1+k] != q[k] { same = false }; k = k + 1 }
+            if same and p[i+1+m] == 34 {
+                let mut j: i32 = i + m + 2
+                while j < n and p[j] != 91 and p[j] != 10 and p[j] != 125 { j = j + 1 }
+                if j < n and p[j] == 91 {
+                    let mut at: i32 = j + 1
+                    let mut a: i32 = 0
+                    while a < 3 {
+                        while at < n and (ws(p[at] as i32) or p[at] == 44) { at = at + 1 }
+                        out[a] = (strtod((p + at) as string, null) * 100.0) as f32
+                        while at < n and p[at] != 44 and p[at] != 93 { at = at + 1 }
+                        a = a + 1
+                    }
+                    return true
+                }
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function encode_positions(m: ModelFile, tokens: ptr<f32>, coords: ptr<f32>, rows: i32) -> bool {
+    let freq: ptr<f32> = get_weight(m, "pos_enc.freq_matrix")
+    let fw: ptr<f32> = get_weight(m, "pos_enc.fourier_linear.weight")
+    let lw: ptr<f32> = get_weight(m, "pos_enc.learned_linear.0.weight")
+    let ln: ptr<f32> = get_weight(m, "pos_enc.learned_linear.2.weight")
+    let fnorm: ptr<f32> = get_weight(m, "pos_enc.final_norm.weight")
+    if freq == null or fw == null or lw == null or ln == null or fnorm == null { return false }
+    let phase: ptr<f32> = alloc_f32(rows * 512)
+    let fourier: ptr<f32> = alloc_f32(rows * 512)
+    let learned: ptr<f32> = alloc_f32(rows * 1024)
+    if phase == null or fourier == null or learned == null { return false }
+    let mut r: i32 = 0
+    while r < rows {
+        let mut f: i32 = 0
+        while f < 256 {
+            let mut angle: f64 = 0.0
+            let mut d: i32 = 0
+            while d < 4 { angle = angle + coords[r*4+d] as f64 * freq[d*256+f] as f64; d = d + 1 }
+            phase[r*512+f] = sin(angle) as f32
+            phase[r*512+256+f] = cos(angle) as f32
+            f = f + 1
+        }
+        r = r + 1
+    }
+    linear(phase, fourier, rows, 512, 512, fw, null)
+    linear(coords, learned, rows, 4, 1024, lw, null)
+    geglu(learned, rows, 512)
+    rmsnorm(learned, rows, 512, ln)
+    r = 0
+    while r < rows { let mut j: i32 = 0; while j < 512 { fourier[r*512+j] = fourier[r*512+j] + learned[r*512+j]; j = j + 1 }; r = r + 1 }
+    rmsnorm(fourier, rows, 512, fnorm)
+    r = 0
+    while r < rows { let mut j: i32 = 0; while j < 512 { tokens[r*512+j] = tokens[r*512+j] + fourier[r*512+j]; j = j + 1 }; r = r + 1 }
+    free(phase as ptr<void>); free(fourier as ptr<void>); free(learned as ptr<void>)
+    return true
+}
+
+function run_encoder(m: ModelFile, x: ptr<f32>, rows: i32) -> bool {
+    let qkv: ptr<f32> = alloc_f32(rows * 1536)
+    let att: ptr<f32> = alloc_f32(rows * 512)
+    let proj: ptr<f32> = alloc_f32(rows * 512)
+    let ff: ptr<f32> = alloc_f32(rows * 4096)
+    let ffout: ptr<f32> = alloc_f32(rows * 512)
+    let scores: ptr<f32> = alloc_f32(rows)
+    if qkv == null or att == null or proj == null or ff == null or ffout == null or scores == null { return false }
+    let mut layer: i32 = 0
+    while layer < LAYERS {
+        let prefix: string = "encoder.layers." + number_string(layer)
+        let pre: ptr<f32> = get_weight(m, prefix + ".pre_attn_norm.weight")
+        let qw: ptr<f32> = get_weight(m, prefix + ".attn.qkv_proj.weight")
+        let qb: ptr<f32> = get_weight(m, prefix + ".attn.qkv_proj.bias")
+        let ow: ptr<f32> = get_weight(m, prefix + ".attn.out_proj.weight")
+        let ob: ptr<f32> = get_weight(m, prefix + ".attn.out_proj.bias")
+        let fn: ptr<f32> = get_weight(m, prefix + ".pre_ffn_norm.weight")
+        let iw: ptr<f32> = get_weight(m, prefix + ".ffn.in_proj.weight")
+        let ib: ptr<f32> = get_weight(m, prefix + ".ffn.in_proj.bias")
+        let fw: ptr<f32> = get_weight(m, prefix + ".ffn.out_proj.weight")
+        let fb: ptr<f32> = get_weight(m, prefix + ".ffn.out_proj.bias")
+        if pre == null or qw == null or qb == null or ow == null or ob == null or fn == null or iw == null or ib == null or fw == null or fb == null { return false }
+        let norm: ptr<f32> = alloc_f32(rows * 512)
+        if norm == null { return false }
+        copy_f32(norm, x, rows * 512)
+        rmsnorm(norm, rows, 512, pre)
+        linear(norm, qkv, rows, 512, 1536, qw, qb)
+        let mut h: i32 = 0
+        while h < HEADS {
+            let mut t: i32 = 0
+            while t < rows {
+                let mut max_score: f64 = -1e30
+                let mut u: i32 = 0
+                while u < rows {
+                    let mut dot: f64 = 0.0
+                    let mut d: i32 = 0
+                    while d < HEAD_DIM { dot = dot + qkv[t*1536+h*64+d] as f64 * qkv[u*1536+512+h*64+d] as f64; d = d + 1 }
+                    scores[u] = (dot * 0.125) as f32
+                    if dot * 0.125 > max_score { max_score = dot * 0.125 }
+                    u = u + 1
+                }
+                let mut denom: f64 = 0.0
+                u = 0
+                while u < rows { let z: f64 = exp(scores[u] as f64-max_score); scores[u] = z as f32; denom = denom + z; u = u + 1 }
+                let mut d: i32 = 0
+                while d < HEAD_DIM {
+                    let mut value: f64 = 0.0
+                    u = 0
+                    while u < rows { value = value + (scores[u] as f64 / denom) * qkv[u*1536+1024+h*64+d] as f64; u = u + 1 }
+                    att[t*512+h*64+d] = value as f32
+                    d = d + 1
+                }
+                t = t + 1
+            }
+            h = h + 1
+        }
+        linear(att, proj, rows, 512, 512, ow, ob)
+        let mut i: i32 = 0
+        while i < rows*512 { x[i] = x[i] + proj[i]; i = i + 1 }
+        copy_f32(norm, x, rows * 512)
+        rmsnorm(norm, rows, 512, fn)
+        linear(norm, ff, rows, 512, 4096, iw, ib)
+        geglu(ff, rows, 2048)
+        linear(ff, ffout, rows, 2048, 512, fw, fb)
+        i = 0
+        while i < rows*512 { x[i] = x[i] + ffout[i]; i = i + 1 }
+        free(norm as ptr<void>)
+        layer = layer + 1
+    }
+    let final_norm: ptr<f32> = get_weight(m, "encoder.final_norm.weight")
+    if final_norm == null { return false }
+    rmsnorm(x, rows, 512, final_norm)
+    free(qkv as ptr<void>); free(att as ptr<void>); free(proj as ptr<void>); free(ff as ptr<void>); free(ffout as ptr<void>); free(scores as ptr<void>)
+    return true
+}
+
+function infer(input_path: string, output_path: string, model_dir: string) -> i32 {
+    let names: ptr<ptr<ptr<u8>>> = malloc(8) as ptr<ptr<ptr<u8>>>
+    let values: ptr<ptr<ptr<f32>>> = malloc(8) as ptr<ptr<ptr<f32>>>
+    let channel_count: ptr<i32> = malloc(4) as ptr<i32>
+    let sample_count: ptr<i32> = malloc(4) as ptr<i32>
+    if not csv_load(input_path, names, values, channel_count, sample_count) { return 2 }
+    let c: i32 = channel_count[0]
+    let t: i32 = sample_count[0]
+    let patches: i32 = 1 + (t - PATCH) / STRIDE
+    let rows: i32 = c * patches
+    if rows > 4096 { println("Input creates more than 4096 model tokens"); return 4 }
+    let m: ModelFile = model_file(model_dir + "/model.safetensors")
+    if m.bytes == null { println("Cannot read valid model.safetensors"); return 3 }
+    let config: FileRead = io_read_text(model_dir + "/config.json")
+    if not config.ok { println("Cannot read config.json"); return 3 }
+    let patch_w: ptr<f32> = get_weight(m, "patch_embed.linear.weight")
+    if patch_w == null { return 3 }
+    let x: ptr<f32> = alloc_f32(rows * 512)
+    let coords: ptr<f32> = alloc_f32(rows * 4)
+    let patch: ptr<f32> = alloc_f32(rows * 200)
+    if x == null or coords == null or patch == null { println("Model input allocation failed"); return 4 }
+    let mut ch: i32 = 0
+    while ch < c {
+        let mut p: i32 = 0
+        while p < patches {
+            let r: i32 = ch * patches + p
+                let mut j: i32 = 0
+            while j < PATCH { patch[r*PATCH+j] = values[0][0][ch*t+p*STRIDE+j]; j = j + 1 }
+            let name: string = names[0][ch] as string
+            if not electrode_position(config.data, name, coords + r*4) { println("Unknown electrode: " + name); return 5 }
+            coords[r*4+3] = p as f32
+            p = p + 1
+        }
+        ch = ch + 1
+    }
+    linear(patch, x, rows, 200, 512, patch_w, null)
+    if not encode_positions(m, x, coords, rows) { return 3 }
+    if not run_encoder(m, x, rows) { return 3 }
+    let out: ptr<ByteBuf> = bb_new(8192)
+    let mut j: i32 = 0
+    while j < 512 {
+        let mut sum: f64 = 0.0
+        let mut r: i32 = 0
+        while r < rows { sum = sum + x[r*512+j] as f64; r = r + 1 }
+        let buf: array<u8, 64> = [0; 64]
+        let _n: i32 = snprintf(&buf[0], 64, "%.9g", sum / rows as f64)
+        bb_puts(out, (&buf[0]) as string)
+        if j < 511 { bb_putc(out, 44 as u8) }
+        j = j + 1
+    }
+    bb_putc(out, 10 as u8)
+    if not io_write_file(output_path, bb_cstr(out)) { println("Could not write embedding CSV"); return 6 }
+    println("Wrote 512-dimensional Pratibha-2 embedding")
+    bb_free(out)
+    return 0
+}
+
+function main() -> i32 {
+    let input: string = proc_getenv("PRATIBHA_INPUT")
+    let output: string = proc_getenv("PRATIBHA_OUTPUT")
+    let model_dir: string = proc_getenv("PRATIBHA_MODEL_DIR")
+    if input == "" or output == "" or model_dir == "" {
+        println("Set PRATIBHA_INPUT, PRATIBHA_OUTPUT, and PRATIBHA_MODEL_DIR.")
+        println("The model directory needs upstream model.safetensors and config.json files.")
+        return 2
+    }
+    return infer(input, output, model_dir)
+}
