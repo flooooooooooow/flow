@@ -15,3 +15,4 @@ tests/gpu_lower/kernels/modal_bank.flow 0
 tests/gpu_lower/kernels/voice_filters.flow 0
 tests/gpu_lower/kernels/voice_osc_varblocks.flow 0
 tests/gpu_lower/kernels/ks_delay.flow 0
+tests/gpu_lower/kernels/remainder.flow 0

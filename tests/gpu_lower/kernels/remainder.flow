@@ -1,0 +1,104 @@
+# remainder: integer % in a kernel (#1770). wrap[t] = (idx[t] + 3) % n is a
+# ring index advanced by a stride larger than one; neg[t] = (idx[t] - 40) % n
+# and negd[t] = (idx[t] + 5) % (0 - n) take negative operands, where the
+# result must be the host's truncating remainder (sign of the dividend), not
+# a floored one. The kernel lowers % to arith.remsi.
+#
+# main() is the CPU build of the same kernel: it runs it per thread id,
+# checks the results against l - (l / r) * r (the constant folder's
+# definition) and a few hand-written values, and writes the launch spec,
+# the inputs and the CPU result to $FLOW_GPU_LOWER_DATA for
+# `flow gpu-lower --run`.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+@gpu
+function wrap_rem(idx: ptr<i32>, wrap: ptr<i32>, neg: ptr<i32>, negd: ptr<i32>, n: i32) {
+    let t: i32 = gpu_thread_id()
+    wrap[t] = (idx[t] + 3) % n
+    neg[t] = (idx[t] - 40) % n
+    negd[t] = (idx[t] + 5) % (0 - n)
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function trunc_rem(l: i32, r: i32) -> i32 {
+    return l - (l / r) * r
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let threads: i32 = 64
+    let n: i32 = 7
+    let idx: ptr<i32> = calloc(64, 4) as ptr<i32>
+    let wrap: ptr<i32> = calloc(64, 4) as ptr<i32>
+    let neg: ptr<i32> = calloc(64, 4) as ptr<i32>
+    let negd: ptr<i32> = calloc(64, 4) as ptr<i32>
+    let nn: ptr<i32> = calloc(1, 4) as ptr<i32>
+    nn[0] = n
+    for i in 0 to threads {
+        idx[i] = (i * 5) - 30
+    }
+    dump(dir, "in_0.bin", idx as ptr<void>, 256)
+    dump(dir, "in_1.bin", wrap as ptr<void>, 256)
+    dump(dir, "in_2.bin", neg as ptr<void>, 256)
+    dump(dir, "in_3.bin", negd as ptr<void>, 256)
+    dump(dir, "in_4.bin", nn as ptr<void>, 4)
+    for t in 0 to threads {
+        cpu_tid_x = t
+        wrap_rem(idx, wrap, neg, negd, n)
+    }
+
+    # Truncating, not floored: the sign follows the dividend.
+    if trunc_rem(0 - 7, 5) != 0 - 2 { return 2 }
+    if trunc_rem(7, 0 - 5) != 2 { return 3 }
+    let mut saw_neg: i32 = 0
+    for i in 0 to threads {
+        if wrap[i] != trunc_rem(idx[i] + 3, n) { return 4 }
+        if neg[i] != trunc_rem(idx[i] - 40, n) { return 5 }
+        if negd[i] != trunc_rem(idx[i] + 5, 0 - n) { return 6 }
+        if neg[i] < 0 { saw_neg = 1 }
+        if neg[i] <= 0 - n or neg[i] >= n { return 7 }
+    }
+    # idx[0] = -30: (-27) % 7 = -6, (-70) % 7 = 0, (-25) % -7 = -4.
+    if wrap[0] != 0 - 6 { return 8 }
+    if neg[0] != 0 { return 9 }
+    if negd[0] != 0 - 4 { return 10 }
+    # idx[63] = 285: 288 % 7 = 1, 245 % 7 = 0, 290 % -7 = 3.
+    if wrap[63] != 1 { return 11 }
+    if negd[63] != 3 { return 12 }
+    if saw_neg == 0 { return 13 }
+
+    dump(dir, "out_1.bin", wrap as ptr<void>, 256)
+    dump(dir, "out_2.bin", neg as ptr<void>, 256)
+    dump(dir, "out_3.bin", negd as ptr<void>, 256)
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _a: i32 = fputs(
+        "buffer 0 i32 64 in\n" +
+        "buffer 1 i32 64 out\n" +
+        "buffer 2 i32 64 out\n" +
+        "buffer 3 i32 64 out\n" +
+        "buffer 4 i32 1 scalar\n" +
+        "dispatch wrap_rem 1 1 1 0 1 2 3 4\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}
