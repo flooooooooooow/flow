@@ -222,6 +222,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `voice_filters.flow` | 128 one-pole + biquad voices, two 64-sample blocks, 1- and 2-float SoA state + mix | 12/12 buffers bit-identical | 12/12 | pending (no MLX here) |
 | `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | pending device re-measure | pending | pending |
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
+| `voice_edges.flow` | 64, then 16, then 0 voices, then a reset block, over the wrapped phase loop; sentinel out buffers | 8/8 buffers bit-identical | 8/8 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
@@ -256,6 +257,19 @@ mid-block ring contents and the continuation formula. Vulkan and Metal were
 bit-identical on the reference host; MLX was not measured here. The construct
 it relies on is why the kernel `if` emitter now carries assigned locals out
 of the `scf.if` (#1765).
+
+`voice_edges.flow` covers the boundaries a voice bank actually runs in, with
+one kernel and four dispatches: 64 voices of which 8 are silent (gain 0, so
+they render zeros while their phase keeps advancing), then 16 voices, then 0
+voices, then a reset block that starts from a zeroed state. The state and
+output buffers of the reduced and empty dispatches are sentinel-filled and
+larger than the region those dispatches may write, so a thread outside the
+voice count that stores anyway fails the case; the reset block must match a
+replay from zero and differ from the continuation of the state it replaced.
+It also shows why a kernel name has to avoid MSL builtins: a kernel named
+`step` lowered to SPIR-V but never appeared in the Metal metallib, so the
+kernel is `render_step`. Registered at 0 ulp in
+`tests/gpu_lower/cases.txt`.
 
 Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
 sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as
