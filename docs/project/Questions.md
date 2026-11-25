@@ -11,6 +11,35 @@ Format:
 
 ## Open Questions
 
+### 2026-11-25: Integer `%` in `@gpu` kernels: lower it, or keep requiring branches?
+
+**Context:** Issue #1770. An `@gpu` kernel lowers `+ - * /` but refuses integer
+remainder (`flowc mlir: unsupported: binary operator in an @gpu kernel`), so a
+ring that advances by one has to wrap with `let next = i + 1` and
+`idx = if next == n { 0 } else { next }`. #1766 made that conditional form
+carry the assigned local out of the `scf.if`, which is why
+`tests/gpu_lower/kernels/ks_delay.flow` is written with one branch per tap. A
+stride larger than one, or several taps at different offsets, becomes one
+branch per term `(i + d) % n`, and every one of those is a comparison, a select
+and a fallback. On device that is more instructions than an integer remainder,
+and for a signed ring index it is also a different result from the host when an
+operand is negative. The host operator truncates: the constant folder at
+`compiler/src/mlirgen.flow:16097` computes `l - (l / r) * r`, so a fold and a
+device lowering that disagree would be a parity bug rather than a compile
+error.
+
+**Options:**
+1. Lower integer `%` to `arith.remsi` for signed and `arith.remui` for unsigned
+   operands, and change the constant folder to match truncating semantics, so
+   folded and unfurled forms agree. Needs the same check on the PTX, MSL and
+   SPIR-V paths and a parity case in `tests/gpu_lower/`.
+2. Keep rejecting `%` in kernels and document the branch form as the supported
+   idiom, accepting one branch per tap.
+3. Lower it only where the operands are provably non-negative (for example a
+   ring index and an `n: i32` proven positive), and keep rejecting the rest.
+
+**Answer:** (Pending)
+
 ### 2026-11-18: Should MLIR emission be byte-identical across build hosts?
 
 **Context:** `parity_mlir` fails on macOS at `origin/main` for four goldens
