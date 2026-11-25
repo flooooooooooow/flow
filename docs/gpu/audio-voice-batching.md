@@ -42,9 +42,9 @@ partial[frame, voice] = gain[voice] * y[n]
 mix[frame] = sum_voice partial[frame, voice]
 ```
 
-Two state arrays (`prev`, `older`) are **structures of arrays**, not
-one allocated object per voice. The coefficients and gains are separate
-arrays. The output partials are sample-major, so adjacent GPU threads
+Two state arrays (`prev`, `older`) are **structures of arrays**: one
+contiguous array per state variable, with no per-voice object allocated.
+The coefficients and gains are separate arrays. The output partials are sample-major, so adjacent GPU threads
 write adjacent float samples at a given instant. The independent
 `mix_modes` dispatch reads those partials and returns only one sample
 per frame to the host. This specific reduction is a correctness
@@ -98,8 +98,8 @@ single-consumer block queue. Measure end-to-end latency, underruns,
 p99.9 block time, GPU wake-up jitter, and power at 64/128/256/512 frames;
 do not infer safety from average GPU execution time.
 
-Compare against a **well-optimised CPU structure-of-voices** baseline,
-not just a CPU interpreter of GPU-oriented storage. Add offline modal
+Compare against a **well-optimised CPU structure-of-voices** baseline. A
+CPU interpreter of GPU-oriented storage is the weaker reference. Add offline modal
 fitting and differentiable DSP only after the synthesis path is correct.
 
 ## Gate 1a: other voices, variable blocks, parameter updates
@@ -112,7 +112,8 @@ covers the next correctness slice after the modal bank:
 ```
 
 - **Other voice program:** 64 independent phase-accumulator oscillators
-  (SoA phase, frequency and gain), not resonators.
+  with SoA phase, frequency and gain. The modal bank's resonators are a
+  separate program.
 - **Variable block sizes:** block 0 is 48 frames; block 1 is 80 frames,
   with separate frame scalars and differently sized partial/mix buffers.
 - **Mid-stream parameter updates:** block 1 binds new frequency and gain

@@ -221,6 +221,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `modal_bank.flow` | 128 stateful resonators, two 64-sample blocks, SoA state + mix | pending device re-measure | pending | pending |
 | `voice_filters.flow` | 128 one-pole + biquad voices, two 64-sample blocks, 1- and 2-float SoA state + mix | 12/12 buffers bit-identical | 12/12 | pending (no MLX here) |
 | `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | pending device re-measure | pending | pending |
+| `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
@@ -244,6 +245,17 @@ blocks, if block 1 is replayed at the old length or coefficients, or if
 the first sample of block 1 matches a reset-from-init formula. Registered
 at 0 ulp in `tests/gpu_lower/cases.txt`; device cells above stay pending
 until re-measured on the reference host.
+
+`ks_delay.flow` is the Karplus-Strong voice program. Each voice keeps a
+48-sample ring in device memory and its own write index, reads the ring at a
+dynamic index, and wraps that index with compare-and-assign, so the kernel
+needs a local assigned inside an `if` inside a `for`. Two 64-sample blocks
+run back to back and the second dispatch reads the state the first one left,
+while an independent unsplit replay of voice 0 checks every sample, the
+mid-block ring contents and the continuation formula. Vulkan and Metal were
+bit-identical on the reference host; MLX was not measured here. The construct
+it relies on is why the kernel `if` emitter now carries assigned locals out
+of the `scf.if` (#1765).
 
 Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
 sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as
