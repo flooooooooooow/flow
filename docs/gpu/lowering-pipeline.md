@@ -230,7 +230,7 @@ Its Vulkan and Metal cells were re-measured on the reference host above
 not measured because no MLX environment was present. Keep treating
 lowering-only PASS or SKIP as no substitute for those cells: the numbers above
 come from a run of `tests/gpu_lower/run.flow` on that host, so a later change
-that only check the lowering must not be read as preserving them.
+that only checks the lowering must not be read as preserving them.
 
 `voice_filters.flow` adds the one-pole and biquad voice programs from the
 GPU audio epic's correctness gate, with one-float and two-float per-voice
