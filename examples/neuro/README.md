@@ -7,6 +7,11 @@ nonzero exit code if it does not. They are regression tests that happen to
 draw pictures. Recorded clips of all fifteen are in the
 [neuron gallery](../../docs/demos/neuro.md).
 
+One more program in this directory is not a dynamics model: [`pratibha2.flow`](pratibha2.flow)
+runs the Pratibha-2 pretrained EEG encoder over a checkpoint in Flow, with no
+PyTorch or Transformers dependency. See [PRATIBHA2.md](PRATIBHA2.md) for the
+model download, input format and the parity check against the upstream encoder.
+
 This is the second domain of [the Example Atlas](../../docs/project/example-atlas.md),
 after [`morphogenesis/`](../morphogenesis/README.md). It exists to make one
 argument, the one in [VISION.md](../../VISION.md): a system that evolves
