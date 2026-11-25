@@ -222,6 +222,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `voice_filters.flow` | 128 one-pole + biquad voices, two 64-sample blocks, 1- and 2-float SoA state + mix | 12/12 buffers bit-identical | 12/12 | pending (no MLX here) |
 | `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
+| `voice_topology.flow` | 40 voices, then 64 with 24 activating, then 24 with the rest freezing | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
@@ -260,6 +261,20 @@ mid-block ring contents and the continuation formula. Vulkan and Metal were
 bit-identical on the reference host; MLX was not measured here. The construct
 it relies on is why the kernel `if` emitter now carries assigned locals out
 of the `scf.if` (#1765).
+
+`voice_topology.flow` is the case for notes arriving and leaving between
+blocks, which is the one thing all the others hold fixed. The host goes from
+40 voices to 64 and back to 24, seeding the newly audible voices from phase
+zero and carrying the rest on from the state the previous dispatch left. The
+CPU reference fails with a numbered exit code if a thread past block 0's
+40-voice count stored anything, if a continuing or activated voice deviates
+from its own replay of the recurrence, if a deactivated voice's state changed,
+or if the last audible voice stopped advancing. The deactivated voices are
+read back from the output buffer itself, so the check is that the values are
+unchanged rather than unwritten. Two limits are worth knowing: a dispatch
+launches 64 threads, so a 72-voice block cannot be expressed through this
+harness, and every buffer in the launcher needs an `in_` file, including the
+outputs. Registered at 0 ulp in `tests/gpu_lower/cases.txt`.
 
 Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
 sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as
