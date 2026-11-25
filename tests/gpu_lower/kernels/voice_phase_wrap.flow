@@ -1,0 +1,273 @@
+# Phase wrap-around for stateful oscillator voices across GPU blocks.
+#
+# One GPU thread owns one phase accumulator. Each sample adds the voice's
+# frequency and wraps the phase back into [0, 1) with compare-and-assign,
+# counting how many wraps it took, so the kernel needs locals assigned inside
+# an `if` inside a `for` (the construct #1765 fixed and ks_delay.flow covers).
+# Frequencies run up to 1.85 cycles per sample, so a fast voice wraps twice in
+# one sample and both folds run.
+#
+# Two unequal blocks (56 then 72 frames) run back to back. Block 1 reads the
+# phase and the wrap counter block 0 left, which is the state a resident voice
+# bank keeps between audio blocks, and the wrap count keeps accumulating.
+#
+# main() is the CPU reference: it runs the same kernel in dispatch order over
+# zero-initialised device buffers. It then replays voice 0 with an independent
+# unsplit accumulator over both blocks, and cross-checks every voice from its
+# rendered output alone: phase stays in [0, 1), the wrap count only grows,
+# block 1 continues block 0's count, and at least one voice wraps more than
+# once per sample. A reset between blocks, a wrap that is dropped, or a
+# counter that restarts fails here.
+#
+# All input/output buffers are separate: in-place updates are not supported by
+# all gpu-lower execution targets (notably MLX).
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+# One block of wrapped phase accumulation per voice, y = wrapped phase * gain.
+@gpu
+function render_wrap(
+    freq: ptr<f32>, gain: ptr<f32>,
+    phase_in: ptr<f32>, phase_out: ptr<f32>,
+    wrap_in: ptr<i32>, wrap_out: ptr<i32>, y: ptr<f32>,
+    voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let f: f32 = freq[voice]
+        let g: f32 = gain[voice]
+        let mut phase: f32 = phase_in[voice]
+        let mut wraps: i32 = wrap_in[voice]
+        for frame in 0 to frames {
+            phase = phase + f
+            if phase >= 1.0 {
+                phase = phase - 1.0
+                wraps = wraps + 1
+            }
+            if phase >= 1.0 {
+                phase = phase - 1.0
+                wraps = wraps + 1
+            }
+            y[frame * voices + voice] = phase * g
+        }
+        phase_out[voice] = phase
+        wrap_out[voice] = wraps
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function absf(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let voices: i32 = 64
+    let frames0: i32 = 56
+    let frames1: i32 = 72
+    let voice_bytes: i64 = (voices * 4) as i64
+    let y0_bytes: i64 = (voices * frames0 * 4) as i64
+    let y1_bytes: i64 = (voices * frames1 * 4) as i64
+
+    let freq0: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let freq1: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let gain: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_init: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_mid: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_end: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let wrap_zero: ptr<i32> = calloc(voices as i64, 4) as ptr<i32>
+    let wrap_mid: ptr<i32> = calloc(voices as i64, 4) as ptr<i32>
+    let wrap_end: ptr<i32> = calloc(voices as i64, 4) as ptr<i32>
+    let y0: ptr<f32> = calloc((voices * frames0) as i64, 4) as ptr<f32>
+    let y1: ptr<f32> = calloc((voices * frames1) as i64, 4) as ptr<f32>
+    let voice_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames0_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames1_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    voice_arg[0] = voices
+    frames0_arg[0] = frames0
+    frames1_arg[0] = frames1
+
+    # Slow voices wrap once every few samples, fast ones twice in one sample.
+    # Block 1 uses different frequencies so the wrap pattern changes mid-stream.
+    for voice in 0 to voices {
+        freq0[voice] = 0.05 + ((voice % 16) as f32) * 0.11
+        freq1[voice] = 0.07 + ((voice % 16) as f32) * 0.12
+        gain[voice] = 0.9
+        phase_init[voice] = 0.05 + ((voice % 7) as f32) * 0.13
+    }
+
+    dump(dir, "in_0.bin", freq0 as ptr<void>, voice_bytes)
+    dump(dir, "in_1.bin", freq1 as ptr<void>, voice_bytes)
+    dump(dir, "in_2.bin", gain as ptr<void>, voice_bytes)
+    dump(dir, "in_3.bin", phase_init as ptr<void>, voice_bytes)
+    dump(dir, "in_4.bin", phase_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_5.bin", phase_end as ptr<void>, voice_bytes)
+    dump(dir, "in_6.bin", wrap_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_7.bin", wrap_end as ptr<void>, voice_bytes)
+    dump(dir, "in_8.bin", y0 as ptr<void>, y0_bytes)
+    dump(dir, "in_9.bin", y1 as ptr<void>, y1_bytes)
+    dump(dir, "in_10.bin", wrap_zero as ptr<void>, voice_bytes)
+    dump(dir, "in_11.bin", voice_arg as ptr<void>, 4)
+    dump(dir, "in_12.bin", frames0_arg as ptr<void>, 4)
+    dump(dir, "in_13.bin", frames1_arg as ptr<void>, 4)
+
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_wrap(
+            freq0, gain, phase_init, phase_mid, wrap_zero, wrap_mid, y0,
+            voices, frames0
+        )
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_wrap(
+            freq1, gain, phase_mid, phase_end, wrap_mid, wrap_end, y1,
+            voices, frames1
+        )
+    }
+
+    # Independent unsplit replay of voice 0: one accumulator over both blocks,
+    # switching coefficients at the block boundary, sharing nothing with the
+    # kernel above.
+    let mut refp: f32 = phase_init[0]
+    let mut refw: i32 = 0
+    let mut bad: i32 = 0
+    for i in 0 to frames0 {
+        refp = refp + freq0[0]
+        if refp >= 1.0 {
+            refp = refp - 1.0
+            refw = refw + 1
+        }
+        if refp >= 1.0 {
+            refp = refp - 1.0
+            refw = refw + 1
+        }
+        if absf(y0[i * voices] - refp * gain[0]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 1 }
+    if absf(phase_mid[0] - refp) > 0.000001 { return 2 }
+    if wrap_mid[0] != refw { return 3 }
+
+    for i in 0 to frames1 {
+        refp = refp + freq1[0]
+        if refp >= 1.0 {
+            refp = refp - 1.0
+            refw = refw + 1
+        }
+        if refp >= 1.0 {
+            refp = refp - 1.0
+            refw = refw + 1
+        }
+        if absf(y1[i * voices] - refp * gain[0]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 4 }
+    if absf(phase_end[0] - refp) > 0.000001 { return 5 }
+    if wrap_end[0] != refw { return 6 }
+
+    # Block 1 must continue block 0's phase and count, not restart either.
+    if wrap_mid[0] == 0 { return 7 }
+    if wrap_end[0] <= wrap_mid[0] { return 8 }
+    if phase_mid[0] == phase_init[0] { return 9 }
+    if phase_end[0] == phase_mid[0] { return 10 }
+
+    # Every voice, cross-checked from its rendered samples alone: the phase
+    # recovered from y is in [0, 1), each sample is the previous one plus the
+    # frequency minus the wraps it reports, and the counter only grows.
+    let mut max_wraps: i32 = 0
+    for voice in 0 to voices {
+        if phase_mid[voice] < 0.0 { return 11 }
+        if phase_mid[voice] >= 1.0 { return 12 }
+        if phase_end[voice] < 0.0 { return 13 }
+        if phase_end[voice] >= 1.0 { return 14 }
+        if wrap_mid[voice] < 0 { return 15 }
+        if wrap_end[voice] < wrap_mid[voice] { return 16 }
+        if wrap_end[voice] > max_wraps { max_wraps = wrap_end[voice] }
+        let mut prev: f32 = phase_init[voice]
+        let mut applied: i32 = 0
+        for i in 0 to frames0 {
+            let here: f32 = y0[i * voices + voice] / gain[voice]
+            if here < 0.0 { return 17 }
+            if here >= 1.0 { return 18 }
+            let mut want: f32 = prev + freq0[voice]
+            let mut wraps: i32 = 0
+            if want >= 1.0 {
+                want = want - 1.0
+                wraps = wraps + 1
+            }
+            if want >= 1.0 {
+                want = want - 1.0
+                wraps = wraps + 1
+            }
+            if absf(want - here) > 0.000001 { return 19 }
+            applied = applied + wraps
+            prev = here
+        }
+        if applied != wrap_mid[voice] { return 20 }
+    }
+    # Frequencies above 1.5 cycles per sample make some voice wrap twice in one
+    # sample, so both subtracts are needed for it to match.
+    if max_wraps <= frames0 + frames1 { return 21 }
+
+    # Negative: the raw unwrapped sum must differ from the stored phase, or the
+    # case would pass with no wrap at all.
+    let raw_end: f32 = phase_init[0] + (frames0 as f32) * freq0[0] + (frames1 as f32) * freq1[0]
+    if raw_end < 1.0 { return 22 }
+    if absf(raw_end - phase_end[0]) < 0.5 { return 23 }
+
+    # Continuity of block 1's first sample under the updated frequency.
+    let mut first: f32 = phase_mid[0] + freq1[0]
+    if first >= 1.0 { first = first - 1.0 }
+    if first >= 1.0 { first = first - 1.0 }
+    if absf(y1[0] - first * gain[0]) > 0.000001 { return 24 }
+
+    dump(dir, "out_4.bin", phase_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_5.bin", phase_end as ptr<void>, voice_bytes)
+    dump(dir, "out_6.bin", wrap_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_7.bin", wrap_end as ptr<void>, voice_bytes)
+    dump(dir, "out_8.bin", y0 as ptr<void>, y0_bytes)
+    dump(dir, "out_9.bin", y1 as ptr<void>, y1_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 64 in\n" +
+        "buffer 1 f32 64 in\n" +
+        "buffer 2 f32 64 in\n" +
+        "buffer 3 f32 64 in\n" +
+        "buffer 4 f32 64 out\n" +
+        "buffer 5 f32 64 out\n" +
+        "buffer 6 i32 64 out\n" +
+        "buffer 7 i32 64 out\n" +
+        "buffer 8 f32 3584 out\n" +
+        "buffer 9 f32 4608 out\n" +
+        "buffer 10 i32 64 in\n" +
+        "buffer 11 i32 1 scalar\n" +
+        "buffer 12 i32 1 scalar\n" +
+        "buffer 13 i32 1 scalar\n" +
+        "dispatch render_wrap 1 1 1 0 2 3 4 10 6 8 11 12\n" +
+        "dispatch render_wrap 1 1 1 1 2 4 5 6 7 9 11 13\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}
