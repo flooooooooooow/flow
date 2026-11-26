@@ -571,14 +571,20 @@ export function compile_audio_program(program: string, backend: string) -> i32 {
     sl_push(a, flow_input)
     sl_push(a, root() + "/runtime/flow_python_embed.c")
     sl_extend(a, conc_sources())
-    sl_extend(a, audio_sources)
+    let audio_in: ptr<ProcStrs> = objc_inputs(audio_sources, build_dir + "/" + basename, audio_cflags)
+    if audio_in == null {
+        cli_exit(1)
+    }
+    sl_extend(a, audio_in)
     sl_extend(a, rtf)
     sl_extend(a, py_ldflags())
     sl_extend(a, audio_ldflags)
     sl_extend(a, conc_ldflags())
     sl_push2(a, "-o", build_dir + "/" + basename)
     let log: string = build_dir + "/" + basename + ".link.log"
-    if run_err_to_file(cmd(a), log) != 0 {
+    let link_rc: i32 = run_err_to_file(cmd(a), log)
+    gpu_link_cleanup(audio_in)
+    if link_rc != 0 {
         error("C compilation/linking failed")
         errs(head_of(drop_matching(read_text(log), "warning"), 20))
         cli_exit(1)
@@ -1563,14 +1569,19 @@ function flow_jit_once(program: string, work: string, cached_exe: string, timing
     let link_env: string = s_lower(env_or("FLOW_JIT_LINK_RUNTIME", "1"))
     let link_rt: bool = not (s_eq(link_env, "0") or s_eq(link_env, "false") or s_eq(link_env, "no") or s_eq(link_env, "off") or s_len(link_env) == 0)
     let rt_args: ptr<ProcStrs> = sl_new()
+    let mut jit_gpu: ptr<ProcStrs> = null
     if link_rt {
         concurrency_flags()
         let rtf: ptr<ProcStrs> = runtime_flow_sources()
         gpu_link_flags()
+        jit_gpu = gpu_link_inputs(work + "/jit_gpu")
+        if jit_gpu == null {
+            return 1
+        }
         sl_extend(rt_args, conc_cflags())
         sl_extend(rt_args, conc_sources())
         sl_extend(rt_args, rtf)
-        sl_extend(rt_args, gpu_sources())
+        sl_extend(rt_args, jit_gpu)
         sl_extend(rt_args, gpu_ldflags())
         sl_extend(rt_args, conc_ldflags())
     }
@@ -1632,6 +1643,7 @@ function flow_jit_once(program: string, work: string, cached_exe: string, timing
             outln("❌ JIT native crash (exit " + s_itoa(code) + ") after all attempts")
         }
     }
+    gpu_link_cleanup(jit_gpu)
     if s_len(result) == 0 {
         outln("❌ JIT execution failed (see errors above)")
         outln("   Requires: mlir-opt, mlir-translate, clang on PATH")
@@ -1691,13 +1703,19 @@ export function mlir_lower_and_link(mlir_file: string, obj_file: string, exe_fil
     sl_push(a, root() + "/runtime/flow_python_embed.c")
     sl_extend(a, conc_sources())
     sl_extend(a, rtf)
-    sl_extend(a, gpu_sources())
+    let gpu: ptr<ProcStrs> = gpu_link_inputs(exe_file)
+    if gpu == null {
+        return 1
+    }
+    sl_extend(a, gpu)
     sl_extend(a, gpu_ldflags())
     sl_extend(a, conc_ldflags())
     sl_push2(a, "-lm", "-o")
     sl_push(a, exe_file)
     let log: string = exe_file + ".link.log"
-    if run_err_to_file(cmd(a), log) != 0 {
+    let link_rc: i32 = run_err_to_file(cmd(a), log)
+    gpu_link_cleanup(gpu)
+    if link_rc != 0 {
         error("Linking failed")
         errs(head_of(drop_matching(read_text(log), "warning"), 20))
         return 1

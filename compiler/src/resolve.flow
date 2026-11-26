@@ -1147,6 +1147,55 @@ function flowc_mono_lit_expand_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
     return result
 }
 
+# <dir>/lib/stdlib/<src[s..e]>, or the same with .flow added, into out_path when
+# that file exists. Returns the length, or -1. For `import "stdlib/x.flow"`
+# when the working directory is not the distribution root.
+function flowc_resolve_stdlib_under(dir: string, src: ptr<u8>, s: i32, e: i32, out_path: ptr<u8>, out_path_cap: i32) -> i32 {
+    let dl: i32 = strlen(dir) as i32
+    if dl <= 0 {
+        return 0 - 1
+    }
+    let dp: ptr<u8> = dir as ptr<u8>
+    if dl == 1 and dp[0] == 46 {
+        return 0 - 1
+    }
+    let suffix: string = "/lib/stdlib/"
+    let sp: ptr<u8> = suffix as ptr<u8>
+    let total: i32 = dl + 12 + (e - s)
+    if total + 6 > out_path_cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < dl {
+        out_path[i] = dp[i]
+        i = i + 1
+    }
+    i = 0
+    while i < 12 {
+        out_path[dl + i] = sp[i]
+        i = i + 1
+    }
+    i = 0
+    while i < e - s {
+        out_path[dl + 12 + i] = src[s + i]
+        i = i + 1
+    }
+    out_path[total] = 0
+    if flowc_io_exists(out_path as string) == 1 {
+        return total
+    }
+    out_path[total] = 46
+    out_path[total + 1] = 102
+    out_path[total + 2] = 108
+    out_path[total + 3] = 111
+    out_path[total + 4] = 119
+    out_path[total + 5] = 0
+    if flowc_io_exists(out_path as string) == 1 {
+        return total + 5
+    }
+    return 0 - 1
+}
+
 # Map import span to a filesystem path under search_dir.
 # Relative `.name` span includes the leading dot → strip it → search_dir/name.flow
 # String `"path"` span includes quotes → strip → search_dir/path (or absolute as-is).
@@ -1220,7 +1269,11 @@ export function flowc_resolve_sibling_path(
                 return total + 5
             }
         }
-        return 0 - 1
+        # The paths above are relative to the working directory, which is the
+        # distribution root only when the C driver runs the compiler there. The
+        # MLIR driver runs it from the program's directory and passes the root
+        # as search_dir, so look under <search_dir>/lib/stdlib as well.
+        return flowc_resolve_stdlib_under(search_dir, import_span_src, s, e, out_path, out_path_cap)
     } else {
         if e - s > 11 and import_span_src[s] == 108 and import_span_src[s + 1] == 105 and import_span_src[s + 2] == 98 and import_span_src[s + 3] == 47 and import_span_src[s + 4] == 115 and import_span_src[s + 5] == 116 and import_span_src[s + 6] == 100 and import_span_src[s + 7] == 108 and import_span_src[s + 8] == 105 and import_span_src[s + 9] == 98 and import_span_src[s + 10] == 47 {
             s = s + 11

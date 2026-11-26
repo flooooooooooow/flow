@@ -1,0 +1,33 @@
+# The MLIR backend links a program on Darwin. The link of `flow run --backend=mlir`
+# compiles runtime/gpu_metal_host.m, which needs -fobjc-arc, and LLVM's clang (the
+# one check_mlir_deps puts first on PATH) emits objc_msgSendClass$ class stubs
+# that Apple's linker does not provide. Before the fix every MLIR program failed
+# to link on macOS. Skipped (exit 0) off Darwin and without mlir-opt.
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function main() -> i32 {
+    let root: string = env("FLOW_CLI_ROOT")
+    if s_len(root) == 0 { return 1 }
+    if not s_eq(uname_s(), "Darwin") { return 0 }
+    if not have("mlir-opt") and not is_exec("/opt/homebrew/opt/llvm/bin/mlir-opt") and not is_exec("/usr/local/opt/llvm/bin/mlir-opt") {
+        return 0
+    }
+    let dir: string = mktemp_dir(tmp_base() + "/flow-mlir-link.XXXXXX")
+    if s_len(dir) == 0 { return 2 }
+    let _manifest: bool = write_text(dir + "/flow.toml", "")
+    let source: string = dir + "/probe.flow"
+    if not write_text(source, "function main() -> i32 {\n    println(\"mlir link ok\")\n    return 0\n}\n") { return 3 }
+    let argv: ptr<ProcStrs> = sl_of3(root + "/flow", "run", source)
+    sl_push(argv, "--backend=mlir")
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, dir)
+    let log: string = capture_merged(c)
+    let st: i32 = last_status()
+    rm_rf(dir)
+    if st != 0 or not s_contains(log, "mlir link ok") {
+        errln(log)
+        return 4
+    }
+    return 0
+}
