@@ -218,17 +218,21 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `stencil2d.flow` | one heat-equation step on 96 x 40, 2D launch | 3840/3840 | 3840/3840 | 3840/3840 |
 | `lj_forces.flow` | Lennard-Jones forces, 200 particles in 3D, all pairs | 600/600 | 600/600 | 600/600 |
 | `zero_trip.flow` | prefix sums, thread 0's loop runs zero times | 64/64 | 64/64 | 64/64 |
-| `modal_bank.flow` | 128 stateful resonators, two 64-sample blocks, SoA state + mix | pending device re-measure | pending | pending |
+| `modal_bank.flow` | 128 stateful resonators, two 64-sample blocks, SoA state + mix | 8/8 buffers bit-identical | 8/8 | pending (no MLX here) |
 | `voice_filters.flow` | 128 one-pole + biquad voices, two 64-sample blocks, 1- and 2-float SoA state + mix | 12/12 buffers bit-identical | 12/12 | pending (no MLX here) |
-| `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | pending device re-measure | pending | pending |
+| `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
+| `voice_phase_wrap.flow` | 64 phase oscillators with wrap-around and a per-voice wrap count, 56 then 72 frames | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_edges.flow` | 64, then 16, then 0 voices, then a reset block, over the wrapped phase loop; sentinel out buffers | 8/8 buffers bit-identical | 8/8 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
-Its device bit-identical cells above stay pending until re-measured on the
-same Apple Silicon host as the original five; do not treat generation PASS
-or SKIP as a substitute for those cells.
+Its Vulkan and Metal cells were re-measured on the reference host above
+(Apple M4 Max, macOS 26.2) at 0 ulp across all eight output buffers; MLX was
+not measured because no MLX environment was present. Keep treating
+lowering-only PASS or SKIP as no substitute for those cells: the numbers above
+come from a run of `tests/gpu_lower/run.flow` on that host, so a later change
+that only checks the lowering must not be read as preserving them.
 
 `voice_filters.flow` adds the one-pole and biquad voice programs from the
 GPU audio epic's correctness gate, with one-float and two-float per-voice
@@ -244,8 +248,9 @@ unequal block lengths (48 then 80), and new SoA frequency/gain buffers on
 the second dispatch. Its CPU harness fails if phase is reset between
 blocks, if block 1 is replayed at the old length or coefficients, or if
 the first sample of block 1 matches a reset-from-init formula. Registered
-at 0 ulp in `tests/gpu_lower/cases.txt`; device cells above stay pending
-until re-measured on the reference host.
+at 0 ulp in `tests/gpu_lower/cases.txt`; its Vulkan and Metal cells were
+re-measured alongside the modal bank on the same reference host at 0 ulp
+across six output buffers, and MLX was not measured there.
 
 `ks_delay.flow` is the Karplus-Strong voice program. Each voice keeps a
 48-sample ring in device memory and its own write index, reads the ring at a
@@ -257,6 +262,17 @@ mid-block ring contents and the continuation formula. Vulkan and Metal were
 bit-identical on the reference host; MLX was not measured here. The construct
 it relies on is why the kernel `if` emitter now carries assigned locals out
 of the `scf.if` (#1765).
+
+`voice_phase_wrap.flow` is the wrap-around half of the oscillator voice
+program. Each voice adds its frequency and folds the phase back into [0, 1)
+with compare-and-assign, counting wraps; frequencies up to 1.85 cycles per
+sample make the second fold necessary, and both the phase and the counter
+cross the block boundary, so block 1 continues block 0 instead of restarting
+either. The second block runs at new frequencies. Its CPU harness replays
+voice 0 with an independent unsplit accumulator and then rebuilds every
+voice's wrap count from the rendered samples alone, which fails if a wrap is
+dropped or the counter restarts. Registered at 0 ulp in
+`tests/gpu_lower/cases.txt`.
 
 `voice_edges.flow` covers the boundaries a voice bank actually runs in, with
 one kernel and four dispatches: 64 voices of which 8 are silent (gain 0, so
