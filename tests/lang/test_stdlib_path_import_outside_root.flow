@@ -1,0 +1,45 @@
+# A string import of the stdlib (`import "stdlib/io.flow"`) resolves when the
+# compiler runs outside the distribution root, as the MLIR driver runs it. The
+# resolver rewrote the import to lib/stdlib/io.flow relative to the working
+# directory, which only the C driver sets to the root; the MLIR emit then
+# stopped at "import that does not resolve". #1735 fixed the same for dotted
+# imports (std.io).
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd }
+
+function check_import(root: string, dir: string, spec: string, backend: string) -> bool {
+    let source: string = dir + "/probe.flow"
+    let output: string = dir + "/probe." + backend
+    let text: string = "import \"" + spec + "\"\nfunction main() -> i32 {\n    let r: FileRead = io_read_text(\"/etc/hosts\")\n    if not r.ok { return 1 }\n    return 0\n}\n"
+    if not write_text(source, text) { return false }
+    let c: ptr<ProcCmd> = cmd(sl_of1(env_or("FLOWC_BIN", root + "/compiler/build/flowc_bootstrap")))
+    cmd_cwd(c, dir)
+    cmd_env(c, "PWD", dir)
+    cmd_env(c, "FLOWC_ROOT", root)
+    cmd_env(c, "FLOWC_DIR", root)
+    cmd_env(c, "FLOWC_IN", source)
+    cmd_env(c, "FLOWC_OUT", output)
+    cmd_env(c, "FLOWC_BUNDLE", "1")
+    if s_eq(backend, "mlir") { cmd_env(c, "FLOWC_EMIT", "mlir") }
+    let log: string = capture_merged(c)
+    if last_status() != 0 {
+        errln(log)
+        return false
+    }
+    if not is_file(output) { return false }
+    return s_contains(read_text(output), "io_read_text")
+}
+
+function main() -> i32 {
+    let root: string = env("FLOW_CLI_ROOT")
+    if s_len(root) == 0 { return 1 }
+    let dir: string = mktemp_dir(tmp_base() + "/flow-stdlib-path.XXXXXX")
+    if s_len(dir) == 0 { return 2 }
+    let _manifest: bool = write_text(dir + "/flow.toml", "")
+    let mut rc: i32 = 0
+    if not check_import(root, dir, "stdlib/io.flow", "mlir") { rc = 3 }
+    elif not check_import(root, dir, "stdlib/io", "mlir") { rc = 4 }
+    elif not check_import(root, dir, "stdlib/io.flow", "c") { rc = 5 }
+    rm_rf(dir)
+    return rc
+}
