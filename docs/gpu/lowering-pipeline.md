@@ -222,6 +222,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `voice_filters.flow` | 128 one-pole + biquad voices, two 64-sample blocks, 1- and 2-float SoA state + mix | 12/12 buffers bit-identical | 12/12 | pending (no MLX here) |
 | `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
+| `voice_phase_wrap.flow` | 64 phase oscillators with wrap-around and a per-voice wrap count, 56 then 72 frames | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_topology.flow` | 40 voices, then 64 with 24 activating, then 24 with the rest freezing | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
@@ -261,6 +262,17 @@ mid-block ring contents and the continuation formula. Vulkan and Metal were
 bit-identical on the reference host; MLX was not measured here. The construct
 it relies on is why the kernel `if` emitter now carries assigned locals out
 of the `scf.if` (#1765).
+
+`voice_phase_wrap.flow` is the wrap-around half of the oscillator voice
+program. Each voice adds its frequency and folds the phase back into [0, 1)
+with compare-and-assign, counting wraps; frequencies up to 1.85 cycles per
+sample make the second fold necessary, and both the phase and the counter
+cross the block boundary, so block 1 continues block 0 instead of restarting
+either. The second block runs at new frequencies. Its CPU harness replays
+voice 0 with an independent unsplit accumulator and then rebuilds every
+voice's wrap count from the rendered samples alone, which fails if a wrap is
+dropped or the counter restarts. Registered at 0 ulp in
+`tests/gpu_lower/cases.txt`.
 
 `voice_topology.flow` is the case for notes arriving and leaving between
 blocks, which is the one thing all the others hold fixed. The host goes from
