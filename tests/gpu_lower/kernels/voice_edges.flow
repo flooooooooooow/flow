@@ -1,0 +1,272 @@
+# Boundary conditions for stateful GPU voice loops.
+#
+# Gate 1 of #1748 asks the audio voice programs to stay correct where a real
+# voice bank spends most of its time: fewer voices than threads, no voices at
+# all, silent voices whose state still advances, and a host that resets the
+# state between blocks. One `step` kernel serves all four, and each dispatch
+# varies the voice count instead of the code:
+#
+#   block 0  64 voices, 32 frames   silent voices 0..7 (gain 0)
+#   block 1  16 voices, 32 frames   threads 16..63 must write nothing
+#   block 2   0 voices, 32 frames   nothing at all may change
+#   block 3  64 voices,  8 frames   fresh (zeroed) state, as after a reset
+#
+# The state and output buffers of the reduced and empty dispatches are
+# sentinel-filled, and larger than the region those dispatches may write, so a
+# thread outside the voice count that stores anyway lands in the sentinel and
+# fails. Silent voices must still advance their phase, and the reset block must
+# match a replay from zero while differing from the continuation of the state
+# it replaced.
+#
+# main() is the CPU reference: it runs the same kernel in dispatch order over
+# the same buffers, seeding each dispatch's state from the block before it the
+# way a host would. All input/output buffers are separate: in-place updates are
+# not supported by all gpu-lower execution targets (notably MLX).
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+# One block of wrapped phase accumulation; y = wrapped phase * gain.
+@gpu
+function render_step(
+    freq: ptr<f32>, gain: ptr<f32>,
+    phase_in: ptr<f32>, phase_out: ptr<f32>, y: ptr<f32>,
+    voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let f: f32 = freq[voice]
+        let g: f32 = gain[voice]
+        let mut phase: f32 = phase_in[voice]
+        for frame in 0 to frames {
+            phase = phase + f
+            if phase >= 1.0 { phase = phase - 1.0 }
+            y[frame * voices + voice] = phase * g
+        }
+        phase_out[voice] = phase
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function absf(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# One sample of the recurrence, for the independent replays.
+function wrap_one(prev: f32, f: f32) -> f32 {
+    let mut p: f32 = prev + f
+    if p >= 1.0 { p = p - 1.0 }
+    return p
+}
+
+function fill(p: ptr<f32>, n: i32, v: f32) {
+    for i in 0 to n {
+        p[i] = v
+    }
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let voices: i32 = 64
+    let voices_b: i32 = 16
+    let frames: i32 = 32
+    let frames_reset: i32 = 8
+    let voice_bytes: i64 = (voices * 4) as i64
+    let signal_bytes: i64 = (voices * frames * 4) as i64
+    let reset_bytes: i64 = (voices * frames_reset * 4) as i64
+
+    let freq: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let gain: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_init: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_mid: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_16: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_zero: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let seed_16: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let seed_zero: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_reset: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let phase_fresh: ptr<f32> = calloc(voices as i64, 4) as ptr<f32>
+    let y0: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let y1: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let y2: ptr<f32> = calloc((voices * frames) as i64, 4) as ptr<f32>
+    let y3: ptr<f32> = calloc((voices * frames_reset) as i64, 4) as ptr<f32>
+    let v64_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let v16_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let v0_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let reset_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    v64_arg[0] = voices
+    v16_arg[0] = voices_b
+    v0_arg[0] = 0
+    frames_arg[0] = frames
+    reset_arg[0] = frames_reset
+
+    # Voices 0..7 are silent: gain 0 outputs zeros while their phase keeps
+    # advancing, which is what a muted-but-active voice does.
+    for voice in 0 to voices {
+        freq[voice] = 0.11 + ((voice % 8) as f32) * 0.09
+        gain[voice] = 0.8
+        if voice < 8 { gain[voice] = 0.0 }
+        phase_init[voice] = 0.02 + ((voice % 13) as f32) * 0.07
+    }
+    # Anything a dispatch may not write stays 7.0; a stray store shows up.
+    fill(phase_16, voices, 7.0)
+    fill(phase_zero, voices, 7.0)
+    fill(y1, voices * frames, 7.0)
+    fill(y2, voices * frames, 7.0)
+
+    dump(dir, "in_0.bin", freq as ptr<void>, voice_bytes)
+    dump(dir, "in_1.bin", gain as ptr<void>, voice_bytes)
+    dump(dir, "in_2.bin", phase_init as ptr<void>, voice_bytes)
+    dump(dir, "in_3.bin", phase_mid as ptr<void>, voice_bytes)
+    dump(dir, "in_4.bin", phase_16 as ptr<void>, voice_bytes)
+    dump(dir, "in_5.bin", phase_zero as ptr<void>, voice_bytes)
+    dump(dir, "in_8.bin", phase_reset as ptr<void>, voice_bytes)
+    dump(dir, "in_9.bin", phase_fresh as ptr<void>, voice_bytes)
+    dump(dir, "in_10.bin", y0 as ptr<void>, signal_bytes)
+    dump(dir, "in_11.bin", y1 as ptr<void>, signal_bytes)
+    dump(dir, "in_12.bin", y2 as ptr<void>, signal_bytes)
+    dump(dir, "in_13.bin", y3 as ptr<void>, reset_bytes)
+    dump(dir, "in_14.bin", v64_arg as ptr<void>, 4)
+    dump(dir, "in_15.bin", v16_arg as ptr<void>, 4)
+    dump(dir, "in_16.bin", v0_arg as ptr<void>, 4)
+    dump(dir, "in_17.bin", frames_arg as ptr<void>, 4)
+    dump(dir, "in_18.bin", reset_arg as ptr<void>, 4)
+
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_step(freq, gain, phase_init, phase_mid, y0, voices, frames)
+    }
+    # The host seeds the next dispatch's state from the one block 0 wrote, so
+    # the voices that drop out of block 1 keep block 0's state.
+    for voice in 0 to voices {
+        seed_16[voice] = phase_mid[voice]
+    }
+    dump(dir, "in_6.bin", seed_16 as ptr<void>, voice_bytes)
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_step(freq, gain, seed_16, phase_16, y1, voices_b, frames)
+    }
+    # The empty dispatch is handed the state block 1 left.
+    for voice in 0 to voices {
+        seed_zero[voice] = phase_16[voice]
+    }
+    dump(dir, "in_7.bin", seed_zero as ptr<void>, voice_bytes)
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_step(freq, gain, seed_zero, phase_zero, y2, 0, frames)
+    }
+    for t in 0 to voices {
+        cpu_tid_x = t
+        render_step(freq, gain, phase_reset, phase_fresh, y3, voices, frames_reset)
+    }
+
+    # Independent replays for voice 8 (audible) and voice 3 (silent).
+    let mut p8: f32 = phase_init[8]
+    let mut p3: f32 = phase_init[3]
+    let mut bad: i32 = 0
+    for frame in 0 to frames {
+        p8 = wrap_one(p8, freq[8])
+        p3 = wrap_one(p3, freq[3])
+        if absf(y0[frame * voices + 8] - p8 * gain[8]) > 0.000001 { bad = 1 }
+        if y0[frame * voices + 3] != 0.0 { bad = 1 }
+    }
+    if bad == 1 { return 1 }
+    if absf(phase_mid[8] - p8) > 0.000001 { return 2 }
+    if absf(phase_mid[3] - phase_init[3]) < 0.000001 { return 3 }
+
+    # Block 1 runs 16 voices: voice 8 continues, 16..63 keep their state, and
+    # the sentinel past the region 16 x 32 frames covers stays untouched.
+    let mut p1: f32 = seed_16[8]
+    for frame in 0 to frames {
+        p1 = wrap_one(p1, freq[8])
+        if absf(y1[frame * voices_b + 8] - p1 * gain[8]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 4 }
+    if absf(phase_16[8] - p1) > 0.000001 { return 5 }
+    for voice in voices_b to voices {
+        if phase_16[voice] != 7.0 { return 6 }
+    }
+    for i in voices_b * frames to voices * frames {
+        if y1[i] != 7.0 { return 7 }
+    }
+
+    # Zero voices: not one byte may change, state or output.
+    for voice in 0 to voices {
+        if phase_zero[voice] != 7.0 { return 8 }
+    }
+    for i in 0 to voices * frames {
+        if y2[i] != 7.0 { return 9 }
+    }
+
+    # Reset: the fresh state equals a replay from zero, and differs from the
+    # continuation of the state it replaced.
+    let mut p2: f32 = 0.0
+    for frame in 0 to frames_reset {
+        p2 = wrap_one(p2, freq[8])
+        if absf(y3[frame * voices + 8] - p2 * gain[8]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 10 }
+    if absf(phase_fresh[8] - p2) > 0.000001 { return 11 }
+    let continued: f32 = wrap_one(seed_zero[8], freq[8])
+    if absf(y3[8] - continued * gain[8]) < 0.000001 { return 12 }
+    if absf(seed_zero[8] - phase_fresh[8]) < 0.000001 { return 13 }
+
+    dump(dir, "out_3.bin", phase_mid as ptr<void>, voice_bytes)
+    dump(dir, "out_4.bin", phase_16 as ptr<void>, voice_bytes)
+    dump(dir, "out_5.bin", phase_zero as ptr<void>, voice_bytes)
+    dump(dir, "out_9.bin", phase_fresh as ptr<void>, voice_bytes)
+    dump(dir, "out_10.bin", y0 as ptr<void>, signal_bytes)
+    dump(dir, "out_11.bin", y1 as ptr<void>, signal_bytes)
+    dump(dir, "out_12.bin", y2 as ptr<void>, signal_bytes)
+    dump(dir, "out_13.bin", y3 as ptr<void>, reset_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 64 in\n" +
+        "buffer 1 f32 64 in\n" +
+        "buffer 2 f32 64 in\n" +
+        "buffer 3 f32 64 out\n" +
+        "buffer 4 f32 64 out\n" +
+        "buffer 5 f32 64 out\n" +
+        "buffer 6 f32 64 in\n" +
+        "buffer 7 f32 64 in\n" +
+        "buffer 8 f32 64 in\n" +
+        "buffer 9 f32 64 out\n" +
+        "buffer 10 f32 2048 out\n" +
+        "buffer 11 f32 2048 out\n" +
+        "buffer 12 f32 2048 out\n" +
+        "buffer 13 f32 512 out\n" +
+        "buffer 14 i32 1 scalar\n" +
+        "buffer 15 i32 1 scalar\n" +
+        "buffer 16 i32 1 scalar\n" +
+        "buffer 17 i32 1 scalar\n" +
+        "buffer 18 i32 1 scalar\n" +
+        "dispatch render_step 1 1 1 0 1 2 3 10 14 17\n" +
+        "dispatch render_step 1 1 1 0 1 6 4 11 15 17\n" +
+        "dispatch render_step 1 1 1 0 1 7 5 12 16 17\n" +
+        "dispatch render_step 1 1 1 0 1 8 9 13 14 18\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}

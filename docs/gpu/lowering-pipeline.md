@@ -223,8 +223,9 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_phase_wrap.flow` | 64 phase oscillators with wrap-around and a per-voice wrap count, 56 then 72 frames | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
-| `voice_invalid.flow` | -7 voices, then 100 voices against a 64-thread launch | 4/4 buffers bit-identical | 4/4 | pending (no MLX here) |
+| `voice_edges.flow` | 64, then 16, then 0 voices, then a reset block, over the wrapped phase loop; sentinel out buffers | 8/8 buffers bit-identical | 8/8 | pending (no MLX here) |
 | `remainder.flow` | integer `%`: a stride-3 ring wrap and negative dividends and divisor, 64 threads | pending device re-measure | pending | pending |
+| `voice_invalid.flow` | -7 voices, then 100 voices against a 64-thread launch | 4/4 buffers bit-identical | 4/4 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
@@ -273,6 +274,19 @@ either. The second block runs at new frequencies. Its CPU harness replays
 voice 0 with an independent unsplit accumulator and then rebuilds every
 voice's wrap count from the rendered samples alone, which fails if a wrap is
 dropped or the counter restarts. Registered at 0 ulp in
+`tests/gpu_lower/cases.txt`.
+
+`voice_edges.flow` covers the boundaries a voice bank actually runs in, with
+one kernel and four dispatches: 64 voices of which 8 are silent (gain 0, so
+they render zeros while their phase keeps advancing), then 16 voices, then 0
+voices, then a reset block that starts from a zeroed state. The state and
+output buffers of the reduced and empty dispatches are sentinel-filled and
+larger than the region those dispatches may write, so a thread outside the
+voice count that stores anyway fails the case; the reset block must match a
+replay from zero and differ from the continuation of the state it replaced.
+It also shows why a kernel name has to avoid MSL builtins: a kernel named
+`step` lowered to SPIR-V but never appeared in the Metal metallib, so the
+kernel is `render_step`. Registered at 0 ulp in
 `tests/gpu_lower/cases.txt`.
 
 `remainder.flow` checks integer `%` in a kernel (#1770): `(idx[t] + 3) % n`
