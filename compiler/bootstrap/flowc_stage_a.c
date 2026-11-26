@@ -87654,6 +87654,16 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   return 0;
 }
   int32_t is_f = (mlg_gpu_is_float(lt) + mlg_gpu_is_float(rt));
+  if (op2 == TOK_PERCENT) {
+  if (is_f > 0) {
+  mlg_refuse(m, e, "float remainder in an @gpu kernel");
+  return 0;
+}
+  if (lt == GT_U32 || lt == GT_U64 || rt == GT_U32 || rt == GT_U64) {
+  mlg_refuse(m, e, "unsigned remainder in an @gpu kernel");
+  return 0;
+}
+}
   int32_t s4 = mlg_gpu_new(m);
   mlg_line(m);
   mlg_gpu_v(m, s4);
@@ -87702,7 +87712,7 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   mlg_s(m, ",");
   t[0] = GT_I1;
 } else {
-  if (op2 != TOK_PLUS && op2 != TOK_MINUS && op2 != TOK_STAR && op2 != TOK_SLASH) {
+  if (op2 != TOK_PLUS && op2 != TOK_MINUS && op2 != TOK_STAR && op2 != TOK_SLASH && op2 != TOK_PERCENT) {
   mlg_refuse(m, e, "binary operator in an @gpu kernel");
   return 0;
 }
@@ -87731,6 +87741,9 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
 }
   if (op2 == TOK_SLASH) {
   mlg_s(m, " = arith.divsi");
+}
+  if (op2 == TOK_PERCENT) {
+  mlg_s(m, " = arith.remsi");
 }
 }
   t[0] = lt;
@@ -87854,11 +87867,11 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(its[i]) __flowc_st100776 = mlg_gpu_new(m); its[i] = __flowc_st100776; }
+  { __typeof__(its[i]) __flowc_st100830 = mlg_gpu_new(m); its[i] = __flowc_st100830; }
 }
   i = 0;
   for (; i < (nc); i = i + 1) {
-  { __typeof__(res[i]) __flowc_st100797 = mlg_gpu_new(m); res[i] = __flowc_st100797; }
+  { __typeof__(res[i]) __flowc_st100851 = mlg_gpu_new(m); res[i] = __flowc_st100851; }
 }
   mlg_line(m);
   if (nc > 0) {
@@ -88041,7 +88054,7 @@ void mlg_gpu_stmt(Mlg* m, int32_t st) {
   int32_t i = 0;
   for (; i < (nc); i = i + 1) {
   old[i] = (m[0]).l_ssa[locs[i]];
-  { __typeof__(res[i]) __flowc_st101674 = mlg_gpu_new(m); res[i] = __flowc_st101674; }
+  { __typeof__(res[i]) __flowc_st101728 = mlg_gpu_new(m); res[i] = __flowc_st101728; }
 }
   int32_t ct = 0;
   int32_t cv = mlg_gpu_expr(m, (((m[0]).arena).nodes[st]).a, (&ct));
