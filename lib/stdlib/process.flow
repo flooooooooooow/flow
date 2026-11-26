@@ -33,6 +33,7 @@
 # Works with the Stage-A compiler alone: nothing from runtime/ is linked.
 
 @cEmbed("#include <errno.h>
+#include <time.h>
 #include <spawn.h>
 #include <signal.h>
 #include <sys/wait.h>
