@@ -1,0 +1,144 @@
+# Faults of the MLIR backend found by building Flow Drive with --backend=mlir.
+# Each program prints its result; the MLIR build must print the same lines.
+#
+# 1. A call through a local of C function pointer type, `cfn(A) -> R`, was
+#    refused ("function, span or fixed-array type").
+# 2. The variable of a `for` stayed bound after the loop, so an if join after
+#    it that assigned a `let mut` of the same name passed the dead induction
+#    value to the join block ("operand #0 does not dominate this use").
+# 3. An if expression whose arms differ in float width (`f32` read, `0.0`
+#    literal) yielded f64 from an f32 scf.if.
+# 4. @cEmbed C reached the MLIR side file with \" and \\ still escaped, and
+#    std.process's C used clock_gettime without <time.h>.
+# 5. An if join merged a name that its arm assigns only after declaring its
+#    own `let mut` of it, so the outer local of that name went through the
+#    join and out of the enclosing loop ("does not dominate this use").
+# 6. An if expression had no static type (i32), so `(if c { 1.0 - t } else
+#    { t }) * w` multiplied with arith.muli; an index arm was not converted.
+# 7. A field through a `ptr<S>` static, an immutable top-level `let`, and a
+#    printf of more than 32 arguments were refused.
+# 8. sizeof<T>() called std.concurrent's placeholder `sizeof<T>() { 0 }`,
+#    instantiated as sizeof_<T>, so it was 0 for every struct.
+# 9. `p + k` with a `for` variable k (an index) went through ptrtoint to i32,
+#    unscaled, in place of a getelementptr.
+#
+# Skipped (exit 0) without mlir-opt.
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs }
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+function have_mlir() -> bool {
+    return have("mlir-opt") or is_exec("/opt/homebrew/opt/llvm/bin/mlir-opt") or is_exec("/usr/local/opt/llvm/bin/mlir-opt")
+}
+
+# The program's output lines: each value the programs print follows "= ", so
+# the driver's own lines and the linker's warnings are left out.
+function program_lines(log: string) -> string {
+    let p: ptr<u8> = log as ptr<u8>
+    let n: i32 = s_len(log)
+    let out: ptr<u8> = calloc((n + 1) as i64, 1) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let mut j: i32 = i
+        while j < n and p[j] != 10 {
+            j = j + 1
+        }
+        if j - i >= 2 and p[i] == 61 and p[i + 1] == 32 {
+            let mut k: i32 = i + 2
+            while k < j {
+                out[o] = p[k]
+                o = o + 1
+                k = k + 1
+            }
+            out[o] = 10
+            o = o + 1
+        }
+        i = j + 1
+    }
+    return out as string
+}
+
+# Runs path with the given backend from dir; the program's lines, or "" when
+# the build or the run fails.
+function run_with(root: string, dir: string, path: string, backend: string) -> string {
+    let argv: ptr<ProcStrs> = sl_of3(root + "/flow", "run", path)
+    sl_push(argv, "--backend=" + backend)
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, dir)
+    let log: string = capture_merged(c)
+    if last_status() != 0 {
+        errln(log)
+        return ""
+    }
+    return program_lines(log)
+}
+
+# Builds source with the C and the MLIR backend from a temporary project; 0
+# when both run and print the same lines, and those contain want.
+function check(root: string, name: string, source: string, want: string) -> i32 {
+    let dir: string = mktemp_dir(tmp_base() + "/flow-mlir-drive.XXXXXX")
+    if s_len(dir) == 0 { return 2 }
+    let _manifest: bool = write_text(dir + "/flow.toml", "")
+    let path: string = dir + "/" + name + ".flow"
+    if not write_text(path, source) { return 3 }
+    let by_c: string = run_with(root, dir, path, "c")
+    let by_mlir: string = run_with(root, dir, path, "mlir")
+    rm_rf(dir)
+    if s_len(by_c) == 0 or not s_eq(by_c, by_mlir) or not s_contains(by_c, want) {
+        errln(name)
+        errln("C:")
+        errln(by_c)
+        errln("MLIR:")
+        errln(by_mlir)
+        return 4
+    }
+    return 0
+}
+
+function main() -> i32 {
+    let root: string = env("FLOW_CLI_ROOT")
+    if s_len(root) == 0 { return 1 }
+    if not have_mlir() { return 0 }
+
+    let cfn_src: string = "extern {\n    function dlsym(h: ptr<void>, name: string) -> ptr<void>\n}\nfunction main() -> i32 {\n    let h: ptr<void> = (0 - 2) as i64 as ptr<void>\n    let f: cfn(i64) -> i64 = dlsym(h, \"labs\") as cfn(i64) -> i64\n    let g: cfn(f64) -> f64 = dlsym(h, \"cos\") as cfn(f64) -> f64\n    print(\"= \")\n    println(f(0 - 42) + 1)\n    print(\"= \")\n    println(g(0.0) * 3.0)\n    return 0\n}\n"
+    let mut rc: i32 = 0
+    if s_eq(uname_s(), "Darwin") {
+        # RTLD_DEFAULT is (void *)-2 on Darwin
+        rc = check(root, "cfn_call", cfn_src, "43\n3.000000")
+        if rc != 0 { return 10 + rc }
+    }
+
+    let scope_src: string = "function g(a: i32, b: i32, fix: bool) -> i32 {\n    let mut s: i32 = 0\n    for round in 0 to 2 {\n        for i in a to b {\n            s = s + i\n        }\n        if fix {\n            let mut i: i32 = b\n            while i > a {\n                s = s + 1\n                i = i - 1\n            }\n        }\n    }\n    return s\n}\nfunction main() -> i32 {\n    print(\"= \")\n    println(g(1, 5, true) * 10 + 7)\n    return 0\n}\n"
+    rc = check(root, "for_scope", scope_src, "287")
+    if rc != 0 { return 20 + rc }
+
+    let ifx_src: string = "function pick(p: ptr<f32>, on: bool) -> f64 {\n    let v: f32 = if on { p[1] } else { 0.0 }\n    return v as f64\n}\nfunction main() -> i32 {\n    let mut a: array<f32, 2> = [1.5, 2.25]\n    let p: ptr<f32> = a\n    print(\"= \")\n    println(pick(p, true) + pick(p, false) + 0.5)\n    return 0\n}\n"
+    rc = check(root, "if_expr_width", ifx_src, "2.750000")
+    if rc != 0 { return 30 + rc }
+
+    let embed_src: string = "import std.process { proc_now_ms }\n@cEmbed(\"static const char *flow_t_word(void) { return \\\"q\\\\\\\"d\\\"; }\")\nextern {\n    function flow_t_word() -> string\n}\nfunction main() -> i32 {\n    let t: i64 = proc_now_ms()\n    print(\"= \")\n    println(flow_t_word())\n    print(\"= \")\n    println(if t > 0 { 1 } else { 0 })\n    return 0\n}\n"
+    rc = check(root, "cembed_escapes", embed_src, "q\"d\n1")
+    if rc != 0 { return 40 + rc }
+
+    let shadow_src: string = "function band(k: i32, n: i32, w: bool) -> f64 {\n    let cb: i32 = k + 1\n    let mut acc: f64 = 0.0\n    let mut y: i32 = 0\n    while y < n {\n        if y >= 0 {\n            let mut x: i32 = 0\n            while x < n {\n                if x != 2 {\n                    let mut cb: f64 = (x as f64) * 0.5\n                    if w {\n                        cb = cb + 1.0\n                    }\n                    acc = acc + cb\n                }\n                x = x + 1\n            }\n        }\n        y = y + 1\n    }\n    return acc + (cb as f64)\n}\nfunction main() -> i32 {\n    print(\"= \")\n    println(band(3, 4, true))\n    return 0\n}\n"
+    rc = check(root, "if_join_shadow", shadow_src, "24.000000")
+    if rc != 0 { return 50 + rc }
+
+    rc = check(root, "if_expr_product", "function w(di: i32, tx: f32, tz: f32) -> f32 {\n    let a: f32 = 1.0 - tx\n    let wt: f32 = (if di == 0 { 1.0 - tx } else { tx }) * (if di == 0 { 1.0 - tz } else { tz })\n    return wt + a\n}\nfunction main() -> i32 {\n    print(\"= \")\n    println(w(0, 0.25, 0.5) as f64)\n    return 0\n}\n", "1.125000")
+    if rc != 0 { return 60 + rc }
+    rc = check(root, "pointer_static_field", "extern {\n    function calloc(n: i64, size: i64) -> ptr<void>\n}\nstruct Inner {\n    a: i32,\n    b: f64\n}\nlet mut g: ptr<Inner> = null\nfunction main() -> i32 {\n    g = calloc(1, 16) as ptr<Inner>\n    g.a = 5\n    g.b = 2.5\n    print(\"= \")\n    println(g.b + (g.a as f64))\n    return 0\n}\n", "7.500000")
+    if rc != 0 { return 70 + rc }
+    rc = check(root, "immutable_top_level_let", "let TABLE: array<f64, 3> = [1.5, 2.25, 4.0]\nlet K: i32 = 7\nfunction main() -> i32 {\n    print(\"= \")\n    println(TABLE[1] + TABLE[2] + (K as f64))\n    return 0\n}\n", "13.250000")
+    if rc != 0 { return 80 + rc }
+    rc = check(root, "printf_40_args", "function main() -> i32 {\n    printf(\"= %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\\n\", 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39)\n    return 0\n}\n", "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39")
+    if rc != 0 { return 90 + rc }
+    rc = check(root, "sizeof_beside_concurrent", "import std.concurrent { Mutex }\nstruct Foo {\n    a: f64,\n    b: i32,\n    c: ptr<f64>\n}\nfunction main() -> i32 {\n    print(\"= \")\n    println(sizeof<Foo>())\n    return 0\n}\n", "24")
+    if rc != 0 { return 100 + rc }
+    rc = check(root, "pointer_plus_for_variable", "extern {\n    function calloc(n: i64, size: i64) -> ptr<void>\n}\nstruct Cyl {\n    a: f64,\n    b: i32\n}\nfunction main() -> i32 {\n    let base: ptr<Cyl> = calloc(4, sizeof<Cyl>()) as ptr<Cyl>\n    for k in 0 to 4 {\n        let c: ptr<Cyl> = base + k\n        c.a = (k as f64) * 1.5\n    }\n    print(\"= \")\n    println(base[3].a + base[1].a)\n    return 0\n}\n", "6.000000")
+    if rc != 0 { return 110 + rc }
+    return 0
+}
