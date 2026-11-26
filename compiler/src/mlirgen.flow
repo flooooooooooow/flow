@@ -153,6 +153,12 @@ export struct Mlg {
     why_node: i32,
     last_line: i32,
     ind: i32,
+    # entry-block allocas of the function being emitted (mlg_alloca1)
+    h_out: ptr<u8>,
+    h_at: i32,
+    h_buf: ptr<u8>,
+    h_len: i32,
+    h_cap: i32,
     # value types / unsigned flags
     nval: i32,
     vt: ptr<i32>,
@@ -4380,14 +4386,89 @@ function mlg_cast(m: ptr<Mlg>, v: i32, from_in: i32, dst: i32) -> i32 {
     return c3
 }
 
-# One-slot alloca holding v: returns the pointer.
-function mlg_alloca_store(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
+# ---------------------------------------------------------------------------
+# Entry-block allocas. An llvm.alloca outside a function's entry block is a
+# dynamic alloca: each time it runs it takes more stack, and LLVM does not
+# promote it to a register. A `let` in a loop body therefore grew the stack
+# every iteration (Flow Drive's handling test overflowed its 8 MB stack in
+# one function) and kept its value in memory. While a function body is
+# emitted its allocas collect here and go to the top of its entry block
+# when it ends. Mlg.h_out is the output buffer they belong to: a lambda
+# written to a buffer of its own saves this state and starts its own, and
+# text written to any other buffer keeps its allocas in place.
+# ---------------------------------------------------------------------------
+# Starts collecting the allocas of the function whose body begins here.
+function mlg_hoist_begin(m: ptr<Mlg>) {
+    if m[0].h_buf == null {
+        m[0].h_cap = 1048576
+        m[0].h_buf = malloc(m[0].h_cap as i64)
+    }
+    m[0].h_out = m[0].out
+    m[0].h_at = m[0].len
+    m[0].h_len = 0
+}
+
+# Puts the collected allocas at the top of the entry block and stops.
+function mlg_hoist_end(m: ptr<Mlg>) {
+    let n: i32 = m[0].h_len
+    let at: i32 = m[0].h_at
+    m[0].h_out = null
+    m[0].h_len = 0
+    if n == 0 or m[0].err != 0 {
+        return
+    }
+    if m[0].len + n > m[0].cap {
+        m[0].err = 1
+        return
+    }
+    let o: ptr<u8> = m[0].out
+    let mut i: i32 = m[0].len - 1
+    while i >= at {
+        o[i + n] = o[i]
+        i = i - 1
+    }
+    i = 0
+    while i < n {
+        o[at + i] = m[0].h_buf[i]
+        i = i + 1
+    }
+    m[0].len = m[0].len + n
+    if m[0].last_line >= at {
+        m[0].last_line = m[0].last_line + n
+    }
+}
+
+# `%one = llvm.mlir.constant(1 : i64) : i64` and `p = llvm.alloca %one x t`,
+# in the entry block while a function body collects them, else here.
+function mlg_alloca1(m: ptr<Mlg>, p: i32, t: i32) {
+    let hoist: bool = m[0].h_out != null and m[0].h_out == m[0].out
+    let saved_out: ptr<u8> = m[0].out
+    let saved_len: i32 = m[0].len
+    let saved_cap: i32 = m[0].cap
+    let saved_last: i32 = m[0].last_line
+    let saved_ind: i32 = m[0].ind
+    if hoist {
+        if m[0].h_len + 65536 > m[0].h_cap {
+            let nb: ptr<u8> = malloc((m[0].h_cap * 2) as i64)
+            let mut k: i32 = 0
+            while k < m[0].h_len {
+                nb[k] = m[0].h_buf[k]
+                k = k + 1
+            }
+            free(m[0].h_buf)
+            m[0].h_buf = nb
+            m[0].h_cap = m[0].h_cap * 2
+        }
+        m[0].out = m[0].h_buf
+        m[0].len = m[0].h_len
+        m[0].cap = m[0].h_cap
+        m[0].ind = 2
+    }
     let one: i32 = mlg_new_val(m, MT_I64)
     mlg_line(m)
     mlg_v(m, one)
     mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
     mlg_nl(m)
-    let p: i32 = mlg_new_val(m, MT_PTR)
     mlg_line(m)
     mlg_v(m, p)
     mlg_s(m, " = llvm.alloca ")
@@ -4396,6 +4477,20 @@ function mlg_alloca_store(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
     mlg_put_type(m, t)
     mlg_s(m, " : (i64) -> !llvm.ptr")
     mlg_nl(m)
+    if hoist {
+        m[0].h_len = m[0].len
+        m[0].out = saved_out
+        m[0].len = saved_len
+        m[0].cap = saved_cap
+        m[0].last_line = saved_last
+        m[0].ind = saved_ind
+    }
+}
+
+# One-slot alloca holding v: returns the pointer.
+function mlg_alloca_store(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
+    let p: i32 = mlg_new_val(m, MT_PTR)
+    mlg_alloca1(m, p, t)
     mlg_line(m)
     mlg_s(m, "llvm.store ")
     mlg_v(m, v)
@@ -10791,6 +10886,15 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
     mlg_put_type(m, rt)
     mlg_s(m, " {")
     mlg_nl(m)
+    # the lambda's allocas go to its own entry block; the enclosing
+    # function's collection resumes after it
+    let sh_out: ptr<u8> = m[0].h_out
+    let sh_at: i32 = m[0].h_at
+    let sh_len: i32 = m[0].h_len
+    let sh_buf: ptr<u8> = m[0].h_buf
+    let sh_cap: i32 = m[0].h_cap
+    m[0].h_buf = null
+    mlg_hoist_begin(m)
     m[0].ind = 2
     i = 0
     while i < nf {
@@ -10836,6 +10940,13 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
             mlg_nl(m)
         }
     }
+    mlg_hoist_end(m)
+    free(m[0].h_buf)
+    m[0].h_out = sh_out
+    m[0].h_at = sh_at
+    m[0].h_len = sh_len
+    m[0].h_buf = sh_buf
+    m[0].h_cap = sh_cap
     m[0].ind = 1
     mlg_line(m)
     mlg_s(m, "}")
@@ -11244,19 +11355,7 @@ function mlg_emit_llarr_buf(m: ptr<Mlg>, la: i32) -> i32 {
         mlg_s(m, ") -> !llvm.ptr")
         mlg_nl(m)
     } else {
-        let one: i32 = mlg_new_val(m, MT_I64)
-        mlg_line(m)
-        mlg_v(m, one)
-        mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
-        mlg_nl(m)
-        mlg_line(m)
-        mlg_v(m, p)
-        mlg_s(m, " = llvm.alloca ")
-        mlg_v(m, one)
-        mlg_s(m, " x ")
-        mlg_put_type(m, la)
-        mlg_s(m, " : (i64) -> !llvm.ptr")
-        mlg_nl(m)
+        mlg_alloca1(m, p, la)
         mlg_mem_use(m)
         let nb: i32 = mlg_new_val(m, MT_I64)
         mlg_line(m)
@@ -11436,20 +11535,8 @@ function mlg_emit_memref_lit(m: ptr<Mlg>, e: i32, hint: i32) -> i32 {
     }
     if mlg_is_struct_mt(et) == 1 or et == MT_PTR {
         let la: i32 = mlg_llarr_of(m, et, n)
-        let one: i32 = mlg_new_val(m, MT_I64)
-        mlg_line(m)
-        mlg_v(m, one)
-        mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
-        mlg_nl(m)
         let p: i32 = mlg_new_val(m, MT_PTR)
-        mlg_line(m)
-        mlg_v(m, p)
-        mlg_s(m, " = llvm.alloca ")
-        mlg_v(m, one)
-        mlg_s(m, " x ")
-        mlg_put_type(m, la)
-        mlg_s(m, " : (i64) -> !llvm.ptr")
-        mlg_nl(m)
+        mlg_alloca1(m, p, la)
         m[0].v_llarr[p] = la
         let mut j: i32 = 0
         while j < n {
@@ -16033,6 +16120,7 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
     mlg_put_type(m, rt)
     mlg_s(m, " {")
     mlg_nl(m)
+    mlg_hoist_begin(m)
     m[0].ind = m[0].ind + 1
     p = params
     while p != AST_NONE {
@@ -16095,6 +16183,7 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
         }
         mlg_nl(m)
     }
+    mlg_hoist_end(m)
     m[0].ind = m[0].ind - 1
     mlg_line(m)
     mlg_s(m, "}")
@@ -23142,7 +23231,8 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         nsp: 0, i64_ft: AST_NONE, sft: mlg_alloc_i32(8),
         clo_st: 0 - 1, lam_buf: malloc(MLG_SIDE_CAP as i64), lam_len: 0,
         cb_buf: malloc(MLG_SIDE_CAP as i64), cb_len: 0,
-        cb_fn: mlg_alloc_i32(MLG_MAX_FNS), ncb: 0, nlambda: 0, env_val: 0 - 1,
+        cb_fn: mlg_alloc_i32(MLG_MAX_FNS), ncb: 0, nlambda: 0,
+        h_out: null, h_at: 0, h_buf: null, h_len: 0, h_cap: 0, env_val: 0 - 1,
         lc_need: 0, hp_need: 0, chk: 0 - 1, lit_want: 0 - 1,
         uk_ns: mlg_alloc_i32(MLG_MAX_UK), uk_ne: mlg_alloc_i32(MLG_MAX_UK), uk_np: mlg_alloc_i32(MLG_MAX_UK),
         uk_rt: mlg_alloc_i32(MLG_MAX_UK), uk_pt: mlg_alloc_i32(MLG_MAX_UK * 16), nuk: 0,

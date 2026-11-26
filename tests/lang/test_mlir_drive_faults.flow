@@ -21,6 +21,8 @@
 #    instantiated as sizeof_<T>, so it was 0 for every struct.
 # 9. `p + k` with a `for` variable k (an index) went through ptrtoint to i32,
 #    unscaled, in place of a getelementptr.
+# 10. Allocas were emitted where their `let` stood, so a local in a loop
+#    body took new stack every iteration and overflowed it (SIGSEGV).
 #
 # Skipped (exit 0) without mlir-opt.
 import "tools/flow_cli/sys.flow"
@@ -140,5 +142,7 @@ function main() -> i32 {
     if rc != 0 { return 100 + rc }
     rc = check(root, "pointer_plus_for_variable", "extern {\n    function calloc(n: i64, size: i64) -> ptr<void>\n}\nstruct Cyl {\n    a: f64,\n    b: i32\n}\nfunction main() -> i32 {\n    let base: ptr<Cyl> = calloc(4, sizeof<Cyl>()) as ptr<Cyl>\n    for k in 0 to 4 {\n        let c: ptr<Cyl> = base + k\n        c.a = (k as f64) * 1.5\n    }\n    print(\"= \")\n    println(base[3].a + base[1].a)\n    return 0\n}\n", "6.000000")
     if rc != 0 { return 110 + rc }
+    rc = check(root, "loop_local_stack", "extern {\n    function calloc(n: i64, size: i64) -> ptr<void>\n}\nlet mut sink: ptr<ptr<f64>> = null\nfunction keep(p: ptr<f64>, i: i32) -> void {\n    sink[i & 7] = p\n    p[0] = p[0] + 1.0\n}\nfunction run(n: i32) -> f64 {\n    let mut s: f64 = 0.0\n    let mut i: i32 = 0\n    while i < n {\n        if i >= 0 {\n            let mut t: array<f64, 64> = []\n            t[0] = 1.0\n            keep(&t[0], i)\n            s = s + t[0]\n        }\n        i = i + 1\n    }\n    return s\n}\nfunction main() -> i32 {\n    sink = calloc(8, 8) as ptr<ptr<f64>>\n    print(\"= \")\n    println(run(400000))\n    return 0\n}\n", "800000.000000")
+    if rc != 0 { return 120 + rc }
     return 0
 }
