@@ -1360,6 +1360,70 @@ export function py_ldflags() -> ptr<ProcStrs> {
 # Link lowered MLIR (LLVM IR) with the Flow runtime, and with the program's
 # @cEmbed C when `embed` names a file that exists (#1093: the MLIR emitter
 # writes it next to the .mlir). Status.
+# The sources of a clang link that is not the C backend's runtime archive (the MLIR
+# link, `flow mlir-run`, the JIT, the audio build), with the Objective-C ones compiled
+# first on Darwin. C sources go to the link as they are. Each .m file is compiled with the
+# system compiler, as flowc_runtime_archive compiles the GPU runtime for the C
+# backend: those links run the `clang` that check_mlir_deps puts first on PATH (LLVM's)
+# when MLIR is involved, which emits objc_msgSendClass$ class stubs that Apple's linker
+# does not provide, and gpu_metal_host.m needs -fobjc-arc. cflags go to those compiles
+# (include paths, defines). The objects are named after stem. Returns null when a
+# source does not compile.
+export function objc_inputs(sources: ptr<ProcStrs>, stem: string, cflags: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    # Off Darwin the link compiles a .m as before (the audio build passes one on Linux).
+    let darwin: bool = s_eq(uname_s(), "Darwin")
+    let mut i: i32 = 0
+    while i < sl_len(sources) {
+        let f: string = sl_get(sources, i)
+        i = i + 1
+        if not darwin or not s_ends(f, ".m") {
+            sl_push(out, f)
+            continue
+        }
+        let obj: string = stem + "." + path_drop_ext(path_basename(f)) + ".o"
+        let sys_cc: string = if is_exec("/usr/bin/clang") { "/usr/bin/clang" } else { "cc" }
+        let a: ptr<ProcStrs> = sl_of1(sys_cc)
+        sl_push2(a, "-w", "-O2")
+        sl_push(a, "-I" + TC_ROOT + "/runtime")
+        if cflags != null {
+            sl_extend(a, cflags)
+        }
+        if s_ends(f, "gpu_metal_host.m") {
+            sl_push(a, "-fobjc-arc")
+        }
+        sl_push2(a, "-c", "-o")
+        sl_push(a, obj)
+        sl_push(a, f)
+        if run_argv(a) != 0 {
+            error("C compilation failed for runtime source " + f)
+            return null
+        }
+        sl_push(out, obj)
+    }
+    return out
+}
+
+# The GPU runtime (gpu_sources) as objc_inputs for one link. Call gpu_link_flags first.
+export function gpu_link_inputs(exe: string) -> ptr<ProcStrs> {
+    return objc_inputs(GPU_SOURCES, exe, null)
+}
+
+# Removes the objects objc_inputs (or gpu_link_inputs) made for one link.
+export function gpu_link_cleanup(inputs: ptr<ProcStrs>) {
+    if inputs == null {
+        return
+    }
+    let mut k: i32 = 0
+    while k < sl_len(inputs) {
+        let f: string = sl_get(inputs, k)
+        if s_ends(f, ".o") {
+            rm_rf(f)
+        }
+        k = k + 1
+    }
+}
+
 export function flow_link_mlir_ll(ll: string, exe: string, embed: string, program: string) -> i32 {
     gpu_link_flags()
     concurrency_flags()
@@ -1390,12 +1454,18 @@ export function flow_link_mlir_ll(ll: string, exe: string, embed: string, progra
     sl_push(a, TC_ROOT + "/runtime/flow_python_embed.c")
     sl_extend(a, CONC_SOURCES)
     sl_extend(a, rtf)
-    sl_extend(a, GPU_SOURCES)
+    let gpu: ptr<ProcStrs> = gpu_link_inputs(exe)
+    if gpu == null {
+        return 1
+    }
+    sl_extend(a, gpu)
     sl_extend(a, py_ldflags())
     sl_extend(a, native)
     sl_extend(a, GPU_LDFLAGS)
     sl_extend(a, CONC_LDFLAGS)
     sl_push2(a, "-lm", "-o")
     sl_push(a, exe)
-    return run_argv(a)
+    let rc: i32 = run_argv(a)
+    gpu_link_cleanup(gpu)
+    return rc
 }
