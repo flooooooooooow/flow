@@ -21419,6 +21419,20 @@ function mlg_gpu_expr(m: ptr<Mlg>, e: i32, t: ptr<i32>) -> i32 {
             return 0
         }
         let is_f: i32 = mlg_gpu_is_float(lt) + mlg_gpu_is_float(rt)
+        # Integer % is the host's truncating remainder (the constant folder's
+        # l - (l / r) * r, C's %), which is arith.remsi on the signed scalars
+        # (#1770). Float and unsigned remainder have no agreed kernel meaning
+        # yet, so they are refused by name.
+        if op2 == TOK_PERCENT {
+            if is_f > 0 {
+                mlg_refuse(m, e, "float remainder in an @gpu kernel")
+                return 0
+            }
+            if lt == GT_U32 or lt == GT_U64 or rt == GT_U32 or rt == GT_U64 {
+                mlg_refuse(m, e, "unsigned remainder in an @gpu kernel")
+                return 0
+            }
+        }
         let s4: i32 = mlg_gpu_new(m)
         mlg_line(m)
         mlg_gpu_v(m, s4)
@@ -21443,7 +21457,7 @@ function mlg_gpu_expr(m: ptr<Mlg>, e: i32, t: ptr<i32>) -> i32 {
             mlg_s(m, ",")
             t[0] = GT_I1
         } else {
-            if op2 != TOK_PLUS and op2 != TOK_MINUS and op2 != TOK_STAR and op2 != TOK_SLASH {
+            if op2 != TOK_PLUS and op2 != TOK_MINUS and op2 != TOK_STAR and op2 != TOK_SLASH and op2 != TOK_PERCENT {
                 mlg_refuse(m, e, "binary operator in an @gpu kernel")
                 return 0
             }
@@ -21457,6 +21471,7 @@ function mlg_gpu_expr(m: ptr<Mlg>, e: i32, t: ptr<i32>) -> i32 {
                 if op2 == TOK_MINUS { mlg_s(m, " = arith.subi") }
                 if op2 == TOK_STAR { mlg_s(m, " = arith.muli") }
                 if op2 == TOK_SLASH { mlg_s(m, " = arith.divsi") }
+                if op2 == TOK_PERCENT { mlg_s(m, " = arith.remsi") }
             }
             t[0] = lt
         }
