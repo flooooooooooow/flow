@@ -224,6 +224,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_phase_wrap.flow` | 64 phase oscillators with wrap-around and a per-voice wrap count, 56 then 72 frames | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_topology.flow` | 40 voices, then 64 with 24 activating, then 24 with the rest freezing | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
+| `remainder.flow` | integer `%`: a stride-3 ring wrap and negative dividends and divisor, 64 threads | pending device re-measure | pending | pending |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
@@ -288,6 +289,14 @@ launches 64 threads, so a 72-voice block cannot be expressed through this
 harness, and every buffer in the launcher needs an `in_` file, including the
 outputs. Registered at 0 ulp in `tests/gpu_lower/cases.txt`.
 
+`remainder.flow` checks integer `%` in a kernel (#1770): `(idx[t] + 3) % n`
+for a ring index advanced by more than one, plus a negative dividend and a
+negative divisor, where the result must keep the dividend's sign as the
+host's truncating remainder does. Its CPU build checks every thread against
+`l - (l / r) * r` and hand-computed values. It was 64/64 bit-identical on all
+three buffers through Mesa lavapipe (Vulkan on the CPU, Linux x86-64);
+the reference-host cells above stay pending until measured there.
+
 Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
 sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as
 `metal` and gives the same results. PTX, the cubin and the code object were
@@ -317,8 +326,11 @@ is wrong in its source is wrong on both sides and passes.
 ## Known gaps
 
 - The `@gpu` emitter in `compiler/src/mlirgen.flow` accepts thread and
-  block ids, `+ - * /`, comparisons, `if`, counted `for` loops, loads,
-  stores and `gpu_barrier()`. It has no casts, no `and` or `or`, no math
+  block ids, `+ - * /`, integer `%`, comparisons, `if`, counted `for`
+  loops, loads, stores and `gpu_barrier()`. Integer `%` is the host's
+  truncating remainder (the sign follows the dividend), lowered to
+  `arith.remsi` on signed scalars (#1770); float and unsigned `%` are
+  refused by name. It has no casts, no `and` or `or`, no math
   functions such as `sqrt`, and no workgroup memory. A local assigned
   inside an `if` is not merged after it. The test kernels stay inside this
   subset: the Lennard-Jones kernel needs no `sqrt`, and splits its pair
