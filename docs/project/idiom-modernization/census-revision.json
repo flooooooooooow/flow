@@ -1,0 +1,31 @@
+{
+  "schema": "flow.census-revision.v1",
+  "revision": "9ee22385b3b2f146b60629d9f287eba58eb5fc26",
+  "worktree_clean": true,
+  "toolchain": {
+    "flow": "Flow 2.0.0",
+    "flow_host": "flowc",
+    "uname_s": "Linux",
+    "uname_m": "x86_64",
+    "cc": "cc (Debian 14.2.0-19) 14.2.0",
+    "mlir_opt": null
+  },
+  "selection": {
+    "include": "Tracked paths from git ls-files. idiom_census counts .flow files by source-purpose directory. feature_evidence resolves backtick path references in docs/project/idiom-modernization/FEATURE-SURFACES.md. parse_coverage and doc_coverage use their existing inventories.",
+    "exclude": "Untracked, ignored and uncommitted files are not part of a pin. compiler fixtures and examples/verify are inventoried as compiler_fixture and proof_corpus. Those classes stay out of an adoption denominator. A resolved path is an anchor. That anchor does not prove the feature works or is shipped.",
+    "dirty_worktree": "git status --porcelain must be empty for --write and --check. A dirty tree may be labelled in the default JSON report and is otherwise refused."
+  },
+  "invocations": [
+    "./flow tool idiom_census --check",
+    "./flow tool feature_evidence --check",
+    "./flow tool compiler/scripts/parse_coverage.flow --check",
+    "./flow tool doc_coverage"
+  ],
+  "checks": [
+    {"name":"idiom_census","exit_code":0,"status":"pass"},
+    {"name":"feature_evidence","exit_code":0,"status":"pass"},
+    {"name":"parse_coverage","exit_code":0,"status":"pass"},
+    {"name":"doc_coverage","exit_code":0,"status":"pass"}
+  ],
+  "gaps_policy": "Missing evidence stays unverified. A failing census tool is recorded as a baseline failure. That failure is not a shipped or absent feature label."
+}
