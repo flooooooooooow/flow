@@ -84,47 +84,47 @@ func.func @report(%arg0: i32) -> () {
 func.return
 }
 func.func @main() -> i32 {
-%v23 = llvm.mlir.addressof @LIMIT : !llvm.ptr
-%v24 = llvm.load %v23 : !llvm.ptr -> i32
-%v25 = func.call @fib(%v24) : (i32) -> i64
-%v26 = llvm.mlir.addressof @str_4 : !llvm.ptr
-%v27 = llvm.call @printf(%v26, %v25) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
-%v28 = arith.constant 0 : i32
-%v29 = arith.constant 84 : i32
-%v30 = arith.constant 36 : i32
-%v31 = func.call @gcd(%v29, %v30) : (i32, i32) -> i32
-%v32 = llvm.mlir.addressof @str_3 : !llvm.ptr
-%v33 = llvm.call @printf(%v32, %v31) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v34 = arith.constant 0 : i32
-%v35 = arith.constant 0 : i32
-%v36 = arith.constant 17 : i32
-%v37 = arith.subi %v35, %v36 : i32
-%v38 = func.call @abs(%v37) : (i32) -> i32
-func.call @report(%v38) : (i32) -> ()
-%v39 = llvm.mlir.addressof @NAME : !llvm.ptr
-%v40 = func.call @puts(%v39) : (!llvm.ptr) -> i32
-%v41 = llvm.mlir.addressof @WIDE : !llvm.ptr
-%v42 = llvm.load %v41 : !llvm.ptr -> i64
-%v43 = llvm.mlir.addressof @str_4 : !llvm.ptr
-%v44 = llvm.call @printf(%v43, %v42) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
-%v45 = arith.constant 0 : i32
-%v46 = llvm.mlir.addressof @SCALE : !llvm.ptr
-%v47 = llvm.load %v46 : !llvm.ptr -> f64
-%v48 = arith.constant 3.0 : f64
-%v49 = arith.mulf %v47, %v48 : f64
-%v50 = llvm.mlir.addressof @str_5 : !llvm.ptr
-%v51 = llvm.call @printf(%v50, %v49) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
-%v52 = arith.constant 0 : i32
-%v53 = llvm.mlir.addressof @MASK : !llvm.ptr
-%v54 = llvm.load %v53 : !llvm.ptr -> i32
-%v55 = arith.ori %v54, %v54 : i32
-%v56 = llvm.mlir.addressof @str_3 : !llvm.ptr
-%v57 = llvm.call @printf(%v56, %v55) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v58 = arith.constant 0 : i32
-%v59 = arith.constant 0 : i32
-%v60 = llvm.mlir.constant(1 : i64) : i64
-%v61 = llvm.alloca %v60 x i32 : (i64) -> !llvm.ptr
-llvm.store %v59, %v61 : i32, !llvm.ptr
+%v23 = llvm.mlir.constant(1 : i64) : i64
+%v24 = llvm.alloca %v23 x i32 : (i64) -> !llvm.ptr
+%v25 = llvm.mlir.addressof @LIMIT : !llvm.ptr
+%v26 = llvm.load %v25 : !llvm.ptr -> i32
+%v27 = func.call @fib(%v26) : (i32) -> i64
+%v28 = llvm.mlir.addressof @str_4 : !llvm.ptr
+%v29 = llvm.call @printf(%v28, %v27) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%v30 = arith.constant 0 : i32
+%v31 = arith.constant 84 : i32
+%v32 = arith.constant 36 : i32
+%v33 = func.call @gcd(%v31, %v32) : (i32, i32) -> i32
+%v34 = llvm.mlir.addressof @str_3 : !llvm.ptr
+%v35 = llvm.call @printf(%v34, %v33) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v36 = arith.constant 0 : i32
+%v37 = arith.constant 0 : i32
+%v38 = arith.constant 17 : i32
+%v39 = arith.subi %v37, %v38 : i32
+%v40 = func.call @abs(%v39) : (i32) -> i32
+func.call @report(%v40) : (i32) -> ()
+%v41 = llvm.mlir.addressof @NAME : !llvm.ptr
+%v42 = func.call @puts(%v41) : (!llvm.ptr) -> i32
+%v43 = llvm.mlir.addressof @WIDE : !llvm.ptr
+%v44 = llvm.load %v43 : !llvm.ptr -> i64
+%v45 = llvm.mlir.addressof @str_4 : !llvm.ptr
+%v46 = llvm.call @printf(%v45, %v44) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%v47 = arith.constant 0 : i32
+%v48 = llvm.mlir.addressof @SCALE : !llvm.ptr
+%v49 = llvm.load %v48 : !llvm.ptr -> f64
+%v50 = arith.constant 3.0 : f64
+%v51 = arith.mulf %v49, %v50 : f64
+%v52 = llvm.mlir.addressof @str_5 : !llvm.ptr
+%v53 = llvm.call @printf(%v52, %v51) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+%v54 = arith.constant 0 : i32
+%v55 = llvm.mlir.addressof @MASK : !llvm.ptr
+%v56 = llvm.load %v55 : !llvm.ptr -> i32
+%v57 = arith.ori %v56, %v56 : i32
+%v58 = llvm.mlir.addressof @str_3 : !llvm.ptr
+%v59 = llvm.call @printf(%v58, %v57) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v60 = arith.constant 0 : i32
+%v61 = arith.constant 0 : i32
+llvm.store %v61, %v24 : i32, !llvm.ptr
 %v62 = arith.constant 0 : i32
 %v63 = llvm.mlir.addressof @LIMIT : !llvm.ptr
 %v64 = llvm.load %v63 : !llvm.ptr -> i32
@@ -141,14 +141,14 @@ cf.br ^b7(%v65 : index)
 %v74 = arith.select %v69, %v72, %v73 : i1
 cf.cond_br %v74, ^b8(%v71 : index), ^b9(%v71 : index)
 ^b8(%v75: index):
-%v76 = llvm.load %v61 : !llvm.ptr -> i32
+%v76 = llvm.load %v24 : !llvm.ptr -> i32
 %v77 = arith.index_cast %v75 : index to i32
 %v78 = arith.addi %v76, %v77 : i32
-llvm.store %v78, %v61 : i32, !llvm.ptr
+llvm.store %v78, %v24 : i32, !llvm.ptr
 %v79 = arith.addi %v75, %v70 : index
 cf.br ^b7(%v79 : index)
 ^b9(%v80: index):
-%v81 = llvm.load %v61 : !llvm.ptr -> i32
+%v81 = llvm.load %v24 : !llvm.ptr -> i32
 func.call @report(%v81) : (i32) -> ()
 %v82 = arith.constant 0 : i32
 func.return %v82 : i32

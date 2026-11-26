@@ -8,37 +8,37 @@ llvm.mlir.global internal constant @str_3("\C3\A9\00") {addr_space = 0 : i32} : 
 llvm.mlir.global internal constant @str_4("high byte %d %d\0A\00") {addr_space = 0 : i32} : !llvm.array<17 x i8>
 llvm.mlir.global internal constant @str_5("b at 1\0A\00") {addr_space = 0 : i32} : !llvm.array<8 x i8>
 func.func @byte_sum(%arg0: !llvm.ptr) -> i32 {
-%v1 = func.call @strlen(%arg0) : (!llvm.ptr) -> i64
-%v2 = arith.trunci %v1 : i64 to i32
-%v3 = arith.constant 0 : i32
-%v4 = llvm.mlir.constant(1 : i64) : i64
-%v5 = llvm.alloca %v4 x i32 : (i64) -> !llvm.ptr
-llvm.store %v3, %v5 : i32, !llvm.ptr
-%v6 = arith.constant 0 : i32
-%v7 = llvm.mlir.constant(1 : i64) : i64
-%v8 = llvm.alloca %v7 x i32 : (i64) -> !llvm.ptr
-llvm.store %v6, %v8 : i32, !llvm.ptr
+%v1 = llvm.mlir.constant(1 : i64) : i64
+%v2 = llvm.alloca %v1 x i32 : (i64) -> !llvm.ptr
+%v3 = llvm.mlir.constant(1 : i64) : i64
+%v4 = llvm.alloca %v3 x i32 : (i64) -> !llvm.ptr
+%v5 = func.call @strlen(%arg0) : (!llvm.ptr) -> i64
+%v6 = arith.trunci %v5 : i64 to i32
+%v7 = arith.constant 0 : i32
+llvm.store %v7, %v2 : i32, !llvm.ptr
+%v8 = arith.constant 0 : i32
+llvm.store %v8, %v4 : i32, !llvm.ptr
 cf.br ^b1
 ^b1:
-%v9 = llvm.load %v8 : !llvm.ptr -> i32
-%v10 = arith.cmpi slt, %v9, %v2 : i32
+%v9 = llvm.load %v4 : !llvm.ptr -> i32
+%v10 = arith.cmpi slt, %v9, %v6 : i32
 cf.cond_br %v10, ^b2, ^b3
 ^b2:
-%v11 = llvm.load %v5 : !llvm.ptr -> i32
-%v12 = llvm.load %v8 : !llvm.ptr -> i32
+%v11 = llvm.load %v2 : !llvm.ptr -> i32
+%v12 = llvm.load %v4 : !llvm.ptr -> i32
 %v13 = arith.extsi %v12 : i32 to i64
 %v14 = llvm.getelementptr %arg0[%v13] : (!llvm.ptr, i64) -> !llvm.ptr, i8
 %v15 = llvm.load %v14 : !llvm.ptr -> i8
 %v16 = arith.extui %v15 : i8 to i32
 %v17 = arith.addi %v11, %v16 : i32
-llvm.store %v17, %v5 : i32, !llvm.ptr
-%v18 = llvm.load %v8 : !llvm.ptr -> i32
+llvm.store %v17, %v2 : i32, !llvm.ptr
+%v18 = llvm.load %v4 : !llvm.ptr -> i32
 %v19 = arith.constant 1 : i32
 %v20 = arith.addi %v18, %v19 : i32
-llvm.store %v20, %v8 : i32, !llvm.ptr
+llvm.store %v20, %v4 : i32, !llvm.ptr
 cf.br ^b1
 ^b3:
-%v21 = llvm.load %v5 : !llvm.ptr -> i32
+%v21 = llvm.load %v2 : !llvm.ptr -> i32
 func.return %v21 : i32
 }
 func.func @main() -> i32 {

@@ -297,42 +297,42 @@ llvm.mlir.global internal constant @str_13("%lld\0A\00") {addr_space = 0 : i32} 
 llvm.mlir.global internal constant @str_14("%f\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
 llvm.mlir.global internal constant @str_15("first\0A\00") {addr_space = 0 : i32} : !llvm.array<7 x i8>
 func.func @total(%arg0: !llvm.ptr) -> i32 {
-%v1 = arith.constant 0 : i32
-%v2 = llvm.mlir.constant(1 : i64) : i64
-%v3 = llvm.alloca %v2 x i32 : (i64) -> !llvm.ptr
-llvm.store %v1, %v3 : i32, !llvm.ptr
-%v4 = arith.constant 0 : i32
-%v5 = llvm.mlir.constant(1 : i64) : i64
-%v6 = llvm.alloca %v5 x i32 : (i64) -> !llvm.ptr
-llvm.store %v4, %v6 : i32, !llvm.ptr
+%v1 = llvm.mlir.constant(1 : i64) : i64
+%v2 = llvm.alloca %v1 x i32 : (i64) -> !llvm.ptr
+%v3 = llvm.mlir.constant(1 : i64) : i64
+%v4 = llvm.alloca %v3 x i32 : (i64) -> !llvm.ptr
+%v5 = arith.constant 0 : i32
+llvm.store %v5, %v2 : i32, !llvm.ptr
+%v6 = arith.constant 0 : i32
+llvm.store %v6, %v4 : i32, !llvm.ptr
 cf.br ^b1
 ^b1:
-%v7 = llvm.load %v6 : !llvm.ptr -> i32
+%v7 = llvm.load %v4 : !llvm.ptr -> i32
 %v8 = arith.constant 5 : i32
 %v9 = arith.cmpi slt, %v7, %v8 : i32
 cf.cond_br %v9, ^b2, ^b3
 ^b2:
-%v10 = llvm.load %v3 : !llvm.ptr -> i32
-%v11 = llvm.load %v6 : !llvm.ptr -> i32
+%v10 = llvm.load %v2 : !llvm.ptr -> i32
+%v11 = llvm.load %v4 : !llvm.ptr -> i32
 %v12 = arith.extsi %v11 : i32 to i64
 %v13 = llvm.getelementptr %arg0[0, %v12] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
 %v14 = llvm.load %v13 : !llvm.ptr -> i32
 %v15 = arith.addi %v10, %v14 : i32
-llvm.store %v15, %v3 : i32, !llvm.ptr
-%v16 = llvm.load %v6 : !llvm.ptr -> i32
+llvm.store %v15, %v2 : i32, !llvm.ptr
+%v16 = llvm.load %v4 : !llvm.ptr -> i32
 %v17 = arith.constant 1 : i32
 %v18 = arith.addi %v16, %v17 : i32
-llvm.store %v18, %v6 : i32, !llvm.ptr
+llvm.store %v18, %v4 : i32, !llvm.ptr
 cf.br ^b1
 ^b3:
-%v19 = llvm.load %v3 : !llvm.ptr -> i32
+%v19 = llvm.load %v2 : !llvm.ptr -> i32
 func.return %v19 : i32
 }
 func.func @scale(%arg0: !llvm.ptr, %arg1: i32, %arg2: f64) -> f64 {
-%v20 = arith.constant 0.0 : f64
-%v21 = llvm.mlir.constant(1 : i64) : i64
-%v22 = llvm.alloca %v21 x f64 : (i64) -> !llvm.ptr
-llvm.store %v20, %v22 : f64, !llvm.ptr
+%v20 = llvm.mlir.constant(1 : i64) : i64
+%v21 = llvm.alloca %v20 x f64 : (i64) -> !llvm.ptr
+%v22 = arith.constant 0.0 : f64
+llvm.store %v22, %v21 : f64, !llvm.ptr
 %v23 = arith.constant 0 : i32
 %v24 = arith.index_cast %v23 : i32 to index
 %v25 = arith.index_cast %arg1 : i32 to index
@@ -347,181 +347,181 @@ cf.br ^b4(%v24 : index)
 %v33 = arith.select %v28, %v31, %v32 : i1
 cf.cond_br %v33, ^b5(%v30 : index), ^b6(%v30 : index)
 ^b5(%v34: index):
-%v35 = llvm.load %v22 : !llvm.ptr -> f64
+%v35 = llvm.load %v21 : !llvm.ptr -> f64
 %v36 = arith.index_cast %v34 : index to i64
 %v37 = llvm.getelementptr %arg0[%v36] : (!llvm.ptr, i64) -> !llvm.ptr, f64
 %v38 = llvm.load %v37 : !llvm.ptr -> f64
 %v39 = llvm.intr.fmuladd(%v38, %arg2, %v35) : (f64, f64, f64) -> f64
-llvm.store %v39, %v22 : f64, !llvm.ptr
+llvm.store %v39, %v21 : f64, !llvm.ptr
 %v40 = arith.addi %v34, %v29 : index
 cf.br ^b4(%v40 : index)
 ^b6(%v41: index):
-%v42 = llvm.load %v22 : !llvm.ptr -> f64
+%v42 = llvm.load %v21 : !llvm.ptr -> f64
 func.return %v42 : f64
 }
 func.func @main() -> i32 {
-%v43 = arith.constant 3 : i32
-%v44 = arith.constant 1 : i32
-%v45 = arith.constant 4 : i32
-%v46 = arith.constant 1 : i32
-%v47 = arith.constant 5 : i32
-%v48 = llvm.mlir.constant(1 : i64) : i64
-%v49 = llvm.alloca %v48 x !llvm.array<5 x i32> : (i64) -> !llvm.ptr
-%v50 = arith.constant 20 : i64
-func.call @flow_mem_note_stack(%v50) : (i64) -> ()
-%v51 = llvm.mlir.zero : !llvm.array<5 x i32>
-llvm.store %v51, %v49 : !llvm.array<5 x i32>, !llvm.ptr
-%v52 = llvm.mlir.constant(0 : i64) : i64
-%v53 = llvm.getelementptr %v49[0, %v52] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v43, %v53 : i32, !llvm.ptr
-%v54 = llvm.mlir.constant(1 : i64) : i64
-%v55 = llvm.getelementptr %v49[0, %v54] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v44, %v55 : i32, !llvm.ptr
-%v56 = llvm.mlir.constant(2 : i64) : i64
-%v57 = llvm.getelementptr %v49[0, %v56] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v45, %v57 : i32, !llvm.ptr
-%v58 = llvm.mlir.constant(3 : i64) : i64
-%v59 = llvm.getelementptr %v49[0, %v58] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v46, %v59 : i32, !llvm.ptr
-%v60 = llvm.mlir.constant(4 : i64) : i64
-%v61 = llvm.getelementptr %v49[0, %v60] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v47, %v61 : i32, !llvm.ptr
-%v62 = func.call @total(%v49) : (!llvm.ptr) -> i32
-%v63 = llvm.mlir.addressof @str_12 : !llvm.ptr
-%v64 = llvm.call @printf(%v63, %v62) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v65 = arith.constant 0 : i32
-%v66 = arith.constant 40 : i32
-%v67 = arith.constant 2 : i32
-%v68 = arith.extsi %v67 : i32 to i64
-%v69 = llvm.getelementptr %v49[0, %v68] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v66, %v69 : i32, !llvm.ptr
-%v70 = arith.constant 4 : i32
-%v71 = arith.extsi %v70 : i32 to i64
-%v72 = llvm.getelementptr %v49[0, %v71] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-%v73 = llvm.load %v72 : !llvm.ptr -> i32
-%v74 = arith.constant 100 : i32
-%v75 = arith.addi %v73, %v74 : i32
-%v76 = arith.extsi %v70 : i32 to i64
-%v77 = llvm.getelementptr %v49[0, %v76] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-llvm.store %v75, %v77 : i32, !llvm.ptr
-%v78 = func.call @total(%v49) : (!llvm.ptr) -> i32
-%v79 = llvm.mlir.addressof @str_12 : !llvm.ptr
-%v80 = llvm.call @printf(%v79, %v78) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v81 = arith.constant 0 : i32
-%v82 = arith.constant 2 : i32
-%v83 = arith.extsi %v82 : i32 to i64
-%v84 = llvm.getelementptr %v49[0, %v83] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-%v85 = llvm.load %v84 : !llvm.ptr -> i32
-%v86 = arith.constant 4 : i32
-%v87 = arith.extsi %v86 : i32 to i64
-%v88 = llvm.getelementptr %v49[0, %v87] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
-%v89 = llvm.load %v88 : !llvm.ptr -> i32
-%v90 = arith.addi %v85, %v89 : i32
-%v91 = llvm.mlir.addressof @str_12 : !llvm.ptr
-%v92 = llvm.call @printf(%v91, %v90) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v93 = arith.constant 0 : i32
-%v94 = arith.constant 1 : i32
-%v95 = arith.constant 2 : i32
-%v96 = arith.constant 3 : i32
-%v97 = llvm.mlir.constant(1 : i64) : i64
-%v98 = llvm.alloca %v97 x !llvm.array<3 x i64> : (i64) -> !llvm.ptr
-%v99 = arith.constant 24 : i64
-func.call @flow_mem_note_stack(%v99) : (i64) -> ()
-%v100 = llvm.mlir.zero : !llvm.array<3 x i64>
-llvm.store %v100, %v98 : !llvm.array<3 x i64>, !llvm.ptr
-%v101 = arith.extsi %v94 : i32 to i64
-%v102 = arith.extsi %v95 : i32 to i64
-%v103 = arith.extsi %v96 : i32 to i64
-%v104 = llvm.mlir.constant(0 : i64) : i64
-%v105 = llvm.getelementptr %v98[0, %v104] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
-llvm.store %v101, %v105 : i64, !llvm.ptr
-%v106 = llvm.mlir.constant(1 : i64) : i64
-%v107 = llvm.getelementptr %v98[0, %v106] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
-llvm.store %v102, %v107 : i64, !llvm.ptr
-%v108 = llvm.mlir.constant(2 : i64) : i64
-%v109 = llvm.getelementptr %v98[0, %v108] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
-llvm.store %v103, %v109 : i64, !llvm.ptr
-%v110 = arith.constant 0 : i32
-%v111 = arith.extsi %v110 : i32 to i64
+%v43 = llvm.mlir.constant(1 : i64) : i64
+%v44 = llvm.alloca %v43 x !llvm.array<5 x i32> : (i64) -> !llvm.ptr
+%v45 = llvm.mlir.constant(1 : i64) : i64
+%v46 = llvm.alloca %v45 x !llvm.array<3 x i64> : (i64) -> !llvm.ptr
+%v47 = llvm.mlir.constant(1 : i64) : i64
+%v48 = llvm.alloca %v47 x i64 : (i64) -> !llvm.ptr
+%v49 = llvm.mlir.constant(1 : i64) : i64
+%v50 = llvm.alloca %v49 x !llvm.array<4 x f64> : (i64) -> !llvm.ptr
+%v51 = llvm.mlir.constant(1 : i64) : i64
+%v52 = llvm.alloca %v51 x !llvm.array<2 x i1> : (i64) -> !llvm.ptr
+%v53 = arith.constant 3 : i32
+%v54 = arith.constant 1 : i32
+%v55 = arith.constant 4 : i32
+%v56 = arith.constant 1 : i32
+%v57 = arith.constant 5 : i32
+%v58 = arith.constant 20 : i64
+func.call @flow_mem_note_stack(%v58) : (i64) -> ()
+%v59 = llvm.mlir.zero : !llvm.array<5 x i32>
+llvm.store %v59, %v44 : !llvm.array<5 x i32>, !llvm.ptr
+%v60 = llvm.mlir.constant(0 : i64) : i64
+%v61 = llvm.getelementptr %v44[0, %v60] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v53, %v61 : i32, !llvm.ptr
+%v62 = llvm.mlir.constant(1 : i64) : i64
+%v63 = llvm.getelementptr %v44[0, %v62] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v54, %v63 : i32, !llvm.ptr
+%v64 = llvm.mlir.constant(2 : i64) : i64
+%v65 = llvm.getelementptr %v44[0, %v64] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v55, %v65 : i32, !llvm.ptr
+%v66 = llvm.mlir.constant(3 : i64) : i64
+%v67 = llvm.getelementptr %v44[0, %v66] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v56, %v67 : i32, !llvm.ptr
+%v68 = llvm.mlir.constant(4 : i64) : i64
+%v69 = llvm.getelementptr %v44[0, %v68] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v57, %v69 : i32, !llvm.ptr
+%v70 = func.call @total(%v44) : (!llvm.ptr) -> i32
+%v71 = llvm.mlir.addressof @str_12 : !llvm.ptr
+%v72 = llvm.call @printf(%v71, %v70) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v73 = arith.constant 0 : i32
+%v74 = arith.constant 40 : i32
+%v75 = arith.constant 2 : i32
+%v76 = arith.extsi %v75 : i32 to i64
+%v77 = llvm.getelementptr %v44[0, %v76] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v74, %v77 : i32, !llvm.ptr
+%v78 = arith.constant 4 : i32
+%v79 = arith.extsi %v78 : i32 to i64
+%v80 = llvm.getelementptr %v44[0, %v79] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+%v81 = llvm.load %v80 : !llvm.ptr -> i32
+%v82 = arith.constant 100 : i32
+%v83 = arith.addi %v81, %v82 : i32
+%v84 = arith.extsi %v78 : i32 to i64
+%v85 = llvm.getelementptr %v44[0, %v84] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+llvm.store %v83, %v85 : i32, !llvm.ptr
+%v86 = func.call @total(%v44) : (!llvm.ptr) -> i32
+%v87 = llvm.mlir.addressof @str_12 : !llvm.ptr
+%v88 = llvm.call @printf(%v87, %v86) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v89 = arith.constant 0 : i32
+%v90 = arith.constant 2 : i32
+%v91 = arith.extsi %v90 : i32 to i64
+%v92 = llvm.getelementptr %v44[0, %v91] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+%v93 = llvm.load %v92 : !llvm.ptr -> i32
+%v94 = arith.constant 4 : i32
+%v95 = arith.extsi %v94 : i32 to i64
+%v96 = llvm.getelementptr %v44[0, %v95] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<5 x i32>
+%v97 = llvm.load %v96 : !llvm.ptr -> i32
+%v98 = arith.addi %v93, %v97 : i32
+%v99 = llvm.mlir.addressof @str_12 : !llvm.ptr
+%v100 = llvm.call @printf(%v99, %v98) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v101 = arith.constant 0 : i32
+%v102 = arith.constant 1 : i32
+%v103 = arith.constant 2 : i32
+%v104 = arith.constant 3 : i32
+%v105 = arith.constant 24 : i64
+func.call @flow_mem_note_stack(%v105) : (i64) -> ()
+%v106 = llvm.mlir.zero : !llvm.array<3 x i64>
+llvm.store %v106, %v46 : !llvm.array<3 x i64>, !llvm.ptr
+%v107 = arith.extsi %v102 : i32 to i64
+%v108 = arith.extsi %v103 : i32 to i64
+%v109 = arith.extsi %v104 : i32 to i64
+%v110 = llvm.mlir.constant(0 : i64) : i64
+%v111 = llvm.getelementptr %v46[0, %v110] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
+llvm.store %v107, %v111 : i64, !llvm.ptr
 %v112 = llvm.mlir.constant(1 : i64) : i64
-%v113 = llvm.alloca %v112 x i64 : (i64) -> !llvm.ptr
-llvm.store %v111, %v113 : i64, !llvm.ptr
-%v114 = arith.constant 0 : i32
-%v115 = arith.constant 3 : i32
-%v116 = arith.index_cast %v114 : i32 to index
-%v117 = arith.index_cast %v115 : i32 to index
-%v118 = arith.constant 1 : index
-%v119 = arith.constant -1 : index
-%v120 = arith.cmpi sle, %v116, %v117 : index
-%v121 = arith.select %v120, %v118, %v119 : index
-cf.br ^b7(%v116 : index)
-^b7(%v122: index):
-%v123 = arith.cmpi slt, %v122, %v117 : index
-%v124 = arith.cmpi sgt, %v122, %v117 : index
-%v125 = arith.select %v120, %v123, %v124 : i1
-cf.cond_br %v125, ^b8(%v122 : index), ^b9(%v122 : index)
-^b8(%v126: index):
-%v127 = llvm.load %v113 : !llvm.ptr -> i64
-%v128 = arith.index_cast %v126 : index to i64
-%v129 = llvm.getelementptr %v98[0, %v128] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
-%v130 = llvm.load %v129 : !llvm.ptr -> i64
-%v131 = arith.constant 1000000 : i32
-%v132 = arith.extsi %v131 : i32 to i64
-%v133 = arith.muli %v130, %v132 : i64
-%v134 = arith.addi %v127, %v133 : i64
-llvm.store %v134, %v113 : i64, !llvm.ptr
-%v135 = arith.addi %v126, %v121 : index
-cf.br ^b7(%v135 : index)
-^b9(%v136: index):
-%v137 = llvm.load %v113 : !llvm.ptr -> i64
-%v138 = llvm.mlir.addressof @str_13 : !llvm.ptr
-%v139 = llvm.call @printf(%v138, %v137) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
-%v140 = arith.constant 0 : i32
-%v141 = arith.constant 0.5 : f64
-%v142 = arith.constant 1.5 : f64
-%v143 = arith.constant 2.5 : f64
-%v144 = arith.constant 3.5 : f64
-%v145 = llvm.mlir.constant(1 : i64) : i64
-%v146 = llvm.alloca %v145 x !llvm.array<4 x f64> : (i64) -> !llvm.ptr
-%v147 = arith.constant 32 : i64
-func.call @flow_mem_note_stack(%v147) : (i64) -> ()
-%v148 = llvm.mlir.zero : !llvm.array<4 x f64>
-llvm.store %v148, %v146 : !llvm.array<4 x f64>, !llvm.ptr
-%v149 = llvm.mlir.constant(0 : i64) : i64
-%v150 = llvm.getelementptr %v146[0, %v149] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
-llvm.store %v141, %v150 : f64, !llvm.ptr
-%v151 = llvm.mlir.constant(1 : i64) : i64
-%v152 = llvm.getelementptr %v146[0, %v151] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
-llvm.store %v142, %v152 : f64, !llvm.ptr
-%v153 = llvm.mlir.constant(2 : i64) : i64
-%v154 = llvm.getelementptr %v146[0, %v153] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
-llvm.store %v143, %v154 : f64, !llvm.ptr
-%v155 = llvm.mlir.constant(3 : i64) : i64
-%v156 = llvm.getelementptr %v146[0, %v155] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
-llvm.store %v144, %v156 : f64, !llvm.ptr
-%v157 = arith.constant 4 : i32
-%v158 = arith.constant 2.0 : f64
-%v159 = func.call @scale(%v146, %v157, %v158) : (!llvm.ptr, i32, f64) -> f64
-%v160 = llvm.mlir.addressof @str_14 : !llvm.ptr
-%v161 = llvm.call @printf(%v160, %v159) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
-%v162 = arith.constant 0 : i32
-%v163 = arith.constant 1 : i1
-%v164 = arith.constant 0 : i1
-%v165 = llvm.mlir.constant(1 : i64) : i64
-%v166 = llvm.alloca %v165 x !llvm.array<2 x i1> : (i64) -> !llvm.ptr
+%v113 = llvm.getelementptr %v46[0, %v112] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
+llvm.store %v108, %v113 : i64, !llvm.ptr
+%v114 = llvm.mlir.constant(2 : i64) : i64
+%v115 = llvm.getelementptr %v46[0, %v114] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
+llvm.store %v109, %v115 : i64, !llvm.ptr
+%v116 = arith.constant 0 : i32
+%v117 = arith.extsi %v116 : i32 to i64
+llvm.store %v117, %v48 : i64, !llvm.ptr
+%v118 = arith.constant 0 : i32
+%v119 = arith.constant 3 : i32
+%v120 = arith.index_cast %v118 : i32 to index
+%v121 = arith.index_cast %v119 : i32 to index
+%v122 = arith.constant 1 : index
+%v123 = arith.constant -1 : index
+%v124 = arith.cmpi sle, %v120, %v121 : index
+%v125 = arith.select %v124, %v122, %v123 : index
+cf.br ^b7(%v120 : index)
+^b7(%v126: index):
+%v127 = arith.cmpi slt, %v126, %v121 : index
+%v128 = arith.cmpi sgt, %v126, %v121 : index
+%v129 = arith.select %v124, %v127, %v128 : i1
+cf.cond_br %v129, ^b8(%v126 : index), ^b9(%v126 : index)
+^b8(%v130: index):
+%v131 = llvm.load %v48 : !llvm.ptr -> i64
+%v132 = arith.index_cast %v130 : index to i64
+%v133 = llvm.getelementptr %v46[0, %v132] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<3 x i64>
+%v134 = llvm.load %v133 : !llvm.ptr -> i64
+%v135 = arith.constant 1000000 : i32
+%v136 = arith.extsi %v135 : i32 to i64
+%v137 = arith.muli %v134, %v136 : i64
+%v138 = arith.addi %v131, %v137 : i64
+llvm.store %v138, %v48 : i64, !llvm.ptr
+%v139 = arith.addi %v130, %v125 : index
+cf.br ^b7(%v139 : index)
+^b9(%v140: index):
+%v141 = llvm.load %v48 : !llvm.ptr -> i64
+%v142 = llvm.mlir.addressof @str_13 : !llvm.ptr
+%v143 = llvm.call @printf(%v142, %v141) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+%v144 = arith.constant 0 : i32
+%v145 = arith.constant 0.5 : f64
+%v146 = arith.constant 1.5 : f64
+%v147 = arith.constant 2.5 : f64
+%v148 = arith.constant 3.5 : f64
+%v149 = arith.constant 32 : i64
+func.call @flow_mem_note_stack(%v149) : (i64) -> ()
+%v150 = llvm.mlir.zero : !llvm.array<4 x f64>
+llvm.store %v150, %v50 : !llvm.array<4 x f64>, !llvm.ptr
+%v151 = llvm.mlir.constant(0 : i64) : i64
+%v152 = llvm.getelementptr %v50[0, %v151] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
+llvm.store %v145, %v152 : f64, !llvm.ptr
+%v153 = llvm.mlir.constant(1 : i64) : i64
+%v154 = llvm.getelementptr %v50[0, %v153] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
+llvm.store %v146, %v154 : f64, !llvm.ptr
+%v155 = llvm.mlir.constant(2 : i64) : i64
+%v156 = llvm.getelementptr %v50[0, %v155] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
+llvm.store %v147, %v156 : f64, !llvm.ptr
+%v157 = llvm.mlir.constant(3 : i64) : i64
+%v158 = llvm.getelementptr %v50[0, %v157] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f64>
+llvm.store %v148, %v158 : f64, !llvm.ptr
+%v159 = arith.constant 4 : i32
+%v160 = arith.constant 2.0 : f64
+%v161 = func.call @scale(%v50, %v159, %v160) : (!llvm.ptr, i32, f64) -> f64
+%v162 = llvm.mlir.addressof @str_14 : !llvm.ptr
+%v163 = llvm.call @printf(%v162, %v161) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+%v164 = arith.constant 0 : i32
+%v165 = arith.constant 1 : i1
+%v166 = arith.constant 0 : i1
 %v167 = arith.constant 2 : i64
 func.call @flow_mem_note_stack(%v167) : (i64) -> ()
 %v168 = llvm.mlir.zero : !llvm.array<2 x i1>
-llvm.store %v168, %v166 : !llvm.array<2 x i1>, !llvm.ptr
+llvm.store %v168, %v52 : !llvm.array<2 x i1>, !llvm.ptr
 %v169 = llvm.mlir.constant(0 : i64) : i64
-%v170 = llvm.getelementptr %v166[0, %v169] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<2 x i1>
-llvm.store %v163, %v170 : i1, !llvm.ptr
+%v170 = llvm.getelementptr %v52[0, %v169] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<2 x i1>
+llvm.store %v165, %v170 : i1, !llvm.ptr
 %v171 = llvm.mlir.constant(1 : i64) : i64
-%v172 = llvm.getelementptr %v166[0, %v171] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<2 x i1>
-llvm.store %v164, %v172 : i1, !llvm.ptr
+%v172 = llvm.getelementptr %v52[0, %v171] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<2 x i1>
+llvm.store %v166, %v172 : i1, !llvm.ptr
 %v173 = arith.constant 0 : i32
 %v174 = arith.extsi %v173 : i32 to i64
-%v175 = llvm.getelementptr %v166[0, %v174] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<2 x i1>
+%v175 = llvm.getelementptr %v52[0, %v174] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<2 x i1>
 %v176 = llvm.load %v175 : !llvm.ptr -> i1
 cf.cond_br %v176, ^b10, ^b11
 ^b10:

@@ -75,23 +75,23 @@ llvm.store %v23, %v24 : i32, !llvm.ptr
 func.return %v26 : i32
 }
 func.func @main() -> i32 {
-%v27 = func.call @next_id() : () -> i32
-%v28 = func.call @next_id() : () -> i32
-%v29 = llvm.mlir.addressof @counter : !llvm.ptr
-%v30 = llvm.load %v29 : !llvm.ptr -> i32
-%v31 = llvm.mlir.addressof @str_1 : !llvm.ptr
-%v32 = llvm.call @printf(%v31, %v30) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
-%v33 = arith.constant 0 : i32
-%v34 = arith.constant 9 : i32
-%v35 = llvm.mlir.addressof @table : !llvm.ptr
-%v36 = arith.constant 2 : i32
-%v37 = arith.extsi %v36 : i32 to i64
-%v38 = llvm.getelementptr %v35[0, %v37] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
-llvm.store %v34, %v38 : i32, !llvm.ptr
-%v39 = arith.constant 0 : i32
-%v40 = llvm.mlir.constant(1 : i64) : i64
-%v41 = llvm.alloca %v40 x i32 : (i64) -> !llvm.ptr
-llvm.store %v39, %v41 : i32, !llvm.ptr
+%v27 = llvm.mlir.constant(1 : i64) : i64
+%v28 = llvm.alloca %v27 x i32 : (i64) -> !llvm.ptr
+%v29 = func.call @next_id() : () -> i32
+%v30 = func.call @next_id() : () -> i32
+%v31 = llvm.mlir.addressof @counter : !llvm.ptr
+%v32 = llvm.load %v31 : !llvm.ptr -> i32
+%v33 = llvm.mlir.addressof @str_1 : !llvm.ptr
+%v34 = llvm.call @printf(%v33, %v32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v35 = arith.constant 0 : i32
+%v36 = arith.constant 9 : i32
+%v37 = llvm.mlir.addressof @table : !llvm.ptr
+%v38 = arith.constant 2 : i32
+%v39 = arith.extsi %v38 : i32 to i64
+%v40 = llvm.getelementptr %v37[0, %v39] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
+llvm.store %v36, %v40 : i32, !llvm.ptr
+%v41 = arith.constant 0 : i32
+llvm.store %v41, %v28 : i32, !llvm.ptr
 %v42 = arith.constant 0 : i32
 %v43 = arith.constant 4 : i32
 %v44 = arith.index_cast %v42 : i32 to index
@@ -107,7 +107,7 @@ cf.br ^b1(%v44 : index)
 %v53 = arith.select %v48, %v51, %v52 : i1
 cf.cond_br %v53, ^b2(%v50 : index), ^b3(%v50 : index)
 ^b2(%v54: index):
-%v55 = llvm.load %v41 : !llvm.ptr -> i32
+%v55 = llvm.load %v28 : !llvm.ptr -> i32
 %v56 = llvm.mlir.addressof @table : !llvm.ptr
 %v57 = arith.index_cast %v54 : index to i32
 %v58 = arith.constant 4 : i32
@@ -120,11 +120,11 @@ func.call @__flow_fault(%v60) : (!llvm.ptr) -> ()
 %v62 = llvm.getelementptr %v56[0, %v61] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x i32>
 %v63 = llvm.load %v62 : !llvm.ptr -> i32
 %v64 = arith.addi %v55, %v63 : i32
-llvm.store %v64, %v41 : i32, !llvm.ptr
+llvm.store %v64, %v28 : i32, !llvm.ptr
 %v65 = arith.addi %v54, %v49 : index
 cf.br ^b1(%v65 : index)
 ^b3(%v66: index):
-%v67 = llvm.load %v41 : !llvm.ptr -> i32
+%v67 = llvm.load %v28 : !llvm.ptr -> i32
 %v68 = llvm.mlir.addressof @str_1 : !llvm.ptr
 %v69 = llvm.call @printf(%v68, %v67) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
 %v70 = arith.constant 0 : i32
