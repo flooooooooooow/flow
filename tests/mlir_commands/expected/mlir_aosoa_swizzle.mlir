@@ -27,22 +27,22 @@ func.return
 //   x: f32
 //   y: f32
 func.func @update() -> i32 {
-%v1 = llvm.mlir.undef : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
-%v2 = arith.constant 0 : i32
-%v3 = llvm.mlir.constant(1 : i64) : i64
-%v4 = llvm.alloca %v3 x i32 : (i64) -> !llvm.ptr
-llvm.store %v2, %v4 : i32, !llvm.ptr
+%v1 = llvm.mlir.constant(1 : i64) : i64
+%v2 = llvm.alloca %v1 x i32 : (i64) -> !llvm.ptr
+%v3 = llvm.mlir.undef : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
+%v4 = arith.constant 0 : i32
+llvm.store %v4, %v2 : i32, !llvm.ptr
 cf.br ^b1
 ^b1:
-%v5 = llvm.load %v4 : !llvm.ptr -> i32
+%v5 = llvm.load %v2 : !llvm.ptr -> i32
 %v6 = arith.constant 4 : i32
 %v7 = arith.cmpi slt, %v5, %v6 : i32
 cf.cond_br %v7, ^b2, ^b3
 ^b2:
 %v8 = arith.constant 1.0 : f64
-%v9 = llvm.extractvalue %v1[0] : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
-%v10 = llvm.load %v4 : !llvm.ptr -> i32
-%v11 = llvm.load %v4 : !llvm.ptr -> i32
+%v9 = llvm.extractvalue %v3[0] : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
+%v10 = llvm.load %v2 : !llvm.ptr -> i32
+%v11 = llvm.load %v2 : !llvm.ptr -> i32
 %v12 = arith.constant 2 : i32
 %v13 = arith.constant 32 : i32
 %v14 = arith.cmpi uge, %v12, %v13 : i32
@@ -56,9 +56,9 @@ func.call @__flow_fault(%v15) : (!llvm.ptr) -> ()
 %v19 = arith.truncf %v8 : f64 to f32
 memref.store %v19, %v9[%v18] : memref<4xf32>
 %v20 = arith.constant 2.0 : f64
-%v21 = llvm.extractvalue %v1[1] : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
-%v22 = llvm.load %v4 : !llvm.ptr -> i32
-%v23 = llvm.load %v4 : !llvm.ptr -> i32
+%v21 = llvm.extractvalue %v3[1] : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
+%v22 = llvm.load %v2 : !llvm.ptr -> i32
+%v23 = llvm.load %v2 : !llvm.ptr -> i32
 %v24 = arith.constant 2 : i32
 %v25 = arith.constant 32 : i32
 %v26 = arith.cmpi uge, %v24, %v25 : i32
@@ -71,13 +71,13 @@ func.call @__flow_fault(%v27) : (!llvm.ptr) -> ()
 %v30 = arith.index_cast %v29 : i32 to index
 %v31 = arith.truncf %v20 : f64 to f32
 memref.store %v31, %v21[%v30] : memref<4xf32>
-%v32 = llvm.load %v4 : !llvm.ptr -> i32
+%v32 = llvm.load %v2 : !llvm.ptr -> i32
 %v33 = arith.constant 1 : i32
 %v34 = arith.addi %v32, %v33 : i32
-llvm.store %v34, %v4 : i32, !llvm.ptr
+llvm.store %v34, %v2 : i32, !llvm.ptr
 cf.br ^b1
 ^b3:
-%v35 = llvm.load %v4 : !llvm.ptr -> i32
+%v35 = llvm.load %v2 : !llvm.ptr -> i32
 func.return %v35 : i32
 }
 }

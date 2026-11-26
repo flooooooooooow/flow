@@ -119,7 +119,9 @@ const FT_AUTO: i32 = -2
 # Values: v >= 0 prints as %v, v < 0 (above V_NONE) as %arg{-v-1}.
 const V_NONE: i32 = -1000000
 
-const MLG_MAX_STRUCTS: i32 = 256
+# Struct type ids run from MT_STRUCT to MT_LLARR, so up to 900 fit. Flow
+# Drive declares 267, past the old 256.
+const MLG_MAX_STRUCTS: i32 = 896
 const MLG_MAX_ARRS: i32 = 256
 const MLG_MAX_FNS: i32 = 8192
 const MLG_MAX_LOCALS: i32 = 4096
@@ -151,6 +153,12 @@ export struct Mlg {
     why_node: i32,
     last_line: i32,
     ind: i32,
+    # entry-block allocas of the function being emitted (mlg_alloca1)
+    h_out: ptr<u8>,
+    h_at: i32,
+    h_buf: ptr<u8>,
+    h_len: i32,
+    h_cap: i32,
     # value types / unsigned flags
     nval: i32,
     vt: ptr<i32>,
@@ -1736,6 +1744,21 @@ function mlg_emit_cplx_binop(m: ptr<Mlg>, e: i32, op: i32, lv: i32, lt: i32, rv:
 }
 
 # `(A, B) -> R`: a Flow function value (Python fn_* types).
+# A C function pointer type, `cfn(A, B) -> R` (the parser marks it with ival -2): a plain !llvm.ptr, called with an
+# indirect llvm.call (mlg_emit_cfn_call), as the C backend's R (*)(A, B).
+function mlg_ft_is_cfn(m: ptr<Mlg>, ft: i32) -> i32 {
+    if ft < 0 {
+        return 0
+    }
+    if mlg_kind(m, ft) != AST_TYPE {
+        return 0
+    }
+    if m[0].arena.nodes[ft].ival == 0 - 2 {
+        return 1
+    }
+    return 0
+}
+
 function mlg_ft_is_fn(m: ptr<Mlg>, ft: i32) -> i32 {
     if ft < 0 {
         return 0
@@ -1999,6 +2022,28 @@ function mlg_ct_put(buf: ptr<u8>, n: i32, cap: i32, s: ptr<u8>, len: i32) -> i32
     return k
 }
 
+# The headers the C backend's preamble includes, which @cEmbed C may rely on:
+# the side file of the C (mlg_write_cembed) and the type probe (mlg_ct_probe)
+# put them first.
+const MLG_C_PREAMBLE: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n"
+
+# @cEmbed text as C: \\ and \" unescaped, as flowc_cgen_put_cembed writes it.
+function mlg_ct_put_cembed(buf: ptr<u8>, n: i32, cap: i32, s: ptr<u8>, len: i32) -> i32 {
+    let mut k: i32 = n
+    let mut i: i32 = 0
+    while i < len and k < cap - 1 {
+        if s[i] == 92 and i + 1 < len and (s[i + 1] == 92 or s[i + 1] == 34) {
+            buf[k] = s[i + 1]
+            i = i + 2
+        } else {
+            buf[k] = s[i]
+            i = i + 1
+        }
+        k = k + 1
+    }
+    return k
+}
+
 function mlg_ct_puts(buf: ptr<u8>, n: i32, cap: i32, s: string) -> i32 {
     let p: ptr<u8> = s
     return mlg_ct_put(buf, n, cap, p, strlen(s) as i32)
@@ -2077,7 +2122,7 @@ function mlg_ct_layout_mt(m: ptr<Mlg>, sz: i32, al: i32, cl: i32) -> i32 {
 function mlg_ct_probe(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
     let cap: i32 = 1048576
     let buf: ptr<u8> = malloc(cap as i64)
-    let mut n: i32 = 0
+    let mut n: i32 = mlg_ct_puts(buf, 0, cap, MLG_C_PREAMBLE)
     let mut hdrs: i32 = 0
     let mut i: i32 = 0
     while i < m[0].arena.len {
@@ -2092,7 +2137,7 @@ function mlg_ct_probe(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
             hdrs = hdrs + 1
         }
         if k == AST_C_EMBED and mlg_ne(m, i) - mlg_ns(m, i) >= 2 {
-            n = mlg_ct_put(buf, n, cap, &m[0].src[mlg_ns(m, i) + 1], mlg_ne(m, i) - mlg_ns(m, i) - 2)
+            n = mlg_ct_put_cembed(buf, n, cap, &m[0].src[mlg_ns(m, i) + 1], mlg_ne(m, i) - mlg_ns(m, i) - 2)
             n = mlg_ct_puts(buf, n, cap, "\n")
             hdrs = hdrs + 1
         }
@@ -2197,6 +2242,9 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     }
     if mlg_ft_is_fn(m, ft) == 1 {
         return mlg_clo_mt(m, at)
+    }
+    if mlg_ft_is_cfn(m, ft) == 1 {
+        return MT_PTR
     }
     if m[0].arena.nodes[ft].c == AST_TYPE_CAPABILITY {
         # A capability value has no MLIR lowering (#1063; it was
@@ -3498,7 +3546,7 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
             }
         }
         let cl: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
-        if cl >= 0 and mlg_ft_is_fn(m, m[0].l_ft[cl]) == 1 {
+        if cl >= 0 and (mlg_ft_is_fn(m, m[0].l_ft[cl]) == 1 or mlg_ft_is_cfn(m, m[0].l_ft[cl]) == 1) {
             return m[0].arena.nodes[m[0].l_ft[cl]].b
         }
         let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, mlg_ns(m, e), mlg_ne(m, e)))
@@ -3728,6 +3776,11 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
     if kind == AST_FLOAT { return MT_F64 }
     if kind == AST_BOOL { return MT_I1 }
     if kind == AST_STRING { return MT_PTR }
+    if kind == AST_IF_EXPR {
+        # the type mlg_emit_if_expr yields: its then arm's (it was i32, so
+        # `(if c { 1.0 - t } else { t }) * w` multiplied with arith.muli)
+        return mlg_expr_mt(m, m[0].arena.nodes[e].b)
+    }
     if kind == AST_IDENT {
         if mlg_is_null(m, e) == 1 {
             return MT_PTR
@@ -3806,7 +3859,7 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
             }
         }
         let cl: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
-        if cl >= 0 and mlg_ft_is_fn(m, m[0].l_ft[cl]) == 1 {
+        if cl >= 0 and (mlg_ft_is_fn(m, m[0].l_ft[cl]) == 1 or mlg_ft_is_cfn(m, m[0].l_ft[cl]) == 1) {
             return mlg_ft_to_mt(m, m[0].arena.nodes[m[0].l_ft[cl]].b, e)
         }
         let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, mlg_ns(m, e), mlg_ne(m, e)))
@@ -4333,14 +4386,89 @@ function mlg_cast(m: ptr<Mlg>, v: i32, from_in: i32, dst: i32) -> i32 {
     return c3
 }
 
-# One-slot alloca holding v: returns the pointer.
-function mlg_alloca_store(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
+# ---------------------------------------------------------------------------
+# Entry-block allocas. An llvm.alloca outside a function's entry block is a
+# dynamic alloca: each time it runs it takes more stack, and LLVM does not
+# promote it to a register. A `let` in a loop body therefore grew the stack
+# every iteration (Flow Drive's handling test overflowed its 8 MB stack in
+# one function) and kept its value in memory. While a function body is
+# emitted its allocas collect here and go to the top of its entry block
+# when it ends. Mlg.h_out is the output buffer they belong to: a lambda
+# written to a buffer of its own saves this state and starts its own, and
+# text written to any other buffer keeps its allocas in place.
+# ---------------------------------------------------------------------------
+# Starts collecting the allocas of the function whose body begins here.
+function mlg_hoist_begin(m: ptr<Mlg>) {
+    if m[0].h_buf == null {
+        m[0].h_cap = 1048576
+        m[0].h_buf = malloc(m[0].h_cap as i64)
+    }
+    m[0].h_out = m[0].out
+    m[0].h_at = m[0].len
+    m[0].h_len = 0
+}
+
+# Puts the collected allocas at the top of the entry block and stops.
+function mlg_hoist_end(m: ptr<Mlg>) {
+    let n: i32 = m[0].h_len
+    let at: i32 = m[0].h_at
+    m[0].h_out = null
+    m[0].h_len = 0
+    if n == 0 or m[0].err != 0 {
+        return
+    }
+    if m[0].len + n > m[0].cap {
+        m[0].err = 1
+        return
+    }
+    let o: ptr<u8> = m[0].out
+    let mut i: i32 = m[0].len - 1
+    while i >= at {
+        o[i + n] = o[i]
+        i = i - 1
+    }
+    i = 0
+    while i < n {
+        o[at + i] = m[0].h_buf[i]
+        i = i + 1
+    }
+    m[0].len = m[0].len + n
+    if m[0].last_line >= at {
+        m[0].last_line = m[0].last_line + n
+    }
+}
+
+# `%one = llvm.mlir.constant(1 : i64) : i64` and `p = llvm.alloca %one x t`,
+# in the entry block while a function body collects them, else here.
+function mlg_alloca1(m: ptr<Mlg>, p: i32, t: i32) {
+    let hoist: bool = m[0].h_out != null and m[0].h_out == m[0].out
+    let saved_out: ptr<u8> = m[0].out
+    let saved_len: i32 = m[0].len
+    let saved_cap: i32 = m[0].cap
+    let saved_last: i32 = m[0].last_line
+    let saved_ind: i32 = m[0].ind
+    if hoist {
+        if m[0].h_len + 65536 > m[0].h_cap {
+            let nb: ptr<u8> = malloc((m[0].h_cap * 2) as i64)
+            let mut k: i32 = 0
+            while k < m[0].h_len {
+                nb[k] = m[0].h_buf[k]
+                k = k + 1
+            }
+            free(m[0].h_buf)
+            m[0].h_buf = nb
+            m[0].h_cap = m[0].h_cap * 2
+        }
+        m[0].out = m[0].h_buf
+        m[0].len = m[0].h_len
+        m[0].cap = m[0].h_cap
+        m[0].ind = 2
+    }
     let one: i32 = mlg_new_val(m, MT_I64)
     mlg_line(m)
     mlg_v(m, one)
     mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
     mlg_nl(m)
-    let p: i32 = mlg_new_val(m, MT_PTR)
     mlg_line(m)
     mlg_v(m, p)
     mlg_s(m, " = llvm.alloca ")
@@ -4349,6 +4477,20 @@ function mlg_alloca_store(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
     mlg_put_type(m, t)
     mlg_s(m, " : (i64) -> !llvm.ptr")
     mlg_nl(m)
+    if hoist {
+        m[0].h_len = m[0].len
+        m[0].out = saved_out
+        m[0].len = saved_len
+        m[0].cap = saved_cap
+        m[0].last_line = saved_last
+        m[0].ind = saved_ind
+    }
+}
+
+# One-slot alloca holding v: returns the pointer.
+function mlg_alloca_store(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
+    let p: i32 = mlg_new_val(m, MT_PTR)
+    mlg_alloca1(m, p, t)
     mlg_line(m)
     mlg_s(m, "llvm.store ")
     mlg_v(m, v)
@@ -5076,12 +5218,9 @@ function mlg_emit_printf_call(m: ptr<Mlg>, e: i32) -> i32 {
     let fk: i32 = mlg_intern_src(m, fmt, 0)
     let fp: i32 = mlg_emit_addressof_str(m, fk)
     let n: i32 = mlg_chain_len(m, m[0].arena.nodes[fmt].next)
-    if n > 32 {
-        mlg_refuse(m, e, "printf with more than 32 arguments")
-        return V_NONE
-    }
-    let mut vals: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    let mut tys: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    # as many arguments as the call has (a frame log prints 46)
+    let vals: ptr<i32> = mlg_alloc_i32(n + 1)
+    let tys: ptr<i32> = mlg_alloc_i32(n + 1)
     let mut a: i32 = m[0].arena.nodes[fmt].next
     let mut i: i32 = 0
     while a != AST_NONE {
@@ -5124,6 +5263,8 @@ function mlg_emit_printf_call(m: ptr<Mlg>, e: i32) -> i32 {
     }
     mlg_s(m, ") -> i32")
     mlg_nl(m)
+    mlg_free_i32(vals)
+    mlg_free_i32(tys)
     return r
 }
 
@@ -5296,8 +5437,7 @@ function mlg_call_is_libc(m: ptr<Mlg>, e: i32, k: i32) -> i32 {
 }
 
 # The MLIR type sizeof<T>() measures when call e is `sizeof_<T>` (the name
-# monomorphization gives it) and nothing else defines that name, else
-# MT_NONE.
+# monomorphization gives it), else MT_NONE.
 function mlg_sizeof_mt(m: ptr<Mlg>, e: i32) -> i32 {
     let ns: i32 = mlg_ns(m, e)
     let ne: i32 = mlg_ne(m, e)
@@ -6293,6 +6433,9 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         if mlg_ft_is_fn(m, m[0].l_ft[cl]) == 1 {
             return mlg_emit_fat_call(m, e, cl, want_value)
         }
+        if mlg_ft_is_cfn(m, m[0].l_ft[cl]) == 1 {
+            return mlg_emit_cfn_call(m, e, cl, want_value)
+        }
         if m[0].l_ft[cl] == FT_AUTO and m[0].clo_st >= 0 and m[0].l_mt[cl] == MT_STRUCT + m[0].clo_st and want_value == 1 {
             # Python's get_expression_type fails on such a call (the local
             # has no return type), so it cannot be used as a value.
@@ -6343,6 +6486,15 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     }
     if mlg_span_is(m, ns, ne, "printf") == 1 {
         return mlg_emit_printf_call(m, e)
+    }
+    # sizeof<T>() of a type the emitter can measure is that type's size,
+    # as the C backend's ((int64_t)sizeof(T)) (#952), even where a function
+    # of the monomorphized name exists: std.concurrent's placeholder
+    # `sizeof<T>() -> i64 { return 0 }` is instantiated as sizeof_<T> for
+    # every T a program measures, and calls went to it (calloc of 0 bytes).
+    let szt0: i32 = mlg_sizeof_mt(m, e)
+    if szt0 != MT_NONE {
+        return mlg_emit_sizeof(m, szt0)
     }
     let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, ns, ne))
     if mlg_span_is(m, ns, ne, "register_tile_outer_product") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 {
@@ -6791,8 +6943,21 @@ function mlg_struct_addr0(m: ptr<Mlg>, e: i32, sk: ptr<i32>) -> i32 {
             }
             let sft: i32 = m[0].arena.nodes[m[0].sv_node[sk0]].a
             if mlg_ft_is_pointer(m, sft) == 1 {
-                mlg_refuse(m, e, "field through a pointer static")
-                return V_NONE
+                # A ptr<S> static (`df.snd` with df: ptr<Drive>): the struct
+                # is where the static's pointer points, as for a pointer local.
+                let pk0: i32 = mlg_ft_struct(m, m[0].arena.nodes[sft].a)
+                if pk0 < 0 {
+                    return V_NONE
+                }
+                let pg0: i32 = mlg_new_val(m, MT_PTR)
+                mlg_line(m)
+                mlg_v(m, pg0)
+                mlg_s(m, " = llvm.mlir.addressof @")
+                mlg_span(m, mlg_ns(m, e), mlg_ne(m, e))
+                mlg_s(m, " : !llvm.ptr")
+                mlg_nl(m)
+                sk[0] = pk0
+                return mlg_load(m, pg0, MT_PTR)
             }
             let k0: i32 = mlg_ft_struct(m, sft)
             if k0 < 0 {
@@ -8960,8 +9125,9 @@ function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_nl(m)
         return ne
     }
-    if (op == TOK_PLUS or op == TOK_MINUS) and mlg_expr_mt(m, l) == MT_PTR and mlg_is_int_mt(mlg_expr_mt(m, r)) == 1 {
-        # Pointer arithmetic scales by the pointee, as in C.
+    if (op == TOK_PLUS or op == TOK_MINUS) and mlg_expr_mt(m, l) == MT_PTR and (mlg_is_int_mt(mlg_expr_mt(m, r)) == 1 or mlg_expr_mt(m, r) == MT_INDEX) {
+        # Pointer arithmetic scales by the pointee, as in C. A `for` variable
+        # is an index: `s.cyl + k` went through ptrtoint to i32 and back.
         let pv: i32 = mlg_emit_expr(m, l)
         let it: i32 = mlg_expr_mt(m, r)
         let mut iv: i32 = mlg_emit_expr(m, r)
@@ -9711,6 +9877,15 @@ function mlg_accessor_target(m: ptr<Mlg>, fnode: i32) -> i32 {
 }
 
 # Python generate_if_expression.
+# 1 for an integer, index or float MLIR type, which an arm of an if
+# expression is converted from or to (a `for` variable is an index).
+function mlg_if_expr_num(t: i32) -> i32 {
+    if mlg_is_int_mt(t) == 1 or mlg_is_float_mt(t) == 1 or t == MT_INDEX {
+        return 1
+    }
+    return 0
+}
+
 function mlg_emit_if_expr(m: ptr<Mlg>, e: i32) -> i32 {
     let ce: i32 = m[0].arena.nodes[e].a
     let te: i32 = m[0].arena.nodes[e].b
@@ -9749,9 +9924,15 @@ function mlg_emit_if_expr(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_s(m, ") {")
     mlg_nl(m)
     m[0].ind = m[0].ind + 1
-    let tv: i32 = mlg_emit_expr(m, te)
+    let mut tv: i32 = mlg_emit_expr(m, te)
     let mut tt: i32 = mlg_vty(m, tv)
     if tt == MT_NONE {
+        tt = rt
+    }
+    # Both arms yield the result type: a literal arm such as `0.0` is f64
+    # while the other reads an f32 (`if p != null { a[i] } else { 0.0 }`).
+    if tt != rt and mlg_if_expr_num(tt) == 1 and mlg_if_expr_num(rt) == 1 {
+        tv = mlg_cast(m, tv, tt, rt)
         tt = rt
     }
     mlg_line(m)
@@ -9765,9 +9946,13 @@ function mlg_emit_if_expr(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_s(m, "} else {")
     mlg_nl(m)
     m[0].ind = m[0].ind + 1
-    let ev: i32 = mlg_emit_expr(m, ee)
+    let mut ev: i32 = mlg_emit_expr(m, ee)
     let mut et: i32 = mlg_vty(m, ev)
     if et == MT_NONE {
+        et = tt
+    }
+    if et != tt and mlg_if_expr_num(et) == 1 and mlg_if_expr_num(tt) == 1 {
+        ev = mlg_cast(m, ev, et, tt)
         et = tt
     }
     mlg_line(m)
@@ -10309,6 +10494,88 @@ function mlg_emit_callback_closure(m: ptr<Mlg>, k: i32) -> i32 {
 }
 
 # Python _generate_fat_closure_call: call the closure held by local l.
+# A call through a local of C function pointer type: llvm.call %fp(args) : !llvm.ptr, (A, B) -> R, the arguments
+# converted to the parameter types as for a direct call.
+function mlg_emit_cfn_call(m: ptr<Mlg>, e: i32, l: i32, want_value: i32) -> i32 {
+    let ft: i32 = m[0].l_ft[l]
+    let mut fp: i32 = m[0].l_ssa[l]
+    if m[0].l_alloca[l] != V_NONE {
+        fp = mlg_load(m, m[0].l_alloca[l], MT_PTR)
+    }
+    let args: i32 = m[0].arena.nodes[e].a
+    let nargs: i32 = mlg_chain_len(m, args)
+    let ptys: i32 = m[0].arena.nodes[ft].a
+    let npt: i32 = mlg_chain_len(m, ptys)
+    if nargs > 32 {
+        mlg_refuse(m, e, "more than 32 arguments")
+        return V_NONE
+    }
+    if nargs != npt {
+        mlg_refuse(m, e, "call through a C function pointer with the wrong number of arguments")
+        return V_NONE
+    }
+    let mut vals: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut tys: array<i32, 32> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut an: i32 = args
+    let mut pt: i32 = ptys
+    let mut i: i32 = 0
+    while i < nargs and m[0].err == 0 {
+        let mut v: i32 = mlg_emit_expr(m, an)
+        let actual: i32 = mlg_val_mt(m, v, an)
+        let expected: i32 = mlg_ft_to_mt(m, pt, e)
+        if actual != expected {
+            v = mlg_cast(m, v, actual, expected)
+        }
+        vals[i] = v
+        tys[i] = expected
+        pt = m[0].arena.nodes[pt].next
+        an = m[0].arena.nodes[an].next
+        i = i + 1
+    }
+    if m[0].err != 0 {
+        return V_NONE
+    }
+    let rt: i32 = mlg_ft_to_mt(m, m[0].arena.nodes[ft].b, e)
+    let mut r: i32 = V_NONE
+    mlg_line(m)
+    if rt != MT_VOID {
+        r = mlg_new_val(m, rt)
+        mlg_v(m, r)
+        mlg_s(m, " = ")
+    }
+    mlg_s(m, "llvm.call ")
+    mlg_v(m, fp)
+    mlg_s(m, "(")
+    i = 0
+    while i < nargs {
+        if i > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_v(m, vals[i])
+        i = i + 1
+    }
+    mlg_s(m, ") : !llvm.ptr, (")
+    i = 0
+    while i < nargs {
+        if i > 0 {
+            mlg_s(m, ", ")
+        }
+        mlg_put_type(m, tys[i])
+        i = i + 1
+    }
+    mlg_s(m, ") -> ")
+    if rt == MT_VOID {
+        mlg_s(m, "()")
+    } else {
+        mlg_put_type(m, rt)
+    }
+    mlg_nl(m)
+    if rt == MT_VOID and want_value == 1 {
+        mlg_refuse(m, e, "value of a void call")
+    }
+    return r
+}
+
 function mlg_emit_fat_call(m: ptr<Mlg>, e: i32, l: i32, want_value: i32) -> i32 {
     let ft: i32 = m[0].l_ft[l]
     let ct: i32 = mlg_clo_mt(m, e)
@@ -10619,6 +10886,15 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
     mlg_put_type(m, rt)
     mlg_s(m, " {")
     mlg_nl(m)
+    # the lambda's allocas go to its own entry block; the enclosing
+    # function's collection resumes after it
+    let sh_out: ptr<u8> = m[0].h_out
+    let sh_at: i32 = m[0].h_at
+    let sh_len: i32 = m[0].h_len
+    let sh_buf: ptr<u8> = m[0].h_buf
+    let sh_cap: i32 = m[0].h_cap
+    m[0].h_buf = null
+    mlg_hoist_begin(m)
     m[0].ind = 2
     i = 0
     while i < nf {
@@ -10664,6 +10940,13 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
             mlg_nl(m)
         }
     }
+    mlg_hoist_end(m)
+    free(m[0].h_buf)
+    m[0].h_out = sh_out
+    m[0].h_at = sh_at
+    m[0].h_len = sh_len
+    m[0].h_buf = sh_buf
+    m[0].h_cap = sh_cap
     m[0].ind = 1
     mlg_line(m)
     mlg_s(m, "}")
@@ -11072,19 +11355,7 @@ function mlg_emit_llarr_buf(m: ptr<Mlg>, la: i32) -> i32 {
         mlg_s(m, ") -> !llvm.ptr")
         mlg_nl(m)
     } else {
-        let one: i32 = mlg_new_val(m, MT_I64)
-        mlg_line(m)
-        mlg_v(m, one)
-        mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
-        mlg_nl(m)
-        mlg_line(m)
-        mlg_v(m, p)
-        mlg_s(m, " = llvm.alloca ")
-        mlg_v(m, one)
-        mlg_s(m, " x ")
-        mlg_put_type(m, la)
-        mlg_s(m, " : (i64) -> !llvm.ptr")
-        mlg_nl(m)
+        mlg_alloca1(m, p, la)
         mlg_mem_use(m)
         let nb: i32 = mlg_new_val(m, MT_I64)
         mlg_line(m)
@@ -11264,20 +11535,8 @@ function mlg_emit_memref_lit(m: ptr<Mlg>, e: i32, hint: i32) -> i32 {
     }
     if mlg_is_struct_mt(et) == 1 or et == MT_PTR {
         let la: i32 = mlg_llarr_of(m, et, n)
-        let one: i32 = mlg_new_val(m, MT_I64)
-        mlg_line(m)
-        mlg_v(m, one)
-        mlg_s(m, " = llvm.mlir.constant(1 : i64) : i64")
-        mlg_nl(m)
         let p: i32 = mlg_new_val(m, MT_PTR)
-        mlg_line(m)
-        mlg_v(m, p)
-        mlg_s(m, " = llvm.alloca ")
-        mlg_v(m, one)
-        mlg_s(m, " x ")
-        mlg_put_type(m, la)
-        mlg_s(m, " : (i64) -> !llvm.ptr")
-        mlg_nl(m)
+        mlg_alloca1(m, p, la)
         m[0].v_llarr[p] = la
         let mut j: i32 = 0
         while j < n {
@@ -12389,12 +12648,49 @@ function mlg_match_default(m: ptr<Mlg>, st: i32) -> i32 {
 
 function mlg_assigned_block(m: ptr<Mlg>, b: i32, buf: ptr<i32>, n0: i32) -> i32
 
+# The names a scan has seen declared (`let`, a `for` variable) in the blocks
+# it is inside, as src spans. An assignment to one of them writes that
+# declaration, which ends with its block, so it is no assignment to a local
+# of the same name outside: such an assignment merged at an if join passed
+# the outer value through the join and out of an enclosing loop ("operand
+# does not dominate this use"). Past the capacity names go unrecorded, which
+# counts their assignments as before.
+const MLG_MAX_SCAN_DECLS: i32 = 1024
+let mut mlg_scan_decl: ptr<i32> = null
+let mut mlg_scan_ndecl: i32 = 0
+
+function mlg_scan_declare(m: ptr<Mlg>, ns: i32, ne: i32) {
+    if mlg_scan_decl == null {
+        mlg_scan_decl = mlg_alloc_i32(MLG_MAX_SCAN_DECLS * 2)
+    }
+    if mlg_scan_ndecl < MLG_MAX_SCAN_DECLS {
+        mlg_scan_decl[2 * mlg_scan_ndecl] = ns
+        mlg_scan_decl[2 * mlg_scan_ndecl + 1] = ne
+        mlg_scan_ndecl = mlg_scan_ndecl + 1
+    }
+}
+
+function mlg_scan_declared(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = mlg_scan_ndecl - 1
+    while i >= 0 {
+        if mlg_span_eq(m, ns, ne, mlg_scan_decl[2 * i], mlg_scan_decl[2 * i + 1]) == 1 {
+            return 1
+        }
+        i = i - 1
+    }
+    return 0
+}
+
 function mlg_assigned_stmt(m: ptr<Mlg>, st: i32, buf: ptr<i32>, n0: i32) -> i32 {
     let k: i32 = mlg_kind(m, st)
     let mut n: i32 = n0
+    if k == AST_LET {
+        mlg_scan_declare(m, mlg_ns(m, st), mlg_ne(m, st))
+        return n
+    }
     if k == AST_ASSIGN {
         let t: i32 = m[0].arena.nodes[st].a
-        if mlg_kind(m, t) == AST_IDENT {
+        if mlg_kind(m, t) == AST_IDENT and mlg_scan_declared(m, mlg_ns(m, t), mlg_ne(m, t)) == 0 {
             n = mlg_names_add(m, buf, n, mlg_ns(m, t), mlg_ne(m, t))
         }
         return n
@@ -12424,7 +12720,12 @@ function mlg_assigned_stmt(m: ptr<Mlg>, st: i32, buf: ptr<i32>, n0: i32) -> i32 
         return mlg_assigned_block(m, m[0].arena.nodes[st].b, buf, n)
     }
     if k == AST_FOR {
-        return mlg_assigned_block(m, m[0].arena.nodes[st].c, buf, n)
+        # the loop variable is declared for the body
+        let saved: i32 = mlg_scan_ndecl
+        mlg_scan_declare(m, mlg_ns(m, st), mlg_ne(m, st))
+        n = mlg_assigned_block(m, m[0].arena.nodes[st].c, buf, n)
+        mlg_scan_ndecl = saved
+        return n
     }
     return n
 }
@@ -12434,11 +12735,13 @@ function mlg_assigned_block(m: ptr<Mlg>, b: i32, buf: ptr<i32>, n0: i32) -> i32 
     if b == AST_NONE {
         return n
     }
+    let saved: i32 = mlg_scan_ndecl
     let mut st: i32 = m[0].arena.nodes[b].a
     while st != AST_NONE {
         n = mlg_assigned_stmt(m, st, buf, n)
         st = m[0].arena.nodes[st].next
     }
+    mlg_scan_ndecl = saved
     return n
 }
 
@@ -15000,7 +15303,16 @@ function mlg_emit_scf_parallel(m: ptr<Mlg>, st: i32, step_val: i32) {
     mlg_nl(m)
 }
 
+# A for statement. Its loop variable is bound for the body only: the local table goes back to its size before the
+# loop, so a later `let` or an if join does not find the dead induction value by its name (#38 gave blocks their
+# scope; the variable is bound outside the body's block).
 function mlg_emit_for(m: ptr<Mlg>, st: i32) {
+    let saved: i32 = m[0].nloc
+    mlg_emit_for_inner(m, st)
+    m[0].nloc = saved
+}
+
+function mlg_emit_for_inner(m: ptr<Mlg>, st: i32) {
     let par: i32 = mlg_for_is_parallel(m, st)
     if par == 0 and mlg_affine_tile_config_valid(m, st) == 0 {
         return
@@ -15808,6 +16120,7 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
     mlg_put_type(m, rt)
     mlg_s(m, " {")
     mlg_nl(m)
+    mlg_hoist_begin(m)
     m[0].ind = m[0].ind + 1
     p = params
     while p != AST_NONE {
@@ -15870,6 +16183,7 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
         }
         mlg_nl(m)
     }
+    mlg_hoist_end(m)
     m[0].ind = m[0].ind - 1
     mlg_line(m)
     mlg_s(m, "}")
@@ -16633,8 +16947,10 @@ function mlg_add_static(m: ptr<Mlg>, d: i32) {
         return
     }
     let ty: i32 = m[0].arena.nodes[d].a
-    if ty == AST_NONE or m[0].arena.nodes[d].b == AST_NONE or m[0].arena.nodes[d].ival != 1 {
-        mlg_refuse(m, d, "top-level let that is not `let mut name: T = value`")
+    # A top-level `let` without `mut` is the same storage with its initializer,
+    # which nothing writes (tables generated as `let NAME: array<f64, N> = [...]`).
+    if ty == AST_NONE or m[0].arena.nodes[d].b == AST_NONE {
+        mlg_refuse(m, d, "top-level let that is not `let [mut] name: T = value`")
         return
     }
     if mlg_ft_is_array(m, ty) == 1 {
@@ -22721,7 +23037,7 @@ function mlg_write_cembed(m: ptr<Mlg>, root: i32) -> i32 {
     if total == 0 {
         return 0
     }
-    let pre: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n"
+    let pre: string = MLG_C_PREAMBLE
     let pl: i32 = strlen(pre) as i32
     let buf: ptr<u8> = malloc((total + pl + 16) as i64)
     let prp: ptr<u8> = pre
@@ -22734,9 +23050,10 @@ function mlg_write_cembed(m: ptr<Mlg>, root: i32) -> i32 {
     while item != AST_NONE {
         let d2: i32 = mlg_unwrap(m, item)
         if mlg_kind(m, d2) == AST_C_EMBED {
-            # The quoted text, quotes stripped, as the C backend writes it,
-            # except that `static` and `inline` opening a line are dropped:
-            # the lowered MLIR calls these functions from another object.
+            # The quoted text, quotes stripped and \\ and \" unescaped, as the
+            # C backend writes it (flowc_cgen_put_cembed), except that `static`
+            # and `inline` opening a line are dropped: the lowered MLIR calls
+            # these functions from another object.
             let mut i: i32 = mlg_ns(m, d2) + 1
             let stop: i32 = mlg_ne(m, d2) - 1
             let mut bol: i32 = 1
@@ -22756,10 +23073,18 @@ function mlg_write_cembed(m: ptr<Mlg>, root: i32) -> i32 {
                     }
                 }
                 if i < stop {
-                    buf[n] = m[0].src[i]
-                    n = n + 1
-                    bol = if m[0].src[i] == 10 { 1 } else { 0 }
-                    i = i + 1
+                    let ch: u8 = m[0].src[i]
+                    if ch == 92 and i + 1 < stop and (m[0].src[i + 1] == 92 or m[0].src[i + 1] == 34) {
+                        buf[n] = m[0].src[i + 1]
+                        n = n + 1
+                        bol = 0
+                        i = i + 2
+                    } else {
+                        buf[n] = ch
+                        n = n + 1
+                        bol = if ch == 10 { 1 } else { 0 }
+                        i = i + 1
+                    }
                 }
             }
             buf[n] = 10
@@ -22906,7 +23231,8 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         nsp: 0, i64_ft: AST_NONE, sft: mlg_alloc_i32(8),
         clo_st: 0 - 1, lam_buf: malloc(MLG_SIDE_CAP as i64), lam_len: 0,
         cb_buf: malloc(MLG_SIDE_CAP as i64), cb_len: 0,
-        cb_fn: mlg_alloc_i32(MLG_MAX_FNS), ncb: 0, nlambda: 0, env_val: 0 - 1,
+        cb_fn: mlg_alloc_i32(MLG_MAX_FNS), ncb: 0, nlambda: 0,
+        h_out: null, h_at: 0, h_buf: null, h_len: 0, h_cap: 0, env_val: 0 - 1,
         lc_need: 0, hp_need: 0, chk: 0 - 1, lit_want: 0 - 1,
         uk_ns: mlg_alloc_i32(MLG_MAX_UK), uk_ne: mlg_alloc_i32(MLG_MAX_UK), uk_np: mlg_alloc_i32(MLG_MAX_UK),
         uk_rt: mlg_alloc_i32(MLG_MAX_UK), uk_pt: mlg_alloc_i32(MLG_MAX_UK * 16), nuk: 0,
