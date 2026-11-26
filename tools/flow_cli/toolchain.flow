@@ -1424,6 +1424,28 @@ export function gpu_link_cleanup(inputs: ptr<ProcStrs>) {
     }
 }
 
+# The native window backend that lib/stdlib/gfx.flow calls (flow_gfx_*), for a link
+# of lowered MLIR, as link_gfx_program links it for the C backend: gfx_macos.m with
+# Cocoa on Darwin, gfx_linux.c with SDL2 elsewhere.
+export function gfx_backend_sources() -> ptr<ProcStrs> {
+    if s_eq(uname_s(), "Darwin") {
+        return sl_of1(TC_ROOT + "/runtime/gfx_macos.m")
+    }
+    return sl_of1(TC_ROOT + "/runtime/gfx_linux.c")
+}
+
+export function gfx_backend_ldflags() -> ptr<ProcStrs> {
+    if s_eq(uname_s(), "Darwin") {
+        return s_words("-framework Cocoa -framework CoreGraphics -framework QuartzCore -framework CoreText")
+    }
+    let probe: ptr<ProcCmd> = cmd(sl_of3("pkg-config", "--exists", "sdl2"))
+    cmd_quiet(probe)
+    if have("pkg-config") and run(probe) == 0 {
+        return s_words(capture(cmd(sl_of3("pkg-config", "--libs", "sdl2"))))
+    }
+    return sl_of1("-lSDL2")
+}
+
 export function flow_link_mlir_ll(ll: string, exe: string, embed: string, program: string) -> i32 {
     gpu_link_flags()
     concurrency_flags()
@@ -1454,13 +1476,24 @@ export function flow_link_mlir_ll(ll: string, exe: string, embed: string, progra
     sl_push(a, TC_ROOT + "/runtime/flow_python_embed.c")
     sl_extend(a, CONC_SOURCES)
     sl_extend(a, rtf)
-    let gpu: ptr<ProcStrs> = gpu_link_inputs(exe)
+    # A program that opens a window calls the gfx backend, which the runtime does not
+    # hold: the link failed with every flow_gfx_* undefined.
+    let gfx: bool = s_contains(read_text(ll), "@flow_gfx_")
+    let objc: ptr<ProcStrs> = sl_new()
+    sl_extend(objc, GPU_SOURCES)
+    if gfx {
+        sl_extend(objc, gfx_backend_sources())
+    }
+    let gpu: ptr<ProcStrs> = objc_inputs(objc, exe, null)
     if gpu == null {
         return 1
     }
     sl_extend(a, gpu)
     sl_extend(a, py_ldflags())
     sl_extend(a, native)
+    if gfx {
+        sl_extend(a, gfx_backend_ldflags())
+    }
     sl_extend(a, GPU_LDFLAGS)
     sl_extend(a, CONC_LDFLAGS)
     sl_push2(a, "-lm", "-o")

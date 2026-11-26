@@ -21,34 +21,34 @@ define void @__flow_fault(ptr %0) {
 }
 
 define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
-  br label %4
+  %4 = alloca float, i64 1, align 4
+  br label %5
 
-4:                                                ; preds = %49, %3
-  %5 = phi i64 [ %50, %49 ], [ 0, %3 ]
-  %6 = icmp slt i64 %5, 2
-  br i1 %6, label %7, label %51
+5:                                                ; preds = %49, %3
+  %6 = phi i64 [ %50, %49 ], [ 0, %3 ]
+  %7 = icmp slt i64 %6, 2
+  br i1 %7, label %8, label %51
 
-7:                                                ; preds = %4
-  br label %8
+8:                                                ; preds = %5
+  br label %9
 
-8:                                                ; preds = %40, %7
-  %9 = phi i64 [ %48, %40 ], [ 0, %7 ]
-  %10 = icmp slt i64 %9, 2
-  br i1 %10, label %11, label %49
+9:                                                ; preds = %40, %8
+  %10 = phi i64 [ %48, %40 ], [ 0, %8 ]
+  %11 = icmp slt i64 %10, 2
+  br i1 %11, label %12, label %49
 
-11:                                               ; preds = %8
-  %12 = alloca float, i64 1, align 4
-  store float 0.000000e+00, ptr %12, align 4
+12:                                               ; preds = %9
+  store float 0.000000e+00, ptr %4, align 4
   br label %13
 
-13:                                               ; preds = %34, %11
-  %14 = phi i64 [ %39, %34 ], [ 0, %11 ]
+13:                                               ; preds = %34, %12
+  %14 = phi i64 [ %39, %34 ], [ 0, %12 ]
   %15 = icmp slt i64 %14, 2
   br i1 %15, label %16, label %40
 
 16:                                               ; preds = %13
-  %17 = load float, ptr %12, align 4
-  %18 = trunc i64 %5 to i32
+  %17 = load float, ptr %4, align 4
+  %18 = trunc i64 %6 to i32
   %19 = mul i32 %18, 2
   %20 = trunc i64 %14 to i32
   %21 = add i32 %19, %20
@@ -65,7 +65,7 @@ define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
   %27 = load float, ptr %26, align 4
   %28 = trunc i64 %14 to i32
   %29 = mul i32 %28, 2
-  %30 = trunc i64 %9 to i32
+  %30 = trunc i64 %10 to i32
   %31 = add i32 %29, %30
   %32 = icmp uge i32 %31, 4
   br i1 %32, label %33, label %34
@@ -79,27 +79,27 @@ define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
   %36 = getelementptr [4 x float], ptr %2, i32 0, i64 %35
   %37 = load float, ptr %36, align 4
   %38 = call float @llvm.fmuladd.f32(float %27, float %37, float %17)
-  store float %38, ptr %12, align 4
+  store float %38, ptr %4, align 4
   %39 = add i64 %14, 1
   br label %13
 
 40:                                               ; preds = %13
-  %41 = load float, ptr %12, align 4
-  %42 = trunc i64 %5 to i32
+  %41 = load float, ptr %4, align 4
+  %42 = trunc i64 %6 to i32
   %43 = mul i32 %42, 2
-  %44 = trunc i64 %9 to i32
+  %44 = trunc i64 %10 to i32
   %45 = add i32 %43, %44
   %46 = sext i32 %45 to i64
   %47 = getelementptr [4 x float], ptr %0, i32 0, i64 %46
   store float %41, ptr %47, align 4
-  %48 = add i64 %9, 1
-  br label %8
+  %48 = add i64 %10, 1
+  br label %9
 
-49:                                               ; preds = %8
-  %50 = add i64 %5, 1
-  br label %4
+49:                                               ; preds = %9
+  %50 = add i64 %6, 1
+  br label %5
 
-51:                                               ; preds = %4
+51:                                               ; preds = %5
   ret i32 0
 }
 
