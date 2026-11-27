@@ -1019,7 +1019,36 @@ export function record_gfx_program(args: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
     }
+    warn_large_frames(rec_dir)
     return 0
+}
+
+# Raw PPM frames are uncompressed: a 2880x1800 frame is 15 MB, so a short run
+# at Retina size leaves close to a gigabyte behind. Say so when a recording
+# passes RECORD_WARN_MB, so the frames get deleted once they have been read.
+const RECORD_WARN_MB: i32 = 200
+
+function warn_large_frames(rec_dir: string) {
+    let mut dir: string = rec_dir
+    if s_len(dir) == 0 {
+        dir = env_or("FLOW_GFX_RECORD_DIR", "frames")
+    }
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let n: i32 = sl_len(names)
+    let mut bytes: i64 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let name: string = sl_get(names, i)
+        if s_ends(name, ".ppm") {
+            bytes = bytes + file_size(dir + "/" + name)
+        }
+        i = i + 1
+    }
+    let mb: i32 = (bytes / 1048576) as i32
+    if mb >= RECORD_WARN_MB {
+        warning("Raw frames in " + dir + " take " + s_itoa(mb) + " MB. Delete them once you have read them.")
+        info("A layout check needs one or two frames: --frames 2")
+    }
 }
 
 # `shift 2` under `set -e`: with one argument left the shift fails and the

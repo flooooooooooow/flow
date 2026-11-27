@@ -450,6 +450,17 @@ int32_t flow_gfx_metrics(void *handle, int32_t *out) {
     return 1;
 }
 
+void flow_gfx_maximize(void *handle) {
+    (void)handle;
+}
+
+/* No window to present to: frames always go through the recorder. */
+void flow_gfx_set_present_hook(void *handle, void *present, void *wait) {
+    (void)handle;
+    (void)present;
+    (void)wait;
+}
+
 void flow_gfx_cursor(void *handle, int32_t kind) {
     (void)handle;
     (void)kind;

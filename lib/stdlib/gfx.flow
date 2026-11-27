@@ -40,6 +40,8 @@ extern { function flow_gfx_mouse(ctx: ptr<void>, out: ptr<i32>) -> i32 }
 extern { function flow_gfx_text(ctx: ptr<void>, x: i32, y: i32, text: string, size: i32, r: u8, g: u8, b: u8) -> void }
 extern { function flow_gfx_init_hidpi(w: i32, h: i32, title: string, flags: i32) -> ptr<void> }
 extern { function flow_gfx_metrics(ctx: ptr<void>, out: ptr<i32>) -> i32 }
+extern { function flow_gfx_maximize(ctx: ptr<void>) -> void }
+extern { function flow_gfx_set_present_hook(ctx: ptr<void>, present: ptr<void>, wait: ptr<void>) -> void }
 extern { function flow_gfx_cursor(ctx: ptr<void>, kind: i32) -> void }
 extern { function flow_gfx_blit_rgb_region(ctx: ptr<void>, src: ptr<u8>, src_w: i32, x: i32, y: i32, w: i32, h: i32) -> void }
 extern { function flow_gfx_text_ex(ctx: ptr<void>, x: i32, baseline: i32, text: string, size: i32, rgb: i32, style: i32, measure: i32) -> i32 }
@@ -219,6 +221,23 @@ export const GFX_RESIZABLE: i32 = 1
 # A window of w x h points with a framebuffer in device pixels. flags: GFX_RESIZABLE.
 export function gfx_open_hidpi(w: i32, h: i32, title: string, flags: i32) -> Gfx {
     return Gfx { ctx: flow_gfx_init_hidpi(w, h, title, flags) }
+}
+
+# Grows the window to the usable area of its screen (the visible frame on macOS, maximized under SDL; nothing in
+# the recorder or the browser). A HiDPI framebuffer follows the new size.
+export function gfx_maximize(g: Gfx) -> void {
+    flow_gfx_maximize(g.ctx)
+}
+
+# A program with its own Metal renderer hands the window its present function
+# (C: int32_t present(void *layer, const uint8_t *rgb, const uint8_t *overlay,
+# int32_t w, int32_t h, uint64_t overlay_version, int32_t has_overlay,
+# int32_t x0, int32_t y0, int32_t x1, int32_t y1), 1 when it drew the frame)
+# and a wait function called before the CPU path is taken instead. A full-size
+# frame from gfx_blit_rgb then goes to a CAMetalLayer, with what was drawn over
+# it as an overlay. macOS only; elsewhere it does nothing. null removes it.
+export function gfx_set_present_hook(g: Gfx, present: ptr<void>, wait: ptr<void>) -> void {
+    flow_gfx_set_present_hook(g.ctx, present, wait)
 }
 
 struct GfxMetrics {
