@@ -170,18 +170,32 @@ function run_spatial(b: f64, gens: i32) -> f64 {
 # in well-mixed pair interaction: payoff_C = -C + B p, payoff_D = B p...
 # wait standard donation: C gets -C + B * (partner coop), D gets B * (partner).
 # Mean: f_C = -C + B p, f_D = B p, so f_C - f_D = -C < 0 always. Extinction.
+function mean_field_rate(p: f64, b: f64) -> f64 {
+    let fc: f64 = 0.0 - C_COST + b * p
+    let fd: f64 = b * p
+    let wbar: f64 = p * fc + (1.0 - p) * fd
+    return p * (fc - wbar)
+}
+
+flow HamiltonMeanField {
+    state p: f64 = 0.5
+
+    param b: f64 = 5.0
+
+    solver { dt 50 ms method rk4 }
+
+    p evolves as mean_field_rate(p, b)
+}
+
 function mean_field(b: f64, p0: f64, steps: i32) -> f64 {
-    let mut p: f64 = p0
+    let mut system: HamiltonMeanField = HamiltonMeanField_new()
+    system.p = p0
+    system.b = b
     let dt: f64 = 0.05
     for t in 0 to steps {
-        let fc: f64 = 0.0 - C_COST + b * p
-        let fd: f64 = b * p
-        let wbar: f64 = p * fc + (1.0 - p) * fd
-        p = p + dt * p * (fc - wbar)
-        if p < 0.0 { p = 0.0 }
-        if p > 1.0 { p = 1.0 }
+        HamiltonMeanField_step(&system, dt)
     }
-    return p
+    return system.p
 }
 
 function preset_b(p: i32) -> f64 {
@@ -227,7 +241,7 @@ function draw_field(g: Gfx) -> void {
 }
 
 function draw_hud(g: Gfx, preset: i32, b: f64, dens: f64, r: f64,
-                  gen: i32, paused: bool) -> void {
+    gen: i32, paused: bool) -> void {
     let t1: i32 = gfx_draw_text(g, 8, 8, "HAMILTON RULE", 2, 238, 234, 246)
     let t2: i32 = gfx_draw_text(g, 200, 12, preset_name(preset), 1, 255, 198, 96)
     let t3: i32 = gfx_draw_text(g, 290, 12, "GEN", 1, 150, 146, 168)

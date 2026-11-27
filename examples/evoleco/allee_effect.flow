@@ -46,26 +46,32 @@ const KEY_1: i32 = 18
 const KEY_2: i32 = 19
 const KEY_3: i32 = 20
 
-function dN(n: f64) -> f64 {
-    return R_GROW * n * (n / A_THR - 1.0) * (1.0 - n / K_CAP)
+function dN(n: f64, r: f64, threshold: f64, capacity: f64) -> f64 {
+    return r * n * (n / threshold - 1.0) * (1.0 - n / capacity)
 }
 
-function rk4_step(n: f64, dt: f64) -> f64 {
-    let k1: f64 = dN(n)
-    let k2: f64 = dN(n + 0.5 * dt * k1)
-    let k3: f64 = dN(n + 0.5 * dt * k2)
-    let k4: f64 = dN(n + dt * k3)
-    let mut np: f64 = n + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
-    if np < 0.0 { np = 0.0 }
-    return np
+flow AlleePopulation {
+    state n: f64 = 10.0
+
+    param r: f64 = 1.0
+    param threshold: f64 = 20.0
+    param capacity: f64 = 100.0
+
+    solver { dt 20 ms method rk4 }
+
+    n evolves as dN(n, r, threshold, capacity)
 }
 
 function integrate(n0: f64, steps: i32) -> f64 {
-    let mut n: f64 = n0
+    let mut system: AlleePopulation = AlleePopulation_new()
+    system.n = n0
+    system.r = R_GROW
+    system.threshold = A_THR
+    system.capacity = K_CAP
     for t in 0 to steps {
-        n = rk4_step(n, DT)
+        AlleePopulation_step(&system, DT)
     }
-    return n
+    return system.n
 }
 
 function preset_n0(p: i32) -> f64 {
@@ -84,15 +90,19 @@ let mut hist: array<f64, 280> = [0.0, 0.0, 0.0, 0.0]
 let mut hist_len: i32 = 0
 
 function fill_hist(n0: f64) -> void {
-    let mut n: f64 = n0
+    let mut system: AlleePopulation = AlleePopulation_new()
+    system.n = n0
+    system.r = R_GROW
+    system.threshold = A_THR
+    system.capacity = K_CAP
     hist_len = 0
     for t in 0 to HIST {
-        hist[hist_len] = n
+        hist[hist_len] = system.n
         hist_len = hist_len + 1
-        n = rk4_step(n, DT)
+        AlleePopulation_step(&system, DT)
         # Several substeps per sample for visible motion.
         for k in 0 to 4 {
-            n = rk4_step(n, DT)
+            AlleePopulation_step(&system, DT)
         }
     }
 }
@@ -113,7 +123,7 @@ function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
 }
 
 function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
-                      r: i32, g2: i32, b: i32) -> void {
+    r: i32, g2: i32, b: i32) -> void {
     for dy in 0 to h {
         for dx in 0 to w {
             put_rgb(fb, x + dx, y + dy, r, g2, b)
@@ -165,7 +175,7 @@ function draw_scene(g: Gfx, fb: ptr<u8>, cursor: i32) -> void {
     for s in 0 to 12 {
         let n: f64 = (s as f64) * K_CAP / 11.0
         let y: i32 = ly0 + lh - 10 - (((n / K_CAP) * ((lh - 20) as f64)) as i32)
-        let f: f64 = dN(n)
+        let f: f64 = dN(n, R_GROW, A_THR, K_CAP)
         if f > 1.0e-6 {
             fill_rect_fb(fb, lx0 + lw / 2 + 10, y - 6, 3, 8, 120, 255, 190)
             put_rgb(fb, lx0 + lw / 2 + 12, y - 8, 120, 255, 190)

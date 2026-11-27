@@ -60,23 +60,26 @@ function fitness_d(p: f64, v: f64, c: f64) -> f64 {
     return p * 0.0 + (1.0 - p) * v / 2.0
 }
 
-function replicator_step(p: f64, v: f64, c: f64, dt: f64) -> f64 {
-    let fh: f64 = fitness_h(p, v, c)
-    let fd: f64 = fitness_d(p, v, c)
-    let wbar: f64 = p * fh + (1.0 - p) * fd
-    # Discrete Moran-style update equivalent to the replicator ODE for small dt.
-    let mut np: f64 = p + dt * p * (fh - wbar)
-    if np < 0.0 { np = 0.0 }
-    if np > 1.0 { np = 1.0 }
-    return np
+flow HawkDove {
+    state p: f64 = 0.5
+
+    param v: f64 = 2.0
+    param c: f64 = 4.0
+
+    solver { dt 50 ms method rk4 }
+
+    p evolves as p * (1.0 - p) * (fitness_h(p, v, c) - fitness_d(p, v, c))
 }
 
 function converge(p0: f64, v: f64, c: f64, steps: i32) -> f64 {
-    let mut p: f64 = p0
+    let mut system: HawkDove = HawkDove_new()
+    system.p = p0
+    system.v = v
+    system.c = c
     for t in 0 to steps {
-        p = replicator_step(p, v, c, DT)
+        HawkDove_step(&system, DT)
     }
-    return p
+    return system.p
 }
 
 # Invasion growth rate: sign of f_mutant - f_resident at the resident state.
@@ -117,12 +120,15 @@ let mut hist: array<f64, 240> = [
 let mut hist_len: i32 = 0
 
 function fill_history(p0: f64, v: f64, c: f64) -> void {
-    let mut p: f64 = p0
+    let mut system: HawkDove = HawkDove_new()
+    system.p = p0
+    system.v = v
+    system.c = c
     hist_len = 0
     for t in 0 to HIST {
-        hist[hist_len] = p
+        hist[hist_len] = system.p
         hist_len = hist_len + 1
-        p = replicator_step(p, v, c, DT)
+        HawkDove_step(&system, DT)
     }
 }
 

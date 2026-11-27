@@ -50,60 +50,63 @@ const KEY_1: i32 = 18
 const KEY_2: i32 = 19
 const KEY_3: i32 = 20
 
-function payoff(mat: i32, i: i32, j: i32) -> f64 {
-    if mat == 0 {
-        # Fair cyclic partnership game; NE at centre, asymptotically stable.
-        if i == 0 and j == 0 { return 0.0 }
-        if i == 0 and j == 1 { return 2.0 }
-        if i == 0 and j == 2 { return 1.0 }
-        if i == 1 and j == 0 { return 1.0 }
-        if i == 1 and j == 1 { return 0.0 }
-        if i == 1 and j == 2 { return 2.0 }
-        if i == 2 and j == 0 { return 2.0 }
-        if i == 2 and j == 1 { return 1.0 }
-        if i == 2 and j == 2 { return 0.0 }
-        return 0.0
-    }
-    # Biased: rest point n = (0.5, 0.3, 0.2) with (A n)_i equal.
-    # A = [[0, -1, 6.5], [1, 0, 2.5], [-1, 5, 0]]
+function payoff(game: f64, i: i32, j: i32) -> f64 {
+    # game=0 is the fair matrix. game=1 is the biased matrix with rest point
+    # (0.5, 0.3, 0.2). Linear interpolation preserves both endpoint matrices.
     if i == 0 and j == 0 { return 0.0 }
-    if i == 0 and j == 1 { return 0.0 - 1.0 }
-    if i == 0 and j == 2 { return 6.5 }
+    if i == 0 and j == 1 { return 2.0 - 3.0 * game }
+    if i == 0 and j == 2 { return 1.0 + 5.5 * game }
     if i == 1 and j == 0 { return 1.0 }
     if i == 1 and j == 1 { return 0.0 }
-    if i == 1 and j == 2 { return 2.5 }
-    if i == 2 and j == 0 { return 0.0 - 1.0 }
-    if i == 2 and j == 1 { return 5.0 }
+    if i == 1 and j == 2 { return 2.0 + 0.5 * game }
+    if i == 2 and j == 0 { return 2.0 - 3.0 * game }
+    if i == 2 and j == 1 { return 1.0 + 4.0 * game }
     if i == 2 and j == 2 { return 0.0 }
     return 0.0
 }
 
 function fitness_i(mat: i32, x0: f64, x1: f64, x2: f64, i: i32) -> f64 {
-    return payoff(mat, i, 0) * x0 + payoff(mat, i, 1) * x1 + payoff(mat, i, 2) * x2
+    let game: f64 = mat as f64
+    return payoff(game, i, 0) * x0 + payoff(game, i, 1) * x1 + payoff(game, i, 2) * x2
 }
 
 let mut nx0: f64 = 0.0
 let mut nx1: f64 = 0.0
 let mut nx2: f64 = 0.0
+let mut simplex_mass_drift: f64 = 0.0
 
-function replicator_step(mat: i32, x0: f64, x1: f64, x2: f64, dt: f64) -> void {
-    let f0: f64 = fitness_i(mat, x0, x1, x2, 0)
-    let f1: f64 = fitness_i(mat, x0, x1, x2, 1)
-    let f2: f64 = fitness_i(mat, x0, x1, x2, 2)
+function fitness_game(game: f64, x0: f64, x1: f64, x2: f64, i: i32) -> f64 {
+    return payoff(game, i, 0) * x0 + payoff(game, i, 1) * x1 + payoff(game, i, 2) * x2
+}
+
+function replicator_rate(game: f64, x0: f64, x1: f64, x2: f64, i: i32) -> f64 {
+    let f0: f64 = fitness_game(game, x0, x1, x2, 0)
+    let f1: f64 = fitness_game(game, x0, x1, x2, 1)
+    let f2: f64 = fitness_game(game, x0, x1, x2, 2)
     let wbar: f64 = x0 * f0 + x1 * f1 + x2 * f2
-    let y0: f64 = x0 + dt * x0 * (f0 - wbar)
-    let y1: f64 = x1 + dt * x1 * (f1 - wbar)
-    let y2: f64 = x2 + dt * x2 * (f2 - wbar)
-    let s: f64 = y0 + y1 + y2
-    if s <= 0.0 {
-        nx0 = x0
-        nx1 = x1
-        nx2 = x2
-        return
-    }
-    nx0 = y0 / s
-    nx1 = y1 / s
-    nx2 = y2 / s
+    let mut xi: f64 = x0
+    if i == 1 { xi = x1 }
+    if i == 2 { xi = x2 }
+    return xi * (fitness_game(game, x0, x1, x2, i) - wbar)
+}
+
+flow Replicator {
+    state x0: f64 = 0.8
+    state x1: f64 = 0.15
+    state x2: f64 = 0.05
+
+    param game: f64 = 0.0
+
+    solver { dt 50 ms method rk4 }
+
+    x0 evolves as replicator_rate(game, x0, x1, x2, 0)
+    x1 evolves as replicator_rate(game, x0, x1, x2, 1)
+    x2 evolves as replicator_rate(game, x0, x1, x2, 2)
+}
+
+function observe_simplex(x0: f64, x1: f64, x2: f64) -> void {
+    let drift: f64 = fabs(x0 + x1 + x2 - 1.0)
+    if drift > simplex_mass_drift { simplex_mass_drift = drift }
 }
 
 function dist3(a0: f64, a1: f64, a2: f64, b0: f64, b1: f64, b2: f64) -> f64 {
@@ -134,18 +137,19 @@ function is_rest_point(mat: i32, x0: f64, x1: f64, x2: f64) -> bool {
 }
 
 function run_to(mat: i32, x0: f64, x1: f64, x2: f64, steps: i32) -> void {
-    let mut a: f64 = x0
-    let mut b: f64 = x1
-    let mut c: f64 = x2
+    let mut system: Replicator = Replicator_new()
+    system.x0 = x0
+    system.x1 = x1
+    system.x2 = x2
+    system.game = mat as f64
+    observe_simplex(system.x0, system.x1, system.x2)
     for t in 0 to steps {
-        replicator_step(mat, a, b, c, DT)
-        a = nx0
-        b = nx1
-        c = nx2
+        Replicator_step(&system, DT)
+        observe_simplex(system.x0, system.x1, system.x2)
     }
-    nx0 = a
-    nx1 = b
-    nx2 = c
+    nx0 = system.x0
+    nx1 = system.x1
+    nx2 = system.x2
 }
 
 let mut hx0: array<f64, 300> = [0.0, 0.0, 0.0, 0.0]
@@ -154,20 +158,22 @@ let mut hx2: array<f64, 300> = [0.0, 0.0, 0.0, 0.0]
 let mut hist_len: i32 = 0
 
 function fill_history(mat: i32, x0: f64, x1: f64, x2: f64) -> void {
-    let mut a: f64 = x0
-    let mut b: f64 = x1
-    let mut c: f64 = x2
+    let mut system: Replicator = Replicator_new()
+    system.x0 = x0
+    system.x1 = x1
+    system.x2 = x2
+    system.game = mat as f64
     hist_len = 0
     for t in 0 to HIST {
-        hx0[hist_len] = a
-        hx1[hist_len] = b
-        hx2[hist_len] = c
+        hx0[hist_len] = system.x0
+        hx1[hist_len] = system.x1
+        hx2[hist_len] = system.x2
         hist_len = hist_len + 1
-        replicator_step(mat, a, b, c, DT)
-        a = nx0
-        b = nx1
-        c = nx2
+        Replicator_step(&system, DT)
     }
+    nx0 = system.x0
+    nx1 = system.x1
+    nx2 = system.x2
 }
 
 function simplex_x(x0: f64, x1: f64, x2: f64) -> i32 {
@@ -213,9 +219,9 @@ function start_of(p: i32) -> void {
 }
 
 function draw_hud(g: Gfx, preset: i32, d: f64, x0: f64, x1: f64, x2: f64,
-                  paused: bool) -> void {
+    paused: bool) -> void {
     let t1: i32 = gfx_draw_text(g, 8, 8, "REPLICATOR DYNAMICS  3-STRATEGY SIMPLEX", 2,
-                                238, 234, 246)
+        238, 234, 246)
     let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 146, 168)
     let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 198, 96)
     let t4: i32 = gfx_draw_text(g, 160, 28, "DIST", 1, 150, 146, 168)
@@ -288,6 +294,9 @@ function main() -> i32 {
 
     run_to(1, 0.8, 0.1, 0.1, STEPS)
     let d_bias: f64 = dist3(nx0, nx1, nx2, 0.5, 0.3, 0.2)
+    print("    max |x0 + x1 + x2 - 1|         : ")
+    printf("%.6e", simplex_mass_drift)
+    println("   gate < 1e-12")
 
     print("    fair distance from start A        : ")
     printf("%.6e", d_fair_a)
@@ -312,6 +321,10 @@ function main() -> i32 {
     if !bias_ok {
         println("    FAIL: biased game did not converge to its Nash rest point")
         return 2
+    }
+    if simplex_mass_drift >= 1.0e-12 {
+        println("    FAIL: replicator integration left the probability simplex")
+        return 3
     }
     println("    PASS: three starts reach the Nash rest point on both games;")
     println("          distance gated below 1e-4")
