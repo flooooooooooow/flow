@@ -1041,6 +1041,10 @@
           "path": "project/idiom-modernization/VERIFICATION.md"
         },
         {
+          "label": "Modernization: Census Revision",
+          "path": "project/idiom-modernization/CENSUS-REVISION.md"
+        },
+        {
           "label": "Modernization: Agent Evaluation",
           "path": "project/idiom-modernization/AGENT-EVAL.md"
         },

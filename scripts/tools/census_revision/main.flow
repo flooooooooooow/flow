@@ -1,0 +1,400 @@
+# @module tools.census_revision
+# @means  Pin a census to an exact Git revision and a recorded toolchain.
+#
+# ./flow tool census_revision                 JSON for the current tree
+# ./flow tool census_revision --write         write the snapshot (clean tree only)
+# ./flow tool census_revision --check         validate a snapshot; refuse a dirty tree
+# ./flow tool census_revision --snapshot PATH read or write that file instead
+# ./flow tool census_revision --run-checks    also run the census tools and record exits
+#
+# A dirty worktree is labelled in the JSON and refused by --write and --check,
+# so a pin cannot silently mix uncommitted edits with a HEAD SHA.
+# --check does not require snapshot.revision == HEAD: the committed pin names
+# the tree it was taken from, and later commits that only add this tooling
+# change HEAD. It does require the pinned SHA to be a Git object and the
+# schema to be well formed. Toolchain fields are those of the recording host
+# and are not compared across machines.
+#
+# Missing evidence stays unverified. This tool does not assign feature IDs
+# or mark features shipped.
+
+import .text { ft_outln, ft_errln, ft_eq, ft_len, ft_itoa, ft_find, ft_slice, ft_starts, ft_exists, ft_read_file, ft_write_file, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .repo { rp_enter_root, rp_root, rp_capture, rp_status, rp_argv2, rp_argv3 }
+import .json { json_quote }
+import .unicode { uc_strip }
+
+const SCHEMA: string = "flow.census-revision.v1"
+const DEFAULT_SNAPSHOT: string = "docs/project/idiom-modernization/census-revision.json"
+
+function usage() {
+    ft_outln("usage: ./flow tool census_revision [--write | --check] [--snapshot PATH] [--run-checks]")
+}
+
+function trim(s: string) -> string {
+    return uc_strip(s)
+}
+
+function first_line(s: string) -> string {
+    let n: i32 = ft_find(s, "\n", 0)
+    if n < 0 {
+        return trim(s)
+    }
+    return trim(ft_slice(s, 0, n))
+}
+
+function line_starting(s: string, prefix: string) -> string {
+    let mut start: i32 = 0
+    let n: i32 = ft_len(s)
+    while start <= n {
+        let nl: i32 = ft_find(s, "\n", start)
+        let mut end: i32 = n
+        if nl >= 0 {
+            end = nl
+        }
+        let line: string = trim(ft_slice(s, start, end))
+        if ft_starts(line, prefix) {
+            return line
+        }
+        if nl < 0 {
+            return ""
+        }
+        start = nl + 1
+    }
+    return ""
+}
+
+function json_bool(v: bool) -> string {
+    if v {
+        return "true"
+    }
+    return "false"
+}
+
+function argv_flow() -> string {
+    return rp_root() + "/flow"
+}
+
+function run_argv(argv: ptr<StrList>) -> string {
+    return rp_capture(argv)
+}
+
+function git_head() -> string {
+    return trim(run_argv(rp_argv3("git", "rev-parse", "HEAD")))
+}
+
+function worktree_is_clean() -> bool {
+    let text: string = run_argv(rp_argv3("git", "status", "--porcelain"))
+    if rp_status() != 0 {
+        return false
+    }
+    return ft_len(trim(text)) == 0
+}
+
+function git_sha_kind(sha: string) -> string {
+    if ft_len(sha) != 40 {
+        return ""
+    }
+    let argv: ptr<StrList> = rp_argv3("git", "cat-file", "-t")
+    ft_list_push(argv, sha)
+    let kind: string = trim(run_argv(argv))
+    if rp_status() != 0 {
+        return ""
+    }
+    return kind
+}
+
+function capture_tool(name: string) -> string {
+    return first_line(run_argv(rp_argv2(name, "--version")))
+}
+
+function flow_version_text() -> string {
+    let argv: ptr<StrList> = ft_list_new()
+    ft_list_push(argv, argv_flow())
+    ft_list_push(argv, "version")
+    return run_argv(argv)
+}
+
+function is_full_sha(s: string) -> bool {
+    if ft_len(s) != 40 {
+        return false
+    }
+    # Walk as bytes via find of each character class: use first_line style
+    # on a copy. json module has no byte API here; use ft_slice of length 1
+    # compared against a hex alphabet.
+    let hex: string = "0123456789abcdefABCDEF"
+    let mut i: i32 = 0
+    while i < 40 {
+        let ch: string = ft_slice(s, i, i + 1)
+        if ft_find(hex, ch, 0) < 0 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function selection_json() -> string {
+    let include: string = "Tracked paths from git ls-files. idiom_census counts .flow files by source-purpose directory. feature_evidence resolves backtick path references in docs/project/idiom-modernization/FEATURE-SURFACES.md. parse_coverage and doc_coverage use their existing inventories."
+    let exclude: string = "Untracked, ignored and uncommitted files are not part of a pin. compiler fixtures and examples/verify are inventoried as compiler_fixture and proof_corpus. Those classes stay out of an adoption denominator. A resolved path is an anchor. That anchor does not prove the feature works or is shipped."
+    let dirty: string = "git status --porcelain must be empty for --write and --check. A dirty tree may be labelled in the default JSON report and is otherwise refused."
+    return "{\n    \"include\": " + json_quote(include) + ",\n    \"exclude\": " + json_quote(exclude) + ",\n    \"dirty_worktree\": " + json_quote(dirty) + "\n  }"
+}
+
+function invocations_json() -> string {
+    let mut s: string = "[\n"
+    s = s + "    " + json_quote("./flow tool idiom_census --check") + ",\n"
+    s = s + "    " + json_quote("./flow tool feature_evidence --check") + ",\n"
+    s = s + "    " + json_quote("./flow tool compiler/scripts/parse_coverage.flow --check") + ",\n"
+    s = s + "    " + json_quote("./flow tool doc_coverage") + "\n"
+    s = s + "  ]"
+    return s
+}
+
+function push_flow_tool(argv: ptr<StrList>, spec: string) {
+    ft_list_push(argv, argv_flow())
+    ft_list_push(argv, "tool")
+    ft_list_push(argv, spec)
+}
+
+function check_status_word(code: i32) -> string {
+    if code == 0 {
+        return "pass"
+    }
+    return "fail"
+}
+
+function one_check(name: string, argv: ptr<StrList>) -> string {
+    let _out: string = run_argv(argv)
+    let code: i32 = rp_status()
+    let status: string = check_status_word(code)
+    return "{\"name\":" + json_quote(name) + ",\"exit_code\":" + ft_itoa(code) + ",\"status\":" + json_quote(status) + "}"
+}
+
+function run_checks_json() -> string {
+    let mut s: string = "[\n    "
+    let a1: ptr<StrList> = ft_list_new()
+    push_flow_tool(a1, "idiom_census")
+    ft_list_push(a1, "--check")
+    s = s + one_check("idiom_census", a1) + ",\n    "
+    let a2: ptr<StrList> = ft_list_new()
+    push_flow_tool(a2, "feature_evidence")
+    ft_list_push(a2, "--check")
+    s = s + one_check("feature_evidence", a2) + ",\n    "
+    let a3: ptr<StrList> = ft_list_new()
+    push_flow_tool(a3, "compiler/scripts/parse_coverage.flow")
+    ft_list_push(a3, "--check")
+    s = s + one_check("parse_coverage", a3) + ",\n    "
+    let a4: ptr<StrList> = ft_list_new()
+    push_flow_tool(a4, "doc_coverage")
+    s = s + one_check("doc_coverage", a4) + "\n  ]"
+    return s
+}
+
+function toolchain_json() -> string {
+    let ver: string = flow_version_text()
+    let flow_line: string = first_line(ver)
+    let host_line: string = line_starting(ver, "host:")
+    let mut host: string = host_line
+    if ft_starts(host_line, "host:") {
+        host = trim(ft_slice(host_line, 5, ft_len(host_line)))
+    }
+    let os_name: string = trim(run_argv(rp_argv2("uname", "-s")))
+    let machine: string = trim(run_argv(rp_argv2("uname", "-m")))
+    let mut cc: string = capture_tool("cc")
+    if rp_status() != 0 {
+        cc = "unavailable"
+    }
+    let llvm: string = capture_tool("mlir-opt")
+    let mut llvm_json: string = "null"
+    if rp_status() == 0 and ft_len(llvm) > 0 {
+        llvm_json = json_quote(llvm)
+    }
+    let mut s: string = "{\n"
+    s = s + "    \"flow\": " + json_quote(flow_line) + ",\n"
+    s = s + "    \"flow_host\": " + json_quote(host) + ",\n"
+    s = s + "    \"uname_s\": " + json_quote(os_name) + ",\n"
+    s = s + "    \"uname_m\": " + json_quote(machine) + ",\n"
+    s = s + "    \"cc\": " + json_quote(cc) + ",\n"
+    s = s + "    \"mlir_opt\": " + llvm_json + "\n"
+    s = s + "  }"
+    return s
+}
+
+function emit_report(revision: string, clean: bool, with_checks: bool) -> string {
+    let mut s: string = "{\n"
+    s = s + "  \"schema\": " + json_quote(SCHEMA) + ",\n"
+    s = s + "  \"revision\": " + json_quote(revision) + ",\n"
+    s = s + "  \"worktree_clean\": " + json_bool(clean) + ",\n"
+    s = s + "  \"toolchain\": " + toolchain_json() + ",\n"
+    s = s + "  \"selection\": " + selection_json() + ",\n"
+    s = s + "  \"invocations\": " + invocations_json() + ",\n"
+    if with_checks {
+        s = s + "  \"checks\": " + run_checks_json() + ",\n"
+    }
+    s = s + "  \"gaps_policy\": " + json_quote("Missing evidence stays unverified. A failing census tool is recorded as a baseline failure. That failure is not a shipped or absent feature label.") + "\n"
+    s = s + "}\n"
+    return s
+}
+
+function snapshot_has(text: string, needle: string) -> bool {
+    return ft_find(text, needle, 0) >= 0
+}
+
+function json_string_field(text: string, key: string) -> string {
+    let pat: string = "\"" + key + "\":"
+    let at: i32 = ft_find(text, pat, 0)
+    if at < 0 {
+        return ""
+    }
+    let mut i: i32 = at + ft_len(pat)
+    let n: i32 = ft_len(text)
+    while i < n {
+        let ch: string = ft_slice(text, i, i + 1)
+        if ft_eq(ch, " ") or ft_eq(ch, "\n") or ft_eq(ch, "\t") or ft_eq(ch, "\r") {
+            i = i + 1
+        } else {
+            break
+        }
+    }
+    if i >= n or not ft_eq(ft_slice(text, i, i + 1), "\"") {
+        return ""
+    }
+    i = i + 1
+    let start: i32 = i
+    while i < n and not ft_eq(ft_slice(text, i, i + 1), "\"") {
+        if ft_eq(ft_slice(text, i, i + 1), "\\") {
+            i = i + 1
+        }
+        i = i + 1
+    }
+    if i > start {
+        return ft_slice(text, start, i)
+    }
+    return ""
+}
+
+function check_snapshot(path: string) -> i32 {
+    if not ft_exists(path) {
+        ft_errln("census_revision: snapshot not found: " + path)
+        return 1
+    }
+    let text: string = ft_read_file(path)
+    if ft_len(text) == 0 {
+        ft_errln("census_revision: snapshot is empty: " + path)
+        return 1
+    }
+    if not snapshot_has(text, "\"schema\": \"" + SCHEMA + "\"") {
+        ft_errln("census_revision: snapshot is not " + SCHEMA)
+        return 1
+    }
+    let pinned: string = json_string_field(text, "revision")
+    if not is_full_sha(pinned) {
+        ft_errln("census_revision: snapshot revision is not a 40-character SHA")
+        return 1
+    }
+    let kind: string = git_sha_kind(pinned)
+    if not ft_eq(kind, "commit") and not ft_eq(kind, "tag") {
+        ft_errln("census_revision: pinned revision is not a Git commit: " + pinned)
+        return 1
+    }
+    if not snapshot_has(text, "\"include\":") {
+        ft_errln("census_revision: snapshot is missing selection.include")
+        return 1
+    }
+    if not snapshot_has(text, "\"exclude\":") {
+        ft_errln("census_revision: snapshot is missing selection.exclude")
+        return 1
+    }
+    if not snapshot_has(text, "./flow tool idiom_census --check") {
+        ft_errln("census_revision: snapshot is missing the idiom_census invocation")
+        return 1
+    }
+    if not snapshot_has(text, "./flow tool feature_evidence --check") {
+        ft_errln("census_revision: snapshot is missing the feature_evidence invocation")
+        return 1
+    }
+    if not snapshot_has(text, "unverified") {
+        ft_errln("census_revision: snapshot does not record the unverified gaps policy")
+        return 1
+    }
+    let head: string = git_head()
+    ft_outln("census_revision: PASS pin " + pinned + " (" + kind + "), HEAD " + head)
+    return 0
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let mut write_snap: bool = false
+    let mut check: bool = false
+    let mut run_checks: bool = false
+    let mut snapshot: string = DEFAULT_SNAPSHOT
+    let mut a: i32 = 1
+    while a < argc {
+        if ft_eq(argv[a], "--write") {
+            write_snap = true
+        } elif ft_eq(argv[a], "--check") {
+            check = true
+        } elif ft_eq(argv[a], "--run-checks") {
+            run_checks = true
+        } elif ft_eq(argv[a], "--snapshot") {
+            if a + 1 >= argc {
+                usage()
+                return 2
+            }
+            snapshot = argv[a + 1]
+            a = a + 1
+        } elif ft_eq(argv[a], "--help") or ft_eq(argv[a], "-h") {
+            usage()
+            return 0
+        } else {
+            ft_errln("unknown option: " + argv[a])
+            usage()
+            return 2
+        }
+        a = a + 1
+    }
+    if write_snap and check {
+        ft_errln("census_revision: pass only one of --write or --check")
+        return 2
+    }
+    if not rp_enter_root() {
+        ft_errln("census_revision: cannot enter repository root")
+        return 1
+    }
+    let revision: string = git_head()
+    if rp_status() != 0 or not is_full_sha(revision) {
+        ft_errln("census_revision: git rev-parse failed")
+        return 1
+    }
+    let clean: bool = worktree_is_clean()
+    if rp_status() != 0 {
+        ft_errln("census_revision: git status failed")
+        return 1
+    }
+    if check {
+        if not clean {
+            ft_errln("census_revision: worktree is dirty; refuse to check a pin")
+            return 1
+        }
+        return check_snapshot(snapshot)
+    }
+    if write_snap {
+        if not clean {
+            ft_errln("census_revision: worktree is dirty; refuse to write a pin")
+            return 1
+        }
+        let text: string = emit_report(revision, true, true)
+        if not ft_write_file(snapshot, text) {
+            ft_errln("census_revision: cannot write " + snapshot)
+            return 1
+        }
+        ft_outln("census_revision: wrote " + snapshot + " for " + revision)
+        return 0
+    }
+    let text: string = emit_report(revision, clean, run_checks)
+    ft_outln(text)
+    if not clean {
+        ft_errln("census_revision: worktree is dirty; this report is labelled, not a pin")
+        return 1
+    }
+    return 0
+}

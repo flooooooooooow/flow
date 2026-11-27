@@ -1,0 +1,287 @@
+# FM-001: a census pin records the Git SHA, toolchain and dirty-tree rule.
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+function trim_newline(s: string) -> string {
+    let n: i32 = s_len(s)
+    if n > 0 and s_byte(s, n - 1) == 10 { return s_slice(s, 0, n - 1) }
+    return s
+}
+
+function git_head() -> string {
+    if t_run_argv(sl_of3("git", "rev-parse", "HEAD")) != 0 { return "" }
+    return trim_newline(read_text(t_out()))
+}
+
+function worktree_clean() -> bool {
+    if t_run_argv(sl_of3("git", "status", "--porcelain")) != 0 { return false }
+    return s_len(s_trim(read_text(t_out()))) == 0
+}
+
+function load_report(rc: i32) -> ptr<Json> {
+    let text: string = read_text(t_out())
+    let parsed: ptr<Json> = json_parse(text)
+    if s_len(json_error(parsed)) > 0 {
+        outln(json_error(parsed))
+        outln(text)
+        return parsed
+    }
+    return parsed
+}
+
+function report_is_stamped() -> i32 {
+    let rc: i32 = t_run_argv(sl_of3("./flow", "tool", "census_revision"))
+    let parsed: ptr<Json> = load_report(rc)
+    if s_len(json_error(parsed)) > 0 { json_free(parsed); return T_FAIL }
+    let root: i32 = 0
+    if not a_eq(json_str(parsed, json_get(parsed, root, "schema")), "flow.census-revision.v1", "schema") {
+        json_free(parsed)
+        return T_FAIL
+    }
+    let rev: string = json_str(parsed, json_get(parsed, root, "revision"))
+    if not a_eq(rev, git_head(), "revision matches HEAD of the tree used") {
+        json_free(parsed)
+        return T_FAIL
+    }
+    if s_len(rev) != 40 {
+        json_free(parsed)
+        return T_FAIL
+    }
+    let clean_kind: i32 = json_kind(parsed, json_get(parsed, root, "worktree_clean"))
+    if clean_kind != json_kind_false() and clean_kind != json_kind_true() {
+        json_free(parsed)
+        return T_FAIL
+    }
+    let tool: i32 = json_get(parsed, root, "toolchain")
+    if not a_true("flow version recorded", s_len(json_str(parsed, json_get(parsed, tool, "flow"))) > 0) {
+        json_free(parsed)
+        return T_FAIL
+    }
+    if not a_true("host OS recorded", s_len(json_str(parsed, json_get(parsed, tool, "uname_s"))) > 0) {
+        json_free(parsed)
+        return T_FAIL
+    }
+    if not a_true("C compiler identity recorded", s_len(json_str(parsed, json_get(parsed, tool, "cc"))) > 0) {
+        json_free(parsed)
+        return T_FAIL
+    }
+    let sel: i32 = json_get(parsed, root, "selection")
+    if not a_contains(json_str(parsed, json_get(parsed, sel, "include")), "git ls-files") {
+        json_free(parsed)
+        return T_FAIL
+    }
+    if not a_contains(json_str(parsed, json_get(parsed, sel, "exclude")), "adoption denominator") {
+        json_free(parsed)
+        return T_FAIL
+    }
+    let inv: i32 = json_get(parsed, root, "invocations")
+    if not a_true("four census invocations", json_len(parsed, inv) == 4) {
+        json_free(parsed)
+        return T_FAIL
+    }
+    if not a_contains(json_str(parsed, json_get(parsed, root, "gaps_policy")), "unverified") {
+        json_free(parsed)
+        return T_FAIL
+    }
+    let expect_clean: bool = worktree_clean()
+    let reported_clean: bool = clean_kind == json_kind_true()
+    if expect_clean != reported_clean {
+        outln("worktree_clean disagreed with git status")
+        json_free(parsed)
+        return T_FAIL
+    }
+    if expect_clean and rc != 0 {
+        outln("clean worktree should exit 0")
+        json_free(parsed)
+        return T_FAIL
+    }
+    if not expect_clean and rc == 0 {
+        outln("dirty worktree should exit nonzero")
+        json_free(parsed)
+        return T_FAIL
+    }
+    json_free(parsed)
+    return T_PASS
+}
+
+const PROBE: string = "census-revision-dirty-probe.txt"
+
+function add_probe() -> bool {
+    return write_text(PROBE, "uncommitted census_revision probe\n")
+}
+
+function drop_probe() {
+    rm_f(PROBE)
+}
+
+function dirty_is_labelled_and_write_is_refused() -> i32 {
+    if not add_probe() { return T_FAIL }
+    let rc: i32 = t_run_argv(sl_of3("./flow", "tool", "census_revision"))
+    let parsed: ptr<Json> = load_report(rc)
+    if s_len(json_error(parsed)) > 0 {
+        drop_probe()
+        json_free(parsed)
+        return T_FAIL
+    }
+    let clean_kind: i32 = json_kind(parsed, json_get(parsed, 0, "worktree_clean"))
+    if clean_kind != json_kind_false() {
+        drop_probe()
+        json_free(parsed)
+        return T_FAIL
+    }
+    if rc == 0 {
+        drop_probe()
+        json_free(parsed)
+        return T_FAIL
+    }
+    json_free(parsed)
+    let dir: string = mktemp_dir(tmp_base() + "/census-revision.XXXXXX")
+    if s_len(dir) == 0 {
+        drop_probe()
+        return T_FAIL
+    }
+    let path: string = dir + "/snap.json"
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "census_revision")
+    sl_push(argv, "--write")
+    sl_push(argv, "--snapshot")
+    sl_push(argv, path)
+    let wrc: i32 = t_run_argv(argv)
+    let wrote: bool = is_file(path)
+    rm_rf(dir)
+    drop_probe()
+    if wrc == 0 or wrote {
+        outln("--write must refuse a dirty worktree and must not write a pin")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_refuses_dirty() -> i32 {
+    if not add_probe() { return T_FAIL }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "census_revision")
+    sl_push(argv, "--check")
+    sl_push(argv, "--snapshot")
+    sl_push(argv, "docs/project/idiom-modernization/census-revision.json")
+    let rc: i32 = t_run_argv(argv)
+    drop_probe()
+    if rc == 0 {
+        outln("--check must refuse a dirty worktree")
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()) + read_text(t_out()), "dirty") {
+        outln("expected a dirty-worktree refusal")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function write_and_check_on_clean() -> i32 {
+    if not worktree_clean() {
+        outln("worktree is already dirty")
+        return t_skip("worktree is already dirty")
+    }
+    let dir: string = mktemp_dir(tmp_base() + "/census-revision.XXXXXX")
+    if s_len(dir) == 0 { return T_FAIL }
+    let path: string = dir + "/snap.json"
+    let wargv: ptr<ProcStrs> = sl_of3("./flow", "tool", "census_revision")
+    sl_push(wargv, "--write")
+    sl_push(wargv, "--snapshot")
+    sl_push(wargv, path)
+    if t_run_argv(wargv) != 0 {
+        t_cat(t_err())
+        rm_rf(dir)
+        return T_FAIL
+    }
+    if not is_file(path) {
+        rm_rf(dir)
+        return T_FAIL
+    }
+    let parsed: ptr<Json> = json_parse(read_text(path))
+    if s_len(json_error(parsed)) > 0 {
+        outln(json_error(parsed))
+        json_free(parsed)
+        rm_rf(dir)
+        return T_FAIL
+    }
+    if not a_eq(json_str(parsed, json_get(parsed, 0, "revision")), git_head(), "written pin SHA") {
+        json_free(parsed)
+        rm_rf(dir)
+        return T_FAIL
+    }
+    let checks: i32 = json_get(parsed, 0, "checks")
+    if not a_true("baseline check results recorded", json_len(parsed, checks) == 4) {
+        json_free(parsed)
+        rm_rf(dir)
+        return T_FAIL
+    }
+    let mut node: i32 = json_first(parsed, checks)
+    let mut saw_fail_or_pass: i32 = 0
+    while node >= 0 {
+        let st: string = json_str(parsed, json_get(parsed, node, "status"))
+        if not (s_eq(st, "pass") or s_eq(st, "fail")) {
+            json_free(parsed)
+            rm_rf(dir)
+            return T_FAIL
+        }
+        saw_fail_or_pass = saw_fail_or_pass + 1
+        node = json_next(parsed, node)
+    }
+    if saw_fail_or_pass != 4 {
+        json_free(parsed)
+        rm_rf(dir)
+        return T_FAIL
+    }
+    json_free(parsed)
+    let cargv: ptr<ProcStrs> = sl_of3("./flow", "tool", "census_revision")
+    sl_push(cargv, "--check")
+    sl_push(cargv, "--snapshot")
+    sl_push(cargv, path)
+    if t_run_argv(cargv) != 0 {
+        t_cat(t_err())
+        rm_rf(dir)
+        return T_FAIL
+    }
+    # A deliberately wrong SHA must fail --check.
+    let bad: string = dir + "/bad.json"
+    if not write_text(bad, "{\"schema\": \"flow.census-revision.v1\", \"revision\": \"0000000000000000000000000000000000000000\", \"selection\": {\"include\": \"x\", \"exclude\": \"y\"}, \"invocations\": [\"./flow tool idiom_census --check\", \"./flow tool feature_evidence --check\"], \"gaps_policy\": \"unverified\"}\n") {
+        rm_rf(dir)
+        return T_FAIL
+    }
+    let bargv: ptr<ProcStrs> = sl_of3("./flow", "tool", "census_revision")
+    sl_push(bargv, "--check")
+    sl_push(bargv, "--snapshot")
+    sl_push(bargv, bad)
+    let brc: i32 = t_run_argv(bargv)
+    rm_rf(dir)
+    if brc == 0 {
+        outln("expected --check to reject a SHA that is not a Git commit")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_cli() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "census_revision")
+    sl_push(argv, "--does-not-exist")
+    if t_run_argv(argv) != 2 {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("census_revision")
+    t_start()
+    t_end("report_stamped_with_head_and_rules", report_is_stamped())
+    t_start()
+    t_end("dirty_worktree_labelled_and_write_refused", dirty_is_labelled_and_write_is_refused())
+    t_start()
+    t_end("check_refuses_dirty_worktree", check_refuses_dirty())
+    t_start()
+    t_end("write_and_check_on_clean_tree", write_and_check_on_clean())
+    t_start()
+    t_end("invalid_option", check_cli())
+    t_done()
+    return 0
+}
