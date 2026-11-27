@@ -380,7 +380,7 @@ function recover_gd_over_gc() -> f64 {
 # profile is cosh((L - x)/lambda), not a pure exponential. Solve for lambda
 # from the ratio between two compartments; that ratio falls monotonically
 # with lambda, so bisection works.
-function fit_lambda_cosh(amp: &[f64], x1: i32, x2: i32) -> f64 {
+function fit_lambda_cosh(amp: span<f64, 13>, x1: i32, x2: i32) -> f64 {
     # dc_mv[i] holds dendrite compartment i-1, and the seal sits half a
     # compartment past the last one, so in these indices the end is at
     # N_DEND + 0.5.
@@ -403,7 +403,7 @@ function fit_lambda_cosh(amp: &[f64], x1: i32, x2: i32) -> f64 {
 }
 
 # Least-squares slope of ln(amplitude) against compartment index.
-function fit_lambda(amp: &[f64]) -> f64 {
+function fit_lambda(amp: span<f64, 13>) -> f64 {
     let mut sx: f64 = 0.0
     let mut sy: f64 = 0.0
     let mut sxx: f64 = 0.0
@@ -746,10 +746,10 @@ function main() -> i32 {
     measure_dc()
 
     lambda_dc_theory = sqrt(G_C / G_D)
-    lambda_dc_meas = fit_lambda(dc_mv)
-    lambda_dc_cosh = fit_lambda_cosh(dc_mv, 1, 9)
+    lambda_dc_meas = fit_lambda(dc_mv[0..N_ALL])
+    lambda_dc_cosh = fit_lambda_cosh(dc_mv[0..N_ALL], 1, 9)
     identity_err = recover_gd_over_gc()
-    lambda_ac = fit_lambda(peak_mv)
+    lambda_ac = fit_lambda(peak_mv[0..N_ALL])
     delay_per_comp = fit_delay()
     total_delay = peak_ms[N_ALL - 1] - peak_ms[0]
     tip_ratio = peak_mv[N_ALL - 1] / peak_mv[0]

@@ -76,7 +76,7 @@ the next neuron starts from a clean guard.
 | [`fitzhugh_nagumo.flow`](fitzhugh_nagumo.flow) | FitzHugh-Nagumo | Nullclines, Hopf window, limit cycle | window [0.33128, 1.41872]; ringing 22.667 vs 22.661 | FitzHugh 1961; Nagumo 1962 |
 | [`morris_lecar.flow`](morris_lecar.flow) | Morris-Lecar, type II | Hopf point located numerically | 93.8576 uA/cm2; fold at 88.300 | Morris & Lecar 1981; Rinzel & Ermentrout 1998 (93.86, 88.3) |
 | [`cable_equation.flow`](cable_equation.flow) | Rall's passive cable | Attenuation vs the analytic length constant | worst error 0.17 % over six lambdas | Rall 1959; Dayan & Abbott eq. 6.30 |
-| [`multicompartment.flow`](multicompartment.flow) | Active soma, passive dendrite | Backpropagating action potential | 296 us per compartment, tip at 10.7 % | Stuart & Sakmann 1994; Rall 1977 |
+| [`multicompartment.flow`](multicompartment.flow) | Active soma, passive dendrite | Backpropagating action potential; cable-fit functions take `span<f64, 13>` | 296 us per compartment, tip at 10.7 % | Stuart & Sakmann 1994; Rall 1977 |
 | [`stdp_window.flow`](stdp_window.flow) | Pair-based STDP | The canonical asymmetric window | worst deviation 1.05e-14 over 201 delays | Bi & Poo 1998; Song, Miller & Abbott 2000 |
 | [`balanced_network.flow`](balanced_network.flow) | 12500 LIF neurons, sparse E/I | The asynchronous irregular state | rate 15.470 Hz vs 15.112 mean-field; CV 0.795 | Brunel 2000 |
 | [`ring_attractor.flow`](ring_attractor.flow) | Cosine ring of rate units | A bump that remembers and tracks | drift 0.00000 deg/s; tracks 30 deg/s at 30.000 | Ben-Yishai et al. 1995; Zhang 1996 |
