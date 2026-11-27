@@ -48,9 +48,10 @@ function main() -> i32 {
 }
 ```
 
-When every bound is an integer literal the whole call folds to a single
-constant at parse time. When a bound is a runtime value the call lowers to one
-helper call, and each bound expression is evaluated exactly once:
+The native parser records the range as a special call, not a folded literal.
+The C emitter generates a closed-form helper call; MLIR emission has a
+literal-folding path and a runtime helper path. Each bound expression is
+passed as a single argument on the C path:
 
 ```flow
 function triangle(n: i32) -> i32 {
@@ -63,7 +64,8 @@ function main() -> i32 {
 }
 ```
 
-A stride of `0` is a compile error rather than a hang.
+A runtime stride of `0` produces zero in the C helper; the language regression
+explicitly checks this. Do not rely on a compile-time diagnostic for zero stride.
 
 ## Union and intersection
 
@@ -94,8 +96,8 @@ function main() -> i32 {
 }
 ```
 
-`&` binds tighter than `|`, matching the bitwise operators. `A | B & C` is
-`A | (B & C)`.
+The native range-sum parser accepts one set operator between two ranges.
+This does not establish precedence for chained range algebra.
 
 Inside `sum(...)`, `|` and `&` between two ranges mean union and intersection.
 Everywhere else they keep their bitwise meaning. The bounds themselves parse at
@@ -121,13 +123,9 @@ struct, passed to a function or returned from one. It exists only in the two
 positions that consume it directly: the header of a `for` loop, and the
 argument of `sum`.
 
-With literal bounds, `sum` folds a union or intersection of up to eight ranges.
-Beyond that it is a compile error, because inclusion-exclusion over `n` ranges
-has `2^n - 1` terms.
-
-With runtime bounds, `sum` handles one operator between two ranges. Deeper
-algebra over runtime bounds is a compile error; combine the sums by hand
-instead:
+The native parser handles one or two ranges for both literal and runtime
+bounds. It requires the closing parenthesis after the second range; do not
+rely on historical multi-range folding. Combine sums by hand instead:
 
 ```flow
 function three_ways(n: i32) -> i32 {
