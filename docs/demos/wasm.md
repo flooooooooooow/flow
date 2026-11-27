@@ -1,6 +1,6 @@
 # WebAssembly Gallery
 
-161 Flow examples compiled to WebAssembly, every one of them runnable in a
+162 Flow examples compiled to WebAssembly, every one of them runnable in a
 browser. Every one is the unedited source from this repository, put through
 Flow → C → `emcc`.
 
@@ -35,7 +35,7 @@ Build one program:
 | [Language and compilers](../wasm/index.html) | 23 of 23 | 638 KB | Generics, traits, enums, effect rows, and Flow tools written in Flow |
 | [Numerics and dynamics](../wasm/index.html) | 20 of 20 | 683 KB | Solvers, optimisers, linear algebra, control theory |
 | [Learning](../wasm/index.html) | 12 of 12 | 455 KB | Small models and agents |
-| [Systems and data](../wasm/index.html) | 14 of 14 | 524 KB | Allocators, hash tables, hashing, parsers, file formats |
+| [Systems and data](../wasm/index.html) | 15 of 15 | 639 KB | Allocators, hash tables, hashing, parsers, file formats, and `tcp_echo` |
 
 Machine-readable index, including every failure and its reason:
 [`manifest.json`](../wasm/manifest.json).
@@ -96,8 +96,9 @@ program has actually read it, which is what makes single keystrokes land at
 
 ## What runs, and what is still being crossed
 
-Only the first two rows are verified in a browser. The rest name the mechanism
-and say plainly that it is not built here.
+Rows marked Runs today have a working mechanism and at least one gallery
+example. The remaining rows name the intended mechanism and say plainly that
+they are not built here.
 
 | Capability | State | Route |
 |---|---|---|
@@ -105,7 +106,7 @@ and say plainly that it is not built here.
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` paints the framebuffer onto a canvas and maps DOM key events to macOS keycodes. |
 | Threads and channels | **Runs today** | `digits_mlp_parallel`, `parallel_sum` and `parallel_scaling` run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. The browser blocks SAB unless the page is cross-origin isolated, so those pages ship a COI service worker: open the card in a tab and it reloads once, isolated. |
 | Fibers | **Runs today** | `async_primitives` runs main and its tasks as stackful cooperative fibers (`runtime/fiber_wasm.c` over the Emscripten fiber API, which is Asyncify stack switching, the wasm analogue of the native `flow_fctx_*.S` asm context switch). M:1 on one JS thread, `flow_fiber_*` API intact: spawn/yield/park/unpark/run/run_until and fiber-aware `async_delay`. Pages build with `-sASYNCIFY`. |
-| Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js` / `PROXY_POSIX_SOCKETS`). |
+| Sockets and HTTP | **Runs today** | `tcp_echo` is a gallery card. It uses Flow's BSD socket API in `runtime/flow_tcp.c`. In the browser, `connect()` is a WebSocket, so start `./flow tool ws_echo_relay --port 9505` first. Without the relay the program times out and exits 1. The same source also runs natively against the relay's TCP port. `./flow tool wasm_crossings sockets` already proved eight round trips in Chrome. |
 | GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
 | Embedded CPython | In progress | Pyodide, which is CPython itself compiled to WebAssembly. |
 | File I/O | In progress | Emscripten's MEMFS and IDBFS filesystems. |
