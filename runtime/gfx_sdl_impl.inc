@@ -484,6 +484,18 @@ int32_t flow_gfx_metrics(void* handle, int32_t* out) {
     return 1;
 }
 
+void flow_gfx_maximize(void* handle) {
+    FlowGfxContext* ctx = (FlowGfxContext*)handle;
+    if (ctx && ctx->window) SDL_MaximizeWindow(ctx->window);
+}
+
+/* SDL presents through its own renderer: frames always take the CPU path. */
+void flow_gfx_set_present_hook(void* handle, void* present, void* wait) {
+    (void)handle;
+    (void)present;
+    (void)wait;
+}
+
 void flow_gfx_cursor(void* handle, int32_t kind) {
     (void)handle;
     (void)kind;
@@ -641,6 +653,17 @@ int32_t flow_gfx_metrics(void* handle, int32_t* out) {
     out[2] = 100;
     out[3] = 0;
     return 0;
+}
+
+void flow_gfx_maximize(void* handle) {
+    (void)handle;
+}
+
+/* SDL presents through its own renderer: frames always take the CPU path. */
+void flow_gfx_set_present_hook(void* handle, void* present, void* wait) {
+    (void)handle;
+    (void)present;
+    (void)wait;
 }
 
 void flow_gfx_cursor(void* handle, int32_t kind) {
