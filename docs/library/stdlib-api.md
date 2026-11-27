@@ -1747,6 +1747,8 @@ gfx: explicit native graphics API (macOS / Linux SDL2 / Windows)  Backend: runti
 | `gfx_mouse_down` | `(g: Gfx, button: i32) -> bool` | button: 0 = left, 1 = right, 2 = middle |
 | `gfx_mouse_wheel` | `(g: Gfx) -> i32` | Cumulative scroll total. Diff against your own previous value. |
 | `gfx_open_hidpi` | `(w: i32, h: i32, title: string, flags: i32) -> Gfx` | A window of w x h points with a framebuffer in device pixels. flags: GFX_RESIZABLE. |
+| `gfx_maximize` | `(g: Gfx) -> void` | Grows the window to the usable area of its screen (the visible frame on macOS, maximized under SDL; nothing in the recorder or the browser). A HiDPI framebuffer follows the new size. |
+| `gfx_set_present_hook` | `(g: Gfx, present: ptr<void>, wait: ptr<void>) -> void` | A program with its own Metal renderer hands the window its present function (C: int32_t present(void *layer, const uint8_t *rgb, const uint8_t *overlay, int32_t w, int32_t h, uint64_t overlay_version, int32_t has_overlay, int32_t x0, int32_t y0, int32_t x1, int32_t y1), 1 when it drew the frame) |
 | `gfx_metrics` | `(g: Gfx) -> GfxMetrics` | Framebuffer width and height in pixels, pixels per point, and a generation that changes on reallocation. |
 | `gfx_cursor` | `(g: Gfx, kind: i32) -> void` | Set the mouse cursor to one of the CURSOR_* shapes. |
 | `gfx_text_ex` | `(g: Gfx, x: i32, baseline: i32, text: string, size: i32, rgb: i32, style: i32) -> i32` | System-font text on a baseline, size in pixels, colour 0xRRGGBB and TEXT_* style, returning its width. |
@@ -3415,7 +3417,7 @@ Flow-native incompressible velocity projection on a uniform periodic 3D grid. Th
 
 ### `science/sofia_ir.flow`
 
-Experimental Flow-native scalar PDE expression IR and time integrators. This is a typed, allocation-free interpreter, not a compiler backend. 1D uniform cell centres, one scalar field, finite-difference derivatives.
+Experimental Flow-native scalar PDE expression IR and time integrators. This is a typed, allocation-free interpreter. It does not generate code. 1D uniform cell centres, one scalar field, finite-difference derivatives.
 
 **Structs:** `SofiaIrNode`, `SofiaIrProgram`
 

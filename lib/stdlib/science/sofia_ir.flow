@@ -1,5 +1,5 @@
 # Experimental Flow-native scalar PDE expression IR and time integrators.
-# This is a typed, allocation-free interpreter, not a compiler backend.
+# This is a typed, allocation-free interpreter. It does not generate code.
 # 1D uniform cell centres, one scalar field, finite-difference derivatives.
 # Callers own all node and state buffers. No host/device transfer is implied.
 # No implicit interpolation, unit conversion, geometry or stencil inference.
