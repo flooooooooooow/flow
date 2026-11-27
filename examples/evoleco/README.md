@@ -57,7 +57,7 @@ Recorded clips live in the
 | [`allee_effect.flow`](allee_effect.flow) | Strong Allee threshold | Below A extinct, above A approaches K |
 | [`hamilton_rule.flow`](hamilton_rule.flow) | Spatial kin selection | Well-mixed kills C; space sustains C when rB > C |
 | [`red_queen.flow`](red_queen.flow) | Matching-alleles coevolution | Oscillations about 1/2; parasite tracks host |
-| [`metapopulation.flow`](metapopulation.flow) | Levins occupancy | ODE and lattice match p* = 1 - e/c |
+| [`metapopulation.flow`](metapopulation.flow) | Levins occupancy (`flow Levins`, RK4) | `flowc` emits `Levins_step`; ODE and lattice match p* = 1 - e/c |
 | [`competitive_lv.flow`](competitive_lv.flow) | Two-species competition | Coexistence eq vs competitive exclusion |
 | [`runaway_selection.flow`](runaway_selection.flow) | Fisherian sexual selection | Strong preference escalates (z,y); weak a returns |
 

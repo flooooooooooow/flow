@@ -62,19 +62,26 @@ function rng_unit() -> f64 {
     return (bits as f64) / 65536.0
 }
 
-function levins_step(p: f64, c: f64, e: f64, dt: f64) -> f64 {
-    let mut np: f64 = p + dt * (c * p * (1.0 - p) - e * p)
-    if np < 0.0 { np = 0.0 }
-    if np > 1.0 { np = 1.0 }
-    return np
+flow Levins {
+    state p: f64 = 0.5
+
+    param c: f64 = 1.0
+    param e: f64 = 0.25
+
+    solver { dt 50 ms method rk4 }
+
+    p evolves as c * p * (1.0 - p) - e * p
 }
 
 function converge(p0: f64, c: f64, e: f64, steps: i32) -> f64 {
-    let mut p: f64 = p0
+    let mut system: Levins = Levins_new()
+    system.p = p0
+    system.c = c
+    system.e = e
     for t in 0 to steps {
-        p = levins_step(p, c, e, DT)
+        Levins_step(&system, DT)
     }
-    return p
+    return system.p
 }
 
 function pstar(c: f64, e: f64) -> f64 {
@@ -226,7 +233,7 @@ function draw_scene(g: Gfx, pstar_v: f64) -> void {
 }
 
 function draw_hud(g: Gfx, preset: i32, e: f64, p: f64, ps: f64,
-                  paused: bool) -> void {
+    paused: bool) -> void {
     let t1: i32 = gfx_draw_text(g, 8, 8, "METAPOPULATION LEVINS", 2, 238, 234, 246)
     let t2: i32 = gfx_draw_text(g, 300, 12, preset_name(preset), 1, 255, 198, 96)
     let t3: i32 = gfx_draw_text(g, 8, 28, "p", 1, 150, 146, 168)
