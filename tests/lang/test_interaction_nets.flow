@@ -1,0 +1,203 @@
+# Bounded interaction-combinator reducer regression gate.
+# Execute: ./flow test-lang tests/lang/test_interaction_nets.flow
+
+import "tools/interaction_nets/core.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+}
+
+# Appends two binary agents facing at their principals, plus four
+# single-port interface markers. All auxiliary endpoints are external.
+function add_binary_pair(n: ptr<InetNet>, left: i32, right: i32) -> bool {
+    let a: i32 = inet_add(n, left)
+    let b: i32 = inet_add(n, right)
+    let x1: i32 = inet_add(n, INET_BOUNDARY)
+    let x2: i32 = inet_add(n, INET_BOUNDARY)
+    let y1: i32 = inet_add(n, INET_BOUNDARY)
+    let y2: i32 = inet_add(n, INET_BOUNDARY)
+    if a < 0 or b < 0 or y2 < 0 { return false }
+    if not inet_connect(n, a * 3, b * 3) { return false }
+    if not inet_connect(n, a * 3 + 1, x1 * 3) { return false }
+    if not inet_connect(n, a * 3 + 2, x2 * 3) { return false }
+    if not inet_connect(n, b * 3 + 1, y1 * 3) { return false }
+    if not inet_connect(n, b * 3 + 2, y2 * 3) { return false }
+    return inet_validate(n)
+}
+
+function test_annihilation(kind: i32) -> i32 {
+    let storage: ptr<InetNode> = malloc(6 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut net: InetNet = inet_new(storage, 6)
+    if not add_binary_pair(&net, kind, kind) { return 1 }
+    if inet_active_pairs(&net) != 1 { return 2 }
+    if inet_reduce_first(&net) != INET_REDUCED { return 3 }
+    if not inet_validate(&net) { return 4 }
+    if inet_live_nodes(&net) != 4 or inet_active_pairs(&net) != 0 { return 5 }
+    if kind == INET_GAMMA {
+        if inet_peer(&net, 2 * 3) != 5 * 3 or inet_peer(&net, 3 * 3) != 4 * 3 { return 6 }
+    } else {
+        if inet_peer(&net, 2 * 3) != 4 * 3 or inet_peer(&net, 3 * 3) != 5 * 3 { return 7 }
+    }
+    let done: InetRun = inet_run(&net, 2)
+    if done.status != INET_DONE or done.steps != 0 { return 8 }
+    free(storage as ptr<void>)
+    return 0
+}
+
+function test_erasure(kind: i32, reversed: bool) -> i32 {
+    let storage: ptr<InetNode> = malloc(8 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut net: InetNet = inet_new(storage, 8)
+    let mut a: i32 = -1
+    let mut e: i32 = -1
+    if reversed {
+        e = inet_add(&net, INET_EPSILON)
+        a = inet_add(&net, kind)
+    } else {
+        a = inet_add(&net, kind)
+        e = inet_add(&net, INET_EPSILON)
+    }
+    let x: i32 = inet_add(&net, INET_BOUNDARY)
+    let y: i32 = inet_add(&net, INET_BOUNDARY)
+    if not inet_connect(&net, a * 3, e * 3) { return 1 }
+    if not inet_connect(&net, a * 3 + 1, x * 3) { return 2 }
+    if not inet_connect(&net, a * 3 + 2, y * 3) { return 3 }
+    if inet_reduce_first(&net) != INET_REDUCED { return 4 }
+    if not inet_validate(&net) or inet_live_nodes(&net) != 4 { return 5 }
+    if net.nodes[4].kind != INET_EPSILON or net.nodes[5].kind != INET_EPSILON { return 6 }
+    if inet_peer(&net, x * 3) != 4 * 3 or inet_peer(&net, y * 3) != 5 * 3 { return 7 }
+    free(storage as ptr<void>)
+    return 0
+}
+
+function test_epsilon_epsilon() -> i32 {
+    let storage: ptr<InetNode> = malloc(2 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut net: InetNet = inet_new(storage, 2)
+    let a: i32 = inet_add(&net, INET_EPSILON)
+    let b: i32 = inet_add(&net, INET_EPSILON)
+    if not inet_connect(&net, a * 3, b * 3) { return 1 }
+    if inet_reduce_first(&net) != INET_REDUCED { return 2 }
+    if inet_live_nodes(&net) != 0 or not inet_validate(&net) { return 3 }
+    if inet_reduce_first(&net) != INET_DONE { return 4 }
+    free(storage as ptr<void>)
+    return 0
+}
+
+function test_commutation(reversed: bool) -> i32 {
+    let storage: ptr<InetNode> = malloc(10 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut net: InetNet = inet_new(storage, 10)
+    let mut ka: i32 = INET_GAMMA
+    let mut kb: i32 = INET_DELTA
+    if reversed {
+        ka = INET_DELTA
+        kb = INET_GAMMA
+    }
+    if not add_binary_pair(&net, ka, kb) { return 1 }
+    if inet_reduce_first(&net) != INET_REDUCED { return 2 }
+    if not inet_validate(&net) or net.count != 10 { return 3 }
+    if inet_live_nodes(&net) != 8 or inet_active_pairs(&net) != 0 { return 4 }
+
+    # Gamma copies are 6/7 and delta copies are 8/9.
+    if net.nodes[6].kind != INET_GAMMA or net.nodes[7].kind != INET_GAMMA { return 5 }
+    if net.nodes[8].kind != INET_DELTA or net.nodes[9].kind != INET_DELTA { return 6 }
+    if inet_peer(&net, 6 * 3 + 1) != 8 * 3 + 1 { return 7 }
+    if inet_peer(&net, 6 * 3 + 2) != 9 * 3 + 1 { return 8 }
+    if inet_peer(&net, 7 * 3 + 1) != 8 * 3 + 2 { return 9 }
+    if inet_peer(&net, 7 * 3 + 2) != 9 * 3 + 2 { return 10 }
+    if reversed {
+        if inet_peer(&net, 2 * 3) != 6 * 3 or inet_peer(&net, 3 * 3) != 7 * 3 { return 11 }
+        if inet_peer(&net, 4 * 3) != 8 * 3 or inet_peer(&net, 5 * 3) != 9 * 3 { return 12 }
+    } else {
+        if inet_peer(&net, 2 * 3) != 8 * 3 or inet_peer(&net, 3 * 3) != 9 * 3 { return 13 }
+        if inet_peer(&net, 4 * 3) != 6 * 3 or inet_peer(&net, 5 * 3) != 7 * 3 { return 14 }
+    }
+    free(storage as ptr<void>)
+    return 0
+}
+
+function test_capacity() -> i32 {
+    let storage: ptr<InetNode> = malloc(6 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut net: InetNet = inet_new(storage, 6)
+    if not add_binary_pair(&net, INET_GAMMA, INET_DELTA) { return 1 }
+    let original: i32 = inet_peer(&net, 2 * 3)
+    if inet_reduce_first(&net) != INET_CAPACITY { return 2 }
+    if net.count != 6 or inet_peer(&net, 2 * 3) != original { return 3 }
+    if inet_live_nodes(&net) != 6 or inet_active_pairs(&net) != 1 { return 4 }
+    if not inet_validate(&net) { return 5 }
+    free(storage as ptr<void>)
+    return 0
+}
+
+function test_validation_and_budget() -> i32 {
+    let storage: ptr<InetNode> = malloc(12 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut net: InetNet = inet_new(storage, 12)
+    if not add_binary_pair(&net, INET_GAMMA, INET_GAMMA) { return 1 }
+    if not add_binary_pair(&net, INET_DELTA, INET_DELTA) { return 2 }
+    if inet_connect(&net, 0, 0) { return 3 }
+    if inet_connect(&net, 2 * 3 + 1, 3 * 3) { return 4 }
+    if inet_reduce_pair(&net, 0, 7) != INET_INVALID { return 5 }
+    if inet_active_pairs(&net) != 2 { return 6 }
+    let zero: InetRun = inet_run(&net, 0)
+    if zero.steps != 0 or zero.status != INET_LIMIT { return 7 }
+    let partial: InetRun = inet_run(&net, 1)
+    if partial.steps != 1 or partial.status != INET_LIMIT { return 8 }
+    let finish: InetRun = inet_run(&net, 2)
+    if finish.steps != 1 or finish.status != INET_DONE { return 9 }
+    if inet_active_pairs(&net) != 0 or inet_live_nodes(&net) != 8 { return 10 }
+    # A malformed one-way wire cannot be used as a valid redex.
+    net.nodes[2].peer0 = -1
+    if inet_validate(&net) { return 11 }
+    if inet_reduce_first(&net) != INET_INVALID { return 12 }
+    free(storage as ptr<void>)
+    return 0
+}
+
+function test_disjoint_order() -> i32 {
+    let ls: ptr<InetNode> = malloc(12 * sizeof<InetNode>()) as ptr<InetNode>
+    let rs: ptr<InetNode> = malloc(12 * sizeof<InetNode>()) as ptr<InetNode>
+    let mut left: InetNet = inet_new(ls, 12)
+    let mut right: InetNet = inet_new(rs, 12)
+    if not add_binary_pair(&left, INET_GAMMA, INET_GAMMA) { return 1 }
+    if not add_binary_pair(&left, INET_DELTA, INET_DELTA) { return 2 }
+    if not add_binary_pair(&right, INET_GAMMA, INET_GAMMA) { return 3 }
+    if not add_binary_pair(&right, INET_DELTA, INET_DELTA) { return 4 }
+    if inet_reduce_pair(&left, 0, 1) != INET_REDUCED { return 5 }
+    if inet_reduce_pair(&left, 6, 7) != INET_REDUCED { return 6 }
+    if inet_reduce_pair(&right, 6, 7) != INET_REDUCED { return 7 }
+    if inet_reduce_pair(&right, 0, 1) != INET_REDUCED { return 8 }
+    let mut i: i32 = 0
+    while i < 12 {
+        if ls[i].alive != rs[i].alive { return 9 }
+        if ls[i].peer0 != rs[i].peer0 or ls[i].peer1 != rs[i].peer1 or ls[i].peer2 != rs[i].peer2 {
+            return 10
+        }
+        i = i + 1
+    }
+    free(ls as ptr<void>)
+    free(rs as ptr<void>)
+    return 0
+}
+
+function main() -> i32 {
+    let a: i32 = test_annihilation(INET_GAMMA)
+    if a != 0 { return 10 + a }
+    let b: i32 = test_annihilation(INET_DELTA)
+    if b != 0 { return 30 + b }
+    let c: i32 = test_erasure(INET_GAMMA, false)
+    if c != 0 { return 50 + c }
+    let d: i32 = test_erasure(INET_DELTA, true)
+    if d != 0 { return 70 + d }
+    let e: i32 = test_epsilon_epsilon()
+    if e != 0 { return 90 + e }
+    let f: i32 = test_commutation(false)
+    if f != 0 { return 110 + f }
+    let g: i32 = test_commutation(true)
+    if g != 0 { return 140 + g }
+    let h: i32 = test_capacity()
+    if h != 0 { return 170 + h }
+    let i: i32 = test_validation_and_budget()
+    if i != 0 { return 190 + i }
+    let j: i32 = test_disjoint_order()
+    if j != 0 { return 220 + j }
+    return 0
+}

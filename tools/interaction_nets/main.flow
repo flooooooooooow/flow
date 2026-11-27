@@ -1,0 +1,80 @@
+# Experimental interaction-net reference runner and microbenchmark.
+# Execute: ./flow tool interaction_nets
+#
+# This times the bounded serial reducer, not parallel execution or compiler
+# lowering, and must not be compared to production C/MLIR as equivalent work.
+
+import "tools/interaction_nets/core.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>)
+    function gettimeofday(tv: ptr<i64>, tz: ptr<void>) -> i32
+    function printf(fmt: string, ...) -> i32
+}
+
+function now_ms() -> f64 {
+    let tv: ptr<i64> = malloc(16) as ptr<i64>
+    let _rc: i32 = gettimeofday(tv, null)
+    let time: f64 = (tv[0] as f64) * 1000.0 + (tv[1] as f64) / 1000.0
+    free(tv as ptr<void>)
+    return time
+}
+
+function make_pair(net: ptr<InetNet>, kind: i32) -> bool {
+    let a: i32 = inet_add(net, kind)
+    let b: i32 = inet_add(net, kind)
+    let x1: i32 = inet_add(net, INET_BOUNDARY)
+    let x2: i32 = inet_add(net, INET_BOUNDARY)
+    let y1: i32 = inet_add(net, INET_BOUNDARY)
+    let y2: i32 = inet_add(net, INET_BOUNDARY)
+    if a < 0 or b < 0 or y2 < 0 { return false }
+    if not inet_connect(net, a * 3, b * 3) { return false }
+    if not inet_connect(net, a * 3 + 1, x1 * 3) { return false }
+    if not inet_connect(net, a * 3 + 2, x2 * 3) { return false }
+    if not inet_connect(net, b * 3 + 1, y1 * 3) { return false }
+    if not inet_connect(net, b * 3 + 2, y2 * 3) { return false }
+    return true
+}
+
+function main() -> i32 {
+    let pairs: i32 = 256
+    let capacity: i32 = pairs * 6
+    let storage: ptr<InetNode> = malloc((capacity as i64) * sizeof<InetNode>()) as ptr<InetNode>
+    if storage == null { return 1 }
+    let mut net: InetNet = inet_new(storage, capacity)
+
+    let mut i: i32 = 0
+    while i < pairs {
+        let mut kind: i32 = INET_GAMMA
+        if i % 2 == 1 { kind = INET_DELTA }
+        if not make_pair(&net, kind) { return 2 }
+        i = i + 1
+    }
+    if not inet_validate(&net) or inet_active_pairs(&net) != pairs { return 3 }
+
+    let start: f64 = now_ms()
+    let result: InetRun = inet_run(&net, pairs)
+    let elapsed: f64 = now_ms() - start
+    if result.status != INET_DONE or result.steps != pairs { return 4 }
+    if not inet_validate(&net) or inet_active_pairs(&net) != 0 { return 5 }
+
+    i = 0
+    while i < pairs {
+        let base: i32 = i * 6
+        let mut expected_x1: i32 = (base + 5) * 3
+        let mut expected_x2: i32 = (base + 4) * 3
+        if i % 2 == 1 {
+            expected_x1 = (base + 4) * 3
+            expected_x2 = (base + 5) * 3
+        }
+        if inet_peer(&net, (base + 2) * 3) != expected_x1 { return 6 }
+        if inet_peer(&net, (base + 3) * 3) != expected_x2 { return 7 }
+        i = i + 1
+    }
+
+    printf("{\"schema\":1,\"reducer\":\"lafont-serial-reference\",\"pairs\":%d,\"interactions\":%d,\"allocated_nodes\":%d,\"live_nodes\":%d,\"elapsed_ms\":%.3f,\"valid\":true}\n",
+        pairs, result.steps, net.count, inet_live_nodes(&net), elapsed)
+    free(storage as ptr<void>)
+    return 0
+}
