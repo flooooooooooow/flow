@@ -94,8 +94,7 @@ flow CompetitiveLV {
     y evolves as r2 * y * (1.0 - (y + a21 * x) / k2)
 }
 
-function step_xy(x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
-    let mut system: CompetitiveLV = CompetitiveLV_new()
+function step_xy(system: ptr<CompetitiveLV>, x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
     system.x = x
     system.y = y
     system.r1 = R1
@@ -104,7 +103,7 @@ function step_xy(x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
     system.k2 = K2
     system.a12 = a12
     system.a21 = a21
-    CompetitiveLV_step(&system, dt)
+    CompetitiveLV_step(system, dt)
     next_y = system.y
     return system.x
 }
@@ -122,10 +121,11 @@ function eq_y(a12: f64, a21: f64) -> f64 {
 }
 
 function integrate(x0: f64, y0: f64, a12: f64, a21: f64, steps: i32) -> f64 {
+    let mut system: CompetitiveLV = CompetitiveLV_new()
     let mut x: f64 = x0
     let mut y: f64 = y0
     for t in 0 to steps {
-        x = step_xy(x, y, a12, a21, DT)
+        x = step_xy(&system, x, y, a12, a21, DT)
         y = next_y
     }
     next_y = y
@@ -184,8 +184,8 @@ function seed_live(x0: f64, y0: f64) -> void {
     push_tr()
 }
 
-function step_live(a12: f64, a21: f64) -> void {
-    live_x = step_xy(live_x, live_y, a12, a21, DT)
+function step_live(system: ptr<CompetitiveLV>, a12: f64, a21: f64) -> void {
+    live_x = step_xy(system, live_x, live_y, a12, a21, DT)
     live_y = next_y
     push_tr()
 }
@@ -253,6 +253,7 @@ function draw_hud(g: Gfx, preset: i32, a12: f64, a21: f64, paused: bool) -> void
 }
 
 function main() -> i32 {
+    let mut live_system: CompetitiveLV = CompetitiveLV_new()
     let fb: array<u8, 786432> = [0, 0, 0, 0]
     let a12c: f64 = 0.5
     let a21c: f64 = 0.5
@@ -372,7 +373,7 @@ function main() -> i32 {
 
         if !paused {
             for k in 0 to 2 {
-                step_live(a12, a21)
+                step_live(&live_system, a12, a21)
             }
             since_cycle = since_cycle + 1
             if since_cycle >= CYCLE_FRAMES {
