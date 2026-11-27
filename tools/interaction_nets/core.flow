@@ -168,7 +168,7 @@ function inet_detach(net: ptr<InetNet>, node: i32) {
 function inet_exposed(net: ptr<InetNet>, a: i32, b: i32) -> bool {
     let mut side: i32 = 0
     while side < 2 {
-        let node: i32 = a
+        let mut node: i32 = a
         if side == 1 { node = b }
         let arity: i32 = inet_arity(net.nodes[node].kind)
         let mut port: i32 = 1
