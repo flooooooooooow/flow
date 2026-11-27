@@ -209,7 +209,7 @@ export function inet_reduce_pair(net: ptr<InetNet>, a: i32, b: i32) -> i32 {
     let mut needed: i32 = 0
     if ka == INET_GAMMA and kb == INET_DELTA or ka == INET_DELTA and kb == INET_GAMMA {
         needed = 4
-    } else if ka == INET_EPSILON and kb != INET_EPSILON or kb == INET_EPSILON and ka != INET_EPSILON {
+    } elif ka == INET_EPSILON and kb != INET_EPSILON or kb == INET_EPSILON and ka != INET_EPSILON {
         needed = 2
     }
     if net.capacity - net.count < needed { return INET_CAPACITY }
@@ -225,11 +225,11 @@ export function inet_reduce_pair(net: ptr<InetNet>, a: i32, b: i32) -> i32 {
         if ka == INET_GAMMA {
             let _a: bool = inet_connect(net, x1, y2)
             let _b: bool = inet_connect(net, x2, y1)
-        } else if ka == INET_DELTA {
+        } elif ka == INET_DELTA {
             let _a: bool = inet_connect(net, x1, y1)
             let _b: bool = inet_connect(net, x2, y2)
         }
-    } else if ka == INET_EPSILON or kb == INET_EPSILON {
+    } elif ka == INET_EPSILON or kb == INET_EPSILON {
         let mut p1: i32 = x1
         let mut p2: i32 = x2
         if ka == INET_EPSILON {
