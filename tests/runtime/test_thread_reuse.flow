@@ -1,0 +1,49 @@
+# Threads spawned and joined many times over, as a renderer does every frame:
+# each spawn's function runs with its own argument once, and its join returns
+# 0 after it has finished. The runtime reuses one worker per slot.
+import "stdlib/concurrent.flow"
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+let mut out: ptr<i64> = null
+function work(arg: ptr<i8>) -> ptr<i8> {
+    let k: ptr<i64> = arg as ptr<i64>
+    let mut s: i64 = 0
+    for i in 0 to 100 {
+        s = s + (i as i64) * k[1]
+    }
+    out[k[0]] = s
+    return null
+}
+function main() -> i32 {
+    out = calloc(16, 8) as ptr<i64>
+    let args: ptr<i64> = calloc(32, 8) as ptr<i64>
+    let ts: ptr<Thread> = calloc(16, sizeof<Thread>()) as ptr<Thread>
+    let mut bad: i32 = 0
+    for round in 0 to 2000 {
+        for t in 0 to 12 {
+            args[2 * t] = t as i64
+            args[2 * t + 1] = (round + t) as i64
+            out[t] = -1
+            ts[t] = thread_spawn(work as ptr<i8>, &args[2 * t] as ptr<i8>)
+            if !ts[t].running {
+                bad = bad + 1
+            }
+        }
+        for t in 0 to 12 {
+            if thread_join(&ts[t]) != 0 {
+                bad = bad + 1
+            }
+            if out[t] != 4950 * ((round + t) as i64) {
+                bad = bad + 1
+            }
+        }
+    }
+    if bad != 0 {
+        print("FAIL thread reuse: ")
+        println(bad)
+        return 1
+    }
+    println("PASS thread reuse: 24000 spawns and joins")
+    return 0
+}

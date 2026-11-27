@@ -22,32 +22,48 @@
 /* ---- threads ----------------------------------------------------------- */
 
 typedef struct {
-    flow_thread_fn fn;
-    void *arg;
-} flow_thread_pack;
-
-typedef struct {
     pthread_t handle;
     int used;
+    int started;
+    int pending;
+    int done;
+    flow_thread_fn fn;
+    void *arg;
+    pthread_cond_t wake;
+    pthread_cond_t complete;
 } flow_thread_slot;
 
 static flow_thread_slot g_threads[FLOW_MAX_THREADS];
 static pthread_mutex_t g_threads_mu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t g_threads_once = PTHREAD_ONCE_INIT;
 
-static void *flow_thread_trampoline(void *p) {
-    flow_thread_pack pack = *(flow_thread_pack *)p;
-    free(p);
-    pack.fn(pack.arg);
+static void flow_thread_slots_init(void) {
+    for (int i = 0; i < FLOW_MAX_THREADS; i++) {
+        pthread_cond_init(&g_threads[i].wake, NULL);
+        pthread_cond_init(&g_threads[i].complete, NULL);
+    }
+}
+
+static void *flow_thread_worker(void *p) {
+    flow_thread_slot *slot = (flow_thread_slot *)p;
+    pthread_mutex_lock(&g_threads_mu);
+    for (;;) {
+        while (!slot->pending) pthread_cond_wait(&slot->wake, &g_threads_mu);
+        flow_thread_fn fn = slot->fn;
+        void *arg = slot->arg;
+        slot->pending = 0;
+        pthread_mutex_unlock(&g_threads_mu);
+        fn(arg);
+        pthread_mutex_lock(&g_threads_mu);
+        slot->done = 1;
+        pthread_cond_signal(&slot->complete);
+    }
     return NULL;
 }
 
 int64_t flow_rt_thread_spawn(flow_thread_fn fn, void *arg) {
     if (!fn) return -1;
-    flow_thread_pack *pack = (flow_thread_pack *)malloc(sizeof(*pack));
-    if (!pack) return -1;
-    pack->fn = fn;
-    pack->arg = arg;
-
+    pthread_once(&g_threads_once, flow_thread_slots_init);
     pthread_mutex_lock(&g_threads_mu);
     int slot = -1;
     for (int i = 0; i < FLOW_MAX_THREADS; i++) {
@@ -57,37 +73,48 @@ int64_t flow_rt_thread_spawn(flow_thread_fn fn, void *arg) {
             break;
         }
     }
-    pthread_mutex_unlock(&g_threads_mu);
     if (slot < 0) {
-        free(pack);
+        pthread_mutex_unlock(&g_threads_mu);
         return -1;
     }
 
-    if (pthread_create(&g_threads[slot].handle, NULL, flow_thread_trampoline, pack) != 0) {
-        pthread_mutex_lock(&g_threads_mu);
-        g_threads[slot].used = 0;
-        pthread_mutex_unlock(&g_threads_mu);
-        free(pack);
-        return -1;
+    flow_thread_slot *worker = &g_threads[slot];
+    worker->fn = fn;
+    worker->arg = arg;
+    worker->done = 0;
+    worker->pending = 1;
+    if (!worker->started) {
+        if (pthread_create(&worker->handle, NULL, flow_thread_worker, worker) != 0) {
+            worker->pending = 0;
+            worker->fn = NULL;
+            worker->arg = NULL;
+            worker->used = 0;
+            pthread_mutex_unlock(&g_threads_mu);
+            return -1;
+        }
+        worker->started = 1;
+    } else {
+        pthread_cond_signal(&worker->wake);
     }
+    pthread_mutex_unlock(&g_threads_mu);
     return (int64_t)slot;
 }
 
 int32_t flow_rt_thread_join(int64_t tid) {
     if (tid < 0 || tid >= FLOW_MAX_THREADS) return -1;
+    pthread_once(&g_threads_once, flow_thread_slots_init);
     pthread_mutex_lock(&g_threads_mu);
-    if (!g_threads[tid].used) {
+    flow_thread_slot *worker = &g_threads[tid];
+    if (!worker->used) {
         pthread_mutex_unlock(&g_threads_mu);
         return -1;
     }
-    pthread_t h = g_threads[tid].handle;
+    while (!worker->done) pthread_cond_wait(&worker->complete, &g_threads_mu);
+    worker->used = 0;
+    worker->fn = NULL;
+    worker->arg = NULL;
     pthread_mutex_unlock(&g_threads_mu);
-
-    int rc = pthread_join(h, NULL);
-    pthread_mutex_lock(&g_threads_mu);
-    g_threads[tid].used = 0;
-    pthread_mutex_unlock(&g_threads_mu);
-    return rc == 0 ? 0 : -1;
+    return 0;
 }
 
 void flow_rt_thread_yield(void) {
