@@ -75,31 +75,38 @@ function preset_name(p: i32) -> string {
     return "COEXIST"
 }
 
-function dx(x: f64, y: f64, a12: f64) -> f64 {
-    return R1 * x * (1.0 - (x + a12 * y) / K1)
-}
-
-function dy(x: f64, y: f64, a21: f64) -> f64 {
-    return R2 * y * (1.0 - (y + a21 * x) / K2)
-}
-
 let mut next_y: f64 = 0.0
 
+flow CompetitiveLV {
+    state x: f64 = 20.0
+    state y: f64 = 20.0
+
+    param r1: f64 = 1.0
+    param r2: f64 = 1.0
+    param k1: f64 = 100.0
+    param k2: f64 = 100.0
+    param a12: f64 = 0.5
+    param a21: f64 = 0.5
+
+    solver { dt 50 ms method rk4 }
+
+    x evolves as r1 * x * (1.0 - (x + a12 * y) / k1)
+    y evolves as r2 * y * (1.0 - (y + a21 * x) / k2)
+}
+
 function step_xy(x: f64, y: f64, a12: f64, a21: f64, dt: f64) -> f64 {
-    let k1x: f64 = dx(x, y, a12)
-    let k1y: f64 = dy(x, y, a21)
-    let k2x: f64 = dx(x + 0.5 * dt * k1x, y + 0.5 * dt * k1y, a12)
-    let k2y: f64 = dy(x + 0.5 * dt * k1x, y + 0.5 * dt * k1y, a21)
-    let k3x: f64 = dx(x + 0.5 * dt * k2x, y + 0.5 * dt * k2y, a12)
-    let k3y: f64 = dy(x + 0.5 * dt * k2x, y + 0.5 * dt * k2y, a21)
-    let k4x: f64 = dx(x + dt * k3x, y + dt * k3y, a12)
-    let k4y: f64 = dy(x + dt * k3x, y + dt * k3y, a21)
-    let mut nx: f64 = x + (dt / 6.0) * (k1x + 2.0 * k2x + 2.0 * k3x + k4x)
-    let mut ny: f64 = y + (dt / 6.0) * (k1y + 2.0 * k2y + 2.0 * k3y + k4y)
-    if nx < 0.0 { nx = 0.0 }
-    if ny < 0.0 { ny = 0.0 }
-    next_y = ny
-    return nx
+    let mut system: CompetitiveLV = CompetitiveLV_new()
+    system.x = x
+    system.y = y
+    system.r1 = R1
+    system.r2 = R2
+    system.k1 = K1
+    system.k2 = K2
+    system.a12 = a12
+    system.a21 = a21
+    CompetitiveLV_step(&system, dt)
+    next_y = system.y
+    return system.x
 }
 
 function eq_x(a12: f64, a21: f64) -> f64 {
@@ -141,7 +148,7 @@ function put_rgb(fb: ptr<u8>, x: i32, y: i32, r: i32, g2: i32, b: i32) -> void {
 }
 
 function fill_rect_fb(fb: ptr<u8>, x: i32, y: i32, w: i32, h: i32,
-                      r: i32, g2: i32, b: i32) -> void {
+    r: i32, g2: i32, b: i32) -> void {
     for dy in 0 to h {
         for dx in 0 to w {
             put_rgb(fb, x + dx, y + dy, r, g2, b)
