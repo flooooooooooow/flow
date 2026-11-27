@@ -1780,7 +1780,7 @@ function category_blurb(id: string) -> string {
     if ft_eq(id, "learning") {
         return "Small models and agents. The Metal and tape-runtime variants need host services that are not linked here."
     }
-    return "Allocators, hash tables, hashing, parsers, file formats. Anything asking the OS about itself stops at the link step."
+    return "Allocators, hash tables, hashing, parsers, file formats, and tcp_echo, which talks to a local WebSocket relay. Anything else asking the OS about itself stops at the link step."
 }
 
 # "folder:pattern" globs, then explicit files, for a category.
@@ -1820,6 +1820,8 @@ function category_files(id: string) -> ptr<StrList> {
         ft_list_push(f, "examples/wasm/hello_wasm.flow")
         ft_list_push(f, "examples/wasm/parallel_scaling.flow")
         ft_list_push(f, "examples/wasm/parallel_sum.flow")
+    } elif ft_eq(id, "systems") {
+        ft_list_push(f, "examples/wasm/tcp_echo.flow")
     }
     return f
 }
@@ -1856,12 +1858,24 @@ function apply_extras(b: ptr<Build>, name: string) -> string {
     } elif ft_eq(name, "digits_mlp_metal") {
         ft_list_push(b[0].link, support)
         return "The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop rather than a GPU dispatch."
+    } elif ft_eq(name, "tcp_echo") {
+        # Same link set as ./flow tool wasm_crossings sockets: Flow's BSD
+        # socket kernels, the runtime support object, and the yield/port shim.
+        # ASYNCIFY is required so flow_net_yield can emscripten_sleep and let
+        # the WebSocket handshake and inbound frames run on the event loop.
+        ft_list_push(b[0].link, root() + "/runtime/flow_tcp.c")
+        ft_list_push(b[0].link, support)
+        ft_list_push(b[0].extra_c, "wasm/crossing_assets/net_yield_shim.c")
+        ft_list_push(b[0].emcc_flags, "-sASYNCIFY=1")
+        ft_list_push(b[0].emcc_flags, "-sASYNCIFY_STACK_SIZE=16384")
+        ft_list_push(b[0].emcc_flags, "-DFLOW_DEMO_PORT=9505")
+        return "Uses Flow's BSD socket API (runtime/flow_tcp.c). Start ./flow tool ws_echo_relay --port 9505 first; the browser maps connect() to a WebSocket on that port. Without the relay the program times out and exits 1. The same source also runs natively against the relay's TCP port."
     }
     return ""
 }
 
 function special_title(name: string) -> string {
-    let pairs: string = "2048=2048|lightsout=Lights Out|connect4=Connect Four|maze chase=Maze Chase|lane racer=Lane Racer|missile=Missile Command|invaders=Space Invaders|hanoi=Tower of Hanoi|match3=Match-3|dla=DLA|wfc growth=WFC Growth|lsystem plant=L-System Plant|lsystem tree=L-System Tree|cyclic ca=Cyclic CA|hexagonal ca=Hexagonal CA|gcd=GCD|hello wasm=Hello WASM|blas demo=BLAS Demo|lu decomposition=LU Decomposition|lu decomposition pedagogical=LU Decomposition (pedagogical)|digits mlp=Digits MLP|digits mlp metal=Digits MLP (Metal)|digits mlp parallel=Digits MLP (parallel)|ga flappy=GA Flappy|ga control=GA Control|ga dsys namespaced=GA Dsys (namespaced)|ga dsys syntax=GA Dsys Syntax|ga full analysis=GA Full Analysis|ga wfc coupled=GA + WFC Coupled|q snake=Q-Snake|wfc demo=WFC Demo|nn layers=NN Layers|mlir tensor bench=MLIR Tensor Bench|sha256=SHA-256|runtime sha256=Runtime SHA-256|csv parser=CSV Parser|gif writer=GIF Writer|lsp ordering port=LSP Ordering Port|oop counter=OOP Counter|oop person=OOP Person|flowlm charlm=FlowLM Char-LM|ode solver=ODE Solver|regression gd=Regression (GD)"
+    let pairs: string = "tcp echo=TCP Echo|2048=2048|lightsout=Lights Out|connect4=Connect Four|maze chase=Maze Chase|lane racer=Lane Racer|missile=Missile Command|invaders=Space Invaders|hanoi=Tower of Hanoi|match3=Match-3|dla=DLA|wfc growth=WFC Growth|lsystem plant=L-System Plant|lsystem tree=L-System Tree|cyclic ca=Cyclic CA|hexagonal ca=Hexagonal CA|gcd=GCD|hello wasm=Hello WASM|blas demo=BLAS Demo|lu decomposition=LU Decomposition|lu decomposition pedagogical=LU Decomposition (pedagogical)|digits mlp=Digits MLP|digits mlp metal=Digits MLP (Metal)|digits mlp parallel=Digits MLP (parallel)|ga flappy=GA Flappy|ga control=GA Control|ga dsys namespaced=GA Dsys (namespaced)|ga dsys syntax=GA Dsys Syntax|ga full analysis=GA Full Analysis|ga wfc coupled=GA + WFC Coupled|q snake=Q-Snake|wfc demo=WFC Demo|nn layers=NN Layers|mlir tensor bench=MLIR Tensor Bench|sha256=SHA-256|runtime sha256=Runtime SHA-256|csv parser=CSV Parser|gif writer=GIF Writer|lsp ordering port=LSP Ordering Port|oop counter=OOP Counter|oop person=OOP Person|flowlm charlm=FlowLM Char-LM|ode solver=ODE Solver|regression gd=Regression (GD)"
     let entries: ptr<StrList> = split_on(pairs, 124)
     let mut k: i32 = 0
     while k < ft_list_len(entries) {

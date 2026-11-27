@@ -51,9 +51,9 @@ clearly under `--backend=mlir`.
 
 ## Status matrix
 
-Two rows are verified in a browser. The rest name the mechanism that would
-cross them and state that it is not built yet. None of them is a permanent
-limit.
+Rows marked Runs today have a working mechanism in this tree. The remaining
+rows name the mechanism that would cross them and state that it is not built
+yet. None of them is a permanent limit.
 
 | Capability | State | Route |
 |---|---|---|
@@ -61,7 +61,7 @@ limit.
 | Freestanding wasm32 modules | **Runs today** | Flow → MLIR → LLVM IR → `clang --target=wasm32-unknown-unknown`. No Emscripten, no libc. See below. |
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` blits the framebuffer to a canvas; DOM key events map to the macOS keycodes the programs already use. |
 | Threads and channels | In progress | Emscripten `-pthread` over SharedArrayBuffer and Web Workers. Needs cross-origin isolation, obtainable on GitHub Pages with a service-worker shim. |
-| Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js`, `PROXY_POSIX_SOCKETS`). |
+| Sockets and HTTP | **Runs today** | `tcp_echo` is a gallery card. It uses Flow's BSD socket API in `runtime/flow_tcp.c`. In the browser, `connect()` is a WebSocket, so start `./flow tool ws_echo_relay --port 9505` first. Without the relay the program times out and exits 1. The same source also runs natively against the relay's TCP port. `./flow tool wasm_crossings sockets` already proved eight round trips in Chrome. |
 | GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
 | Embedded CPython | In progress | Pyodide, CPython compiled to WebAssembly. |
 | File I/O | In progress | Emscripten MEMFS and IDBFS. |
