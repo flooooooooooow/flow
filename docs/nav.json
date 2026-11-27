@@ -1065,6 +1065,10 @@
           "path": "project/idiom-modernization/FM-012-algebraic-dae-mna-inventory.md"
         },
         {
+          "label": "Modernization: Range Sum Inventory",
+          "path": "project/idiom-modernization/FM-012-range-sum-inventory.md"
+        },
+        {
           "label": "FIR-G",
           "path": "project/fir-g.md"
         },
