@@ -1,0 +1,344 @@
+# @module tools.interaction_nets.core
+# @means Experimental, bounded reference reducer for Lafont's interaction
+#        combinators. Not wired into flowc or production FIR-G lowering.
+#
+# Port 0 is principal; ports 1 and 2 are auxiliary for gamma and delta.
+# A port ID is node_id * 3 + port_number. Every attached wire is reciprocal.
+# INET_BOUNDARY is an inert, one-port testing/interface marker.
+#
+# Reference rules:
+# gamma-gamma: cross auxiliaries, delta-delta: straight auxiliaries
+# epsilon-epsilon: annihilate
+# gamma/delta-epsilon: propagate two epsilon agents
+# gamma-delta: four agents wired in a 2x2 commuting square
+#
+# This first bounded implementation requires every auxiliary of a redex to
+# connect outside the active pair; internal loops and dangling redex auxiliary
+# ports fail closed. The allocator never reuses tombstones.
+
+export const INET_GAMMA: i32 = 1
+export const INET_DELTA: i32 = 2
+export const INET_EPSILON: i32 = 3
+export const INET_BOUNDARY: i32 = 4
+
+export const INET_DONE: i32 = 0
+export const INET_REDUCED: i32 = 1
+export const INET_INVALID: i32 = -1
+export const INET_CAPACITY: i32 = -2
+export const INET_LIMIT: i32 = -3
+
+export struct InetNode {
+    kind: i32,
+    peer0: i32,
+    peer1: i32,
+    peer2: i32,
+    alive: i32
+}
+
+export struct InetNet {
+    nodes: ptr<InetNode>,
+    count: i32,
+    capacity: i32
+}
+
+export struct InetRun {
+    steps: i32,
+    status: i32
+}
+
+export function inet_new(storage: ptr<InetNode>, capacity: i32) -> InetNet {
+    return InetNet { nodes: storage, count: 0, capacity: capacity }
+}
+
+function inet_arity(kind: i32) -> i32 {
+    if kind == INET_GAMMA or kind == INET_DELTA { return 2 }
+    if kind == INET_EPSILON or kind == INET_BOUNDARY { return 0 }
+    return -1
+}
+
+export function inet_add(net: ptr<InetNet>, kind: i32) -> i32 {
+    if net.nodes == null or net.count < 0 or net.capacity < 0 or net.count >= net.capacity or inet_arity(kind) < 0 {
+        return -1
+    }
+    let id: i32 = net.count
+    net.nodes[id] = InetNode {
+        kind: kind, peer0: -1, peer1: -1, peer2: -1, alive: 1
+    }
+    net.count = net.count + 1
+    return id
+}
+
+function inet_port_ok(net: ptr<InetNet>, id: i32) -> bool {
+    if id < 0 or net.nodes == null or net.count < 0 or net.count > net.capacity {
+        return false
+    }
+    let node: i32 = id / 3
+    let port: i32 = id % 3
+    if node >= net.count or net.nodes[node].alive != 1 { return false }
+    return port <= inet_arity(net.nodes[node].kind)
+}
+
+export function inet_peer(net: ptr<InetNet>, id: i32) -> i32 {
+    if not inet_port_ok(net, id) { return -1 }
+    let node: i32 = id / 3
+    let port: i32 = id % 3
+    if port == 0 { return net.nodes[node].peer0 }
+    if port == 1 { return net.nodes[node].peer1 }
+    return net.nodes[node].peer2
+}
+
+function inet_set_peer(net: ptr<InetNet>, id: i32, other: i32) {
+    let node: i32 = id / 3
+    let port: i32 = id % 3
+    if port == 0 { net.nodes[node].peer0 = other }
+    if port == 1 { net.nodes[node].peer1 = other }
+    if port == 2 { net.nodes[node].peer2 = other }
+}
+
+export function inet_connect(net: ptr<InetNet>, a: i32, b: i32) -> bool {
+    if a == b or not inet_port_ok(net, a) or not inet_port_ok(net, b) {
+        return false
+    }
+    if inet_peer(net, a) != -1 or inet_peer(net, b) != -1 {
+        return false
+    }
+    inet_set_peer(net, a, b)
+    inet_set_peer(net, b, a)
+    return true
+}
+
+export function inet_validate(net: ptr<InetNet>) -> bool {
+    if net.capacity < 0 or net.count < 0 or net.count > net.capacity {
+        return false
+    }
+    if net.count > 0 and net.nodes == null { return false }
+    let mut i: i32 = 0
+    while i < net.count {
+        let node: InetNode = net.nodes[i]
+        if node.alive == 0 {
+            if node.peer0 != -1 or node.peer1 != -1 or node.peer2 != -1 {
+                return false
+            }
+        } else {
+            if node.alive != 1 { return false }
+            let arity: i32 = inet_arity(node.kind)
+            if arity < 0 { return false }
+            let mut port: i32 = 0
+            while port < 3 {
+                let id: i32 = i * 3 + port
+                let mut peer: i32 = node.peer0
+                if port == 1 { peer = node.peer1 }
+                if port == 2 { peer = node.peer2 }
+                if port > arity {
+                    if peer != -1 { return false }
+                } else {
+                    if peer < -1 { return false }
+                    if peer >= 0 {
+                        if peer == id or not inet_port_ok(net, peer) {
+                            return false
+                        }
+                        if inet_peer(net, peer) != id { return false }
+                    }
+                }
+                port = port + 1
+            }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function inet_detach(net: ptr<InetNet>, node: i32) {
+    let arity: i32 = inet_arity(net.nodes[node].kind)
+    let mut port: i32 = 0
+    while port <= arity {
+        let id: i32 = node * 3 + port
+        let other: i32 = inet_peer(net, id)
+        if other >= 0 {
+            inet_set_peer(net, other, -1)
+            inet_set_peer(net, id, -1)
+        }
+        port = port + 1
+    }
+    net.nodes[node].alive = 0
+}
+
+# A rewrite's exposed auxiliary ports must have distinct external endpoints.
+# This is a documented first-stage restriction, not general IC evaluation.
+function inet_exposed(net: ptr<InetNet>, a: i32, b: i32) -> bool {
+    let mut side: i32 = 0
+    while side < 2 {
+        let node: i32 = a
+        if side == 1 { node = b }
+        let arity: i32 = inet_arity(net.nodes[node].kind)
+        let mut port: i32 = 1
+        while port <= arity {
+            let peer: i32 = inet_peer(net, node * 3 + port)
+            if peer < 0 or peer / 3 == a or peer / 3 == b {
+                return false
+            }
+            port = port + 1
+        }
+        side = side + 1
+    }
+    return true
+}
+
+# Returns INET_REDUCED only for a completed graph-local rewrite.
+# Negative results leave the net unchanged.
+export function inet_reduce_pair(net: ptr<InetNet>, a: i32, b: i32) -> i32 {
+    if not inet_validate(net) { return INET_INVALID }
+    if a < 0 or b < 0 or a >= net.count or b >= net.count or a == b {
+        return INET_INVALID
+    }
+    if net.nodes[a].alive != 1 or net.nodes[b].alive != 1 {
+        return INET_INVALID
+    }
+    if inet_peer(net, a * 3) != b * 3 or inet_peer(net, b * 3) != a * 3 {
+        return INET_INVALID
+    }
+    let ka: i32 = net.nodes[a].kind
+    let kb: i32 = net.nodes[b].kind
+    if ka == INET_BOUNDARY or kb == INET_BOUNDARY {
+        return INET_DONE
+    }
+    if not inet_exposed(net, a, b) {
+        return INET_INVALID
+    }
+
+    let mut needed: i32 = 0
+    if ka == INET_GAMMA and kb == INET_DELTA or ka == INET_DELTA and kb == INET_GAMMA {
+        needed = 4
+    } else if ka == INET_EPSILON and kb != INET_EPSILON or kb == INET_EPSILON and ka != INET_EPSILON {
+        needed = 2
+    }
+    if net.capacity - net.count < needed { return INET_CAPACITY }
+
+    let x1: i32 = inet_peer(net, a * 3 + 1)
+    let x2: i32 = inet_peer(net, a * 3 + 2)
+    let y1: i32 = inet_peer(net, b * 3 + 1)
+    let y2: i32 = inet_peer(net, b * 3 + 2)
+    inet_detach(net, a)
+    inet_detach(net, b)
+
+    if ka == kb {
+        if ka == INET_GAMMA {
+            let _a: bool = inet_connect(net, x1, y2)
+            let _b: bool = inet_connect(net, x2, y1)
+        } else if ka == INET_DELTA {
+            let _a: bool = inet_connect(net, x1, y1)
+            let _b: bool = inet_connect(net, x2, y2)
+        }
+    } else if ka == INET_EPSILON or kb == INET_EPSILON {
+        let mut p1: i32 = x1
+        let mut p2: i32 = x2
+        if ka == INET_EPSILON {
+            p1 = y1
+            p2 = y2
+        }
+        let e1: i32 = inet_add(net, INET_EPSILON)
+        let e2: i32 = inet_add(net, INET_EPSILON)
+        let _a: bool = inet_connect(net, e1 * 3, p1)
+        let _b: bool = inet_connect(net, e2 * 3, p2)
+    } else {
+        # Normalize the exposed interfaces to gamma (g) and delta (d).
+        let mut g1: i32 = x1
+        let mut g2: i32 = x2
+        let mut d1: i32 = y1
+        let mut d2: i32 = y2
+        if ka == INET_DELTA {
+            g1 = y1
+            g2 = y2
+            d1 = x1
+            d2 = x2
+        }
+
+        let gl: i32 = inet_add(net, INET_GAMMA)
+        let gr: i32 = inet_add(net, INET_GAMMA)
+        let dl: i32 = inet_add(net, INET_DELTA)
+        let dr: i32 = inet_add(net, INET_DELTA)
+
+        let _a: bool = inet_connect(net, dl * 3, g1)
+        let _b: bool = inet_connect(net, dr * 3, g2)
+        let _c: bool = inet_connect(net, gl * 3, d1)
+        let _d: bool = inet_connect(net, gr * 3, d2)
+        let _e: bool = inet_connect(net, gl * 3 + 1, dl * 3 + 1)
+        let _f: bool = inet_connect(net, gl * 3 + 2, dr * 3 + 1)
+        let _g: bool = inet_connect(net, gr * 3 + 1, dl * 3 + 2)
+        let _h: bool = inet_connect(net, gr * 3 + 2, dr * 3 + 2)
+    }
+    if not inet_validate(net) { return INET_INVALID }
+    return INET_REDUCED
+}
+
+export function inet_active_pairs(net: ptr<InetNet>) -> i32 {
+    if not inet_validate(net) { return -1 }
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < net.count {
+        if net.nodes[i].alive == 1 and net.nodes[i].kind != INET_BOUNDARY {
+            let peer: i32 = inet_peer(net, i * 3)
+            if peer >= 0 and peer % 3 == 0 and peer / 3 > i {
+                let other: i32 = peer / 3
+                if net.nodes[other].kind != INET_BOUNDARY {
+                    total = total + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return total
+}
+
+export function inet_reduce_first(net: ptr<InetNet>) -> i32 {
+    if not inet_validate(net) { return INET_INVALID }
+    let mut i: i32 = 0
+    while i < net.count {
+        if net.nodes[i].alive == 1 and net.nodes[i].kind != INET_BOUNDARY {
+            let peer: i32 = inet_peer(net, i * 3)
+            if peer >= 0 and peer % 3 == 0 and peer / 3 > i {
+                let other: i32 = peer / 3
+                if net.nodes[other].kind != INET_BOUNDARY {
+                    return inet_reduce_pair(net, i, other)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return INET_DONE
+}
+
+export function inet_run(net: ptr<InetNet>, max_steps: i32) -> InetRun {
+    if max_steps < 0 or not inet_validate(net) {
+        return InetRun { steps: 0, status: INET_INVALID }
+    }
+    let mut steps: i32 = 0
+    while steps < max_steps {
+        let status: i32 = inet_reduce_first(net)
+        if status == INET_DONE {
+            return InetRun { steps: steps, status: INET_DONE }
+        }
+        if status != INET_REDUCED {
+            return InetRun { steps: steps, status: status }
+        }
+        steps = steps + 1
+    }
+    let remaining: i32 = inet_active_pairs(net)
+    if remaining < 0 {
+        return InetRun { steps: steps, status: INET_INVALID }
+    }
+    if remaining > 0 {
+        return InetRun { steps: steps, status: INET_LIMIT }
+    }
+    return InetRun { steps: steps, status: INET_DONE }
+}
+
+export function inet_live_nodes(net: ptr<InetNet>) -> i32 {
+    let mut live: i32 = 0
+    let mut i: i32 = 0
+    while i < net.count {
+        if net.nodes[i].alive == 1 { live = live + 1 }
+        i = i + 1
+    }
+    return live
+}
