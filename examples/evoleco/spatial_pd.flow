@@ -143,19 +143,32 @@ function run_gens(tempt: f64, gens: i32, frac_c: f64) -> f64 {
 }
 
 # Mean-field: well-mixed replicator with the same payoff.
+function mean_field_rate(p: f64, temptation: f64) -> f64 {
+    let fc: f64 = p * 1.0
+    let fd: f64 = p * temptation
+    let wbar: f64 = p * fc + (1.0 - p) * fd
+    return p * (fc - wbar)
+}
+
+flow PDMeanField {
+    state p: f64 = 0.5
+
+    param temptation: f64 = 1.2
+
+    solver { dt 50 ms method rk4 }
+
+    p evolves as mean_field_rate(p, temptation)
+}
+
 function mean_field(tempt: f64, p0: f64, steps: i32) -> f64 {
-    let mut p: f64 = p0
+    let mut system: PDMeanField = PDMeanField_new()
+    system.p = p0
+    system.temptation = tempt
     let dt: f64 = 0.05
     for t in 0 to steps {
-        # Fitness: f_C = p * 1, f_D = p * b; wbar = p f_C + (1-p) f_D.
-        let fc: f64 = p * 1.0
-        let fd: f64 = p * tempt
-        let wbar: f64 = p * fc + (1.0 - p) * fd
-        p = p + dt * p * (fc - wbar)
-        if p < 0.0 { p = 0.0 }
-        if p > 1.0 { p = 1.0 }
+        PDMeanField_step(&system, dt)
     }
-    return p
+    return system.p
 }
 
 function preset_b(p: i32) -> f64 {
@@ -198,7 +211,7 @@ function draw_field(g: Gfx) -> void {
 }
 
 function draw_hud(g: Gfx, preset: i32, b: f64, dens: f64, gen: i32,
-                  paused: bool) -> void {
+    paused: bool) -> void {
     let t1: i32 = gfx_draw_text(g, 8, 8, "SPATIAL PD  NOWAK MAY IMITATION", 2, 238, 234, 246)
     let t2: i32 = gfx_draw_text(g, 8, 28, "MODE", 1, 150, 146, 168)
     let t3: i32 = gfx_draw_text(g, 40, 28, preset_name(preset), 1, 255, 198, 96)
