@@ -1,0 +1,31 @@
+# runtime/gfx_overlay.h: the overlay patch a Metal present uses to keep three
+# overlay buffers current (clear the previous dirty bounds, copy the current
+# ones). Builds and runs runtime/tests/gfx_overlay_test.c with the C compiler.
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function main() -> i32 {
+    let root: string = env("FLOW_CLI_ROOT")
+    if s_len(root) == 0 { return 1 }
+    let cc: string = if have("cc") { "cc" } else { "clang" }
+    let dir: string = mktemp_dir(tmp_base() + "/flow-gfx-overlay.XXXXXX")
+    if s_len(dir) == 0 { return 2 }
+    let exe: string = dir + "/gfx_overlay_test"
+    let build: ptr<ProcStrs> = sl_of3(cc, "-O1", "-o")
+    sl_push(build, exe)
+    sl_push(build, root + "/runtime/tests/gfx_overlay_test.c")
+    let blog: string = capture_merged(cmd(build))
+    if last_status() != 0 {
+        errln(blog)
+        rm_rf(dir)
+        return 3
+    }
+    let log: string = capture_merged(cmd(sl_of1(exe)))
+    let st: i32 = last_status()
+    rm_rf(dir)
+    if st != 0 or s_contains(log, "FAIL") {
+        errln(log)
+        return 4
+    }
+    return 0
+}

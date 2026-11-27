@@ -15,6 +15,8 @@
 #import <Cocoa/Cocoa.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
+#import <dispatch/dispatch.h>
+#include <stdlib.h>
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
@@ -39,6 +41,14 @@ struct FlowGfxContext {
     int width;
     int height;
     uint8_t* pixels; // width*height*4 RGBA
+    const uint8_t* rgb_source; // borrowed full-frame RGB8 image, valid through present
+    int32_t rgb_source_w, rgb_source_h;
+    bool rgb_base;
+    bool rgb_overlay;
+    bool rgb_overlay_ready;
+    uint64_t overlay_version;
+    bool gfx_touched;
+    int32_t overlay_x0, overlay_y0, overlay_x1, overlay_y1;
     bool keys[256];  // macOS virtual keyCode state
     bool should_close;
 
@@ -66,12 +76,81 @@ struct FlowGfxContext {
     int32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 };
 
+static CGColorSpaceRef flow_gfx_rgb_space = NULL;
+typedef int32_t (*FlowGfxMetalPresentFn)(void*, const uint8_t*, const uint8_t*, int32_t, int32_t,
+                                        uint64_t, int32_t, int32_t, int32_t, int32_t, int32_t);
+typedef void (*FlowGfxMetalScaleWaitFn)(void);
+/* The present hook (flow_gfx_set_present_hook): a program with its own Metal
+ * renderer hands the window its present function, and a full-size RGB frame
+ * blitted with flow_gfx_blit_rgb then goes to a CAMetalLayer through it, with
+ * what was drawn over the frame since as an overlay, in place of the CPU copy
+ * into the view's backing store. Without a hook nothing changes. */
+static FlowGfxMetalPresentFn flow_gfx_metal_present_fn = NULL;
+static FlowGfxMetalScaleWaitFn flow_gfx_metal_scale_wait_fn = NULL;
+
+/* present(layer, rgb, overlay, w, h, overlay_version, has_overlay, x0, y0, x1, y1)
+ * returns 1 when it drew the frame; wait() is called before the CPU path is
+ * taken instead. NULL present removes the hook. */
+void flow_gfx_set_present_hook(void* handle, void* present, void* wait) {
+    (void)handle;
+    flow_gfx_metal_present_fn = (FlowGfxMetalPresentFn)present;
+    flow_gfx_metal_scale_wait_fn = present ? (FlowGfxMetalScaleWaitFn)wait : NULL;
+}
+
+static void* flow_gfx_metal_layer(FlowGfxContext* ctx) {
+    if (!ctx || !ctx->view) return NULL;
+    if (!flow_gfx_metal_present_fn) return NULL;
+    if (!ctx->view.layer || ![ctx->view.layer.className isEqualToString:@"CAMetalLayer"]) {
+        Class cls = NSClassFromString(@"CAMetalLayer");
+        if (!cls) return NULL;
+        CALayer* layer = [[cls alloc] init];
+        ctx->view.wantsLayer = YES;
+        ctx->view.layer = layer;
+        layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+        ctx->view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
+    }
+    CALayer* layer = ctx->view.layer;
+    layer.contentsScale = ctx->scale > 0.0 ? ctx->scale : 1.0;
+    return (__bridge void*)layer;
+}
+
+static void flow_gfx_clear_overlay(FlowGfxContext* ctx) {
+    if (!ctx || !ctx->pixels) return;
+    ctx->overlay_version++;
+    if (!ctx->rgb_overlay_ready) {
+        memset(ctx->pixels, 0, (size_t)ctx->width * (size_t)ctx->height * 4u);
+        ctx->rgb_overlay_ready = true;
+    } else if (ctx->overlay_x1 > ctx->overlay_x0 && ctx->overlay_y1 > ctx->overlay_y0) {
+        size_t bytes = (size_t)(ctx->overlay_x1 - ctx->overlay_x0) * 4u;
+        for (int y = ctx->overlay_y0; y < ctx->overlay_y1; y++) {
+            memset(ctx->pixels + ((size_t)y * (size_t)ctx->width + (size_t)ctx->overlay_x0) * 4u, 0, bytes);
+        }
+    }
+    ctx->overlay_x0 = ctx->width;
+    ctx->overlay_y0 = ctx->height;
+    ctx->overlay_x1 = 0;
+    ctx->overlay_y1 = 0;
+}
+
 static void flow_gfx_mark(FlowGfxContext* ctx, int x0, int y0, int x1, int y1) {
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > ctx->width) x1 = ctx->width;
     if (y1 > ctx->height) y1 = ctx->height;
     if (x0 >= x1 || y0 >= y1) return;
+    if (ctx->rgb_base && !ctx->rgb_overlay) {
+        flow_gfx_clear_overlay(ctx);
+        ctx->rgb_overlay = true;
+    }
+    if (ctx->rgb_overlay) {
+        if (x0 < ctx->overlay_x0) ctx->overlay_x0 = x0;
+        if (y0 < ctx->overlay_y0) ctx->overlay_y0 = y0;
+        if (x1 > ctx->overlay_x1) ctx->overlay_x1 = x1;
+        if (y1 > ctx->overlay_y1) ctx->overlay_y1 = y1;
+    } else {
+    }
+    ctx->gfx_touched = true;
+    ctx->overlay_version++;
     if (ctx->dirty_x1 <= ctx->dirty_x0 || ctx->dirty_y1 <= ctx->dirty_y0) {
         ctx->dirty_x0 = x0; ctx->dirty_y0 = y0; ctx->dirty_x1 = x1; ctx->dirty_y1 = y1;
         return;
@@ -136,6 +215,18 @@ static void flow_gfx_fit_framebuffer(FlowGfxContext* ctx) {
     flow_gfx_drop_text_cg(ctx);
     free(ctx->pixels);
     ctx->pixels = px;
+    ctx->rgb_source = NULL;
+    ctx->rgb_source_w = 0;
+    ctx->rgb_source_h = 0;
+    ctx->rgb_base = false;
+    ctx->rgb_overlay = false;
+    ctx->rgb_overlay_ready = false;
+        ctx->overlay_version = 0;
+    ctx->gfx_touched = false;
+    ctx->overlay_x0 = w;
+    ctx->overlay_y0 = h;
+    ctx->overlay_x1 = 0;
+    ctx->overlay_y1 = 0;
     ctx->width = w;
     ctx->height = h;
     ctx->scale = scale;
@@ -154,7 +245,9 @@ static void flow_gfx_pump_events(FlowGfxContext* ctx) {
             if (!event) break;
             [app sendEvent:event];
         }
-        [app updateWindows];
+        // Let AppKit flush invalidated regions at the end of its run-loop turn.
+        // updateWindows forces a synchronous backing-store transaction here,
+        // which stalls the frame loop even when no events are pending.
     }
 }
 
@@ -306,24 +399,49 @@ static void flow_gfx_pump_events(FlowGfxContext* ctx) {
         CGContextRef cg = [[NSGraphicsContext currentContext] CGContext];
         if (!cg) return;
         NSRect b = [self bounds];
-        CGContextSetRGBFillColor(cg, 0, 0, 0, 1);
-        CGContextFillRect(cg, NSRectToCGRect(b));
-        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        size_t bytes = (size_t)ctx->width * (size_t)ctx->height * 4u;
-        CGDataProviderRef dp = CGDataProviderCreateWithData(NULL, ctx->pixels, bytes, NULL);
-        CGImageRef img = CGImageCreate((size_t)ctx->width, (size_t)ctx->height, 8, 32,
-                                       (size_t)ctx->width * 4u, cs,
-                                       kCGBitmapByteOrder32Big | kCGImageAlphaNoneSkipLast,
-                                       dp, NULL, false, kCGRenderingIntentDefault);
-        if (img) {
-            double pw = ctx->width / ctx->scale;
-            double ph = ctx->height / ctx->scale;
-            CGContextSetInterpolationQuality(cg, kCGInterpolationNone);
-            CGContextDrawImage(cg, CGRectMake(0, b.size.height - ph, pw, ph), img);
-            CGImageRelease(img);
+        if (!flow_gfx_rgb_space) flow_gfx_rgb_space = CGColorSpaceCreateDeviceRGB();
+        CGColorSpaceRef cs = flow_gfx_rgb_space;
+        double pw = ctx->width / ctx->scale;
+        double ph = ctx->height / ctx->scale;
+        CGRect dst = CGRectMake(0, b.size.height - ph, pw, ph);
+        CGContextSetInterpolationQuality(cg, kCGInterpolationNone);
+        if (ctx->rgb_base && ctx->rgb_source) {
+            size_t rgbBytes = (size_t)ctx->width * (size_t)ctx->height * 3u;
+            CGDataProviderRef rgbProvider = CGDataProviderCreateWithData(NULL, ctx->rgb_source, rgbBytes, NULL);
+            CGImageRef rgbImage = CGImageCreate((size_t)ctx->width, (size_t)ctx->height, 8, 24,
+                                                (size_t)ctx->width * 3u, cs, kCGImageAlphaNone,
+                                                rgbProvider, NULL, false, kCGRenderingIntentDefault);
+            if (rgbImage) {
+                CGContextDrawImage(cg, dst, rgbImage);
+                CGImageRelease(rgbImage);
+            }
+            if (rgbProvider) CGDataProviderRelease(rgbProvider);
+            if (ctx->overlay_x1 > ctx->overlay_x0 && ctx->overlay_y1 > ctx->overlay_y0) {
+                size_t overlayBytes = (size_t)ctx->width * (size_t)ctx->height * 4u;
+                CGDataProviderRef overlayProvider = CGDataProviderCreateWithData(NULL, ctx->pixels, overlayBytes, NULL);
+                CGImageRef overlayImage = CGImageCreate((size_t)ctx->width, (size_t)ctx->height, 8, 32,
+                                                        (size_t)ctx->width * 4u, cs,
+                                                        kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast,
+                                                        overlayProvider, NULL, false, kCGRenderingIntentDefault);
+                if (overlayImage) {
+                    CGContextDrawImage(cg, dst, overlayImage);
+                    CGImageRelease(overlayImage);
+                }
+                if (overlayProvider) CGDataProviderRelease(overlayProvider);
+            }
+        } else {
+            size_t bytes = (size_t)ctx->width * (size_t)ctx->height * 4u;
+            CGDataProviderRef dp = CGDataProviderCreateWithData(NULL, ctx->pixels, bytes, NULL);
+            CGImageRef img = CGImageCreate((size_t)ctx->width, (size_t)ctx->height, 8, 32,
+                                           (size_t)ctx->width * 4u, cs,
+                                           kCGBitmapByteOrder32Big | kCGImageAlphaNoneSkipLast,
+                                           dp, NULL, false, kCGRenderingIntentDefault);
+            if (img) {
+                CGContextDrawImage(cg, dst, img);
+                CGImageRelease(img);
+            }
+            CGDataProviderRelease(dp);
         }
-        CGDataProviderRelease(dp);
-        CGColorSpaceRelease(cs);
         return;
     }
 
@@ -372,6 +490,12 @@ static void flow_gfx_request_close(FlowGfxContext* ctx, bool from_delegate) {
 @implementation FlowGfxWindowDelegate
 - (void)windowWillClose:(NSNotification*)notification {
     flow_gfx_request_close(self.ctx, true);
+}
+- (void)windowDidResignKey:(NSNotification*)notification {
+    (void)notification;
+    /* A key-up event can be lost when focus moves to another app. Clear the
+     * sampled state so held game controls cannot keep running in background. */
+    if (self.ctx) memset(self.ctx->keys, 0, sizeof(self.ctx->keys));
 }
 @end
 
@@ -425,7 +549,9 @@ static void* flow_gfx_open_window(int32_t w, int32_t h, const char* title_utf8,
         [ctx->window setDelegate:del];
 
         if (hidpi) {
-            [ctx->window center];
+            NSScreen* screen = [NSScreen mainScreen];
+            if (screen) [ctx->window setFrame:screen.visibleFrame display:NO];
+            else [ctx->window center];
             flow_gfx_fit_framebuffer(ctx);
         }
         /* FLOW_GFX_HIDDEN=1: a window that never takes focus and is not drawn
@@ -517,6 +643,16 @@ int32_t flow_gfx_set_layer(void* handle, void* layer) {
         }
     }
     return 1;
+}
+
+void flow_gfx_maximize(void* handle) {
+    @autoreleasepool {
+        FlowGfxContext* ctx = (FlowGfxContext*)handle;
+        if (!ctx || !ctx->window) return;
+        NSScreen* screen = ctx->window.screen ?: [NSScreen mainScreen];
+        if (screen) [ctx->window setFrame:screen.visibleFrame display:YES animate:NO];
+        if (ctx->hidpi) flow_gfx_fit_framebuffer(ctx);
+    }
 }
 
 /* 0 arrow, 1 pointing hand, 2 crosshair, 3 resize left-right,
@@ -620,6 +756,10 @@ int32_t flow_gfx_mouse(void* handle, int32_t* out) {
 void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
     if (!ctx || !ctx->pixels) return;
+    ctx->rgb_source = NULL;
+    ctx->rgb_base = false;
+    ctx->rgb_overlay = false;
+    ctx->rgb_overlay_ready = false;
     size_t n = (size_t)ctx->width * (size_t)ctx->height;
     uint8_t* p = ctx->pixels;
     flow_gfx_mark(ctx, 0, 0, ctx->width, ctx->height);
@@ -636,6 +776,42 @@ void flow_gfx_clear(void* handle, uint8_t r, uint8_t g, uint8_t b) {
  * framebuffer at (x, y). Per-pixel work belongs here rather than in a
  * fill_rect call per pixel: a 320x240 particle field is 76800 rects a frame,
  * which the rect path cannot sustain. Clipped like fill_rect. */
+typedef struct FlowGfxBlitRows {
+    const uint8_t *src;
+    uint8_t *dst;
+    int32_t x, y, w, x0, x1, y0, y1, stride, workers;
+} FlowGfxBlitRows;
+
+static void flow_gfx_blit_rgb_rows(void *opaque, size_t worker) {
+    FlowGfxBlitRows *task = (FlowGfxBlitRows *)opaque;
+    int rows = task->y1 - task->y0;
+    int first = task->y0 + (int)((size_t)rows * worker / (size_t)task->workers);
+    int last = task->y0 + (int)((size_t)rows * (worker + 1) / (size_t)task->workers);
+    for (int yy = first; yy < last; yy++) {
+        const uint8_t *srow = task->src + ((size_t)(yy - task->y) * (size_t)task->w + (size_t)(task->x0 - task->x)) * 3u;
+        uint8_t *drow = task->dst + ((size_t)yy * (size_t)task->stride + (size_t)task->x0) * 4u;
+        int xx = task->x0;
+#if defined(__ARM_NEON)
+        uint8x16_t alpha = vdupq_n_u8(255);
+        for (; xx + 16 <= task->x1; xx += 16) {
+            uint8x16x3_t rgb = vld3q_u8(srow);
+            uint8x16x4_t rgba = { { rgb.val[0], rgb.val[1], rgb.val[2], alpha } };
+            vst4q_u8(drow, rgba);
+            srow += 48;
+            drow += 64;
+        }
+#endif
+        for (; xx < task->x1; xx++) {
+            drow[0] = srow[0];
+            drow[1] = srow[1];
+            drow[2] = srow[2];
+            drow[3] = 255;
+            srow += 3;
+            drow += 4;
+        }
+    }
+}
+
 void flow_gfx_blit_rgb(void *handle, int32_t x, int32_t y, int32_t w, int32_t h,
                        const uint8_t *src) {
     FlowGfxContext *ctx = (FlowGfxContext *)handle;
@@ -647,32 +823,35 @@ void flow_gfx_blit_rgb(void *handle, int32_t x, int32_t y, int32_t w, int32_t h,
     int x1 = x + w; if (x1 > ctx->width) x1 = ctx->width;
     int y1 = y + h; if (y1 > ctx->height) y1 = ctx->height;
     if (x0 >= x1 || y0 >= y1) return;
+    if (ctx->hidpi && !ctx->gfx_touched && x0 == 0 && y0 == 0 && x1 == ctx->width && y1 == ctx->height &&
+        w == ctx->width && h == ctx->height && (int64_t)w * h >= 1000000) {
+        ctx->rgb_source = NULL;
+        ctx->rgb_base = false;
+        ctx->rgb_overlay = false;
+        flow_gfx_mark(ctx, 0, 0, ctx->width, ctx->height);
+        ctx->gfx_touched = false;
+        ctx->rgb_source = src;
+        ctx->rgb_source_w = w;
+        ctx->rgb_source_h = h;
+        ctx->rgb_base = true;
+        return;
+    }
+    ctx->rgb_source = NULL;
+    ctx->rgb_base = false;
+    ctx->rgb_overlay = false;
+    ctx->rgb_overlay_ready = false;
+    ctx->overlay_x0 = ctx->width;
+    ctx->overlay_y0 = ctx->height;
+    ctx->overlay_x1 = 0;
+    ctx->overlay_y1 = 0;
     flow_gfx_mark(ctx, x0, y0, x1, y1);
-
-    uint8_t *dst = ctx->pixels;
-    for (int yy = y0; yy < y1; yy++) {
-        const uint8_t *srow = src + ((size_t)(yy - y) * (size_t)w + (size_t)(x0 - x)) * 3u;
-        uint8_t *drow = dst + ((size_t)yy * (size_t)ctx->width + (size_t)x0) * 4u;
-        int xx = x0;
-#if defined(__ARM_NEON)
-        /* 16 pixels at a time: de-interleave RGB, re-interleave with alpha. */
-        uint8x16_t alpha = vdupq_n_u8(255);
-        for (; xx + 16 <= x1; xx += 16) {
-            uint8x16x3_t rgb = vld3q_u8(srow);
-            uint8x16x4_t rgba = { { rgb.val[0], rgb.val[1], rgb.val[2], alpha } };
-            vst4q_u8(drow, rgba);
-            srow += 48;
-            drow += 64;
-        }
-#endif
-        for (; xx < x1; xx++) {
-            drow[0] = srow[0];
-            drow[1] = srow[1];
-            drow[2] = srow[2];
-            drow[3] = 255;
-            srow += 3;
-            drow += 4;
-        }
+    FlowGfxBlitRows task = { src, ctx->pixels, x, y, w, x0, x1, y0, y1, ctx->width, 1 };
+    if ((int64_t)(x1 - x0) * (int64_t)(y1 - y0) >= 1000000) {
+        task.workers = 4;
+        dispatch_apply_f(4, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0),
+                         &task, flow_gfx_blit_rgb_rows);
+    } else {
+        flow_gfx_blit_rgb_rows(&task, 0);
     }
 }
 
@@ -919,6 +1098,22 @@ void flow_gfx_present(void* handle) {
     FlowGfxContext* ctx = (FlowGfxContext*)handle;
     if (!ctx || !ctx->view) return;
     @autoreleasepool {
+        if (ctx->hidpi && ctx->rgb_base && ctx->rgb_source) {
+            void* layer = flow_gfx_metal_layer(ctx);
+            if (layer && flow_gfx_metal_present_fn(layer, ctx->rgb_source,
+                    ctx->rgb_overlay ? ctx->pixels : NULL, ctx->width, ctx->height,
+                    ctx->overlay_version, ctx->rgb_overlay,
+                    ctx->rgb_overlay ? ctx->overlay_x0 : 0,
+                    ctx->rgb_overlay ? ctx->overlay_y0 : 0,
+                    ctx->rgb_overlay ? ctx->overlay_x1 : 0,
+                    ctx->rgb_overlay ? ctx->overlay_y1 : 0)) {
+                ctx->dirty_x0 = ctx->dirty_y0 = ctx->dirty_x1 = ctx->dirty_y1 = 0;
+                ctx->rgb_overlay = false;
+                ctx->gfx_touched = false;
+                return;
+            }
+            if (flow_gfx_metal_scale_wait_fn) flow_gfx_metal_scale_wait_fn();
+        }
         if (ctx->hidpi) {
             /* Only what changed since the last present. */
             if (ctx->dirty_x1 > ctx->dirty_x0 && ctx->dirty_y1 > ctx->dirty_y0) {
@@ -928,13 +1123,18 @@ void flow_gfx_present(void* handle) {
                                       (ctx->dirty_x1 - ctx->dirty_x0) / sc,
                                       (ctx->dirty_y1 - ctx->dirty_y0) / sc);
                 [ctx->view setNeedsDisplayInRect:NSInsetRect(r, -1, -1)];
-                [ctx->view displayIfNeeded];
+                // Schedule this frame for the next AppKit flush. Synchronously
+                // drawing here makes the render thread wait on window backing.
             }
             ctx->dirty_x0 = ctx->dirty_y0 = ctx->dirty_x1 = ctx->dirty_y1 = 0;
+            ctx->rgb_overlay = false;
+            ctx->gfx_touched = false;
             return;
         }
         [ctx->view setNeedsDisplay:YES];
         [ctx->view displayIfNeeded];
+        ctx->rgb_overlay = false;
+        ctx->gfx_touched = false;
     }
 }
 
