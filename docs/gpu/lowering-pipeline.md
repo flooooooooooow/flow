@@ -223,6 +223,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `voice_osc_varblocks.flow` | 64 phase oscillators, 48 then 80 frames, mid-stream freq/gain update | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `ks_delay.flow` | 64 Karplus-Strong voices, 48-sample ring per voice, dynamic read index + write-index state, two 64-sample blocks | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_phase_wrap.flow` | 64 phase oscillators with wrap-around and a per-voice wrap count, 56 then 72 frames | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
+| `voice_topology.flow` | 40 voices, then 64 with 24 activating, then 24 with the rest freezing | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_edges.flow` | 64, then 16, then 0 voices, then a reset block, over the wrapped phase loop; sentinel out buffers | 8/8 buffers bit-identical | 8/8 | pending (no MLX here) |
 | `remainder.flow` | integer `%`: a stride-3 ring wrap and negative dividends and divisor, 64 threads | pending device re-measure | pending | pending |
 | `voice_invalid.flow` | -7 voices, then 100 voices against a 64-thread launch | 4/4 buffers bit-identical | 4/4 | pending (no MLX here) |
@@ -276,6 +277,19 @@ voice's wrap count from the rendered samples alone, which fails if a wrap is
 dropped or the counter restarts. Registered at 0 ulp in
 `tests/gpu_lower/cases.txt`.
 
+`voice_topology.flow` is the case for notes arriving and leaving between
+blocks, which is the one thing all the others hold fixed. The host goes from
+40 voices to 64 and back to 24, seeding the newly audible voices from phase
+zero and carrying the rest on from the state the previous dispatch left. The
+CPU reference fails with a numbered exit code if a thread past block 0's
+40-voice count stored anything, if a continuing or activated voice deviates
+from its own replay of the recurrence, if a deactivated voice's state changed,
+or if the last audible voice stopped advancing. The deactivated voices are
+read back from the output buffer itself, so the check is that the values are
+unchanged rather than unwritten. Two limits are worth knowing: a dispatch
+launches 64 threads, so a 72-voice block cannot be expressed through this
+harness, and every buffer in the launcher needs an `in_` file, including the
+outputs. Registered at 0 ulp in `tests/gpu_lower/cases.txt`.
 `voice_edges.flow` covers the boundaries a voice bank actually runs in, with
 one kernel and four dispatches: 64 voices of which 8 are silent (gain 0, so
 they render zeros while their phase keeps advancing), then 16 voices, then 0

@@ -1,0 +1,263 @@
+# Voice activation and deactivation between blocks.
+#
+# Gate 1 of #1748 also has to survive a topology change: a bank that goes from
+# 40 voices to 64 and back to 24 between blocks, which is what happens when
+# notes are added and released. One kernel serves all three dispatches, and the
+# only thing that changes is the voice count the host passes and the state the
+# host seeds:
+#
+#   block 0  40 voices, 32 frames   voices 40..63 are still inactive
+#   block 1  64 voices, 32 frames   voices 40..63 activate, starting from phase 0
+#   block 2  24 voices, 32 frames   voices 24..63 deactivate and freeze
+#
+# A newly audible voice must start at zero rather than at whatever the buffer
+# held; a deactivated voice must come back with its state untouched; and the
+# output buffer of the shrinking dispatch is sentinel-filled beyond the region
+# 24 x 32 frames so a thread past the new voice count that stores anyway fails.
+#
+# main() is the CPU reference: it runs the same kernel in dispatch order over
+# the same buffers and seeds each dispatch from the one before it, the way a
+# host would. All input/output buffers are separate because in-place updates
+# are not supported by every gpu-lower execution target.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+# One block of wrapped phase accumulation; y = wrapped phase * gain.
+@gpu
+function render_act(
+    freq: ptr<f32>, gain: ptr<f32>,
+    phase_in: ptr<f32>, phase_out: ptr<f32>, y: ptr<f32>,
+    voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let f: f32 = freq[voice]
+        let g: f32 = gain[voice]
+        let mut phase: f32 = phase_in[voice]
+        for frame in 0 to frames {
+            phase = phase + f
+            if phase >= 1.0 { phase = phase - 1.0 }
+            y[frame * voices + voice] = phase * g
+        }
+        phase_out[voice] = phase
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function absf(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# One sample of the recurrence, for the independent replays.
+function wrap_one(prev: f32, f: f32) -> f32 {
+    let mut p: f32 = prev + f
+    if p >= 1.0 { p = p - 1.0 }
+    return p
+}
+
+function fill(p: ptr<f32>, n: i32, v: f32) {
+    for i in 0 to n {
+        p[i] = v
+    }
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let n_max: i32 = 64
+    let n_a: i32 = 40
+    let n_b: i32 = 64
+    let n_c: i32 = 24
+    let frames: i32 = 32
+    let voice_bytes: i64 = (n_max * 4) as i64
+    let ya_bytes: i64 = (n_a * frames * 4) as i64
+    let yb_bytes: i64 = (n_b * frames * 4) as i64
+    # Block 2 may write 24 x 32 frames; the rest of its buffer stays sentinel.
+    let yc_bytes: i64 = (n_a * frames * 4) as i64
+
+    let freq: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let gain: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let phase_init: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let phase_a: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let seed_b: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let phase_b: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let seed_c: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let phase_c: ptr<f32> = calloc(n_max as i64, 4) as ptr<f32>
+    let ya: ptr<f32> = calloc((n_a * frames) as i64, 4) as ptr<f32>
+    let yb: ptr<f32> = calloc((n_b * frames) as i64, 4) as ptr<f32>
+    let yc: ptr<f32> = calloc((n_a * frames) as i64, 4) as ptr<f32>
+    let c_a: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let c_b: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let c_c: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    c_a[0] = n_a
+    c_b[0] = n_b
+    c_c[0] = n_c
+    frames_arg[0] = frames
+
+    for voice in 0 to n_max {
+        freq[voice] = 0.07 + ((voice % 11) as f32) * 0.05
+        gain[voice] = 0.6 + ((voice % 5) as f32) * 0.07
+    }
+    # Voices 0..39 start audible with a phase, 40..63 are still inactive: the
+    # 7.0 they hold is a sentinel, so a store from a thread outside block 0's
+    # voice count shows up here.
+    for voice in 0 to n_a {
+        phase_init[voice] = 0.01 + ((voice % 7) as f32) * 0.13
+    }
+    for voice in n_a to n_max {
+        phase_init[voice] = 7.0
+    }
+    # Same sentinel for the state buffer block 0 owns and for the tail of
+    # block 2's output buffer; both are seeded through their in_ files.
+    fill(phase_a, n_max, 7.0)
+    fill(yc, n_a * frames, 7.0)
+
+    dump(dir, "in_0.bin", freq as ptr<void>, voice_bytes)
+    dump(dir, "in_1.bin", gain as ptr<void>, voice_bytes)
+    dump(dir, "in_2.bin", phase_init as ptr<void>, voice_bytes)
+    dump(dir, "in_3.bin", phase_a as ptr<void>, voice_bytes)
+    # Every buffer the launcher sees needs an in_ file, including the outputs;
+    # these three are fully written by their dispatch, so they start at zero.
+    fill(phase_b, n_max, 0.0)
+    fill(ya, n_a * frames, 0.0)
+    fill(yb, n_b * frames, 0.0)
+    dump(dir, "in_5.bin", phase_b as ptr<void>, voice_bytes)
+    dump(dir, "in_8.bin", ya as ptr<void>, ya_bytes)
+    dump(dir, "in_9.bin", yb as ptr<void>, yb_bytes)
+    dump(dir, "in_10.bin", yc as ptr<void>, yc_bytes)
+    dump(dir, "in_11.bin", c_a as ptr<void>, 4)
+    dump(dir, "in_12.bin", c_b as ptr<void>, 4)
+    dump(dir, "in_13.bin", c_c as ptr<void>, 4)
+    dump(dir, "in_14.bin", frames_arg as ptr<void>, 4)
+
+    for t in 0 to n_max {
+        cpu_tid_x = t
+        render_act(freq, gain, phase_init, phase_a, ya, n_a, frames)
+    }
+    # A thread past block 0's voice count must not have stored anything.
+    for voice in n_a to n_max {
+        if phase_a[voice] != 7.0 { return 1 }
+    }
+    let mut pa5: f32 = phase_init[5]
+    let mut bad: i32 = 0
+    for frame in 0 to frames {
+        pa5 = wrap_one(pa5, freq[5])
+        if absf(ya[frame * n_a + 5] - pa5 * gain[5]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 2 }
+    if absf(phase_a[5] - pa5) > 0.000001 { return 3 }
+
+    # Block 1 activates voices 40..63 from zero and carries 0..39 on from the
+    # state block 0 left.
+    for voice in 0 to n_a {
+        seed_b[voice] = phase_a[voice]
+    }
+    for voice in n_a to n_max {
+        seed_b[voice] = 0.0
+    }
+    dump(dir, "in_4.bin", seed_b as ptr<void>, voice_bytes)
+
+    for t in 0 to n_max {
+        cpu_tid_x = t
+        render_act(freq, gain, seed_b, phase_b, yb, n_b, frames)
+    }
+    # The continuing voice and one of the activated voices, replayed on their
+    # own from block 1's seed.
+    let mut pb5: f32 = seed_b[5]
+    let mut pb40: f32 = 0.0
+    let first40: f32 = wrap_one(0.0, freq[40]) * gain[40]
+    if absf(yb[40] - first40) > 0.000001 { return 4 }
+    for frame in 0 to frames {
+        pb5 = wrap_one(pb5, freq[5])
+        pb40 = wrap_one(pb40, freq[40])
+        if absf(yb[frame * n_b + 5] - pb5 * gain[5]) > 0.000001 { bad = 1 }
+        if absf(yb[frame * n_b + 40] - pb40 * gain[40]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 5 }
+    if absf(phase_b[5] - pb5) > 0.000001 { return 6 }
+    if absf(phase_b[40] - pb40) > 0.000001 { return 7 }
+
+    # Block 2 drops to 24 voices: 24..63 must come out exactly as they went in.
+    for voice in 0 to n_max {
+        seed_c[voice] = phase_b[voice]
+        # Block 2's output buffer starts as that same state, so a voice the
+        # dispatch freezes has to come out unchanged rather than unwritten.
+        phase_c[voice] = seed_c[voice]
+    }
+    dump(dir, "in_6.bin", seed_c as ptr<void>, voice_bytes)
+    dump(dir, "in_7.bin", phase_c as ptr<void>, voice_bytes)
+
+    for t in 0 to n_max {
+        cpu_tid_x = t
+        render_act(freq, gain, seed_c, phase_c, yc, n_c, frames)
+    }
+    for voice in n_c to n_max {
+        if phase_c[voice] != seed_c[voice] { return 8 }
+    }
+    for i in n_c * frames to n_a * frames {
+        if yc[i] != 7.0 { return 9 }
+    }
+    # The last voice that stayed audible must have moved, or the freeze above
+    # would pass trivially on a kernel that never runs.
+    if absf(phase_c[23] - seed_c[23]) < 0.000001 { return 10 }
+    let mut pc23: f32 = seed_c[23]
+    for frame in 0 to frames {
+        pc23 = wrap_one(pc23, freq[23])
+        if absf(yc[frame * n_c + 23] - pc23 * gain[23]) > 0.000001 { bad = 1 }
+    }
+    if bad == 1 { return 11 }
+    if absf(phase_c[23] - pc23) > 0.000001 { return 12 }
+
+    dump(dir, "out_3.bin", phase_a as ptr<void>, voice_bytes)
+    dump(dir, "out_5.bin", phase_b as ptr<void>, voice_bytes)
+    dump(dir, "out_7.bin", phase_c as ptr<void>, voice_bytes)
+    dump(dir, "out_8.bin", ya as ptr<void>, ya_bytes)
+    dump(dir, "out_9.bin", yb as ptr<void>, yb_bytes)
+    dump(dir, "out_10.bin", yc as ptr<void>, yc_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 64 in\n" +
+        "buffer 1 f32 64 in\n" +
+        "buffer 2 f32 64 in\n" +
+        "buffer 3 f32 64 out\n" +
+        "buffer 4 f32 64 in\n" +
+        "buffer 5 f32 64 out\n" +
+        "buffer 6 f32 64 in\n" +
+        "buffer 7 f32 64 out\n" +
+        "buffer 8 f32 1280 out\n" +
+        "buffer 9 f32 2048 out\n" +
+        "buffer 10 f32 1280 out\n" +
+        "buffer 11 i32 1 scalar\n" +
+        "buffer 12 i32 1 scalar\n" +
+        "buffer 13 i32 1 scalar\n" +
+        "buffer 14 i32 1 scalar\n" +
+        "dispatch render_act 1 1 1 0 1 2 3 8 11 14\n" +
+        "dispatch render_act 1 1 1 0 1 4 5 9 12 14\n" +
+        "dispatch render_act 1 1 1 0 1 6 7 10 13 14\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}
