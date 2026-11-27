@@ -1,0 +1,195 @@
+# Invalid voice counts handed to a stateful GPU voice kernel.
+#
+# Gate 1 of #1748 covers the counts a host can pass when its own bookkeeping is
+# wrong: a negative count, and a count larger than the threads one dispatch
+# launches (64 in `flow gpu-lower`). Neither is a valid request, and this case
+# records what the lowered kernel does with them rather than defining a policy:
+#
+#   dispatch 0  voices  -7   `voice < voices` is false for every thread, so the
+#                            dispatch must leave state and output untouched
+#   dispatch 1  voices 100   threads 0..63 write, 64..99 never run, so the
+#                            region a count past the launch asks for stays at
+#                            its sentinel
+#
+# The point for a host is that a bad count costs correctness of the block it
+# was meant to render, and cannot reach memory outside the buffer the launch
+# addresses. Both output buffers are sentinel-filled and sized for the count,
+# so a thread that stores outside its voice or the first frame it owns shows
+# up as a changed sentinel.
+#
+# main() is the CPU reference: it runs the same kernel over the same 64-thread
+# launch, which is why a count of 100 advances 64 voices and stops.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fwrite(buf: ptr<void>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fputs(s: string, fp: ptr<void>) -> i32
+    function fclose(fp: ptr<void>) -> i32
+    function getenv(name: string) -> string
+}
+
+let mut cpu_tid_x: i32 = 0
+
+function gpu_thread_id() -> i32 {
+    return cpu_tid_x
+}
+
+# One block of wrapped phase accumulation; y = wrapped phase * gain.
+@gpu
+function render_bound(
+    freq: ptr<f32>, gain: ptr<f32>,
+    phase_in: ptr<f32>, phase_out: ptr<f32>, y: ptr<f32>,
+    voices: i32, frames: i32
+) {
+    let voice: i32 = gpu_thread_id()
+    if voice < voices {
+        let f: f32 = freq[voice]
+        let g: f32 = gain[voice]
+        let mut phase: f32 = phase_in[voice]
+        for frame in 0 to frames {
+            phase = phase + f
+            if phase >= 1.0 { phase = phase - 1.0 }
+            y[frame * voices + voice] = phase * g
+        }
+        phase_out[voice] = phase
+    }
+}
+
+function dump(dir: string, name: string, p: ptr<void>, bytes: i64) {
+    let fp: ptr<void> = fopen(dir + "/" + name, "wb")
+    let _w: i64 = fwrite(p, 1, bytes, fp)
+    let _c: i32 = fclose(fp)
+}
+
+function absf(x: f32) -> f32 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# One sample of the recurrence, for the independent replay.
+function wrap_one(prev: f32, f: f32) -> f32 {
+    let mut p: f32 = prev + f
+    if p >= 1.0 { p = p - 1.0 }
+    return p
+}
+
+function fill(p: ptr<f32>, n: i32, v: f32) {
+    for i in 0 to n {
+        p[i] = v
+    }
+}
+
+function main() -> i32 {
+    let dir: string = getenv("FLOW_GPU_LOWER_DATA")
+    let launch: i32 = 64
+    let voices_wide: i32 = 100
+    let voices_neg: i32 = 0 - 7
+    let frames: i32 = 32
+    let wide_bytes: i64 = (voices_wide * 4) as i64
+    let signal_bytes: i64 = (voices_wide * frames * 4) as i64
+
+    let freq: ptr<f32> = calloc(voices_wide as i64, 4) as ptr<f32>
+    let gain: ptr<f32> = calloc(voices_wide as i64, 4) as ptr<f32>
+    let phase_neg_in: ptr<f32> = calloc(voices_wide as i64, 4) as ptr<f32>
+    let phase_neg_out: ptr<f32> = calloc(voices_wide as i64, 4) as ptr<f32>
+    let y_neg: ptr<f32> = calloc((voices_wide * frames) as i64, 4) as ptr<f32>
+    let phase_wide_in: ptr<f32> = calloc(voices_wide as i64, 4) as ptr<f32>
+    let phase_wide_out: ptr<f32> = calloc(voices_wide as i64, 4) as ptr<f32>
+    let y_wide: ptr<f32> = calloc((voices_wide * frames) as i64, 4) as ptr<f32>
+    let neg_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let wide_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let frames_arg: ptr<i32> = calloc(1, 4) as ptr<i32>
+    neg_arg[0] = voices_neg
+    wide_arg[0] = voices_wide
+    frames_arg[0] = frames
+
+    for voice in 0 to voices_wide {
+        freq[voice] = 0.11 + ((voice % 8) as f32) * 0.09
+        gain[voice] = 0.8
+        phase_neg_in[voice] = 0.02 + ((voice % 13) as f32) * 0.07
+        phase_wide_in[voice] = 0.02 + ((voice % 13) as f32) * 0.07
+    }
+    # Anything a dispatch may not write stays 7.0; a stray store shows up.
+    fill(phase_neg_in, voices_wide, 7.0)
+    fill(phase_neg_out, voices_wide, 7.0)
+    fill(phase_wide_out, voices_wide, 7.0)
+    fill(y_neg, voices_wide * frames, 7.0)
+    fill(y_wide, voices_wide * frames, 7.0)
+
+    dump(dir, "in_0.bin", freq as ptr<void>, wide_bytes)
+    dump(dir, "in_1.bin", gain as ptr<void>, wide_bytes)
+    dump(dir, "in_2.bin", phase_neg_in as ptr<void>, wide_bytes)
+    dump(dir, "in_3.bin", phase_neg_out as ptr<void>, wide_bytes)
+    dump(dir, "in_4.bin", y_neg as ptr<void>, signal_bytes)
+    dump(dir, "in_5.bin", phase_wide_in as ptr<void>, wide_bytes)
+    dump(dir, "in_6.bin", phase_wide_out as ptr<void>, wide_bytes)
+    dump(dir, "in_7.bin", y_wide as ptr<void>, signal_bytes)
+    dump(dir, "in_8.bin", neg_arg as ptr<void>, 4)
+    dump(dir, "in_9.bin", wide_arg as ptr<void>, 4)
+    dump(dir, "in_10.bin", frames_arg as ptr<void>, 4)
+
+    # A negative count: the guard is false for every launched thread.
+    for t in 0 to launch {
+        cpu_tid_x = t
+        render_bound(freq, gain, phase_neg_in, phase_neg_out, y_neg, voices_neg, frames)
+    }
+    # A count past the launch: only the 64 launched threads exist to write.
+    for t in 0 to launch {
+        cpu_tid_x = t
+        render_bound(freq, gain, phase_wide_in, phase_wide_out, y_wide, voices_wide, frames)
+    }
+
+    # Negative count: not one value may change, state or output.
+    for voice in 0 to voices_wide {
+        if phase_neg_out[voice] != 7.0 { return 1 }
+    }
+    for i in 0 to voices_wide * frames {
+        if y_neg[i] != 7.0 { return 2 }
+    }
+
+    # Wide count: every launched voice matches its own replay of the recurrence.
+    for voice in 0 to launch {
+        let mut p: f32 = phase_wide_in[voice]
+        for frame in 0 to frames {
+            p = wrap_one(p, freq[voice])
+            if absf(y_wide[frame * voices_wide + voice] - p * gain[voice]) > 0.000001 { return 3 }
+        }
+        if absf(phase_wide_out[voice] - p) > 0.000001 { return 4 }
+    }
+    # Voices past the launch were asked for and never ran: sentinel survives.
+    for voice in launch to voices_wide {
+        if phase_wide_out[voice] != 7.0 { return 5 }
+    }
+    for i in 0 to voices_wide * frames {
+        let voice: i32 = i % voices_wide
+        if voice >= launch and y_wide[i] != 7.0 { return 6 }
+    }
+
+    dump(dir, "out_3.bin", phase_neg_out as ptr<void>, wide_bytes)
+    dump(dir, "out_4.bin", y_neg as ptr<void>, signal_bytes)
+    dump(dir, "out_6.bin", phase_wide_out as ptr<void>, wide_bytes)
+    dump(dir, "out_7.bin", y_wide as ptr<void>, signal_bytes)
+
+    let fp: ptr<void> = fopen(dir + "/launch.txt", "w")
+    let _w: i32 = fputs(
+        "buffer 0 f32 100 in\n" +
+        "buffer 1 f32 100 in\n" +
+        "buffer 2 f32 100 in\n" +
+        "buffer 3 f32 100 out\n" +
+        "buffer 4 f32 3200 out\n" +
+        "buffer 5 f32 100 in\n" +
+        "buffer 6 f32 100 out\n" +
+        "buffer 7 f32 3200 out\n" +
+        "buffer 8 i32 1 scalar\n" +
+        "buffer 9 i32 1 scalar\n" +
+        "buffer 10 i32 1 scalar\n" +
+        "dispatch render_bound 1 1 1 0 1 2 3 4 8 10\n" +
+        "dispatch render_bound 1 1 1 0 1 5 6 7 9 10\n",
+        fp
+    )
+    let _c: i32 = fclose(fp)
+    return 0
+}

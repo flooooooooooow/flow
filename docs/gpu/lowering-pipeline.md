@@ -225,6 +225,7 @@ Apple M4 Max, macOS 26.2, Homebrew LLVM 22.1.7, MoltenVK 1.4.0 (Vulkan
 | `voice_phase_wrap.flow` | 64 phase oscillators with wrap-around and a per-voice wrap count, 56 then 72 frames | 6/6 buffers bit-identical | 6/6 | pending (no MLX here) |
 | `voice_edges.flow` | 64, then 16, then 0 voices, then a reset block, over the wrapped phase loop; sentinel out buffers | 8/8 buffers bit-identical | 8/8 | pending (no MLX here) |
 | `remainder.flow` | integer `%`: a stride-3 ring wrap and negative dividends and divisor, 64 threads | pending device re-measure | pending | pending |
+| `voice_invalid.flow` | -7 voices, then 100 voices against a 64-thread launch | 4/4 buffers bit-identical | 4/4 | pending (no MLX here) |
 
 `modal_bank.flow` is registered in `tests/gpu_lower/cases.txt` at 0 ulp and
 is covered by the CPU cross-block harness plus PTX/HSACO generation checks.
@@ -295,6 +296,17 @@ host's truncating remainder does. Its CPU build checks every thread against
 `l - (l / r) * r` and hand-computed values. It was 64/64 bit-identical on all
 three buffers through Mesa lavapipe (Vulkan on the CPU, Linux x86-64);
 the reference-host cells above stay pending until measured there.
+
+`voice_invalid.flow` takes the counts a host passes when its own bookkeeping
+is wrong. A negative count makes `voice < voices` false for every thread, so
+the dispatch must leave both the state buffer and the output at their
+sentinel; a count of 100 against a 64-thread launch advances the 64 voices
+that exist and leaves voices 64..99 and their slice of the output untouched.
+The case records this as observable behaviour: a host that miscounts loses
+the block it meant to render, and cannot reach memory outside the buffer the
+launch addresses. Which counts to accept is the host's decision, so the case
+documents the kernel side only. Registered at 0 ulp in
+`tests/gpu_lower/cases.txt`.
 
 Every established case above is bit for bit, so `tests/gpu_lower/cases.txt`
 sets a tolerance of 0 ulp for all of them. `msl` runs the same MSL as

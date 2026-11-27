@@ -18,3 +18,4 @@ tests/gpu_lower/kernels/ks_delay.flow 0
 tests/gpu_lower/kernels/voice_phase_wrap.flow 0
 tests/gpu_lower/kernels/voice_edges.flow 0
 tests/gpu_lower/kernels/remainder.flow 0
+tests/gpu_lower/kernels/voice_invalid.flow 0
